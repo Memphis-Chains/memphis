@@ -10,6 +10,8 @@ import {
   TOOL_REGISTRY,
 } from '../../src/gateway/tool-registry.js';
 
+const stableEnv: NodeJS.ProcessEnv = {};
+
 describe('tool registry', () => {
   it('exports all registered tools', () => {
     // Codex Round 5 P1 fix (#107): added 2 tier-2 mutating tools to
@@ -27,13 +29,19 @@ describe('tool registry', () => {
     //   memphis_self_review (tier-0 read),
     //   memphis_self_pr_open (tier-2 execute+network),
     //   memphis_self_deploy_verify (tier-0 read+execute).
-    expect(getToolNames()).toHaveLength(51);
+    // REV2 Temat 3.5: +1 tier-1 read — memphis_exec_analyze (pre-exec
+    // impact analyzer; companion to memphis_exec for wisdom doctrine).
+    // 2026-06-16: +2 tier-0 read — memphis_self_governance_status
+    // (canonical supervised-operational autonomy readiness) and
+    // memphis_tensor_status (canonical tensor/vector runtime truth).
+    expect(getToolNames(stableEnv)).toHaveLength(54);
   });
 
   it('hides experimental preview tools by default', () => {
-    expect(getToolNames()).not.toContain('memphis_chain_query');
-    expect(getToolNames()).not.toContain('memphis_providers');
-    expect(getToolNames()).not.toContain('memphis_system_info');
+    const names = getToolNames(stableEnv);
+    expect(names).not.toContain('memphis_chain_query');
+    expect(names).not.toContain('memphis_providers');
+    expect(names).not.toContain('memphis_system_info');
   });
 
   it('exposes experimental preview tools when MEMPHIS_FEATURES enables them', () => {
@@ -83,22 +91,25 @@ describe('tool registry', () => {
   });
 
   it('getToolsByTier returns correct tools', () => {
-    const tier0 = getToolsByTier(0);
+    const tier0 = getToolsByTier(0, stableEnv);
     // 15 = 13 base tier-0 + memphis_self_describe (S3, sprint 2026-04-26)
     //      + memphis_slo_status (Track C3, 2026-04-29)
     // PR #593 (S5): +6 tier-0 — memphis_self_plan_{create,get,advance,cancel}
     //   + memphis_self_review + memphis_self_deploy_verify.
-    expect(tier0.length).toBe(21);
+    // 2026-06-16: +2 tier-0 — memphis_self_governance_status + memphis_tensor_status.
+    expect(tier0.length).toBe(23);
     expect(tier0.every((t) => t.tier === 0)).toBe(true);
 
-    const tier1 = getToolsByTier(1);
+    const tier1 = getToolsByTier(1, stableEnv);
     // PR #572 (2026-05-12): added 3 tier-1 read tools — memphis_skill_list,
     // memphis_skill_show, memphis_skill_validate (info-only operations).
     // PR (kartograf-runtime, 2026-05-12): added memphis_kartograf (inference,
     // read-only — returns embedding + zones, no chain writes).
-    expect(tier1.length).toBe(5);
+    // REV2 Temat 3.5: +1 tier-1 read — memphis_exec_analyze.
+    expect(tier1.length).toBe(6);
     expect(tier1.map((t) => t.name).sort()).toEqual(
       [
+        'memphis_exec_analyze',
         'memphis_health_check',
         'memphis_kartograf',
         'memphis_skill_list',
@@ -107,7 +118,7 @@ describe('tool registry', () => {
       ].sort(),
     );
 
-    const tier2 = getToolsByTier(2);
+    const tier2 = getToolsByTier(2, stableEnv);
     // PR #572 (2026-05-12): added 2 tier-2 write tools —
     // memphis_skill_create, memphis_skill_install (write to drafts/installed dirs).
     // PR #593 (S5): +1 tier-2 — memphis_self_pr_open (execute+network,

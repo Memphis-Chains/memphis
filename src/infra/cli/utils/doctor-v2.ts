@@ -45,22 +45,28 @@ import {
 } from '../../../config/paths.js';
 import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
 import {
+  parseTelegramAllowedUserIds,
+  telegramAllowAllUsers,
+} from '../../../gateway/channels/telegram-readiness.js';
+import {
   buildSurfacePolicySnapshot,
   evaluateSurfacePolicyRisk,
 } from '../../../gateway/surface-policy.js';
-import { checkPiperServerHealth } from '../../../gateway/voice/local-piper-adapter.js';
-import { checkWhisperServerHealth } from '../../../gateway/voice/local-whisper-adapter.js';
 import { resolveVoiceConfig } from '../../../gateway/voice/voice-service.js';
 import { DEFAULT_MCP_HTTP_PORT, buildMcpHttpHealthUrl } from '../../../mcp/transport/defaults.js';
 import { inspectManagedAppCatalog } from '../../../modules/apps/manifest.js';
 import type { FirstRunPlan } from '../../../onboarding/first-run.js';
 import { probeVaultCipherCycle } from '../../../security/vault-boundary.js';
 import { loadSoulManifest } from '../../../soul/manifest.js';
+import { readDotEnvFile } from '../../config/hot-reload.js';
 import { envSchema } from '../../config/schema.js';
+import { readRecentSecurityAuditEvents } from '../../logging/security-audit.js';
 import { resolveInstallRoot } from '../../runtime/install-root.js';
+import { loadKnownForks } from '../../runtime/known-forks.js';
 import { buildRuntimeHealthSnapshot } from '../../runtime/runtime-health.js';
 import { repairRuntimeState } from '../../runtime/runtime-repair.js';
 import { diagnoseChainHashes, rebuildChainHashes } from '../../storage/chain-adapter.js';
+import { assessRustBridgeManifestStatus } from '../../storage/rust-bridge-manifest.js';
 import { embedReset, embedSearch } from '../../storage/rust-embed-adapter.js';
 
 /**
@@ -250,6 +256,14 @@ function sanitizeProviderUrlForLog(raw: string | undefined): string | undefined 
 function levelFrom(ok: boolean, warn = false): DoctorCheckLevel {
   if (ok) return 'pass';
   return warn ? 'warn' : 'fail';
+}
+
+function boolEnv(value: string | undefined, fallback = false): boolean {
+  if (value === undefined) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return fallback;
 }
 
 function ping(url: string, timeoutMs = 1200): Promise<{ ok: boolean; latencyMs: number }> {
@@ -549,6 +563,8 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     force: options.force === true,
     apply: options.apply === true,
   });
+  const dotEnvValues = readDotEnvFile(process.env).values;
+  const diagnosticEnv: NodeJS.ProcessEnv = { ...dotEnvValues, ...process.env };
   const parsedRuntimeConfig = envSchema.safeParse(process.env);
   const runtimeSnapshot = await buildRuntimeHealthSnapshot(
     parsedRuntimeConfig.success
@@ -597,6 +613,32 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     fix: 'Run memphis doctor --fix to initialize storage',
   });
 
+  const bridgeManifest = assessRustBridgeManifestStatus(process.env);
+  checks.push({
+    id: 't1-rust-bridge-manifest',
+    tier: 1,
+    title: 'Rust bridge manifest',
+    level:
+      bridgeManifest.level === 'ok'
+        ? 'pass'
+        : bridgeManifest.level === 'warn'
+          ? 'warn'
+          : 'fail',
+    ok: bridgeManifest.ok,
+    required: bridgeManifest.rustEnabled || bridgeManifest.strictRequired,
+    detail: `${bridgeManifest.message}; path=${bridgeManifest.bridgePath}; missing=${bridgeManifest.missingRequiredExports.length}`,
+    fix: bridgeManifest.ok ? undefined : 'Run npm run build:rust and restart Memphis',
+    meta: {
+      rustEnabled: bridgeManifest.rustEnabled,
+      strictRequired: bridgeManifest.strictRequired,
+      bridgeLoaded: bridgeManifest.bridgeLoaded,
+      manifestAvailable: bridgeManifest.manifestAvailable,
+      missingRequiredExports: bridgeManifest.missingRequiredExports,
+      requiredExports: bridgeManifest.requiredExports,
+      manifest: bridgeManifest.manifest,
+    },
+  });
+
   const chain = checkChainIntegrity(chainsDir);
   checks.push({
     id: 't1-chain-integrity',
@@ -607,6 +649,45 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     required: true,
     detail: `${chain.checked} blocks checked, invalid=${chain.invalid}`,
     fix: 'Run memphis doctor --fix to rebuild chain hashes, or restore from backup',
+  });
+
+  // Surface known-fork mitigations from the last 200 audit events.
+  // The audit log captures every startup's `chain.verify.startup`
+  // entry; this surfaces "the chain has N tolerated forks at startup"
+  // alongside the raw integrity check so operators reading `doctor`
+  // see the mitigation history without grepping audit-log.jsonl. The
+  // check is informational (level=warn, ok=true) — known forks are
+  // accepted by operator decision, not failures.
+  const knownForks = (() => {
+    try {
+      return loadKnownForks(process.env);
+    } catch {
+      return [];
+    }
+  })();
+  const recentMitigations = readRecentSecurityAuditEvents(
+    (event) =>
+      event.action === 'chain.verify.startup' && event.status === 'mitigated',
+    20,
+    process.env,
+  );
+  const latestMitigation = recentMitigations[0];
+  checks.push({
+    id: 't1-chain-known-forks',
+    tier: 1,
+    title: 'Chain known-fork tolerance',
+    level: latestMitigation ? 'warn' : 'pass',
+    ok: true,
+    required: false,
+    detail: latestMitigation
+      ? `${knownForks.length} fork(s) configured; last startup mitigated ` +
+        `${String(latestMitigation.details?.chain ?? '?')}:` +
+        `${String(latestMitigation.details?.block ?? '?')} ` +
+        `(${String(latestMitigation.details?.kind ?? '?')})`
+      : `${knownForks.length} fork(s) configured; no mitigations in recent audit history`,
+    fix: knownForks.length === 0
+      ? undefined
+      : 'Edit <dataDir>/known-forks.json or set MEMPHIS_KNOWN_FORK_MARKERS to adjust the accepted-fork list',
   });
   checks.push({
     id: 't1-chain-memory-source',
@@ -1146,11 +1227,20 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
       : invalidAlertKeys.length > 0
         ? `configured transports=${alertTransportCount}, invalid key format: ${invalidAlertKeys.join(',')}`
         : `configured transports=${alertTransportCount}`;
-  const surfacePolicies = buildSurfacePolicySnapshot(process.env);
+  const surfacePolicies = buildSurfacePolicySnapshot(diagnosticEnv);
   const chatSurfaceRisks = surfacePolicies
     .filter((policy) => policy.surfaceClass === 'chat')
     .map((policy) => ({ policy, risk: evaluateSurfacePolicyRisk(policy) }));
   const dangerousChatSurfaces = chatSurfaceRisks.filter((item) => item.risk.level === 'fail');
+  const telegramAllowlisted =
+    parseTelegramAllowedUserIds(diagnosticEnv).length > 0 &&
+    !telegramAllowAllUsers(diagnosticEnv);
+  const allowlistedOperatorChatSurfaces = dangerousChatSurfaces.filter(
+    (item) => item.policy.surface === 'telegram' && telegramAllowlisted,
+  );
+  const publicDangerousChatSurfaces = dangerousChatSurfaces.filter(
+    (item) => !(item.policy.surface === 'telegram' && telegramAllowlisted),
+  );
   const elevatedChatSurfaces = chatSurfaceRisks.filter((item) => item.risk.level === 'warn');
 
   checks.push({
@@ -1242,17 +1332,26 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     id: 't4-chat-surface-hardening',
     tier: 4,
     title: 'Chat surface hardening',
-    level: dangerousChatSurfaces.length === 0 ? 'pass' : isFullAutonomy ? 'warn' : 'fail',
+    level:
+      dangerousChatSurfaces.length === 0
+        ? 'pass'
+        : isFullAutonomy
+          ? 'warn'
+          : 'fail',
     ok: dangerousChatSurfaces.length === 0 || isFullAutonomy,
-    required: !isFullAutonomy,
+    required: !isFullAutonomy && dangerousChatSurfaces.length > 0,
     detail:
       dangerousChatSurfaces.length === 0
         ? 'no dangerous chat-surface overrides detected'
-        : (isFullAutonomy ? '[full autonomy] ' : '') +
-          dangerousChatSurfaces
+        : (isFullAutonomy
+            ? '[full autonomy] '
+            : publicDangerousChatSurfaces.length === 0
+              ? '[operator allowlisted] '
+              : '') +
+          [...publicDangerousChatSurfaces, ...allowlistedOperatorChatSurfaces]
             .map((item) => `${item.policy.surface}: ${item.risk.issues.join('; ')}`)
             .join(' | '),
-    fix: isFullAutonomy
+    fix: isFullAutonomy || dangerousChatSurfaces.length === 0
       ? undefined
       : 'Run memphis config surfaces reset <surface> or lower chat surfaces to tier0/tier1 without unknown tools or operator override',
   });
@@ -1477,9 +1576,10 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   const externalPlugin =
     existsSync(resolve(PROJECT_ROOT, 'external-plugin')) ||
     Boolean(process.env.MEMPHIS_EXTERNAL_PLUGIN_ENABLED);
-  const parsedMcpPort = Number(process.env.MCP_PORT ?? DEFAULT_MCP_HTTP_PORT);
+  const parsedMcpPort = Number(diagnosticEnv.MCP_PORT ?? DEFAULT_MCP_HTTP_PORT);
   const mcpPort =
     Number.isInteger(parsedMcpPort) && parsedMcpPort > 0 ? parsedMcpPort : DEFAULT_MCP_HTTP_PORT;
+  const mcpRequired = boolEnv(diagnosticEnv.MEMPHIS_MCP_REQUIRED, false);
   const mcp = await ping(buildMcpHttpHealthUrl(undefined, mcpPort));
   const multiAgentSync = Boolean(
     process.env.MEMPHIS_SYNC_REMOTE || process.env.MEMPHIS_AGENT_PEERS,
@@ -1510,10 +1610,18 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     id: 't6-mcp-server',
     tier: 6,
     title: 'MCP server',
-    level: levelFrom(mcp.ok, true),
-    ok: mcp.ok,
-    required: false,
-    detail: `${mcp.ok ? 'reachable' : 'unreachable'} on :${mcpPort} (${msLabel(mcp.latencyMs)})`,
+    level: mcp.ok ? 'pass' : mcpRequired ? 'fail' : 'warn',
+    ok: mcp.ok || !mcpRequired,
+    required: mcpRequired,
+    detail: mcp.ok
+      ? `reachable on :${mcpPort} (${msLabel(mcp.latencyMs)})`
+      : mcpRequired
+        ? `required but unreachable on :${mcpPort} (${msLabel(mcp.latencyMs)})`
+        : `optional HTTP MCP not running on :${mcpPort} (${msLabel(mcp.latencyMs)}); start with 'memphis mcp serve --transport http --port ${mcpPort}' when an external MCP client needs it`,
+    fix:
+      mcp.ok || !mcpRequired
+        ? undefined
+        : `Start it with 'memphis mcp serve --transport http --port ${mcpPort}' or set MEMPHIS_MCP_REQUIRED=0`,
   });
   checks.push({
     id: 't6-multi-agent-sync',
@@ -2171,6 +2279,10 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     voiceLevel = 'warn';
     voiceDetail = `disabled (mode=${voiceMode}, no HF token) — set MEMPHIS_VOICE_MODE=local to opt into offline engines`;
   } else if (voiceConfig.route === 'local') {
+    const [{ checkWhisperServerHealth }, { checkPiperServerHealth }] = await Promise.all([
+      import('../../../gateway/voice/local-whisper-adapter.js'),
+      import('../../../gateway/voice/local-piper-adapter.js'),
+    ]);
     const [stt, tts] = await Promise.all([checkWhisperServerHealth(), checkPiperServerHealth()]);
     const sttPart = stt.ok
       ? `STT@${WHISPER_SERVER_URL.read(process.env)} (${stt.latencyMs ?? '?'}ms)`

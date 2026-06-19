@@ -53,6 +53,18 @@ describe('mcp code-read — symlink escape protection (#132)', () => {
     expect(result.content).toContain('export const x = 1');
   });
 
+  it('resolves relative paths against ~/memphis instead of process cwd', () => {
+    const targetDir = path.join(env.sandboxDir, 'src');
+    mkdirSync(targetDir, { recursive: true });
+    writeFileSync(path.join(targetDir, 'relative.ts'), 'export const rel = true;\n', 'utf8');
+
+    const result = runMemphisCodeRead({ path: 'src/relative.ts' });
+
+    expect(result.error).toBeUndefined();
+    expect(result.path).toBe(path.join(env.sandboxDir, 'src', 'relative.ts'));
+    expect(result.content).toContain('export const rel = true');
+  });
+
   it('refuses to read through a symlink pointing outside the sandbox', () => {
     const outsideDir = mkdtempSync(path.join(os.tmpdir(), 'memphis-escape-'));
     try {

@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 
+import { TOOL_REGISTRY } from '../../src/gateway/tool-registry.js';
 import { createMemphisMcpServer } from '../../src/mcp/server.js';
 import * as decideTool from '../../src/mcp/tools/decide.js';
 import * as journalTool from '../../src/mcp/tools/journal.js';
@@ -13,6 +15,43 @@ import * as recallTool from '../../src/mcp/tools/recall.js';
 import * as searchTool from '../../src/mcp/tools/search.js';
 
 describe('memphis mcp server', () => {
+  it('derives selected MCP input schemas from TOOL_REGISTRY', async () => {
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const server = createMemphisMcpServer();
+    await server.connect(serverTransport);
+
+    const client = new Client({ name: 'schema-test-client', version: '1.0.0' });
+    await client.connect(clientTransport);
+    const listed = await client.listTools();
+    const byName = new Map(listed.tools.map((tool) => [tool.name, tool]));
+
+    for (const toolName of [
+      'memphis_health',
+      'memphis_self_describe',
+      'memphis_slo_status',
+      'memphis_presence',
+      'memphis_repair',
+      'memphis_self_modify',
+      'memphis_recall',
+      'memphis_search',
+      'memphis_code_read',
+      'memphis_brave_search',
+    ]) {
+      const registrySchema = z.toJSONSchema(TOOL_REGISTRY[toolName]!.inputSchema!);
+      const registryProperties = Object.keys(
+        (registrySchema as { properties?: Record<string, unknown> }).properties ?? {},
+      ).sort();
+      const mcpProperties = Object.keys(
+        (byName.get(toolName)?.inputSchema as { properties?: Record<string, unknown> } | undefined)
+          ?.properties ?? {},
+      ).sort();
+      expect(mcpProperties).toEqual(registryProperties);
+    }
+
+    await client.close();
+    await server.close();
+  });
+
   it('registers and executes core memory MCP tools', async () => {
     vi.spyOn(journalTool, 'runMemphisJournal').mockResolvedValue({
       success: true,

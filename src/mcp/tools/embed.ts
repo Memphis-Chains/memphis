@@ -15,7 +15,10 @@ export interface EmbedStoreOutput {
   id: string;
   count?: number;
   dim?: number;
+  dtype?: 'f32';
   provider?: string;
+  normalized?: boolean | 'provider-dependent';
+  tensor?: unknown;
   error?: string;
 }
 
@@ -29,6 +32,11 @@ export interface EmbedSearchOutput {
   query: string;
   count: number;
   hits: EmbedSearchHit[];
+  dim?: number;
+  dtype?: 'f32';
+  provider?: string;
+  normalized?: boolean | 'provider-dependent';
+  tensor?: unknown;
   error?: string;
 }
 

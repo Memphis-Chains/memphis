@@ -13,6 +13,66 @@ describe('telegram channel', () => {
     const mod = await import('../../src/gateway/channels/telegram.js');
     expect(mod.createTelegramAdapter.length).toBeGreaterThanOrEqual(1);
   });
+
+  it('recognizes bare operator tool probes before the LLM gateway', async () => {
+    const mod = await import('../../src/gateway/channels/telegram.js');
+    expect(mod.isTelegramToolsProbe('tools?>')).toBe(true);
+    expect(mod.isTelegramToolsProbe('tools?')).toBe(true);
+    expect(mod.isTelegramToolsProbe('list tools')).toBe(true);
+    expect(mod.isTelegramToolsProbe('jakie narzedzia?')).toBe(true);
+    expect(mod.isTelegramToolsProbe('run the tool now')).toBe(false);
+  });
+
+  it('recognizes bare operator model probes before the LLM gateway', async () => {
+    const mod = await import('../../src/gateway/channels/telegram.js');
+    expect(mod.isTelegramModelProbe('what model do u use?')).toBe(true);
+    expect(mod.isTelegramModelProbe('model?')).toBe(true);
+    expect(mod.isTelegramModelProbe('provider?>')).toBe(true);
+    expect(mod.isTelegramModelProbe('jaki model?')).toBe(true);
+    expect(mod.isTelegramModelProbe('use the model to answer')).toBe(false);
+  });
+
+  it('recognizes bare operator status probes before the LLM gateway', async () => {
+    const mod = await import('../../src/gateway/channels/telegram.js');
+    expect(mod.isTelegramStatusProbe('status')).toBe(true);
+    expect(mod.isTelegramStatusProbe('status?')).toBe(true);
+    expect(mod.isTelegramStatusProbe('runtime status')).toBe(true);
+    expect(mod.isTelegramStatusProbe('status tools')).toBe(false);
+  });
+
+  it('maps Telegram tier 2 to full-access runtime overlay when configured', async () => {
+    const mod = await import('../../src/gateway/channels/telegram.js');
+    const previous = process.env.MEMPHIS_TIER2_FULL_ACCESS;
+    process.env.MEMPHIS_TIER2_FULL_ACCESS = 'true';
+    try {
+      expect(mod.isTelegramTier2FullAccess()).toBe(true);
+      expect(mod.buildTelegramTierEnvOverride('chat-1', 2)).toMatchObject({
+        MEMPHIS_AUTONOMY_MODE: 'full',
+        MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER: '3',
+        MEMPHIS_TIER3_FS_UNRESTRICTED: 'true',
+        GATEWAY_EXEC_RESTRICTED_MODE: 'false',
+      });
+    } finally {
+      if (previous === undefined) delete process.env.MEMPHIS_TIER2_FULL_ACCESS;
+      else process.env.MEMPHIS_TIER2_FULL_ACCESS = previous;
+    }
+  });
+
+  it('keeps Telegram tier 2 as default surface mode when full-access override is off', async () => {
+    const mod = await import('../../src/gateway/channels/telegram.js');
+    const previous = process.env.MEMPHIS_TIER2_FULL_ACCESS;
+    process.env.MEMPHIS_TIER2_FULL_ACCESS = 'false';
+    try {
+      expect(mod.isTelegramTier2FullAccess()).toBe(false);
+      expect(mod.buildTelegramTierEnvOverride('chat-1', 2)).toBeUndefined();
+      expect(mod.buildTelegramTierEnvOverride('chat-1', 1)).toMatchObject({
+        MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER: '1',
+      });
+    } finally {
+      if (previous === undefined) delete process.env.MEMPHIS_TIER2_FULL_ACCESS;
+      else process.env.MEMPHIS_TIER2_FULL_ACCESS = previous;
+    }
+  });
 });
 
 describe('text splitting pattern', () => {

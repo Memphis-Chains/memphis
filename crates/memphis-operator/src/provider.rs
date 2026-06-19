@@ -1,5 +1,5 @@
 use std::{
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, ErrorKind},
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc,
@@ -609,8 +609,11 @@ impl ProviderRuntime {
 
         for line in reader.lines() {
             ensure_not_cancelled(cancel_flag)?;
-            let line = line.map_err(|error| {
-                OperatorError::Message(format!("invalid ollama stream response: {error}"))
+            let line = line.map_err(|error| match error.kind() {
+                ErrorKind::TimedOut => OperatorError::Message(
+                    "ollama stream timeout: timed out reading response".to_string(),
+                ),
+                _ => OperatorError::Message(format!("invalid ollama stream response: {error}")),
             })?;
             let trimmed = line.trim();
             if trimmed.is_empty() {
@@ -791,8 +794,11 @@ impl ProviderRuntime {
 
         for line in reader.lines() {
             ensure_not_cancelled(cancel_flag)?;
-            let line = line.map_err(|error| {
-                OperatorError::Message(format!("invalid provider stream response: {error}"))
+            let line = line.map_err(|error| match error.kind() {
+                ErrorKind::TimedOut => OperatorError::Message(
+                    "provider stream timeout: timed out reading response".to_string(),
+                ),
+                _ => OperatorError::Message(format!("invalid provider stream response: {error}")),
             })?;
             let trimmed = line.trim();
             if trimmed.is_empty() {
@@ -999,8 +1005,11 @@ impl ProviderRuntime {
 
         for line in reader.lines() {
             ensure_not_cancelled(cancel_flag)?;
-            let line = line.map_err(|error| {
-                OperatorError::Message(format!("invalid anthropic stream response: {error}"))
+            let line = line.map_err(|error| match error.kind() {
+                ErrorKind::TimedOut => OperatorError::Message(
+                    "anthropic stream timeout: timed out reading response".to_string(),
+                ),
+                _ => OperatorError::Message(format!("invalid anthropic stream response: {error}")),
             })?;
             let trimmed = line.trim();
             if trimmed.is_empty() {

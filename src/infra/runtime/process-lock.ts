@@ -28,6 +28,7 @@
  * (`acquired: false`), exit with code 13.
  */
 
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeSync, closeSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -52,13 +53,34 @@ function isPidAlive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ESRCH') return false;
+    if ((err as NodeJS.ErrnoException).code === 'ESRCH') {
+      return isSystemdUserMainPid(pid);
+    }
     if ((err as NodeJS.ErrnoException).code === 'EPERM') {
       // Permission denied — process exists but we can't signal it. Treat
       // as alive (safer to refuse than to overwrite a foreign process's
       // PID file).
       return true;
     }
+    return false;
+  }
+}
+
+function isSystemdUserMainPid(pid: number): boolean {
+  try {
+    const status = spawnSync(
+      'systemctl',
+      ['--user', 'show', 'memphis.service', '-p', 'MainPID', '-p', 'ActiveState', '--value'],
+      { encoding: 'utf8', timeout: 1000 },
+    );
+    if (status.status !== 0) return false;
+    const [mainPidRaw, activeStateRaw] = status.stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const mainPid = Number.parseInt(mainPidRaw ?? '', 10);
+    return mainPid === pid && activeStateRaw === 'active';
+  } catch {
     return false;
   }
 }

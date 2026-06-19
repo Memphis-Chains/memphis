@@ -136,6 +136,7 @@ export default [
       'reference/**',
       'legacy/**',
       'memphis/**',
+      'target/**',
     ],
   },
 ];

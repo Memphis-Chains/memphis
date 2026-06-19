@@ -1,3 +1,4 @@
+import { inspectPromptFragment } from '../../gateway/prompt-boundary.js';
 import { baseMemoryIdFromChunkId } from '../../infra/memory/embed-reindex.js';
 import { searchChainsDirectly, searchExactMemory } from '../../infra/memory/exact-search.js';
 import { embedSearch, type EmbedSearchHit } from '../../infra/storage/rust-embed-adapter.js';
@@ -131,6 +132,26 @@ function finalizeRecall(
   };
 }
 
+function filterUnsafeRecallHits(
+  hits: MemphisRecallOutput['results'],
+  warnings: string[],
+): MemphisRecallOutput['results'] {
+  const safe: MemphisRecallOutput['results'] = [];
+  let dropped = 0;
+  for (const hit of hits) {
+    const assessment = inspectPromptFragment(hit.content, 'recalled_memory');
+    if (assessment.allowed) {
+      safe.push(hit);
+    } else {
+      dropped += 1;
+    }
+  }
+  if (dropped > 0) {
+    warnings.push(`${dropped} unsafe recall hit${dropped === 1 ? '' : 's'} filtered`);
+  }
+  return safe;
+}
+
 export function runMemphisRecall(
   input: MemphisRecallInput,
   deps: RecallDeps = {
@@ -154,8 +175,9 @@ export function runMemphisRecall(
     const semanticHits = mapSemanticHits(out.hits)
       .filter((hit) => !input.chain || hit.chain === input.chain)
       .slice(0, limit);
-    if (semanticHits.length > 0) {
-      return finalizeRecall('semantic', semanticHits, warnings);
+    const safeSemanticHits = filterUnsafeRecallHits(semanticHits, warnings);
+    if (safeSemanticHits.length > 0) {
+      return finalizeRecall('semantic', safeSemanticHits, warnings);
     }
   } catch (error) {
     warnings.push(error instanceof Error ? error.message : String(error));
@@ -169,8 +191,9 @@ export function runMemphisRecall(
       input.chain,
     );
     const exactHits = filterByTags(mapExactHits(out.hits), tags).slice(0, limit);
-    if (exactHits.length > 0) {
-      return finalizeRecall('exact', exactHits, warnings);
+    const safeExactHits = filterUnsafeRecallHits(exactHits, warnings);
+    if (safeExactHits.length > 0) {
+      return finalizeRecall('exact', safeExactHits, warnings);
     }
   } catch (error) {
     warnings.push(error instanceof Error ? error.message : String(error));
@@ -185,7 +208,12 @@ export function runMemphisRecall(
       tags,
     );
     const chainHits = mapExactHits(out.hits).slice(0, limit);
-    return finalizeRecall(chainHits.length > 0 ? 'chain' : 'none', chainHits, warnings);
+    const safeChainHits = filterUnsafeRecallHits(chainHits, warnings);
+    return finalizeRecall(
+      safeChainHits.length > 0 ? 'chain' : 'none',
+      safeChainHits,
+      warnings,
+    );
   } catch (error) {
     warnings.push(error instanceof Error ? error.message : String(error));
   }

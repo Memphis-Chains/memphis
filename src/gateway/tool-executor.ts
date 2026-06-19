@@ -5,17 +5,23 @@
 
 import { recordAuthorizationDecision, resolveToolPolicy } from './authorization.js';
 import type { ToolExecutor } from './chat-types.js';
+import { buildRegistryInputJsonSchema } from './tool-json-schema.js';
 import { isToolEnabledByFeatureFlag } from './tool-registry.js';
 import { buildTool, type RuntimeToolDefinition, type ToolExecutionHook } from './tool-runtime.js';
 import { RollbackManager } from '../backup/rollback.js';
 import { getDataDir } from '../config/paths.js';
 import { AppError } from '../core/errors.js';
 import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
+import { appendBlock } from '../infra/storage/chain-adapter.js';
 import type { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import type { SqliteToolPermissionRepository } from '../infra/storage/sqlite/repositories/tool-permission-repository.js';
 import { runMemphisBraveSearch } from '../mcp/tools/brave-search.js';
 import { runMemphisBuild } from '../mcp/tools/build.js';
-import { runMemphisCaseAppend, runMemphisCaseQuery } from '../mcp/tools/case-entry.js';
+import {
+  normalizeCaseAppendInput,
+  runMemphisCaseAppend,
+  runMemphisCaseQuery,
+} from '../mcp/tools/case-entry.js';
 import { runMemphisChainQuery } from '../mcp/tools/chain-query.js';
 import { runMemphisCodeRead } from '../mcp/tools/code-read.js';
 import {
@@ -28,6 +34,7 @@ import { runMemphisCron } from '../mcp/tools/cron.js';
 import { runMemphisDb } from '../mcp/tools/db.js';
 import { runMemphisDecide } from '../mcp/tools/decide.js';
 import { runMemphisDeploy } from '../mcp/tools/deploy.js';
+import { runMemphisExecAnalyze } from '../mcp/tools/exec-analyze.js';
 import { runMemphisExec } from '../mcp/tools/exec.js';
 import { runMemphisFsOps } from '../mcp/tools/fs-ops.js';
 import { runMemphisFsWrite } from '../mcp/tools/fs-write.js';
@@ -49,6 +56,7 @@ import { runMemphisRestart } from '../mcp/tools/restart.js';
 import { runMemphisSearch } from '../mcp/tools/search.js';
 import { runMemphisSelfDeployVerify } from '../mcp/tools/self-deploy-verify.js';
 import { runMemphisSelfDescribe } from '../mcp/tools/self-describe.js';
+import { runMemphisSelfGovernanceStatus } from '../mcp/tools/self-governance-status.js';
 import { runMemphisSelfModify } from '../mcp/tools/self-modify.js';
 import {
   runMemphisSelfPlanAdvance,
@@ -68,6 +76,7 @@ import {
 import { runMemphisSloStatus } from '../mcp/tools/slo-status.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from '../mcp/tools/soul.js';
 import { runMemphisSystemInfo } from '../mcp/tools/system-info.js';
+import { runMemphisTensorStatus } from '../mcp/tools/tensor-status.js';
 import { runMemphisTest } from '../mcp/tools/test-run.js';
 import { runMemphisWebFetch } from '../mcp/tools/web-fetch.js';
 import { runMemphisWebSearch } from '../mcp/tools/web-search.js';
@@ -137,6 +146,60 @@ function defaultManifest(): SoulManifest {
 type ToolInput = Record<string, unknown>;
 type SoulReadSection = 'user' | 'self' | 'context' | 'all';
 
+const SOUL_UPDATE_ARRAY_FIELDS = {
+  user: ['languages', 'preferences', 'expertise', 'integrations'],
+  self: ['strengths', 'learnings', 'evolvedCapabilities'],
+  context: ['recentDecisions'],
+} as const;
+
+function normalizeSoulUpdateArrayField(value: unknown): unknown {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== 'object') return value;
+
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0) return value;
+  const sortable = entries.every(([key]) => /^\d+$/.test(key));
+  const ordered = sortable
+    ? entries.sort(([left], [right]) => Number(left) - Number(right))
+    : entries;
+  const strings = ordered
+    .map(([, entry]) => entry)
+    .filter((entry): entry is string => typeof entry === 'string');
+  return strings.length === entries.length ? strings : value;
+}
+
+export function normalizeSoulWriteUpdatesForToolCall(
+  updates: Record<string, unknown>,
+): Record<string, unknown> {
+  const normalized: Record<string, unknown> = { ...updates };
+
+  for (const [section, fields] of Object.entries(SOUL_UPDATE_ARRAY_FIELDS)) {
+    const sectionValue = normalized[section];
+    if (!sectionValue || typeof sectionValue !== 'object' || Array.isArray(sectionValue)) continue;
+
+    const nextSection: Record<string, unknown> = { ...(sectionValue as Record<string, unknown>) };
+    for (const field of fields) {
+      if (Object.hasOwn(nextSection, field)) {
+        nextSection[field] = normalizeSoulUpdateArrayField(nextSection[field]);
+      }
+    }
+    normalized[section] = nextSection;
+  }
+
+  return normalized;
+}
+
+export function normalizeCaseQueryForToolCall(
+  query: Record<string, unknown>,
+): Record<string, unknown> {
+  const normalized: Record<string, unknown> = { ...query };
+  const limit = normalized.limit;
+  if (typeof limit === 'string' && /^\s*\d+\s*$/.test(limit)) {
+    normalized.limit = Number(limit.trim());
+  }
+  return normalized;
+}
+
 function requiredString(args: ToolInput, key: string): string {
   const value = args[key];
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -148,6 +211,15 @@ function requiredString(args: ToolInput, key: string): string {
 function optionalString(args: ToolInput, key: string): string | undefined {
   const value = args[key];
   return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function optionalStringLength(args: ToolInput, key: string, length: number): string | undefined {
+  const value = optionalString(args, key);
+  if (value === undefined) return undefined;
+  if (value.length !== length) {
+    throw new AppError('VALIDATION_ERROR', `tool ${key} must be ${length} characters`, 400);
+  }
+  return value;
 }
 
 function optionalStringArray(args: ToolInput, key: string): string[] | undefined {
@@ -162,6 +234,30 @@ function optionalStringArray(args: ToolInput, key: string): string[] | undefined
 function optionalNumber(args: ToolInput, key: string): number | undefined {
   const value = args[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function optionalNonnegativeInteger(args: ToolInput, key: string): number | undefined {
+  const value = optionalNumber(args, key);
+  if (value === undefined) return undefined;
+  if (!Number.isInteger(value) || value < 0) {
+    throw new AppError('VALIDATION_ERROR', `tool ${key} must be a non-negative integer`, 400);
+  }
+  return value;
+}
+
+function optionalIntegerInRange(
+  args: ToolInput,
+  key: string,
+  min: number,
+  max?: number,
+): number | undefined {
+  const value = optionalNumber(args, key);
+  if (value === undefined) return undefined;
+  if (!Number.isInteger(value) || value < min || (max !== undefined && value > max)) {
+    const range = max === undefined ? `>= ${min}` : `between ${min} and ${max}`;
+    throw new AppError('VALIDATION_ERROR', `tool ${key} must be an integer ${range}`, 400);
+  }
+  return value;
 }
 
 function optionalBoolean(args: ToolInput, key: string): boolean | undefined {
@@ -263,20 +359,18 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
     buildTool({
       name: 'memphis_recall',
       description: 'Semantic search across Memphis memory chains',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: 'Search query' },
-          limit: { type: 'number', description: 'Max results (1-50)', default: 5 },
+      inputSchema: buildRegistryInputJsonSchema('memphis_recall', {
+        propertyDescriptions: {
+          query: 'Search query',
+          limit: 'Max results (1-50)',
         },
-        required: ['query'],
-      },
+      }),
       isConcurrencySafe: true,
       isReadOnly: true,
       validateInput(args) {
         return {
           query: requiredString(args, 'query'),
-          limit: optionalNumber(args, 'limit') ?? 5,
+          limit: optionalIntegerInRange(args, 'limit', 1, 50) ?? 5,
         };
       },
       execute(input) {
@@ -286,21 +380,19 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
     buildTool({
       name: 'memphis_search',
       description: 'Exact phrase search across indexed Memphis memory',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: 'Exact phrase to search for' },
-          limit: { type: 'number', description: 'Max results (1-50)', default: 5 },
-          chain: { type: 'string', description: 'Optional chain filter' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_search', {
+        propertyDescriptions: {
+          query: 'Exact phrase to search for',
+          limit: 'Max results (1-50)',
+          chain: 'Optional chain filter',
         },
-        required: ['query'],
-      },
+      }),
       isConcurrencySafe: true,
       isReadOnly: true,
       validateInput(args) {
         return {
           query: requiredString(args, 'query'),
-          limit: optionalNumber(args, 'limit') ?? 5,
+          limit: optionalIntegerInRange(args, 'limit', 1, 50) ?? 5,
           chain: optionalString(args, 'chain'),
         };
       },
@@ -358,6 +450,28 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
       isReadOnly: true,
       execute(args: { windowDays?: number }) {
         return runMemphisSloStatus({ windowDays: args.windowDays }, deps.rawEnv);
+      },
+    }),
+    buildTool({
+      name: 'memphis_self_governance_status',
+      description:
+        'Read Memphis self-governance capability state — supervised-operational autonomy readiness, recovery blockers, and required operator actions.',
+      inputSchema: { type: 'object', properties: {} },
+      isConcurrencySafe: true,
+      isReadOnly: true,
+      async execute() {
+        return runMemphisSelfGovernanceStatus(deps.rawEnv);
+      },
+    }),
+    buildTool({
+      name: 'memphis_tensor_status',
+      description:
+        'Read Memphis tensor/vector runtime truth — memory embedding dim/provider/persistence, Kartograf tensor mode, and public raw-vector exposure policy.',
+      inputSchema: { type: 'object', properties: {} },
+      isConcurrencySafe: true,
+      isReadOnly: true,
+      execute() {
+        return runMemphisTensorStatus(deps.rawEnv);
       },
     }),
     buildTool({
@@ -426,7 +540,7 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
         //
         // We mirror the MCP server schema (server.ts:989) here so both
         // surfaces reject the same shapes the same way.
-        const updatesRaw = requiredRecord(args, 'updates');
+        const updatesRaw = normalizeSoulWriteUpdatesForToolCall(requiredRecord(args, 'updates'));
         const parsed = soulMemoryUpdateSchema.safeParse(updatesRaw);
         if (!parsed.success) {
           const issue = parsed.error.issues[0];
@@ -461,6 +575,7 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
             ? {
                 update: updateSoulMemory,
                 caseAdapter: deps.caseAdapter,
+                appendSoulAudit: appendBlock,
               }
             : undefined,
         );
@@ -469,15 +584,13 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
     buildTool({
       name: 'memphis_case_append',
       description: 'Append an entry to the case chain',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          entry: { type: 'object', description: 'Case chain entry payload' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_case_append', {
+        propertyDescriptions: {
+          entry: 'Case chain entry payload. You may also pass case_type and its role fields at top level.',
         },
-        required: ['entry'],
-      },
+      }),
       validateInput(args) {
-        return { entry: requiredRecord(args, 'entry') as never };
+        return normalizeCaseAppendInput(args as never) as never;
       },
       async execute(input) {
         return runMemphisCaseAppend(
@@ -499,7 +612,9 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
       isConcurrencySafe: true,
       isReadOnly: true,
       validateInput(args) {
-        return { query: requiredRecord(args, 'query') as never };
+        const query = normalizeCaseQueryForToolCall(requiredRecord(args, 'query'));
+        optionalIntegerInRange(query, 'limit', 1, 100);
+        return { query: query as never };
       },
       async execute(input) {
         return runMemphisCaseQuery(
@@ -511,24 +626,23 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
     buildTool({
       name: 'memphis_chain_query',
       description: 'Query raw chain blocks with optional filters',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          chain: { type: 'string', description: 'Chain name to query' },
-          limit: { type: 'number', description: 'Max number of blocks to return' },
-          offset: { type: 'number', description: 'Starting offset into the result set' },
-          blockType: { type: 'string', description: 'Optional block type filter' },
-          contains: { type: 'string', description: 'Optional substring filter' },
-          tag: { type: 'string', description: 'Optional tag filter' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_chain_query', {
+        propertyDescriptions: {
+          chain: 'Chain name to query',
+          limit: 'Max number of blocks to return',
+          offset: 'Starting offset into the result set',
+          blockType: 'Optional block type filter',
+          contains: 'Optional substring filter',
+          tag: 'Optional tag filter',
         },
-      },
+      }),
       isConcurrencySafe: true,
       isReadOnly: true,
       validateInput(args) {
         return {
           chain: optionalString(args, 'chain'),
-          limit: optionalNumber(args, 'limit'),
-          offset: optionalNumber(args, 'offset'),
+          limit: optionalIntegerInRange(args, 'limit', 1, 100),
+          offset: optionalIntegerInRange(args, 'offset', 0),
           blockType: optionalString(args, 'blockType'),
           contains: optionalString(args, 'contains'),
           tag: optionalString(args, 'tag'),
@@ -578,24 +692,22 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
     buildTool({
       name: 'memphis_code_read',
       description: 'Read files inside ~/memphis/ (whitelisted, read-only)',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: 'Absolute or ~-relative path inside ~/memphis/' },
-          startLine: { type: 'number', description: 'Start line (1-indexed, inclusive)' },
-          endLine: { type: 'number', description: 'End line (1-indexed, inclusive)' },
-          limit: { type: 'number', description: 'Max lines to return (default 2000, max 2000)' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_code_read', {
+        propertyDescriptions: {
+          path: 'Absolute or ~-relative path inside ~/memphis/',
+          startLine: 'Start line (1-indexed, inclusive)',
+          endLine: 'End line (1-indexed, inclusive)',
+          limit: 'Max lines to return (default 2000, max 2000)',
         },
-        required: ['path'],
-      },
+      }),
       isConcurrencySafe: true,
       isReadOnly: true,
       validateInput(args) {
         return {
           path: requiredString(args, 'path'),
-          startLine: optionalNumber(args, 'startLine'),
-          endLine: optionalNumber(args, 'endLine'),
-          limit: optionalNumber(args, 'limit'),
+          startLine: optionalIntegerInRange(args, 'startLine', 1),
+          endLine: optionalIntegerInRange(args, 'endLine', 1),
+          limit: optionalIntegerInRange(args, 'limit', 1, 2000),
         };
       },
       execute(input) {
@@ -605,21 +717,16 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
     buildTool({
       name: 'memphis_grep',
       description: 'Search code using regex patterns (ripgrep or grep)',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          pattern: { type: 'string', description: 'Regex pattern to search for' },
-          path: {
-            type: 'string',
-            description: 'Subdirectory to search within (relative to project root)',
-          },
-          glob: { type: 'string', description: 'Glob to filter files (e.g. "*.ts", "*.rs")' },
-          limit: { type: 'number', description: 'Max results (default 50, max 200)' },
-          context: { type: 'number', description: 'Lines of context around matches (max 10)' },
-          ignoreCase: { type: 'boolean', description: 'Case-insensitive search' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_grep', {
+        propertyDescriptions: {
+          pattern: 'Regex pattern to search for',
+          path: 'Subdirectory to search within (relative to project root)',
+          glob: 'Glob to filter files (e.g. "*.ts", "*.rs")',
+          limit: 'Max results (default 50, max 200)',
+          context: 'Lines of context around matches',
+          ignoreCase: 'Case-insensitive search',
         },
-        required: ['pattern'],
-      },
+      }),
       isReadOnly: true,
       isDestructive: false,
       validateInput(args) {
@@ -627,8 +734,8 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
           pattern: requiredString(args, 'pattern'),
           path: optionalString(args, 'path'),
           glob: optionalString(args, 'glob'),
-          limit: optionalNumber(args, 'limit'),
-          context: optionalNumber(args, 'context'),
+          limit: optionalIntegerInRange(args, 'limit', 1, 200),
+          context: optionalIntegerInRange(args, 'context', 0),
           ignoreCase: args.ignoreCase === true,
         };
       },
@@ -639,25 +746,20 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
     buildTool({
       name: 'memphis_glob',
       description: 'Find files by glob pattern (fd or find)',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          pattern: { type: 'string', description: 'Glob pattern (e.g. "**/*.ts", "*.json")' },
-          path: {
-            type: 'string',
-            description: 'Subdirectory to search within (relative to project root)',
-          },
-          limit: { type: 'number', description: 'Max results (default 100, max 500)' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_glob', {
+        propertyDescriptions: {
+          pattern: 'Glob pattern (e.g. "**/*.ts", "*.json")',
+          path: 'Subdirectory to search within (relative to project root)',
+          limit: 'Max results (default 100, max 500)',
         },
-        required: ['pattern'],
-      },
+      }),
       isReadOnly: true,
       isDestructive: false,
       validateInput(args) {
         return {
           pattern: requiredString(args, 'pattern'),
           path: optionalString(args, 'path'),
-          limit: optionalNumber(args, 'limit'),
+          limit: optionalIntegerInRange(args, 'limit', 1, 500),
         };
       },
       execute(input) {
@@ -780,14 +882,15 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
     }),
     buildTool({
       name: 'memphis_cron',
-      description: 'Manage scheduled tasks — list, add, remove, enable, disable cron jobs',
+      description:
+        'Manage recurring Memphis-internal scheduled tasks — list, add, remove, enable, disable cron jobs. Not a one-off reminder/alarm system.',
       inputSchema: {
         type: 'object',
         properties: {
           action: { type: 'string', description: 'Action: list | add | remove | enable | disable' },
           cron: {
             type: 'string',
-            description: 'Cron expression (for add, e.g. "0 * * * *" = hourly)',
+            description: 'Recurring cron expression (for add, e.g. "0 * * * *" = hourly)',
           },
           name: { type: 'string', description: 'Task name (for add)' },
           taskType: {
@@ -830,20 +933,60 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
       },
     }),
     buildTool({
+      name: 'memphis_exec_analyze',
+      description:
+        'Pre-exec analysis: parse + classify side-effects, reversibility, dry-run hint, recommendation. No side effects.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          command: { type: 'string', description: 'Shell command to analyze (not executed)' },
+          surface_intent: {
+            type: 'string',
+            description: "Operator's high-level intent — surfaced unchanged for audit context.",
+          },
+        },
+        required: ['command'],
+      },
+      isReadOnly: true,
+      isConcurrencySafe: true,
+      validateInput(args) {
+        return {
+          command: requiredString(args, 'command'),
+          surface_intent: optionalString(args, 'surface_intent'),
+        };
+      },
+      execute(input) {
+        return runMemphisExecAnalyze(input);
+      },
+    }),
+    buildTool({
       name: 'memphis_exec',
       description: 'Execute a shell command',
       inputSchema: {
         type: 'object',
-        properties: { command: { type: 'string', description: 'Command to execute' } },
+        properties: {
+          command: { type: 'string', description: 'Command to execute' },
+          surface_intent: {
+            type: 'string',
+            description:
+              "Optional operator-stated intent (the prompt that prompted this exec). Audit-logged alongside the predicted-vs-actual outcome.",
+          },
+        },
         required: ['command'],
       },
       isDestructive: true,
       validateInput(args) {
-        return { command: requiredString(args, 'command') };
+        return {
+          command: requiredString(args, 'command'),
+          surface_intent: optionalString(args, 'surface_intent'),
+        };
       },
       execute(input) {
         try {
-          return runMemphisExec(input, deps.rawEnv);
+          return runMemphisExec(input, deps.rawEnv, {
+            surface: deps.surface,
+            actorId: deps.sessionId,
+          });
         } catch (err) {
           return { error: err instanceof Error ? err.message : String(err) };
         }
@@ -855,10 +998,12 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
       inputSchema: {
         type: 'object',
         properties: {
-          intent: { type: 'string' },
-          files: { type: 'array', items: { type: 'string' } },
+          intent: { type: 'string', minLength: 1 },
+          files: { type: 'array', items: { type: 'string' }, minItems: 1 },
           changes: { type: 'object', additionalProperties: { type: 'string' } },
           passphrase: { type: 'string' },
+          plan_id: { type: 'string' },
+          step_idx: { type: 'integer', minimum: 0 },
         },
         required: ['intent', 'files', 'changes'],
       },
@@ -869,6 +1014,8 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
           files: optionalStringArray(args, 'files') ?? [],
           changes: requiredRecord(args, 'changes') as Record<string, string>,
           passphrase: optionalString(args, 'passphrase'),
+          plan_id: optionalString(args, 'plan_id'),
+          step_idx: optionalNonnegativeInteger(args, 'step_idx'),
         };
       },
       async execute(input) {
@@ -974,24 +1121,22 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
     buildTool({
       name: 'memphis_brave_search',
       description: 'Search the web via Brave Search API',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: 'Search query' },
-          limit: { type: 'number', description: 'Max results (1-20)' },
-          country: { type: 'string', description: 'ISO 3166-1 alpha-2 country code' },
-          search_lang: { type: 'string', description: 'ISO 639-1 language code' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_brave_search', {
+        propertyDescriptions: {
+          query: 'Search query',
+          limit: 'Max results (1-20)',
+          country: 'ISO 3166-1 alpha-2 country code',
+          search_lang: 'ISO 639-1 language code',
         },
-        required: ['query'],
-      },
+      }),
       isReadOnly: true,
       isConcurrencySafe: true,
       validateInput(args) {
         return {
           query: requiredString(args, 'query'),
-          limit: optionalNumber(args, 'limit'),
-          country: optionalString(args, 'country'),
-          search_lang: optionalString(args, 'search_lang'),
+          limit: optionalIntegerInRange(args, 'limit', 1, 20),
+          country: optionalStringLength(args, 'country', 2),
+          search_lang: optionalStringLength(args, 'search_lang', 2),
         };
       },
       async execute(input) {
@@ -1753,6 +1898,16 @@ async function executeTool(
   deps: InProcessToolExecutorDeps,
   runtimeTools: Map<string, RuntimeToolDefinition>,
 ): Promise<string> {
+  // REV2 Temat 3.5: failure-budget reset on any non-exec tool call.
+  // The wisdom doctrine in the soul seed tells the agent "if 3 exec
+  // failures in a row, stop and re-analyze". We enforce that at the
+  // runtime layer; this reset signals "agent moved on from the exec
+  // retry loop" and clears the per-(surface, actor) counter so the
+  // NEXT exec attempt isn't pre-emptively blocked.
+  if (call.name !== 'memphis_exec' && call.name !== 'memphis_exec_analyze') {
+    const { resetOnNonExecToolCall } = await import('./exec-failure-budget.js');
+    resetOnNonExecToolCall({ surface: deps.surface, actorId: deps.sessionId });
+  }
   // Enforce tiered authorization before execution
   // Thread rawEnv from request deps so per-request env overrides
   // (e.g. MEMPHIS_AUTONOMY_MODE=full carried in the HTTP request env

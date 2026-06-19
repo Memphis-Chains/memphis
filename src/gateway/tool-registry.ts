@@ -355,7 +355,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       })
       .strict(),
     helpText:
-      'Reads telemetry spans (sourced from `~/.memphis/telemetry/`) over a rolling window and evaluates every defined SLO: tool success rate, p95 latency by tool, vault decrypt error rate, chain append throughput, embed-index health. Each SLO returns `pass | fail | unavailable` with the computed value, threshold, and sample count so the operator can see WHY the runtime is degraded, not just THAT it is. `unavailable` means the SLO has no samples in the window — usually fine for a fresh install, indicates a logging gap on a long-running runtime.',
+      'Reads telemetry spans (sourced from `~/.memphis/telemetry/`) over a rolling window and evaluates the implemented SLOs: p99 turn latency, confabulation rate, provider error rate, and tool error rate. Each SLO returns `pass | fail | unavailable` with computed value, threshold, and sample count so the operator can see WHY the runtime is degraded, not just THAT it is. `unavailable` means the SLO has no samples or fewer than the minimum sample floor in the window — usually fine for a fresh install, but a logging gap on a long-running runtime.',
     cliFlags: [
       {
         name: '--window-days',
@@ -363,6 +363,36 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         takesValue: true,
       },
     ],
+  },
+  memphis_self_governance_status: {
+    name: 'memphis_self_governance_status',
+    tier: 0,
+    capabilities: ['read'],
+    description:
+      'Read Memphis self-governance capability state — supervised-operational autonomy readiness, recovery blockers, and required operator actions.',
+    inputSchema: z
+      .object({
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+    helpText:
+      'Canonical answer for "can Memphis steer itself and preserve that ability?". Aggregates runtime health, chain integrity, backup readiness, provider/fallback readiness, scheduler posture, and SLO state into `capable`, `canSelfRecover`, `canSelfModify=false`, `blockingReasons`, and `recommendedActions`. Read-only; it never restarts, repairs, deploys, or edits code.',
+    cliFlags: [],
+  },
+  memphis_tensor_status: {
+    name: 'memphis_tensor_status',
+    tier: 0,
+    capabilities: ['read'],
+    description:
+      'Read Memphis tensor/vector runtime truth — memory embedding dim/provider/persistence, Kartograf tensor mode, and public raw-vector exposure policy.',
+    inputSchema: z
+      .object({
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+    helpText:
+      'Use this to answer "what do tensors look like in Memphis right now?". Reports Rust memory embeddings (`Vec<f32>`), Kartograf embeddings (`Float32Array`/ONNX), configured dimensions, dtype, persistence, bridge readiness, and whether a legacy index dim mismatch is present. It never returns raw vector values.',
+    cliFlags: [],
   },
   memphis_repair: {
     name: 'memphis_repair',
@@ -372,6 +402,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       'Repair Memphis runtime state — chain integrity, SQLite, migrations, derived indexes',
     inputSchema: z
       .object({
+        force: z.boolean().optional(),
         approval_request_id: z.string().optional(),
       })
       .strict(),
@@ -426,8 +457,23 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     description: 'Append case entry',
     inputSchema: z
       .object({
-        entry: z.object({
-          case_type: z.enum([
+        entry: z
+          .object({
+            case_type: z.enum([
+              'nominative',
+              'genitive',
+              'dative',
+              'accusative',
+              'instrumental',
+              'locative',
+              'ablative',
+              'vocative',
+            ]),
+          })
+          .passthrough()
+          .optional(),
+        case_type: z
+          .enum([
             'nominative',
             'genitive',
             'dative',
@@ -436,13 +482,34 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
             'locative',
             'ablative',
             'vocative',
-          ]),
-        }).passthrough(),
+          ])
+          .optional(),
+        entity: z.string().optional(),
+        action: z.string().optional(),
+        timestamp: z.string().optional(),
+        owner: z.string().optional(),
+        possessed: z.string().optional(),
+        giver: z.string().optional(),
+        recipient: z.string().optional(),
+        object: z.string().optional(),
+        subject: z.string().optional(),
+        verb: z.string().optional(),
+        actor: z.string().optional(),
+        instrument: z.string().optional(),
+        target: z.string().optional(),
+        location: z.string().optional(),
+        origin: z.string().optional(),
+        destination: z.string().optional(),
+        invoker: z.string().optional(),
+        invocation: z.string().optional(),
         approval_request_id: z.string().optional(),
+      })
+      .refine((value) => Boolean(value.entry ?? value.case_type), {
+        message: 'Provide either entry.case_type or top-level case_type',
       })
       .strict(),
     helpText:
-      'Append a case entry to the cases chain — Memphis\'s linguistic-case knowledge graph. Each entry is anchored on a Polish grammatical case (nominative/genitive/dative/accusative/instrumental/locative/ablative/vocative) plus role fields (actor, target, instrument, location, etc.) drawn from the operator\'s `entry` payload. Indexed in the SQLite case-index for relational queries via memphis_case_query. Use to record structured observations the embedding index can\'t capture relationally — e.g. "X delegated Y to Z".',
+      'Append a case entry to the cases chain — Memphis\'s linguistic-case knowledge graph. Accepts either `{entry:{case_type,...}}` or top-level `{case_type,...}`. Each entry is anchored on a Polish grammatical case (nominative/genitive/dative/accusative/instrumental/locative/ablative/vocative) plus role fields: nominative needs entity/action/timestamp; instrumental needs actor/instrument/target; accusative needs subject/verb/object; locative needs entity/location. Indexed in SQLite for memphis_case_query. Use to record structured observations the embedding index can\'t capture relationally — e.g. "X delegated Y to Z".',
     cliFlags: [],
   },
   memphis_case_query: {
@@ -855,7 +922,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       })
       .strict(),
     helpText:
-      'Manage Memphis-internal scheduled tasks (NOT crontab — these run inside the runtime, audited via the system chain). Four task types: `shell` (operator script), `reflection` (cognitive Mode E periodic run), `git-pull-build` (refresh + rebuild), `http` (poll an endpoint). `list` shows current schedule; `add` registers a new task with cron-pattern + handler; `remove` deletes by id; `enable`/`disable` toggle without removing.',
+      'Manage recurring Memphis-internal scheduled tasks (NOT crontab and NOT a one-off reminder/alarm system — these run inside the runtime, audited via the system chain). Four task types: `shell` (operator script), `reflection` (cognitive Mode E periodic run), `git-pull-build` (refresh + rebuild), `http` (poll an endpoint). `list` shows current schedule; `add` registers a recurring task with cron-pattern + handler; `remove` deletes by id; `enable`/`disable` toggle without removing.',
     cliFlags: [
       {
         name: '--action',
@@ -866,7 +933,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       {
         name: '--cron',
         description:
-          'Cron expression (5-field, e.g. `0 9 * * 1-5`). Required for add.',
+          'Recurring 5-field cron expression (e.g. `0 9 * * 1-5`). Required for add.',
         takesValue: true,
       },
       {
@@ -896,6 +963,22 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       },
     ],
   },
+  memphis_exec_analyze: {
+    name: 'memphis_exec_analyze',
+    tier: 1,
+    capabilities: ['read'],
+    description:
+      'Pre-exec analysis: parse a command and predict its side-effects without running it',
+    inputSchema: z
+      .object({
+        command: z.string().min(1),
+        surface_intent: z.string().optional(),
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+    helpText:
+      "Call BEFORE `memphis_exec` for any command that isn't obviously read-only. Returns `{parsed, semantic, side_effects, files_touched, reversibility, tier_required, dry_run_command?, warnings, recommendation}`. Recommendation values: `safe-to-run` (just execute), `analyze-then-run` (surface the analysis to the operator first), `ask-operator` (irreversible — must get explicit go-ahead), `refuse` (touches vault/protected paths — never run regardless of tier). Pure parser + heuristics; safe to call at any tier without side effects.",
+  },
   memphis_exec: {
     name: 'memphis_exec',
     tier: 2,
@@ -904,11 +987,12 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     inputSchema: z
       .object({
         command: z.string().min(1),
+        surface_intent: z.string().optional(),
         approval_request_id: z.string().optional(),
       })
       .strict(),
     helpText:
-      'Run a shell command in the Memphis runtime context (cwd: install root, env: filtered). Tier-2 with approval-required default — operator must whitelist or one-shot approve before each call. Stdout + stderr are returned together (capped at 64KB). Use for one-off diagnostics + dev commands; tier-2 commands that mutate the filesystem prefer memphis_fs_write or memphis_git so the change is auditable. NEVER pipe secrets into commands here — the audit log captures the full argv.',
+      "Run a shell command in the Memphis runtime context (cwd: install root, env: filtered). Tier-2 with approval-required default — operator must whitelist or one-shot approve before each call. Stdout + stderr are returned together (capped at 64KB). At tier-3, the allowlist + metachar block are dropped; the wisdom doctrine (soul-seed `exec wisdom` section) tells the agent to call `memphis_exec_analyze` FIRST and surface predicted impact before running anything destructive. `surface_intent` (optional) — the operator's high-level prompt that prompted this exec; appears in audit logs alongside the predicted-vs-actual outcome. Failure budget: after 3 consecutive non-zero exits in a row, further calls are refused with a 'stop blind-retrying' error — call any non-exec tool to reset.",
     cliFlags: [
       {
         name: '--command',

@@ -59,6 +59,20 @@ export type CliArgs = {
     | 'build-only'
     | 'custom';
   force: boolean;
+  /**
+   * Opt-in override for `vault init`'s refuse-on-nonempty guard
+   * (2026-05-13 — root-cause fix for the pepper desync that bit on
+   * 2026-05-11 15:57 → 16:07). Without this flag, `vault init` refuses
+   * to overwrite an existing non-empty `vault-entries.json` because
+   * silent re-init regenerates the master key envelope while the old
+   * ciphertext stays on disk, leaving every entry undecryptable.
+   *
+   * Set this flag deliberately when you really do want to wipe state
+   * (after backing up `~/.memphis/`). Distinct from the generic
+   * `--force` so a stray `--force` somewhere else can't accidentally
+   * authorise a vault wipe.
+   */
+  forceReinit?: boolean;
   fix?: boolean;
   deep?: boolean;
   postInstall?: boolean;

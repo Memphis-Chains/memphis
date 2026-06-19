@@ -63,6 +63,7 @@ function serializeConversation(messages: ChatMessage[], opts?: ChatOptions): str
 function buildGenerateInputFromChat(messages: ChatMessage[], opts?: ChatOptions): GenerateInput {
   return {
     input: serializeConversation(messages, opts),
+    messages,
     model: opts?.model,
     systemPrompt: opts?.systemPrompt,
     tools: opts?.tools,
