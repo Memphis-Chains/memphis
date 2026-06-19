@@ -168,6 +168,32 @@ describe('in-process tool executor', () => {
     });
   });
 
+  it('accepts top-level case_append payloads from model tool calls', async () => {
+    const adapter = {
+      appendCaseEntry: vi.fn(async () => ({ success: true, index: 3, hash: 'h', chain: 'cases' })),
+      queryCases: vi.fn(),
+    };
+    const executor = createInProcessToolExecutor({ caseAdapter: adapter as never });
+
+    await executor.execute({
+      id: 'call-case-append-top-level',
+      name: 'memphis_case_append',
+      arguments: {
+        case_type: 'nominative',
+        entity: 'profile',
+        action: 'synced',
+        timestamp: '2026-06-19T00:00:00.000Z',
+      },
+    });
+
+    expect(adapter.appendCaseEntry).toHaveBeenCalledWith({
+      case_type: 'nominative',
+      entity: 'profile',
+      action: 'synced',
+      timestamp: '2026-06-19T00:00:00.000Z',
+    });
+  });
+
   it('rejects out-of-range case query limits before Rust parsing', async () => {
     const executor = createInProcessToolExecutor();
     await expect(

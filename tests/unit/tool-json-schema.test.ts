@@ -48,9 +48,20 @@ describe('registry-backed JSON schemas', () => {
           ],
         },
       },
-      required: ['case_type'],
     });
-    expect(schema.required).toEqual(['entry']);
+    expect(schema.properties?.case_type).toMatchObject({
+      enum: [
+        'nominative',
+        'genitive',
+        'dative',
+        'accusative',
+        'instrumental',
+        'locative',
+        'ablative',
+        'vocative',
+      ],
+    });
+    expect(schema.required).toBeUndefined();
   });
 
   it('preserves numeric registry constraints when deriving executor schemas', () => {

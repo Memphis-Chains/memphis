@@ -10,7 +10,11 @@ import '../infra/logging/contextual.js';
 
 import { runMemphisBraveSearch } from './tools/brave-search.js';
 import { runMemphisBuild } from './tools/build.js';
-import { runMemphisCaseAppend, runMemphisCaseQuery } from './tools/case-entry.js';
+import {
+  normalizeCaseAppendInput,
+  runMemphisCaseAppend,
+  runMemphisCaseQuery,
+} from './tools/case-entry.js';
 import { runMemphisChainQuery } from './tools/chain-query.js';
 import { runMemphisCodeRead } from './tools/code-read.js';
 import {
@@ -1162,65 +1166,47 @@ export function createMemphisMcpServer(
 
   const caseAppendPolicy = getToolPolicy(permissions, 'memphis_case_append', resolvedManifest);
   if (shouldRegisterTool('memphis_case_append', caseAppendPolicy, rawEnv)) {
+    const caseTypeSchema = z.enum([
+      'nominative',
+      'genitive',
+      'dative',
+      'accusative',
+      'instrumental',
+      'locative',
+      'ablative',
+      'vocative',
+    ]);
     server.registerTool(
       'memphis_case_append',
       {
         description:
-          'Append a case entry to the cognitive knowledge graph (8 Polish grammatical cases)',
+          'Append a case entry to the cognitive knowledge graph. Accepts either {entry:{case_type,...}} or top-level {case_type,...}.',
         inputSchema: {
-          entry: z.discriminatedUnion('case_type', [
-            z.object({
-              case_type: z.literal('nominative'),
-              entity: z.string().min(1),
-              action: z.string().min(1),
-              timestamp: z.string().min(1),
-            }),
-            z.object({
-              case_type: z.literal('genitive'),
-              owner: z.string().min(1),
-              possessed: z.string().min(1),
-            }),
-            z.object({
-              case_type: z.literal('dative'),
-              giver: z.string().min(1),
-              recipient: z.string().min(1),
-              object: z.string().min(1),
-            }),
-            z.object({
-              case_type: z.literal('accusative'),
-              subject: z.string().min(1),
-              verb: z.string().min(1),
-              object: z.string().min(1),
-            }),
-            z.object({
-              case_type: z.literal('instrumental'),
-              actor: z.string().min(1),
-              instrument: z.string().min(1),
-              target: z.string().min(1),
-            }),
-            z.object({
-              case_type: z.literal('locative'),
-              entity: z.string().min(1),
-              location: z.string().min(1),
-            }),
-            z.object({
-              case_type: z.literal('ablative'),
-              entity: z.string().min(1),
-              origin: z.string().min(1),
-              destination: z.string().optional(),
-            }),
-            z.object({
-              case_type: z.literal('vocative'),
-              invoker: z.string().min(1),
-              invocation: z.string().min(1),
-              target: z.string().min(1),
-            }),
-          ]),
+          entry: z.object({ case_type: caseTypeSchema }).passthrough().optional(),
+          case_type: caseTypeSchema.optional(),
+          entity: z.string().optional(),
+          action: z.string().optional(),
+          timestamp: z.string().optional(),
+          owner: z.string().optional(),
+          possessed: z.string().optional(),
+          giver: z.string().optional(),
+          recipient: z.string().optional(),
+          object: z.string().optional(),
+          subject: z.string().optional(),
+          verb: z.string().optional(),
+          actor: z.string().optional(),
+          instrument: z.string().optional(),
+          target: z.string().optional(),
+          location: z.string().optional(),
+          origin: z.string().optional(),
+          destination: z.string().optional(),
+          invoker: z.string().optional(),
+          invocation: z.string().optional(),
           approval_request_id: z.string().optional(),
         },
       },
-      withApprovalGate('memphis_case_append', caseAppendPolicy, approvals, async ({ entry }) => {
-        const result = await runMemphisCaseAppend({ entry });
+      withApprovalGate('memphis_case_append', caseAppendPolicy, approvals, async (args) => {
+        const result = await runMemphisCaseAppend(normalizeCaseAppendInput(args as never));
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
           structuredContent: toJsonRecord(result),

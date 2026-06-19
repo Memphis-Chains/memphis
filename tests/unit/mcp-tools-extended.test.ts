@@ -55,6 +55,28 @@ describe('mcp tools — case-entry', () => {
     expect(result).toMatchObject({ ok: true, index: 5 });
   });
 
+  it('accepts top-level case entry fields for model/tool-call compatibility', async () => {
+    const adapter = {
+      appendCaseEntry: vi.fn(async () => ({
+        success: true,
+        index: 6,
+        hash: 'def456',
+        chain: 'cases',
+      })),
+      queryCases: vi.fn(),
+    };
+    const entry = {
+      case_type: 'nominative' as const,
+      entity: 'profile',
+      action: 'synced',
+      timestamp: '2026-06-19T00:00:00.000Z',
+    };
+    const result = await runMemphisCaseAppend(entry, { adapter: adapter as never });
+
+    expect(adapter.appendCaseEntry).toHaveBeenCalledWith(entry);
+    expect(result).toMatchObject({ success: true, index: 6 });
+  });
+
   it('queries cases via adapter', async () => {
     const adapter = {
       appendCaseEntry: vi.fn(),

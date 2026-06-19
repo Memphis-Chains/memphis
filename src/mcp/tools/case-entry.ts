@@ -8,7 +8,7 @@ import type {
 
 export type MemphisCaseAppendInput = {
   entry: CaseEntry;
-};
+} | CaseEntry;
 
 export type MemphisCaseQueryInput = {
   query: CaseQuery;
@@ -30,7 +30,7 @@ export async function runMemphisCaseAppend(
   input: MemphisCaseAppendInput,
   deps: CaseAppendDeps = defaultAppendDeps,
 ): Promise<CaseAppendResult> {
-  return deps.adapter.appendCaseEntry(input.entry);
+  return deps.adapter.appendCaseEntry(normalizeCaseAppendInput(input));
 }
 
 export async function runMemphisCaseQuery(
@@ -38,4 +38,9 @@ export async function runMemphisCaseQuery(
   deps: CaseQueryDeps = defaultQueryDeps,
 ): Promise<CaseQueryResult> {
   return deps.adapter.queryCases(input.query);
+}
+
+export function normalizeCaseAppendInput(input: MemphisCaseAppendInput): CaseEntry {
+  if ('entry' in input) return input.entry;
+  return input;
 }
