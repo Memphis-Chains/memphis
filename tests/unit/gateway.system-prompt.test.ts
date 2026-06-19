@@ -62,24 +62,30 @@ describe('gateway system prompt', () => {
     // Operator session 2026-05-04 caught the bot claiming "ja, cogito:3b"
     // / "Pisałem to sam (Claude Opus)" while MiniMax was the actual
     // provider. The system-prompt guard pins three rules:
-    //   1. NEVER claim a model/provider from intuition
-    //   2. Defer to memphis_self_describe + the runtime stamp
-    //   3. Don't bake provenance lies into self-modify content
+    //   1. Answer from <runtime_route> when the runtime exposes it
+    //   2. NEVER claim a model/provider from intuition
+    //   3. Don't call self_describe for provider/model identity
+    //   4. Don't bake provenance lies into self-modify content
     const prompt = buildSystemPrompt({
       availableTools: ['memphis_self_describe', 'memphis_self_modify'],
+      providerLabel: 'minimax',
+      modelLabel: 'MiniMax-M2.7',
     });
 
     expect(prompt).toContain('Self-identity honesty');
-    expect(prompt).toContain('You DO NOT KNOW which provider or model');
+    expect(prompt).toContain('<runtime_route>');
+    expect(prompt).toContain('Provider selected for this turn: minimax.');
+    expect(prompt).toContain('Model selected for this turn: MiniMax-M2.7.');
+    expect(prompt).toContain('answer from <runtime_route>');
+    expect(prompt).not.toContain('You DO NOT KNOW which provider or model');
+    expect(prompt).not.toContain("I can't\nread the active route");
     expect(prompt).toContain('NEVER claim');
     expect(prompt).toContain('via {provider}/{model}');
-    // 2026-05-12: removed `per memphis_self_describe:` instruction —
-    // that tool doesn't actually carry provider/model fields (Codex
-    // review on #580), so pointing Memphis at it would just yield
-    // confabulation. New guidance directs to TUI status pill +
-    // daemon-restart log + `memphis providers list`.
+    // 2026-06-19: runtime_route is now the authoritative source when
+    // present. memphis_self_describe remains wrong for provider/model
+    // identity; it only carries surface/tools/cognitive mode.
     expect(prompt).toContain('memphis providers list');
-    expect(prompt).toContain('do NOT call');
+    expect(prompt).toContain('Do NOT call');
     // Don't bake provenance lies into self-modify outputs.
     // (Match across line breaks since the source-code wrapping
     // doesn't matter to the LLM consuming the prompt.)
