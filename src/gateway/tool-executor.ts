@@ -17,7 +17,11 @@ import type { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repo
 import type { SqliteToolPermissionRepository } from '../infra/storage/sqlite/repositories/tool-permission-repository.js';
 import { runMemphisBraveSearch } from '../mcp/tools/brave-search.js';
 import { runMemphisBuild } from '../mcp/tools/build.js';
-import { runMemphisCaseAppend, runMemphisCaseQuery } from '../mcp/tools/case-entry.js';
+import {
+  normalizeCaseAppendInput,
+  runMemphisCaseAppend,
+  runMemphisCaseQuery,
+} from '../mcp/tools/case-entry.js';
 import { runMemphisChainQuery } from '../mcp/tools/chain-query.js';
 import { runMemphisCodeRead } from '../mcp/tools/code-read.js';
 import {
@@ -580,15 +584,13 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
     buildTool({
       name: 'memphis_case_append',
       description: 'Append an entry to the case chain',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          entry: { type: 'object', description: 'Case chain entry payload' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_case_append', {
+        propertyDescriptions: {
+          entry: 'Case chain entry payload. You may also pass case_type and its role fields at top level.',
         },
-        required: ['entry'],
-      },
+      }),
       validateInput(args) {
-        return { entry: requiredRecord(args, 'entry') as never };
+        return normalizeCaseAppendInput(args as never) as never;
       },
       async execute(input) {
         return runMemphisCaseAppend(

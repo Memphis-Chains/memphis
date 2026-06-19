@@ -80,8 +80,11 @@ export function parseEnvelope<T>(raw: string, fnName: string): T {
  */
 export async function listBlockFiles(dir: string): Promise<string[]> {
   try {
-    const files = await readdir(dir);
-    return files.filter((f) => f.endsWith('.json')).sort();
+    const entries = await readdir(dir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+      .map((entry) => entry.name)
+      .sort();
   } catch (error) {
     if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return [];
     throw error;
