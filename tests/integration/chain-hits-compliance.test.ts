@@ -178,4 +178,39 @@ describe('cognitive prelude — chain_hits behavioral compliance', () => {
     const chainHitLines = lines.filter((line) => line.startsWith('- journal#'));
     expect(chainHitLines.length).toBeLessThanOrEqual(3);
   });
+
+  it('filters unsafe exact hits out of cognitive prompt fragments', async () => {
+    indexExactSearchBlock(
+      {
+        chain: 'journal',
+        index: 1,
+        hash: 'hash-journal-unsafe',
+        data: {
+          content: 'old telegram transcript mentioned system prompt and hidden instructions',
+          tags: ['tools', 'conversation'],
+        },
+      },
+      process.env,
+    );
+    indexExactSearchBlock(
+      {
+        chain: 'journal',
+        index: 2,
+        hash: 'hash-journal-safe',
+        data: {
+          content: 'safe tools inventory summary for runtime capabilities',
+          tags: ['tools', 'runtime'],
+        },
+      },
+      process.env,
+    );
+
+    const prelude = await prepareCognitivePrelude('tools runtime');
+
+    expect(prelude.exact.hits.map((hit) => hit.sourceKey)).toEqual(['journal:2']);
+    expect(prelude.promptFragment).toContain('[chain_hits]');
+    expect(prelude.promptFragment).toContain('safe tools inventory');
+    expect(prelude.promptFragment).not.toContain('system prompt');
+    expect(prelude.promptFragment).not.toContain('hidden instructions');
+  });
 });

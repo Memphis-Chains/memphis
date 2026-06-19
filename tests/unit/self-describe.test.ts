@@ -60,7 +60,7 @@ describe('runMemphisSelfDescribe', () => {
     expect(errors?.value).toBe(32);
   });
 
-  it('marks tools as available iff their tier is <= surface policy maxToolTier', () => {
+  it('separates surface visibility from authorization availability', () => {
     const out = runMemphisSelfDescribe(
       { surface: 'telegram' },
       {
@@ -71,11 +71,37 @@ describe('runMemphisSelfDescribe', () => {
     expect(out.surfacePolicy.maxToolTier).toBe(0);
     const tier0Tools = out.tools.filter((t) => t.tier === 0);
     const tier2Tools = out.tools.filter((t) => t.tier === 2);
-    // Tier 0 tools should be available; tier 2 should not.
+    // Tier 0 tools should be visible and executable; tier 2 should not
+    // even be visible under the surface cap.
     expect(tier0Tools.every((t) => t.available)).toBe(true);
+    expect(tier0Tools.every((t) => t.surfaceAvailable)).toBe(true);
     if (tier2Tools.length > 0) {
+      expect(tier2Tools.every((t) => !t.surfaceAvailable)).toBe(true);
       expect(tier2Tools.every((t) => !t.available)).toBe(true);
     }
+  });
+
+  it('marks tier-2 Telegram write tools as visible but approval-blocked in balanced mode', () => {
+    const out = runMemphisSelfDescribe(
+      { surface: 'telegram' },
+      {
+        MEMPHIS_DATA_DIR: '/tmp/memphis-test',
+        MEMPHIS_AUTONOMY_MODE: 'balanced',
+      } as NodeJS.ProcessEnv,
+    );
+
+    expect(out.surfacePolicy.maxToolTier).toBe(2);
+    const fsWrite = out.tools.find((tool) => tool.name === 'memphis_fs_write');
+    expect(fsWrite).toBeDefined();
+    expect(fsWrite).toMatchObject({
+      surfaceAvailable: true,
+      available: false,
+      requiresApproval: true,
+      authorization: expect.objectContaining({
+        policy: 'require-approval',
+        source: 'mode-default',
+      }),
+    });
   });
 
   it('reports active tier-3 session for the resolved (surface, actorId) pair', () => {

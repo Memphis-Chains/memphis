@@ -118,4 +118,31 @@ describe('case-chain rebuild regression', () => {
     const entities = result.entries.map((e) => e.entity).sort();
     expect(entities).toEqual(['entity-0', 'entity-1', 'entity-2', 'entity-3', 'entity-4']);
   });
+
+  it('rebuilds repeatedly through the Rust NAPI bridge without losing queryability', async () => {
+    env = {
+      ...env,
+      RUST_CHAIN_ENABLED: 'true',
+      RUST_CHAIN_BRIDGE_PATH: './crates/memphis-napi',
+    };
+    const adapter = new CaseChainAdapter(env);
+
+    for (let i = 0; i < 12; i++) {
+      await adapter.appendCaseEntry({
+        case_type: 'instrumental',
+        actor: 'agent',
+        instrument: `tool-${i}`,
+        target: `target-${i}`,
+      });
+    }
+
+    for (let i = 0; i < 25; i++) {
+      const report = await adapter.rebuildIndex();
+      expect(report.indexed).toBe(12);
+      expect(report.errors).toBe(0);
+    }
+
+    const result = await adapter.queryCases({ case_type: 'instrumental' });
+    expect(result.count).toBe(12);
+  });
 });

@@ -46,9 +46,19 @@ describe('MCP tool: memphis_exec', () => {
   });
 
   it('blocks shell metacharacters', () => {
-    expect(() => runMemphisExec({ command: 'echo ok && whoami' })).toThrow(AppError);
-    expect(() => runMemphisExec({ command: 'echo ok; rm -rf /' })).toThrow(AppError);
-    expect(() => runMemphisExec({ command: 'echo $(id)' })).toThrow(AppError);
+    const restrictedEnv = { ...process.env, GATEWAY_EXEC_RESTRICTED_MODE: 'true' };
+    expect(() => runMemphisExec({ command: 'echo ok && whoami' }, restrictedEnv)).toThrow(AppError);
+    expect(() => runMemphisExec({ command: 'echo ok; rm -rf /' }, restrictedEnv)).toThrow(AppError);
+    expect(() => runMemphisExec({ command: 'echo $(id)' }, restrictedEnv)).toThrow(AppError);
+  });
+
+  it('allows shell operators when exec restricted mode is disabled', () => {
+    const result = runMemphisExec(
+      { command: 'echo ok && echo done | wc -l' },
+      { ...process.env, GATEWAY_EXEC_RESTRICTED_MODE: 'false' },
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.trim()).toBe('ok\n1');
   });
 
   it('blocks oversized arguments', () => {

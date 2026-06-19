@@ -16,6 +16,8 @@ use memphis_embed::EmbedPipeline;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use memphis_core::hash::to_canonical_hash_data;
+use memphis_paths;
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -74,6 +76,17 @@ fn env_limit(var: &str, default: usize) -> usize {
         .unwrap_or(default)
 }
 
+fn env_limit_any(vars: &[&str], default: usize) -> usize {
+    vars.iter()
+        .find_map(|var| {
+            std::env::var(var)
+                .ok()
+                .and_then(|raw| raw.trim().parse::<usize>().ok())
+                .filter(|v| *v > 0)
+        })
+        .unwrap_or(default)
+}
+
 fn chat_max_messages() -> usize {
     env_limit("MEMPHIS_CHAT_MAX_MESSAGES", CHAT_MAX_MESSAGES_DEFAULT)
 }
@@ -91,7 +104,10 @@ fn chat_max_errors() -> usize {
 }
 
 fn chat_max_tokens() -> usize {
-    env_limit("MEMPHIS_GEN_MAX_TOKENS", CHAT_MAX_TOKENS_DEFAULT)
+    env_limit_any(
+        &["MEMPHIS_GEN_MAX_TOKENS", "GEN_MAX_TOKENS"],
+        CHAT_MAX_TOKENS_DEFAULT,
+    )
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1828,11 +1844,9 @@ fn execute_native_tool(
                 .and_then(Value::as_u64)
                 .unwrap_or(20) as usize;
 
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-            let chains_dir = std::path::Path::new(&home)
-                .join("memphis")
-                .join("data")
-                .join("chains");
+            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/home/memphis"));
+            let env_map: std::collections::HashMap<String, String> = std::env::vars().collect();
+            let chains_dir = memphis_paths::resolve_chains_dir(&env_map, &cwd);
             let chain_file = chains_dir.join(chain_name);
 
             if !chain_file.exists() {
@@ -1933,11 +1947,9 @@ fn execute_native_tool(
                 .and_then(Value::as_str)
                 .unwrap_or("");
 
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-            let chains_dir = std::path::Path::new(&home)
-                .join("memphis")
-                .join("data")
-                .join("chains");
+            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/home/memphis"));
+            let env_map: std::collections::HashMap<String, String> = std::env::vars().collect();
+            let chains_dir = memphis_paths::resolve_chains_dir(&env_map, &cwd);
             std::fs::create_dir_all(&chains_dir).map_err(|e| {
                 OperatorError::Message(format!("failed to create chains dir: {}", e))
             })?;
@@ -2048,10 +2060,16 @@ fn build_runtime_system_prompt(
         .get("trustRules")
         .cloned()
         .unwrap_or_else(|| json!([]));
-    let capabilities = manifest
+    let mut capabilities = manifest
         .get("capabilities")
         .cloned()
         .unwrap_or_else(|| json!({}));
+    capabilities["surface"] = json!("rust-tui");
+    capabilities["toolSource"] = json!("native-rust-operator");
+    capabilities["tools"] = json!(tools
+        .iter()
+        .map(|tool| tool.name.clone())
+        .collect::<Vec<_>>());
 
     Ok(format!(
         "<memphis_system>\n\
@@ -2905,11 +2923,17 @@ fn validate_generic_block(
     block: &GenericChainBlock,
     previous: Option<&GenericChainBlock>,
 ) -> Result<(), OperatorError> {
+    // Use the canonical 3-field form of `data` (type/content/tags), matching
+    // the TS-side chain-adapter writer. Without this, TS-written blocks with
+    // extra fields (source, turn_id, conversation_id, session_id, consent,
+    // ...) fail validation here with `chain integrity check failed for
+    // {chain}:{index} hash mismatch` even though they are valid.
+    let canonical_data = to_canonical_hash_data(&block.data);
     let block_without_hash = json!({
         "index": block.index,
         "timestamp": block.timestamp,
         "chain": block.chain,
-        "data": block.data,
+        "data": canonical_data,
         "prev_hash": block.prev_hash,
     });
     let expected_hash = sha256_hex(stable_json(block_without_hash)?.as_bytes());
@@ -3519,6 +3543,43 @@ mod tests {
             ("DEFAULT_PROVIDER", "local-fallback"),
         ]);
         OperatorRuntime { config }
+    }
+
+    #[test]
+    fn runtime_prompt_reports_native_tools_not_stale_manifest_tools() {
+        let root = temp_runtime_root("prompt-tools");
+        let config_dir = root.join("config");
+        fs::create_dir_all(&config_dir).expect("create config dir");
+        fs::write(
+            config_dir.join("soul-manifest.json"),
+            serde_json::to_string(&json!({
+                "schemaVersion": 1,
+                "identity": {
+                    "agentName": "Memphis Agent",
+                    "ownerName": "local operator",
+                    "runtimeMode": "test",
+                    "createdAt": "2026-01-01T00:00:00Z"
+                },
+                "capabilities": {
+                    "tools": ["memphis_self_describe", "memphis_providers"]
+                },
+                "boundaries": {},
+                "trustRules": []
+            }))
+            .expect("manifest json"),
+        )
+        .expect("write stale manifest");
+
+        let runtime = runtime_for(&root);
+        let tools = native_tool_definitions();
+        let prompt =
+            build_runtime_system_prompt(&runtime, &tools).expect("build runtime system prompt");
+
+        assert!(prompt.contains("Available tools: memphis_journal"));
+        assert!(prompt.contains("\"toolSource\":\"native-rust-operator\""));
+        assert!(!prompt.contains("memphis_self_describe"));
+        assert!(!prompt.contains("memphis_providers"));
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

@@ -13,6 +13,7 @@ import type { TuiHostCapability } from './protocol.js';
 import { createAppContainer } from '../../app/container.js';
 import { getCognitiveModeConfig, isValidCognitiveMode } from '../../cognitive/modes.js';
 import { NODE_ENV } from '../../config/env-registry.js';
+import { parseBool } from '../../core/env.js';
 import {
   getActiveSurfacesSnapshot,
   recordSurfaceActivity,
@@ -180,11 +181,20 @@ async function executeSystemRestart(
 ): Promise<unknown> {
   const reason = optionalStringArg(args, 'reason');
   const { requestRestart } = await import('../runtime/self-restart.js');
-  context.emitLine('info', 'Requesting restart (tier 3 required)...');
+  const tier2FullAccess = isTier2FullAccess();
+  context.emitLine(
+    'info',
+    tier2FullAccess
+      ? 'Requesting restart (tier 2 full-access mode)...'
+      : 'Requesting restart (tier 3 required)...',
+  );
   const outcome = await requestRestart({
     surface: TUI_TIER_SURFACE,
     actorId: TUI_TIER_ACTOR_ID,
     reason,
+    alreadyElevated: tier2FullAccess,
+    elevatedVia: tier2FullAccess ? 'tier2-full-access' : undefined,
+    rawEnv: process.env,
   });
   assertNotAborted(context.signal);
   if (!outcome.ok) {
@@ -697,6 +707,10 @@ async function executeCognitiveModeSet(
 const TUI_TIER_SURFACE = 'tui' as const;
 const TUI_TIER_ACTOR_ID = 'local' as const;
 
+function isTier2FullAccess(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
+  return parseBool(rawEnv.MEMPHIS_TIER2_FULL_ACCESS, false);
+}
+
 function formatRemaining(ms: number): string {
   if (ms <= 0) return 'expired';
   const totalSeconds = Math.floor(ms / 1000);
@@ -718,6 +732,8 @@ async function executeSecurityTierStatus(context: TuiHostCommandContext): Promis
   let tier: 0 | 1 | 2 | 3;
   if (session) {
     tier = 3;
+  } else if (isTier2FullAccess()) {
+    tier = 3;
   } else {
     const override = process.env.MEMPHIS_SURFACE_TUI_MAX_TOOL_TIER;
     const parsed = override ? Number.parseInt(override, 10) : NaN;
@@ -727,6 +743,8 @@ async function executeSecurityTierStatus(context: TuiHostCommandContext): Promis
   let line: string;
   if (session) {
     line = `Tier 3 active for ${formatRemaining(remainingMs)} (expires ${new Date(session.expiresAt).toISOString()}).`;
+  } else if (isTier2FullAccess()) {
+    line = 'Tier 2 full-access mode active (effective tier 3). No elevation session required.';
   } else if (tier === 2) {
     line = 'Tier 2 (default). No elevation active.';
   } else {

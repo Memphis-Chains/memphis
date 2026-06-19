@@ -6,6 +6,7 @@ export interface MemphisSloStatusInput {
 
 export type MemphisSloStatusOutput = SloReport & {
   ok: boolean;
+  allSlosPassing: boolean;
   failingSlos: string[];
 };
 
@@ -20,7 +21,8 @@ export function runMemphisSloStatus(
   const failingSlos = report.slos.filter((s) => s.status === 'fail').map((s) => s.name);
   return {
     ...report,
-    ok: failingSlos.length === 0,
+    ok: true,
+    allSlosPassing: failingSlos.length === 0,
     failingSlos,
   };
 }

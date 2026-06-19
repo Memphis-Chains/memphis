@@ -150,3 +150,25 @@ data/stability-runs/
 data/stability-incidents/
 data/demo-armed.json
 data/demo-plan-b.json
+
+# ── Local product/private prototypes quarantined from public repo ────────────
+# 2026-06-17 cleanup: these are operator-local or deferred prototypes, not
+# public source until explicitly reviewed and reintroduced.
+/apps/
+/001743.json
+/leads.json
+/manifest.json
+/popup.html
+/sesja-refleksyjna-*.md
+/wodzu-dashboard.cjs
+/data/PSA/
+/notes/PSA/
+/notes/PSA-struktura-*.md
+/notes/memphis-20-part-audit-*.md
+/crons/adapt-psa.sh
+/tools/sync-psa.sh
+/vault/
+/src/dashboard/watra-dashboard.ts
+/src/infra/public-chat-gateway.ts
+/src/infra/public-chat-contract.ts
+/tests/unit/public-chat-contract.test.ts

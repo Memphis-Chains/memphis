@@ -8,6 +8,7 @@ import { parseBool } from '../../core/env.js';
 import { errorTemplates } from '../../core/errors.js';
 import { metrics } from '../logging/metrics.js';
 import { resolveRustBridgePath } from '../runtime/install-root.js';
+import { memoryEmbeddingMeta, type EmbeddingVectorMeta } from '../tensors/types.js';
 
 const EMBED_BRIDGE_ALIASES = {
   embed_store: ['embed_store', 'embedStore'],
@@ -50,6 +51,18 @@ export interface EmbedSearchHit {
   tags: string[];
 }
 
+export interface EmbedStoreResult {
+  id: string;
+  count: number;
+  dim: number;
+  dtype: 'f32';
+  provider: string;
+  normalized: boolean | 'provider-dependent';
+  persistence_enabled?: boolean;
+  persistence_load_state?: string;
+  tensor: EmbeddingVectorMeta;
+}
+
 export interface RustEmbedAdapterStatus {
   rustEnabled: boolean;
   rustBridgePath: string;
@@ -58,7 +71,37 @@ export interface RustEmbedAdapterStatus {
   tunedSearchAvailable: boolean;
 }
 
-type EmbedSearchResult = { query: string; count: number; hits: EmbedSearchHit[] };
+type RawEmbedStoreResult = {
+  id: string;
+  count: number;
+  dim: number;
+  dtype?: 'f32';
+  provider: string;
+  normalized?: boolean | string;
+  persistence_enabled?: boolean;
+  persistence_load_state?: string;
+};
+
+type RawEmbedSearchResult = {
+  query: string;
+  count: number;
+  dim?: number;
+  dtype?: 'f32';
+  provider?: string;
+  normalized?: boolean | string;
+  hits: EmbedSearchHit[];
+};
+
+export type EmbedSearchResult = {
+  query: string;
+  count: number;
+  dim?: number;
+  dtype: 'f32';
+  provider?: string;
+  normalized?: boolean | 'provider-dependent';
+  hits: EmbedSearchHit[];
+  tensor?: EmbeddingVectorMeta;
+};
 
 type CacheEntry = { value: EmbedSearchResult; expiresAt: number };
 
@@ -78,6 +121,49 @@ function parseEnvelope<T>(raw: string): T {
     throw new Error('rust bridge returned empty data');
   }
   return out.data;
+}
+
+function normalizeNormalized(
+  value: boolean | string | undefined,
+  provider: string,
+): boolean | 'provider-dependent' {
+  if (typeof value === 'boolean') return value;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  if (value === 'provider-dependent') return 'provider-dependent';
+  return provider === 'local-deterministic' ? true : 'provider-dependent';
+}
+
+function normalizeStoreResult(raw: RawEmbedStoreResult): EmbedStoreResult {
+  const normalized = normalizeNormalized(raw.normalized, raw.provider);
+  return {
+    ...raw,
+    dtype: 'f32',
+    normalized,
+    tensor: memoryEmbeddingMeta({
+      dim: raw.dim,
+      provider: raw.provider,
+      persistenceEnabled: raw.persistence_enabled,
+      persistenceLoadState: raw.persistence_load_state,
+    }),
+  };
+}
+
+function normalizeSearchResult(raw: RawEmbedSearchResult): EmbedSearchResult {
+  const provider = raw.provider;
+  const normalized = provider ? normalizeNormalized(raw.normalized, provider) : undefined;
+  return {
+    ...raw,
+    dtype: 'f32',
+    normalized,
+    tensor:
+      provider && raw.dim
+        ? memoryEmbeddingMeta({
+            dim: raw.dim,
+            provider,
+          })
+        : undefined,
+  };
 }
 
 function parseCacheTtlMs(rawEnv: NodeJS.ProcessEnv = process.env): number {
@@ -224,10 +310,12 @@ export function embedStore(
   text: string,
   rawEnv: NodeJS.ProcessEnv = process.env,
   tags?: string[],
-): { id: string; count: number; dim: number; provider: string } {
+): EmbedStoreResult {
   const bridge = getBridgeOrThrow(rawEnv);
   const tagsJson = tags && tags.length > 0 ? JSON.stringify(tags) : undefined;
-  return parseEnvelope(bridge.embed_store(id, text, tagsJson));
+  return normalizeStoreResult(
+    parseEnvelope<RawEmbedStoreResult>(bridge.embed_store(id, text, tagsJson)),
+  );
 }
 
 export function embedSearch(
@@ -251,7 +339,9 @@ export function embedSearch(
   }
 
   metrics.recordEmbedCacheMiss();
-  const out = parseEnvelope<EmbedSearchResult>(bridge.embed_search(query, topK, tagsJson));
+  const out = normalizeSearchResult(
+    parseEnvelope<RawEmbedSearchResult>(bridge.embed_search(query, topK, tagsJson)),
+  );
   setToCache(key, out, ttlMs, now);
   metrics.recordEmbedQuery(out.count);
   return out;
@@ -280,8 +370,12 @@ export function embedSearchTuned(
   metrics.recordEmbedCacheMiss();
   const out =
     typeof bridge.embed_search_tuned !== 'function'
-      ? parseEnvelope<EmbedSearchResult>(bridge.embed_search(query, topK, tagsJson))
-      : parseEnvelope<EmbedSearchResult>(bridge.embed_search_tuned(query, topK, tagsJson));
+      ? normalizeSearchResult(
+          parseEnvelope<RawEmbedSearchResult>(bridge.embed_search(query, topK, tagsJson)),
+        )
+      : normalizeSearchResult(
+          parseEnvelope<RawEmbedSearchResult>(bridge.embed_search_tuned(query, topK, tagsJson)),
+        );
   setToCache(key, out, ttlMs, now);
   metrics.recordEmbedQuery(out.count);
   return out;
@@ -303,7 +397,9 @@ export interface EmbedStoreManyResult {
   inserted: number;
   count: number;
   dim: number;
+  dtype?: 'f32';
   provider: string;
+  normalized?: boolean | 'provider-dependent';
   persistence_enabled: boolean;
 }
 
@@ -353,6 +449,7 @@ export function embedStoreMany(
 export function embedFlush(rawEnv: NodeJS.ProcessEnv = process.env): {
   flushed: boolean;
   dim: number;
+  dtype?: 'f32';
 } {
   const bridge = getBridgeOrThrow(rawEnv);
   if (typeof bridge.embed_flush !== 'function') {

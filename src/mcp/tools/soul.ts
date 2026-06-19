@@ -1,4 +1,5 @@
 import { CaseChainAdapter } from '../../infra/storage/case-chain-adapter.js';
+import { appendBlock, type AppendBlockResult } from '../../infra/storage/chain-adapter.js';
 import { scanContent } from '../../security/content-scan.js';
 import { emitRuntimeSecurityEvent } from '../../security/runtime-security-events.js';
 import { ensureSoulManifest, loadSoulManifest } from '../../soul/manifest.js';
@@ -70,6 +71,8 @@ export type SoulWriteResult = {
   success: boolean;
   updated: string[];
   timestamp: string;
+  soulChain?: Pick<AppendBlockResult, 'index' | 'hash' | 'chain'>;
+  auditWarning?: string;
   error?: string;
   patternId?: string;
 };
@@ -77,11 +80,13 @@ export type SoulWriteResult = {
 export type SoulWriteDeps = {
   update: typeof updateSoulMemory;
   caseAdapter: CaseChainAdapter;
+  appendSoulAudit: typeof appendBlock;
 };
 
 const defaultWriteDeps: SoulWriteDeps = {
   update: updateSoulMemory,
   caseAdapter: new CaseChainAdapter(),
+  appendSoulAudit: appendBlock,
 };
 
 export async function runMemphisSoulWrite(
@@ -120,6 +125,22 @@ export async function runMemphisSoulWrite(
   }
 
   const merged = deps.update(input.updates);
+  let soulChain: SoulWriteResult['soulChain'];
+  let auditWarning: string | undefined;
+
+  try {
+    const audit = await deps.appendSoulAudit('soul', {
+      type: 'system_event',
+      kind: 'soul.memory_update',
+      source: 'memphis_soul_write',
+      schemaVersion: 1,
+      updatedSections,
+      changedKeys: buildChangedKeys(input.updates),
+    });
+    soulChain = { index: audit.index, hash: audit.hash, chain: audit.chain };
+  } catch (error) {
+    auditWarning = `soul chain audit write failed: ${error instanceof Error ? error.message : String(error)}`;
+  }
 
   // Record soul changes to case chain for auditability
   for (const section of updatedSections) {
@@ -150,7 +171,20 @@ export async function runMemphisSoulWrite(
     success: true,
     updated: updatedSections,
     timestamp: merged.lastUpdated,
+    ...(soulChain ? { soulChain } : {}),
+    ...(auditWarning ? { auditWarning } : {}),
   };
+}
+
+function buildChangedKeys(updates: SoulMemoryUpdate): string[] {
+  const keys: string[] = [];
+  for (const [section, sectionData] of Object.entries(updates)) {
+    if (!sectionData || typeof sectionData !== 'object') continue;
+    for (const key of Object.keys(sectionData)) {
+      keys.push(`${section}.${key}`);
+    }
+  }
+  return keys;
 }
 
 function summarizePossessed(section: string, updates: SoulMemoryUpdate): string {

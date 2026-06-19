@@ -113,6 +113,12 @@ describe('runMemphisSoulWrite', () => {
         queryCases: vi.fn().mockResolvedValue({ ok: true, entries: [] }),
         rebuildIndex: vi.fn().mockResolvedValue({ ok: true }),
       } as unknown as SoulWriteDeps['caseAdapter'],
+      appendSoulAudit: vi.fn().mockResolvedValue({
+        index: 12,
+        hash: 'soul-hash',
+        chain: 'soul',
+        timestamp: '2026-06-16T00:00:00.000Z',
+      }),
     };
   }
 
@@ -123,6 +129,17 @@ describe('runMemphisSoulWrite', () => {
     expect(result.success).toBe(true);
     expect(result.updated).toEqual(['user']);
     expect(result.timestamp).toBeTruthy();
+    expect(result.soulChain).toEqual({ index: 12, hash: 'soul-hash', chain: 'soul' });
+    expect(deps.appendSoulAudit).toHaveBeenCalledWith(
+      'soul',
+      expect.objectContaining({
+        type: 'system_event',
+        kind: 'soul.memory_update',
+        source: 'memphis_soul_write',
+        updatedSections: ['user'],
+        changedKeys: ['user.name'],
+      }),
+    );
   });
 
   it('reports multiple sections when multiple are updated', async () => {
@@ -149,6 +166,7 @@ describe('runMemphisSoulWrite', () => {
     expect(result.updated).toEqual([]);
     // Should not call update at all
     expect(deps.update).not.toHaveBeenCalled();
+    expect(deps.appendSoulAudit).not.toHaveBeenCalled();
   });
 
   it('records genitive and accusative case entries for each section', async () => {
@@ -179,5 +197,16 @@ describe('runMemphisSoulWrite', () => {
 
     expect(result.success).toBe(true);
     expect(result.updated).toEqual(['user']);
+  });
+
+  it('surfaces soul chain audit failure without hiding the memory update', async () => {
+    const deps = makeWriteDeps();
+    (deps.appendSoulAudit as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('hash mismatch'));
+
+    const result = await runMemphisSoulWrite({ updates: { user: { name: 'Bob' } } }, deps);
+
+    expect(result.success).toBe(true);
+    expect(result.updated).toEqual(['user']);
+    expect(result.auditWarning).toMatch(/soul chain audit write failed: hash mismatch/);
   });
 });
