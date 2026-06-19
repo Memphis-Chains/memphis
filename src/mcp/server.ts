@@ -45,6 +45,7 @@ import { runMemphisRestart } from './tools/restart.js';
 import { runMemphisSearch } from './tools/search.js';
 import { runMemphisSelfDeployVerify } from './tools/self-deploy-verify.js';
 import { runMemphisSelfDescribe } from './tools/self-describe.js';
+import { runMemphisSelfGovernanceStatus } from './tools/self-governance-status.js';
 import { runMemphisSelfModify } from './tools/self-modify.js';
 import {
   runMemphisSelfPlanAdvance,
@@ -64,12 +65,17 @@ import {
 import { runMemphisSloStatus } from './tools/slo-status.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from './tools/soul.js';
 import { runMemphisSystemInfo } from './tools/system-info.js';
+import { runMemphisTensorStatus } from './tools/tensor-status.js';
 import { runMemphisTest } from './tools/test-run.js';
 import { runMemphisWebFetch } from './tools/web-fetch.js';
 import { runMemphisWebSearch } from './tools/web-search.js';
 import { RollbackManager } from '../backup/rollback.js';
 import { resolveToolPolicy } from '../gateway/authorization.js';
-import { getToolDescription, isToolEnabledByFeatureFlag } from '../gateway/tool-registry.js';
+import {
+  TOOL_REGISTRY,
+  getToolDescription,
+  isToolEnabledByFeatureFlag,
+} from '../gateway/tool-registry.js';
 import { loadConfig } from '../infra/config/env.js';
 import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import { createSqliteClient, runMigrations } from '../infra/storage/sqlite/client.js';
@@ -139,6 +145,84 @@ function shouldRegisterTool(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): boolean {
   return shouldRegister(policy) && isToolEnabledByFeatureFlag(toolName, rawEnv);
+}
+
+function registryMcpInputSchema(toolName: string): z.ZodRawShape {
+  const schema = TOOL_REGISTRY[toolName]?.inputSchema;
+  const maybeShape =
+    (schema as { shape?: unknown; _def?: { shape?: unknown } } | undefined)?.shape ??
+    (schema as { _def?: { shape?: unknown } } | undefined)?._def?.shape;
+  const shape = typeof maybeShape === 'function' ? maybeShape() : maybeShape;
+  if (!shape || typeof shape !== 'object' || Array.isArray(shape)) {
+    throw new Error(`No registry Zod object inputSchema found for MCP tool ${toolName}`);
+  }
+  return shape as z.ZodRawShape;
+}
+
+function optionalStringArg(args: Record<string, unknown>, key: string): string | undefined {
+  const value = args[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function optionalNumberArg(args: Record<string, unknown>, key: string): number | undefined {
+  const value = args[key];
+  return typeof value === 'number' ? value : undefined;
+}
+
+function optionalBooleanArg(args: Record<string, unknown>, key: string): boolean | undefined {
+  const value = args[key];
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function optionalNonnegativeIntegerArg(
+  args: Record<string, unknown>,
+  key: string,
+): number | undefined {
+  const value = optionalNumberArg(args, key);
+  if (value === undefined) return undefined;
+  return Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+function optionalIntegerInRangeArg(
+  args: Record<string, unknown>,
+  key: string,
+  min: number,
+  max?: number,
+): number | undefined {
+  const value = optionalNumberArg(args, key);
+  if (value === undefined) return undefined;
+  if (!Number.isInteger(value) || value < min || (max !== undefined && value > max)) {
+    return undefined;
+  }
+  return value;
+}
+
+function requiredStringArg(args: Record<string, unknown>, key: string): string {
+  const value = args[key];
+  if (typeof value !== 'string') {
+    throw new Error(`MCP tool argument ${key} must be a string`);
+  }
+  return value;
+}
+
+function requiredStringArrayArg(args: Record<string, unknown>, key: string): string[] {
+  const value = args[key];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+    throw new Error(`MCP tool argument ${key} must be a string array`);
+  }
+  return value;
+}
+
+function requiredStringRecordArg(args: Record<string, unknown>, key: string): Record<string, string> {
+  const value = args[key];
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`MCP tool argument ${key} must be a string record`);
+  }
+  const entries = Object.entries(value);
+  if (!entries.every(([, entryValue]) => typeof entryValue === 'string')) {
+    throw new Error(`MCP tool argument ${key} must be a string record`);
+  }
+  return Object.fromEntries(entries) as Record<string, string>;
 }
 
 /**
@@ -284,7 +368,7 @@ export function createMemphisMcpServer(
         const result = await runMemphisJournal({ content, tags });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as Record<string, unknown>,
+          structuredContent: result as unknown as Record<string, unknown>,
         };
       }),
     );
@@ -326,17 +410,16 @@ export function createMemphisMcpServer(
       'memphis_recall',
       {
         description: getToolDescription('memphis_recall'),
-        inputSchema: {
-          query: z.string().min(1),
-          limit: z.number().int().min(1).max(50).optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_recall'),
       },
-      withApprovalGate('memphis_recall', recallPolicy, approvals, async ({ query, limit }) => {
-        const result = runMemphisRecall({ query, limit });
+      withApprovalGate('memphis_recall', recallPolicy, approvals, async (args) => {
+        const result = runMemphisRecall({
+          query: requiredStringArg(args, 'query'),
+          limit: optionalIntegerInRangeArg(args, 'limit', 1, 50),
+        });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as Record<string, unknown>,
+          structuredContent: result as unknown as Record<string, unknown>,
         };
       }),
     );
@@ -348,19 +431,18 @@ export function createMemphisMcpServer(
       'memphis_search',
       {
         description: getToolDescription('memphis_search'),
-        inputSchema: {
-          query: z.string().min(1),
-          limit: z.number().int().min(1).max(50).optional(),
-          chain: z.string().min(1).optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_search'),
       },
       withApprovalGate(
         'memphis_search',
         searchPolicy,
         approvals,
-        async ({ query, limit, chain }) => {
-          const result = runMemphisSearch({ query, limit, chain });
+        async (args) => {
+          const result = runMemphisSearch({
+            query: requiredStringArg(args, 'query'),
+            limit: optionalIntegerInRangeArg(args, 'limit', 1, 50),
+            chain: optionalStringArg(args, 'chain'),
+          });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
             structuredContent: result as Record<string, unknown>,
@@ -404,15 +486,62 @@ export function createMemphisMcpServer(
       'memphis_health',
       {
         description: getToolDescription('memphis_health'),
-        inputSchema: {
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_health'),
       },
       withApprovalGate('memphis_health', healthPolicy, approvals, async () => {
         const result = await runMemphisHealth();
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
           structuredContent: result as Record<string, unknown>,
+        };
+      }),
+    );
+  }
+
+  const selfGovernancePolicy = getToolPolicy(
+    permissions,
+    'memphis_self_governance_status',
+    resolvedManifest,
+  );
+  if (shouldRegisterTool('memphis_self_governance_status', selfGovernancePolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_self_governance_status',
+      {
+        description: getToolDescription('memphis_self_governance_status'),
+        inputSchema: registryMcpInputSchema('memphis_self_governance_status'),
+      },
+      withApprovalGate(
+        'memphis_self_governance_status',
+        selfGovernancePolicy,
+        approvals,
+        async () => {
+          const result = await runMemphisSelfGovernanceStatus(rawEnv);
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as Record<string, unknown>,
+          };
+        },
+      ),
+    );
+  }
+
+  const tensorStatusPolicy = getToolPolicy(
+    permissions,
+    'memphis_tensor_status',
+    resolvedManifest,
+  );
+  if (shouldRegisterTool('memphis_tensor_status', tensorStatusPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_tensor_status',
+      {
+        description: getToolDescription('memphis_tensor_status'),
+        inputSchema: registryMcpInputSchema('memphis_tensor_status'),
+      },
+      withApprovalGate('memphis_tensor_status', tensorStatusPolicy, approvals, async () => {
+        const result = runMemphisTensorStatus(rawEnv);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result as unknown as Record<string, unknown>,
         };
       }),
     );
@@ -431,11 +560,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Runtime self-introspection — active surface, effective tier, cognitive mode, full tool inventory with availability, feature flags, cross-surface tier-3 sessions. Call BEFORE answering "what can you do" questions instead of guessing from training data.',
-        inputSchema: {
-          surface: z.string().optional(),
-          actorId: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_self_describe'),
       },
       withApprovalGate(
         'memphis_self_describe',
@@ -443,7 +568,10 @@ export function createMemphisMcpServer(
         approvals,
         async (args) => {
           const result = runMemphisSelfDescribe(
-            { surface: args.surface, actorId: args.actorId },
+            {
+              surface: optionalStringArg(args, 'surface'),
+              actorId: optionalStringArg(args, 'actorId'),
+            },
             rawEnv,
           );
           return {
@@ -606,13 +734,13 @@ export function createMemphisMcpServer(
       {
         description:
           'Runtime SLO snapshot — reads telemetry spans over a time window (default 7 days) and reports each SLO as pass/fail/unavailable with computed value, threshold, and sample count.',
-        inputSchema: {
-          windowDays: z.number().int().min(1).max(90).optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_slo_status'),
       },
       withApprovalGate('memphis_slo_status', sloStatusPolicy, approvals, async (args) => {
-        const result = runMemphisSloStatus({ windowDays: args.windowDays }, rawEnv);
+        const result = runMemphisSloStatus(
+          { windowDays: optionalNumberArg(args, 'windowDays') },
+          rawEnv,
+        );
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
           structuredContent: toJsonRecord(result),
@@ -632,13 +760,10 @@ export function createMemphisMcpServer(
       {
         description:
           'Repair Memphis runtime state — chain integrity, SQLite, migrations, derived indexes',
-        inputSchema: {
-          force: z.boolean().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_repair'),
       },
       withApprovalGate('memphis_repair', repairPolicy, approvals, async (args) => {
-        const result = await runMemphisRepair({ force: args.force });
+        const result = await runMemphisRepair({ force: optionalBooleanArg(args, 'force') });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
           structuredContent: toJsonRecord(result),
@@ -746,20 +871,19 @@ export function createMemphisMcpServer(
       'memphis_code_read',
       {
         description: 'Read files inside ~/memphis/ (whitelisted, read-only, no path traversal)',
-        inputSchema: {
-          path: z.string().min(1),
-          startLine: z.number().int().min(1).optional(),
-          endLine: z.number().int().min(1).optional(),
-          limit: z.number().int().min(1).max(2000).optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_code_read'),
       },
       withApprovalGate(
         'memphis_code_read',
         codeReadPolicy,
         approvals,
-        async ({ path, startLine, endLine, limit }) => {
-          const result = runMemphisCodeRead({ path, startLine, endLine, limit });
+        async (args) => {
+          const result = runMemphisCodeRead({
+            path: requiredStringArg(args, 'path'),
+            startLine: optionalIntegerInRangeArg(args, 'startLine', 1),
+            endLine: optionalIntegerInRangeArg(args, 'endLine', 1),
+            limit: optionalIntegerInRangeArg(args, 'limit', 1, 2000),
+          });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
             structuredContent: result as Record<string, unknown>,
@@ -1256,21 +1380,22 @@ export function createMemphisMcpServer(
       'memphis_self_modify',
       {
         description: 'Safe self-modification with snapshot, branch isolation, and test gate',
-        inputSchema: {
-          intent: z.string().min(1),
-          files: z.array(z.string()).min(1),
-          changes: z.record(z.string(), z.string()),
-          passphrase: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_self_modify'),
       },
       withApprovalGate(
         'memphis_self_modify',
         selfModifyPolicy,
         approvals,
-        async ({ intent, files, changes, passphrase }) => {
+        async (args) => {
           const result = await runMemphisSelfModify(
-            { intent, files, changes, passphrase },
+            {
+              intent: requiredStringArg(args, 'intent'),
+              files: requiredStringArrayArg(args, 'files'),
+              changes: requiredStringRecordArg(args, 'changes'),
+              passphrase: optionalStringArg(args, 'passphrase'),
+              plan_id: optionalStringArg(args, 'plan_id'),
+              step_idx: optionalNonnegativeIntegerArg(args, 'step_idx'),
+            },
             { ...evolveDeps, rawEnv },
           );
           return {
@@ -1379,20 +1504,19 @@ export function createMemphisMcpServer(
       'memphis_brave_search',
       {
         description: getToolDescription('memphis_brave_search'),
-        inputSchema: {
-          query: z.string().min(1),
-          limit: z.number().int().positive().max(20).optional(),
-          country: z.string().length(2).optional(),
-          search_lang: z.string().length(2).optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_brave_search'),
       },
       withApprovalGate(
         'memphis_brave_search',
         braveSearchPolicy,
         approvals,
-        async ({ query, limit, country, search_lang }) => {
-          const result = await runMemphisBraveSearch({ query, limit, country, search_lang });
+        async (args) => {
+          const result = await runMemphisBraveSearch({
+            query: requiredStringArg(args, 'query'),
+            limit: optionalIntegerInRangeArg(args, 'limit', 1, 20),
+            country: optionalStringArg(args, 'country'),
+            search_lang: optionalStringArg(args, 'search_lang'),
+          });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
             structuredContent: toJsonRecord(result),
@@ -1556,9 +1680,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Cross-surface presence snapshot — which surfaces (TUI, Telegram, HTTP) are active and when they last acted.',
-        inputSchema: {
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_presence'),
       },
       withApprovalGate('memphis_presence', presencePolicy, approvals, async () => {
         const result = runMemphisPresence();

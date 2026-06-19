@@ -245,13 +245,54 @@ function isTarFileChangedWarning(error: unknown, archivePath: string): boolean {
   }
 }
 
-function readFallbackArchive(archivePath: string): BackupArchive {
-  const raw = gunzipSync(readFileSync(archivePath));
-  const parsed = JSON.parse(raw.toString('utf8')) as BackupArchive;
+function tryReadFallbackArchive(archivePath: string): BackupArchive | null {
+  let raw: Buffer;
+  try {
+    raw = gunzipSync(readFileSync(archivePath));
+  } catch {
+    return null;
+  }
+
+  const text = raw.toString('utf8');
+  if (!text.trimStart().startsWith('{')) {
+    return null;
+  }
+
+  let parsed: BackupArchive;
+  try {
+    parsed = JSON.parse(text) as BackupArchive;
+  } catch {
+    return null;
+  }
+
   if (parsed.format !== 'memphis-backup-v1' || !Array.isArray(parsed.entries)) {
-    throw new Error('invalid fallback backup archive format');
+    return null;
   }
   return parsed;
+}
+
+function readFallbackArchive(archivePath: string): BackupArchive {
+  const archive = tryReadFallbackArchive(archivePath);
+  if (!archive) {
+    throw new Error('invalid fallback backup archive format');
+  }
+  return archive;
+}
+
+function fallbackArchiveEntriesToPaths(archive: BackupArchive): string[] {
+  return archive.entries.map((entry) => (entry.kind === 'dir' ? `${entry.path}/` : entry.path));
+}
+
+type ArchiveListOptions = {
+  tarList?: (archivePath: string) => string[];
+};
+
+function tarListArchiveContents(archivePath: string): string[] {
+  const out = execFileSync('tar', ['-tzf', archivePath], { encoding: 'utf8' });
+  return out
+    .split('\n')
+    .map((v) => v.trim())
+    .filter(Boolean);
 }
 
 function isSafeArchiveEntryPath(entryPath: string): boolean {
@@ -330,6 +371,17 @@ function createFallbackArchive(memphisRoot: string, backupPath: string): void {
   writeFileSync(backupPath, gzipSync(Buffer.from(JSON.stringify(archive), 'utf8')));
 }
 
+function ensureArchiveListableOrFallback(memphisRoot: string, backupPath: string): void {
+  try {
+    tarListArchiveContents(backupPath);
+  } catch (error) {
+    if (!isTarExecutionError(error)) {
+      throw error;
+    }
+    createFallbackArchive(memphisRoot, backupPath);
+  }
+}
+
 function extractFallbackArchive(archivePath: string, targetRoot: string): void {
   const archive = readFallbackArchive(archivePath);
   for (const entry of archive.entries) {
@@ -344,26 +396,18 @@ function extractFallbackArchive(archivePath: string, targetRoot: string): void {
   }
 }
 
-export function listArchiveContents(archivePath: string): string[] {
-  try {
-    return readFallbackArchive(archivePath).entries.map((entry) =>
-      entry.kind === 'dir' ? `${entry.path}/` : entry.path,
-    );
-  } catch {
-    // Not a fallback archive; continue with tar listing.
+export function listArchiveContents(archivePath: string, options: ArchiveListOptions = {}): string[] {
+  const fallback = tryReadFallbackArchive(archivePath);
+  if (fallback) {
+    return fallbackArchiveEntriesToPaths(fallback);
   }
 
   try {
-    const out = execFileSync('tar', ['-tzf', archivePath], { encoding: 'utf8' });
-    return out
-      .split('\n')
-      .map((v) => v.trim())
-      .filter(Boolean);
+    return (options.tarList ?? tarListArchiveContents)(archivePath);
   } catch (error) {
     if (isTarExecutionError(error)) {
-      return readFallbackArchive(archivePath).entries.map((entry) =>
-        entry.kind === 'dir' ? `${entry.path}/` : entry.path,
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`tar listing failed and archive is not a Memphis fallback archive: ${message}`);
     }
 
     throw error;
@@ -500,6 +544,14 @@ function createArchive(memphisRoot: string, backupPath: string): void {
   // backups.
   const redactedEnvPath = join(memphisRoot, REDACTED_ENV_FILENAME);
   let redactedEnvWritten = false;
+  const cleanupRedactedEnv = (): void => {
+    if (!redactedEnvWritten) return;
+    try {
+      unlinkSync(redactedEnvPath);
+    } catch {
+      /* best-effort cleanup */
+    }
+  };
   try {
     const redacted = buildRedactedDotEnv();
     if (redacted !== null) {
@@ -538,29 +590,21 @@ function createArchive(memphisRoot: string, backupPath: string): void {
     // status 1 when it encountered file-changed/removed conditions.
     // The archive IS valid in that case — accept it.
     if (isTarFileChangedWarning(error, backupPath)) {
+      ensureArchiveListableOrFallback(memphisRoot, backupPath);
+      cleanupRedactedEnv();
       return;
     }
-    if (redactedEnvWritten) {
-      try {
-        unlinkSync(redactedEnvPath);
-      } catch {
-        /* best-effort cleanup */
-      }
-    }
     if (!isTarExecutionError(error)) {
+      cleanupRedactedEnv();
       throw error;
     }
     createFallbackArchive(memphisRoot, backupPath);
+    cleanupRedactedEnv();
     return;
   }
 
-  if (redactedEnvWritten) {
-    try {
-      unlinkSync(redactedEnvPath);
-    } catch {
-      /* best-effort cleanup */
-    }
-  }
+  ensureArchiveListableOrFallback(memphisRoot, backupPath);
+  cleanupRedactedEnv();
 }
 
 /**

@@ -177,12 +177,14 @@ export async function appendBlock(
     homedir: os.homedir(),
     resolve: path.resolve,
     sep: path.sep,
-  });
+  }, rawEnv);
   await fs.mkdir(chainsDir, { recursive: true });
 
   return withAppendLock(chainsDir, fs, path, async () => {
     await pruneTrailingEmptyBlockFiles(chainsDir, fs, path);
-    const blocks = await readAndValidateChainBlocks(chainsDir, fs, crypto);
+    const blocks = await readAndValidateChainBlocks(chainsDir, fs, crypto, rawEnv, {
+      repairOnMismatch: true,
+    });
     const previousBlock = blocks.at(-1);
     const nextIndex = previousBlock ? previousBlock.index + 1 : 1;
 
@@ -241,12 +243,13 @@ export async function appendPrecomputedBlock(
   const normalizedChainName = normalizeChainName(chainName) ?? chainName;
   const fs = await import('node:fs/promises');
   const path = await import('node:path');
+  const rawEnv = _rawEnv ?? process.env;
 
   const chainsDir = resolveChainDir(normalizedChainName, {
     homedir: (await import('node:os')).homedir(),
     resolve: path.resolve,
     sep: path.sep,
-  });
+  }, rawEnv);
 
   await fs.mkdir(chainsDir, { recursive: true });
 
@@ -448,6 +451,7 @@ export async function getConfigValue(key: string): Promise<string | null> {
 export function resolveChainDir(
   chainName: string,
   deps: { homedir: string; resolve: (...paths: string[]) => string; sep: string },
+  rawEnv: NodeJS.ProcessEnv = process.env,
 ): string {
   if (typeof chainName !== 'string' || chainName.trim().length === 0) {
     throw new Error('invalid chain name');
@@ -465,7 +469,7 @@ export function resolveChainDir(
     throw new Error('invalid chain name');
   }
 
-  const baseDir = deps.resolve(getChainPath());
+  const baseDir = deps.resolve(getChainPath(undefined, rawEnv));
   const targetDir = deps.resolve(baseDir, normalized);
   if (targetDir !== baseDir && !targetDir.startsWith(`${baseDir}${deps.sep}`)) {
     throw new Error('invalid chain name');
@@ -506,6 +510,8 @@ async function readAndValidateChainBlocks(
   chainsDir: string,
   fs: typeof import('node:fs/promises'),
   crypto: typeof import('node:crypto'),
+  rawEnv: NodeJS.ProcessEnv = process.env,
+  options: { repairOnMismatch?: boolean } = {},
 ): Promise<ChainBlock[]> {
   const files = (await fs.readdir(chainsDir)).filter((file) => file.endsWith('.json'));
   if (files.length === 0) {
@@ -543,8 +549,8 @@ async function readAndValidateChainBlocks(
   for (const { file, block: current } of loaded) {
     const mismatch = checkBlockHashMismatch(current, crypto, file);
     if (mismatch?.mismatch) {
-      if (isChainRepairEnabled()) {
-        await repairBlockHash(current, file, chainsDir, crypto, fs);
+      if (options.repairOnMismatch === true && isChainRepairEnabled(rawEnv)) {
+        await repairBlockHash(current, file, chainsDir, crypto, fs, rawEnv);
         // Re-check hash after repair (block was updated in place)
         current.hash = mismatch.expectedHash;
       } else {
@@ -622,8 +628,8 @@ function isStrictChainValidation(): boolean {
   return (process.env.MEMPHIS_STRICT_CHAIN_VALIDATION ?? 'true').toLowerCase() === 'true';
 }
 
-function isChainRepairEnabled(): boolean {
-  return parseBool(process.env.MEMPHIS_CHAIN_REPAIR_ON_MISMATCH, false);
+function isChainRepairEnabled(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
+  return parseBool(rawEnv.MEMPHIS_CHAIN_REPAIR_ON_MISMATCH, false);
 }
 
 interface HashMismatchResult {
@@ -698,6 +704,7 @@ async function repairBlockHash(
   chainsDir: string,
   crypto: typeof import('node:crypto'),
   fs: typeof import('node:fs/promises'),
+  rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
   const blockWithoutHash = {
     index: block.index,
@@ -715,20 +722,24 @@ async function repairBlockHash(
   await fs.rename(tmpFilename, filename);
 
   // Append repair audit block
-  await appendBlock('system', {
-    type: 'system_event',
-    kind: 'chain.repair',
-    source: 'chain-adapter',
-    schemaVersion: 1,
-    payload: {
-      chain: block.chain,
-      blockIndex: block.index,
-      file,
-      storedHash: block.hash,
-      correctHash,
-      repairedAt: new Date().toISOString(),
+  await appendBlock(
+    'system',
+    {
+      type: 'system_event',
+      kind: 'chain.repair',
+      source: 'chain-adapter',
+      schemaVersion: 1,
+      payload: {
+        chain: block.chain,
+        blockIndex: block.index,
+        file,
+        storedHash: block.hash,
+        correctHash,
+        repairedAt: new Date().toISOString(),
+      },
     },
-  });
+    rawEnv,
+  );
 }
 
 function toChainBlock(block: Partial<ChainBlock>, file: string): ChainBlock {
@@ -757,10 +768,10 @@ export async function verifyChainIntegrity(
 ): Promise<{ ok: boolean; chainsChecked: number; blockCount: number; chain?: string }> {
   const fs = await import('node:fs/promises');
   const path = await import('node:path');
-  const os = await import('node:os');
   const crypto = await import('node:crypto');
+  const rawEnv = _rawEnv ?? process.env;
 
-  const baseDir = path.resolve(getChainPath());
+  const baseDir = path.resolve(getChainPath(undefined, rawEnv));
   const selectedChains = chainName
     ? [normalizeChainName(chainName) ?? chainName]
     : (await fs.readdir(baseDir).catch(() => [])).filter((name) => SAFE_CHAIN_NAME.test(name));
@@ -769,13 +780,16 @@ export async function verifyChainIntegrity(
   let blockCount = 0;
 
   for (const chain of selectedChains) {
-    const chainsDir = resolveChainDir(chain, {
-      homedir: os.homedir(),
-      resolve: path.resolve,
-      sep: path.sep,
-    });
+    const normalizedChain = normalizeChainName(chain) ?? chain;
+    if (!SAFE_CHAIN_NAME.test(normalizedChain)) {
+      throw new Error('invalid chain name');
+    }
+    const chainsDir = path.resolve(getChainPath(normalizedChain, rawEnv));
+    if (chainsDir !== baseDir && !chainsDir.startsWith(`${baseDir}${path.sep}`)) {
+      throw new Error('invalid chain name');
+    }
 
-    const blocks = await readAndValidateChainBlocks(chainsDir, fs, crypto);
+    const blocks = await readAndValidateChainBlocks(chainsDir, fs, crypto, rawEnv);
     chainsChecked += 1;
     blockCount += blocks.length;
   }
@@ -802,7 +816,7 @@ export async function exportChain(
     throw new Error(`chain export failed: chain "${normalizedChainName}" not found`);
   }
 
-  const blocks = await readAndValidateChainBlocks(chainsDir, fs, crypto);
+  const blocks = await readAndValidateChainBlocks(chainsDir, fs, crypto, rawEnv);
   return {
     chainName: normalizedChainName,
     exportedAt: new Date().toISOString(),
@@ -977,15 +991,11 @@ export async function diagnoseChainHashes(
 ): Promise<ChainHashDiagnosis> {
   const fs = await import('node:fs/promises');
   const path = await import('node:path');
-  const os = await import('node:os');
   const crypto = await import('node:crypto');
+  const rawEnv = _rawEnv ?? process.env;
 
   const normalizedName = normalizeChainName(chainName) ?? chainName;
-  const chainsDir = resolveChainDir(normalizedName, {
-    homedir: os.homedir(),
-    resolve: path.resolve,
-    sep: path.sep,
-  });
+  const chainsDir = getChainPath(normalizedName, rawEnv);
 
   const details: ChainHashDiagnosis['details'] = [];
 

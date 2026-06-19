@@ -92,6 +92,10 @@ export async function handleMessage(
         userId: conversation.actorId,
         surface: message.channel,
         errors: result.persistence.errors,
+        inputBlocks: result.persistence.inputBlocks,
+        policyBlocks: result.persistence.policyBlocks,
+        writeFailures: result.persistence.writeFailures,
+        cognitiveFailures: result.persistence.cognitiveFailures,
       },
       'gateway turn persistence degraded',
     );

@@ -11,6 +11,7 @@ import {
   type NapiBlockData,
 } from './chain-file-io.js';
 import {
+  hasRequiredBridgeExports,
   loadPlatformAwareBridge,
   resolveBridgeContract,
   type BridgeAliasMap,
@@ -116,10 +117,7 @@ export class CaseChainAdapter {
 
   private get rustAvailable(): boolean {
     if (!parseBool(this.rawEnv.RUST_CHAIN_ENABLED, false)) return false;
-    return (
-      this.bridge.bridgeLoaded &&
-      typeof (this.bridge.resolved as ResolvedCaseBridge).case_append === 'function'
-    );
+    return hasRequiredBridgeExports(this.bridge, ['case_append', 'case_query', 'case_rebuild']);
   }
 
   async appendCaseEntry(entry: CaseEntry): Promise<CaseAppendResult> {

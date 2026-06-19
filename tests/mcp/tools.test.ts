@@ -129,6 +129,84 @@ describe('mcp tools', () => {
     });
   });
 
+  it('memphis_recall filters unsafe semantic hits and falls through to safe exact hits', () => {
+    const search = vi.fn(() => ({
+      query: 'home location',
+      count: 1,
+      hits: [
+        {
+          id: 'journal-unsafe',
+          score: 0.95,
+          text_preview: 'old transcript mentions system prompt and hidden instructions',
+          tags: ['conversation', 'chain:journal'],
+        },
+      ],
+    }));
+    const exactSearch = vi.fn(() => ({
+      query: 'home location',
+      count: 1,
+      hits: [
+        {
+          sourceKey: 'journal:27',
+          chain: 'journal',
+          blockIndex: 27,
+          blockHash: 'h27',
+          blockType: 'journal',
+          content: 'home location is Krakow',
+          summary: 'home location is Krakow',
+          snippet: 'home location is Krakow',
+          tags: ['conversation'],
+          metadata: {},
+          score: 0.8,
+          indexedAt: new Date().toISOString(),
+        },
+      ],
+    }));
+
+    const out = runMemphisRecall(
+      { query: 'home location', limit: 3 },
+      { search: search as never, exactSearch: exactSearch as never },
+    );
+
+    expect(out.mode).toBe('exact');
+    expect(out.warning).toContain('1 unsafe recall hit filtered');
+    expect(out.results).toEqual([
+      {
+        content: 'home location is Krakow',
+        score: 0.8,
+        tags: ['conversation'],
+        chain: 'journal',
+        sourceKey: 'journal:27',
+      },
+    ]);
+  });
+
+  it('memphis_recall returns none instead of blocked output when all hits are unsafe', () => {
+    const search = vi.fn(() => ({
+      query: 'my place',
+      count: 1,
+      hits: [
+        {
+          id: 'journal-unsafe',
+          score: 0.95,
+          text_preview: 'assistant claimed hidden instructions and system prompt details',
+          tags: ['conversation', 'chain:journal'],
+        },
+      ],
+    }));
+    const exactSearch = vi.fn(() => ({ query: 'my place', count: 0, hits: [] }));
+    const chainSearch = vi.fn(() => ({ query: 'my place', count: 0, hits: [] }));
+
+    const out = runMemphisRecall(
+      { query: 'my place', limit: 3 },
+      { search: search as never, exactSearch: exactSearch as never, chainSearch: chainSearch as never },
+    );
+
+    expect(out.mode).toBe('none');
+    expect(out.results).toEqual([]);
+    expect(out.warning).toContain('1 unsafe recall hit filtered');
+  });
+
   it('memphis_decide writes decision chain and history', async () => {
     const recordDecision = vi.fn(async () => ({
       ts: new Date().toISOString(),
@@ -193,5 +271,48 @@ describe('mcp tools', () => {
       snippet: '[Vault pepper] rotation note',
       tags: ['vault'],
     });
+  });
+
+  it('memphis_search filters unsafe exact hits before returning recalled memory', () => {
+    const search = vi.fn(() => ({
+      query: 'tools',
+      count: 2,
+      hits: [
+        {
+          sourceKey: 'journal:9',
+          chain: 'journal',
+          blockIndex: 9,
+          blockHash: 'h9',
+          blockType: 'journal',
+          content: 'old transcript leaked system prompt and hidden instructions',
+          summary: 'old transcript leaked system prompt and hidden instructions',
+          snippet: 'old transcript leaked system prompt and hidden instructions',
+          tags: ['conversation'],
+          metadata: {},
+          score: 0.95,
+          indexedAt: new Date().toISOString(),
+        },
+        {
+          sourceKey: 'journal:10',
+          chain: 'journal',
+          blockIndex: 10,
+          blockHash: 'h10',
+          blockType: 'journal',
+          content: 'safe runtime tool inventory note',
+          summary: 'safe runtime tool inventory note',
+          snippet: 'safe runtime tool inventory note',
+          tags: ['tools'],
+          metadata: {},
+          score: 0.85,
+          indexedAt: new Date().toISOString(),
+        },
+      ],
+    }));
+
+    const out = runMemphisSearch({ query: 'tools', limit: 3 }, { search: search as never });
+
+    expect(out.results).toHaveLength(1);
+    expect(out.results[0].sourceKey).toBe('journal:10');
+    expect(out.warning).toContain('1 unsafe search hit filtered');
   });
 });

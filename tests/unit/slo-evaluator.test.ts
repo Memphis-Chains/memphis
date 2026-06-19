@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { runMemphisSloStatus } from '../../src/mcp/tools/slo-status.js';
 import { evaluateSlos } from '../../src/observability/slo-evaluator.js';
 
 interface SpanLine {
@@ -130,7 +131,8 @@ describe('evaluateSlos', () => {
     const p99 = report.slos.find((s) => s.name === 'p99_turn_latency_ms');
     expect(p99?.samples).toBe(1);
     expect(p99?.value).toBe(500);
-    expect(p99?.status).toBe('pass');
+    expect(p99?.status).toBe('unavailable');
+    expect(p99?.reason).toContain('insufficient samples');
   });
 
   it('reports failingSlos via the wrapped tool', () => {
@@ -152,6 +154,48 @@ describe('evaluateSlos', () => {
     expect(p99?.value).toBe(5000);
   });
 
+  it('allows operator-local p99 turn latency threshold override', () => {
+    const today = '2026-04-29';
+    const spans: SpanLine[] = [];
+    for (let i = 0; i < 100; i++) {
+      spans.push({
+        ts: '2026-04-29T10:00:00Z',
+        name: 'turn.dispatch',
+        durationMs: 5000,
+        status: 'ok',
+      });
+    }
+    writeSpans(telemetryDir, today, spans);
+
+    const report = evaluateSlos({
+      now: fixedNow,
+      rawEnv: { ...process.env, MEMPHIS_SLO_TURN_P99_MS: '8000' },
+    });
+    const p99 = report.slos.find((s) => s.name === 'p99_turn_latency_ms');
+    expect(p99?.threshold).toBe(8000);
+    expect(p99?.status).toBe('pass');
+  });
+
+  it('keeps slo_status tool execution ok even when SLOs fail', () => {
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const spans: SpanLine[] = [];
+    for (let i = 0; i < 100; i++) {
+      spans.push({
+        ts: now.toISOString(),
+        name: 'turn.dispatch',
+        durationMs: 5000,
+        status: 'ok',
+      });
+    }
+    writeSpans(telemetryDir, today, spans);
+
+    const report = runMemphisSloStatus({ windowDays: 7 }, process.env);
+    expect(report.ok).toBe(true);
+    expect(report.allSlosPassing).toBe(false);
+    expect(report.failingSlos).toContain('p99_turn_latency_ms');
+  });
+
   it('returns empty samples and unavailable when window has no spans', () => {
     writeSpans(telemetryDir, '2026-04-29', [
       {
@@ -167,7 +211,59 @@ describe('evaluateSlos', () => {
     expect(confab?.status).toBe('unavailable');
     expect(confab?.reason).toContain('no turn.dispatch');
     const tool = report.slos.find((s) => s.name === 'tool_error_rate');
-    expect(tool?.status).toBe('pass');
+    expect(tool?.status).toBe('unavailable');
     expect(tool?.value).toBe(0);
+    expect(tool?.reason).toContain('insufficient samples');
+  });
+
+  it('does not mark low-sample success rates as pass', () => {
+    writeSpans(telemetryDir, '2026-04-29', [
+      {
+        ts: '2026-04-29T10:00:00Z',
+        name: 'provider.completion',
+        durationMs: 100,
+        status: 'ok',
+      },
+      {
+        ts: '2026-04-29T10:00:01Z',
+        name: 'provider.completion',
+        durationMs: 120,
+        status: 'ok',
+      },
+    ]);
+
+    const report = evaluateSlos({ now: fixedNow });
+    const provider = report.slos.find((s) => s.name === 'provider_error_rate');
+    expect(provider?.samples).toBe(2);
+    expect(provider?.value).toBe(0);
+    expect(provider?.status).toBe('unavailable');
+    expect(provider?.reason).toBe('insufficient samples (2 < 10)');
+  });
+
+  it('counts tool output-shape errors as tool errors', () => {
+    const spans: SpanLine[] = [];
+    for (let i = 0; i < 9; i++) {
+      spans.push({
+        ts: '2026-04-29T10:00:00Z',
+        name: 'tool.call',
+        attrs: { 'tool.output.shape': 'success' },
+        durationMs: 10,
+        status: 'ok',
+      });
+    }
+    spans.push({
+      ts: '2026-04-29T10:00:01Z',
+      name: 'tool.call',
+      attrs: { 'tool.output.shape': 'error' },
+      durationMs: 10,
+      status: 'ok',
+    });
+    writeSpans(telemetryDir, '2026-04-29', spans);
+
+    const report = evaluateSlos({ now: fixedNow });
+    const tool = report.slos.find((s) => s.name === 'tool_error_rate');
+    expect(tool?.samples).toBe(10);
+    expect(tool?.value).toBe(0.1);
+    expect(tool?.status).toBe('fail');
   });
 });

@@ -20,6 +20,8 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('a local-first Memphis agent runtime');
     expect(prompt).toContain('Your owner is Marcin.');
     expect(prompt).toContain('You are operator-supervised, not a cloud service.');
+    expect(prompt).toContain('interpret it as the Memphis runtime product');
+    expect(prompt).toContain('not Memphis, Tennessee');
     expect(prompt).not.toContain('sovereign AI');
     expect(prompt).toContain('USER content is enclosed in <user_input> tags');
     expect(prompt).toContain(
@@ -217,6 +219,33 @@ describe('gateway system prompt', () => {
     // Negative: no operator-specific narrative leaks (multi-tenant safe)
     expect(prompt).not.toContain('Wodzu');
     expect(prompt).not.toContain('Marcin');
+  });
+
+  it('forbids fake reminder scheduling through self-plans', () => {
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_cron', 'memphis_self_plan_create'],
+    });
+
+    expect(prompt).toContain('Scheduling/reminder claims require the scheduler tool');
+    expect(prompt).toContain('memphis_self_plan_create');
+    expect(prompt).toContain('is NOT a reminder scheduler');
+    expect(prompt).toContain('recurring Memphis-internal cron tasks');
+    expect(prompt).toContain('not supported on this surface yet');
+    expect(prompt).toContain('memphis_cron');
+  });
+
+  it('explains that Telegram tier-2 visibility is not interactive approval', () => {
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_fs_write', 'memphis_self_describe'],
+      surface: 'telegram',
+      maxToolTier: 2,
+    });
+
+    expect(prompt).toContain('Telegram approval limits');
+    expect(prompt).toContain('does NOT mean every tier-2 tool is executable');
+    expect(prompt).toContain('does not currently provide an interactive approval prompt');
+    expect(prompt).toContain('do NOT tell the user to "approve on Telegram"');
+    expect(prompt).toContain('read-only/report-only route');
   });
 
   it('requires multi-surface recall before negative answer to history questions (anti-confab phase 4 2026-05-08)', () => {
@@ -437,6 +466,53 @@ describe('gateway system prompt', () => {
     expect(prompt).not.toContain('tier-3 gated tool path');
     expect(prompt).toContain('any explicit per-tool gate');
     expect(prompt).toContain('paranoid tier is distinct from tier-3 sessions');
+  });
+
+  it('renders deployment environment as runtime context, not private identity', () => {
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_recall', 'memphis_brave_search'],
+      runtimeEnvironment: {
+        hostname: 'memphis-prod-1',
+        platform: 'linux',
+        arch: 'x64',
+        timezone: 'Europe/Warsaw',
+        timezoneSource: 'config',
+        locale: 'pl_PL.UTF-8',
+        localeSource: 'config',
+        deploymentName: 'public-demo',
+        deploymentRegion: 'PL',
+        weatherLocation: 'Krakow',
+        weatherCountry: 'PL',
+        weatherSearchLang: 'pl',
+      },
+    });
+
+    expect(prompt).toContain('<runtime_environment>');
+    expect(prompt).toContain('Host: memphis-prod-1 (linux/x64).');
+    expect(prompt).toContain('Timezone: Europe/Warsaw (source=config).');
+    expect(prompt).toContain('Deployment name: public-demo.');
+    expect(prompt).toContain('Weather locality: Krakow.');
+    expect(prompt).toContain('Weather country: PL.');
+    expect(prompt).toContain('deployment/runtime context for public Memphis behavior');
+  });
+
+  it('tells the agent not to infer local weather location when deployment locality is unset', () => {
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_recall'],
+      runtimeEnvironment: {
+        hostname: 'memphis-dev',
+        platform: 'linux',
+        arch: 'x64',
+        timezone: 'UTC',
+        timezoneSource: 'host',
+        locale: 'en-US',
+        localeSource: 'host',
+      },
+    });
+
+    expect(prompt).toContain('Weather locality: not configured.');
+    expect(prompt).toContain('do NOT infer a personal location from memory');
+    expect(prompt).toContain('MEMPHIS_WEATHER_LOCATION');
   });
 
   it('renders all 10 canonical chains in the architecture section (Sprint 0.5 G2)', () => {

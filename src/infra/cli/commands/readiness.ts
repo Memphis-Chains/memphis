@@ -21,12 +21,14 @@ import { resolve } from 'node:path';
 
 import { getTelegramReadinessStatus } from '../../../gateway/channels/telegram-readiness.js';
 import { LOOP_LIMITS } from '../../../gateway/loop-limits.js';
+import { buildToolSchemaAuditReport } from '../../../gateway/tool-schema-audit.js';
+import { buildToolSurfaceAuditReport } from '../../../gateway/tool-surface-audit.js';
 import { inspectFirstRunStatus } from '../../../onboarding/first-run.js';
 import { resolveProviderKeyResult } from '../../../providers/index.js';
 import { probeVaultCipherCycle } from '../../../security/vault-boundary.js';
 import { resolveVaultSecret } from '../../config/vault-resolve.js';
 import { resolveInstallRoot } from '../../runtime/install-root.js';
-import { getChainAdapterStatus } from '../../storage/chain-adapter.js';
+import { assessRustBridgeManifestStatus } from '../../storage/rust-bridge-manifest.js';
 import { getRustEmbedAdapterStatus } from '../../storage/rust-embed-adapter.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
@@ -113,16 +115,17 @@ async function checkVault(env: NodeJS.ProcessEnv): Promise<ReadinessRow> {
 }
 
 async function checkRustBridge(env: NodeJS.ProcessEnv): Promise<ReadinessRow> {
-  const chain = getChainAdapterStatus(env);
-  return chain.rustBridgeLoaded
-    ? row('rust_bridge', 'Rust bridge', 'ok', 'NAPI chain adapter loaded')
-    : row(
-        'rust_bridge',
-        'Rust bridge',
-        'warn',
-        'falling back to TS chain adapter — run npm run build:rust',
-        false,
-      );
+  const status = assessRustBridgeManifestStatus(env);
+  if (status.ok) {
+    return row('rust_bridge', 'Rust bridge', 'ok', status.message);
+  }
+  return row(
+    'rust_bridge',
+    'Rust bridge',
+    status.level === 'fail' && status.strictRequired ? 'fail' : 'warn',
+    `${status.message} — run npm run build:rust`,
+    status.strictRequired,
+  );
 }
 
 async function checkEmbedPipeline(env: NodeJS.ProcessEnv): Promise<ReadinessRow> {
@@ -136,6 +139,68 @@ async function checkEmbedPipeline(env: NodeJS.ProcessEnv): Promise<ReadinessRow>
         'embed API unavailable — semantic search degraded',
         false,
       );
+}
+
+async function checkCapabilities(env: NodeJS.ProcessEnv): Promise<ReadinessRow> {
+  try {
+    const surface = buildToolSurfaceAuditReport(env);
+    const schema = buildToolSchemaAuditReport(env);
+    if (surface.ok && schema.ok) {
+      return row(
+        'capabilities',
+        'Capabilities',
+        'ok',
+        `${surface.registryCount} tools; registry/executor/MCP/schema parity OK`,
+      );
+    }
+
+    const issues: string[] = [];
+    for (const item of surface.surfaces) {
+      if (item.missingFromRegistry.length > 0) {
+        issues.push(
+          `${item.surface} has unregistered tools: ${item.missingFromRegistry.join(', ')}`,
+        );
+      }
+      if (item.missingFromSurface.length > 0) {
+        issues.push(`${item.surface} missing tools: ${item.missingFromSurface.join(', ')}`);
+      }
+    }
+    if (schema.mismatches.length > 0) {
+      issues.push(`${schema.mismatches.length} schema key mismatch(es)`);
+    }
+    if (schema.requiredMismatches.length > 0) {
+      issues.push(`${schema.requiredMismatches.length} required-key mismatch(es)`);
+    }
+    if (schema.typeMismatches.length > 0) {
+      issues.push(`${schema.typeMismatches.length} type mismatch(es)`);
+    }
+    if (schema.constraintMismatches.length > 0) {
+      issues.push(`${schema.constraintMismatches.length} constraint mismatch(es)`);
+    }
+    if (schema.missingRegistrySchema.length > 0) {
+      issues.push(`missing registry schema: ${schema.missingRegistrySchema.join(', ')}`);
+    }
+    if (schema.missingExecutorSchema.length > 0) {
+      issues.push(`missing executor schema: ${schema.missingExecutorSchema.join(', ')}`);
+    }
+    if (schema.missingMcpSchema.length > 0) {
+      issues.push(`missing MCP schema: ${schema.missingMcpSchema.join(', ')}`);
+    }
+
+    return row(
+      'capabilities',
+      'Capabilities',
+      'fail',
+      issues.slice(0, 4).join('; ') || 'tool surface parity failed',
+    );
+  } catch (error) {
+    return row(
+      'capabilities',
+      'Capabilities',
+      'fail',
+      `unable to audit capabilities: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 async function checkDefaultProvider(env: NodeJS.ProcessEnv): Promise<ReadinessRow> {
@@ -341,6 +406,7 @@ export async function buildReadinessReport(
     await checkVault(env),
     await checkRustBridge(env),
     await checkEmbedPipeline(env),
+    await checkCapabilities(env),
     await checkDefaultProvider(env),
     await checkTelegram(env, fetchImpl),
     loopLimitsRow(),

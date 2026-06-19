@@ -16,6 +16,9 @@ vi.mock('../../src/security/vault-boundary.js', () => ({
 vi.mock('../../src/infra/storage/chain-adapter.js', () => ({
   getChainAdapterStatus: vi.fn(),
 }));
+vi.mock('../../src/infra/storage/rust-bridge-manifest.js', () => ({
+  assessRustBridgeManifestStatus: vi.fn(),
+}));
 vi.mock('../../src/infra/storage/rust-embed-adapter.js', () => ({
   getRustEmbedAdapterStatus: vi.fn(),
 }));
@@ -25,11 +28,31 @@ vi.mock('../../src/providers/index.js', () => ({
 vi.mock('../../src/infra/config/vault-resolve.js', () => ({
   resolveVaultSecret: vi.fn(),
 }));
+vi.mock('../../src/gateway/tool-surface-audit.js', () => ({
+  buildToolSurfaceAuditReport: vi.fn(() => ({
+    ok: true,
+    registryCount: 57,
+    surfaces: [],
+  })),
+}));
+vi.mock('../../src/gateway/tool-schema-audit.js', () => ({
+  buildToolSchemaAuditReport: vi.fn(() => ({
+    ok: true,
+    checked: 57,
+    mismatches: [],
+    requiredMismatches: [],
+    typeMismatches: [],
+    constraintMismatches: [],
+    missingRegistrySchema: [],
+    missingExecutorSchema: [],
+    missingMcpSchema: [],
+  })),
+}));
 
 import { getTelegramReadinessStatus } from '../../src/gateway/channels/telegram-readiness.js';
 import { buildReadinessReport } from '../../src/infra/cli/commands/readiness.js';
 import { resolveVaultSecret } from '../../src/infra/config/vault-resolve.js';
-import { getChainAdapterStatus } from '../../src/infra/storage/chain-adapter.js';
+import { assessRustBridgeManifestStatus } from '../../src/infra/storage/rust-bridge-manifest.js';
 import { getRustEmbedAdapterStatus } from '../../src/infra/storage/rust-embed-adapter.js';
 import { inspectFirstRunStatus } from '../../src/onboarding/first-run.js';
 import { resolveProviderKeyResult } from '../../src/providers/index.js';
@@ -38,7 +61,7 @@ import { probeVaultCipherCycle } from '../../src/security/vault-boundary.js';
 const mockedTelegram = vi.mocked(getTelegramReadinessStatus);
 const mockedFirstRun = vi.mocked(inspectFirstRunStatus);
 const mockedVault = vi.mocked(probeVaultCipherCycle);
-const mockedChain = vi.mocked(getChainAdapterStatus);
+const mockedBridgeManifest = vi.mocked(assessRustBridgeManifestStatus);
 const mockedEmbed = vi.mocked(getRustEmbedAdapterStatus);
 const mockedProvider = vi.mocked(resolveProviderKeyResult);
 const mockedResolveVaultSecret = vi.mocked(resolveVaultSecret);
@@ -65,7 +88,25 @@ function allHealthy(): void {
     },
   } as ReturnType<typeof inspectFirstRunStatus>);
   mockedVault.mockReturnValue({ ok: true });
-  mockedChain.mockReturnValue({ rustBridgeLoaded: true } as ReturnType<typeof getChainAdapterStatus>);
+  mockedBridgeManifest.mockReturnValue({
+    rustEnabled: true,
+    strictRequired: false,
+    bridgePath: './crates/memphis-napi',
+    bridgeLoaded: true,
+    manifestAvailable: true,
+    manifest: {
+      name: 'memphis-napi',
+      schemaVersion: 1,
+      exports: [],
+      requiredExports: [],
+    },
+    requiredExports: [],
+    missingRequiredExports: [],
+    legacyAliasesUsed: {},
+    ok: true,
+    level: 'ok',
+    message: 'Rust bridge manifest OK',
+  });
   mockedEmbed.mockReturnValue({
     embedApiAvailable: true,
   } as ReturnType<typeof getRustEmbedAdapterStatus>);
@@ -105,6 +146,7 @@ describe('buildReadinessReport', () => {
     expect(report.ok).toBe(true);
     expect(report.exitCode).toBe(0);
     expect(report.rows.find((r) => r.id === 'env_file')?.level).toBe('ok');
+    expect(report.rows.find((r) => r.id === 'capabilities')?.level).toBe('ok');
     // Phase 1.5.1 (autopilot 2026-05-08): asserts against canonical
     // LOOP_LIMITS rather than hardcoded number, so future bumps don't
     // require touching this test.
@@ -127,9 +169,19 @@ describe('buildReadinessReport', () => {
 
   it('exits 2 when only non-critical rows warn', async () => {
     allHealthy();
-    mockedChain.mockReturnValue({ rustBridgeLoaded: false } as ReturnType<
-      typeof getChainAdapterStatus
-    >);
+    mockedBridgeManifest.mockReturnValue({
+      rustEnabled: true,
+      strictRequired: false,
+      bridgePath: './crates/memphis-napi',
+      bridgeLoaded: false,
+      manifestAvailable: false,
+      requiredExports: ['bridge_manifest'],
+      missingRequiredExports: ['bridge_manifest'],
+      legacyAliasesUsed: {},
+      ok: false,
+      level: 'fail',
+      message: 'Rust bridge not loadable',
+    });
     const report = await buildReadinessReport({
       env: {
         MEMPHIS_ENV_FILE: join(scratch, '.env'),

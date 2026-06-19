@@ -20,7 +20,12 @@ import {
   type RuntimeHealthSnapshot,
 } from '../runtime/runtime-health.js';
 import { getSchedulerRuntimeStatus, type SchedulerRuntimeStatus } from '../runtime/scheduler.js';
+import {
+  buildSelfGovernanceSnapshot,
+  type SelfGovernanceSnapshot,
+} from '../runtime/self-governance.js';
 import { snapshotTurnTelemetry, type TurnTelemetrySnapshot } from '../runtime/turn-telemetry.js';
+import { assessRustBridgeManifestStatus } from '../storage/rust-bridge-manifest.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 import type { WorkPollingSnapshot } from '../work/work-polling-service.js';
 
@@ -154,6 +159,7 @@ export type HealthPayload = {
     totalFailures: number;
     totalDrills: number;
   };
+  selfGovernance: SelfGovernanceSnapshot;
   /**
    * Phase 4.2 (autopilot 2026-05-08): tier-3 elevated-session counts.
    * Monitoring scripts use these to detect "elevated session still
@@ -260,13 +266,26 @@ function checkDataDir(rawEnv: NodeJS.ProcessEnv): CheckResult {
 }
 
 function checkRustBridge(rawEnv: NodeJS.ProcessEnv, runtime: RuntimeHealthSnapshot): CheckResult {
-  const status = getRustEmbedAdapterStatus(rawEnv);
-  if (!status.rustEnabled) {
-    return { status: 'ok', message: 'rust bridge disabled' };
+  const bridge = assessRustBridgeManifestStatus(rawEnv);
+  if (!bridge.ok && bridge.strictRequired) {
+    return {
+      status: 'fail',
+      message: bridge.message,
+      fixAction: 'Run npm run build:rust, then restart Memphis',
+    };
   }
 
-  if (status.bridgeLoaded && status.embedApiAvailable) {
-    return { status: 'ok' };
+  if (!bridge.ok) {
+    return { status: 'ok', message: bridge.message };
+  }
+
+  if (!bridge.rustEnabled) {
+    return { status: 'ok', message: bridge.message };
+  }
+
+  const embed = getRustEmbedAdapterStatus(rawEnv);
+  if (embed.bridgeLoaded && embed.embedApiAvailable) {
+    return { status: 'ok', message: bridge.message };
   }
 
   if (runtime.memory.recallMode !== 'none') {
@@ -356,6 +375,15 @@ export async function buildHealthPayload(
   const shutdown = getShutdownState();
   const { getScheduledBackupState } = await import('../runtime/scheduled-backup.js');
   const backupReport = getScheduledBackupState(rawEnv);
+  const { listBackups } = await import('../cli/commands/backup.js');
+  const backupArchives = await listBackups().catch(() => ({ backups: [], totalSize: 0 }));
+  const latestBackupArchive = backupArchives.backups[0];
+  const { evaluateSlos } = await import('../../observability/slo-evaluator.js');
+  const sloReports = {
+    '1h': evaluateSlos({ rawEnv, windowHours: 1 }),
+    '24h': evaluateSlos({ rawEnv, windowDays: 1 }),
+    '7d': evaluateSlos({ rawEnv, windowDays: 7 }),
+  };
   const { getAllProviderBudgets } = await import('../runtime/cost-cap.js');
   const providerBudgets = getAllProviderBudgets(rawEnv);
   const { getAllBreakerSnapshots } = await import('../runtime/circuit-breaker.js');
@@ -367,6 +395,37 @@ export async function buildHealthPayload(
     : requiredHealthy && runtimeHealthy
       ? 'healthy'
       : 'unhealthy';
+  const scheduler = getSchedulerRuntimeStatus(rawEnv, {
+    workPollingTokenReady: options?.workPolling?.tokenReady ?? null,
+  });
+  const backups = {
+    enabled: backupReport.state.enabled,
+    intervalMs: backupReport.state.intervalMs,
+    lastSuccessAt: backupReport.state.lastSuccessAt,
+    lastSuccessFile: backupReport.state.lastSuccessFile,
+    lastSuccessSizeBytes: backupReport.state.lastSuccessSizeBytes,
+    ageMs: backupReport.ageMs,
+    isStale: backupReport.isStale,
+    lastError: backupReport.state.lastError,
+    lastErrorAt: backupReport.state.lastErrorAt,
+    lastDrillAt: backupReport.state.lastDrillAt,
+    lastDrillOk: backupReport.state.lastDrillOk,
+    lastDrillError: backupReport.state.lastDrillError,
+    totalSuccess: backupReport.state.totalSuccess,
+    totalFailures: backupReport.state.totalFailures,
+    totalDrills: backupReport.state.totalDrills,
+  };
+  const selfGovernance = buildSelfGovernanceSnapshot({
+    runtime,
+    backups,
+    backupArchives: {
+      total: backupArchives.backups.length,
+      latestFile: latestBackupArchive?.file,
+      latestCreatedAt: latestBackupArchive?.timestamp,
+    },
+    scheduler,
+    sloReports,
+  });
   return {
     status: topLevelStatus,
     repairable: runtime.repair.repairable,
@@ -378,9 +437,7 @@ export async function buildHealthPayload(
     surfaceStatus: formatSurfaceStatusLines(activeSurfaces),
     workPolling: options?.workPolling ?? null,
     localWorker: getLocalWorkerRuntimeStatus(),
-    scheduler: getSchedulerRuntimeStatus(rawEnv, {
-      workPollingTokenReady: options?.workPolling?.tokenReady ?? null,
-    }),
+    scheduler,
     latestTurnTelemetry: snapshotTurnTelemetry(),
     confabulationEvents7d: countConfabulationEventsInWindow(undefined, rawEnv),
     version: appVersion(),
@@ -389,23 +446,8 @@ export async function buildHealthPayload(
     providerBudgets: providerBudgets.length > 0 ? providerBudgets : undefined,
     providerBreakers: providerBreakers.length > 0 ? providerBreakers : undefined,
     turnAdmission,
-    backups: {
-      enabled: backupReport.state.enabled,
-      intervalMs: backupReport.state.intervalMs,
-      lastSuccessAt: backupReport.state.lastSuccessAt,
-      lastSuccessFile: backupReport.state.lastSuccessFile,
-      lastSuccessSizeBytes: backupReport.state.lastSuccessSizeBytes,
-      ageMs: backupReport.ageMs,
-      isStale: backupReport.isStale,
-      lastError: backupReport.state.lastError,
-      lastErrorAt: backupReport.state.lastErrorAt,
-      lastDrillAt: backupReport.state.lastDrillAt,
-      lastDrillOk: backupReport.state.lastDrillOk,
-      lastDrillError: backupReport.state.lastDrillError,
-      totalSuccess: backupReport.state.totalSuccess,
-      totalFailures: backupReport.state.totalFailures,
-      totalDrills: backupReport.state.totalDrills,
-    },
+    backups,
+    selfGovernance,
     tier3: readTier3Snapshot(rawEnv),
     demo: readDemoReadinessSnapshot(rawEnv),
     degradedConfig:

@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
   cleanBackups,
   createBackup,
+  listArchiveContents,
   listBackups,
   restoreBackup,
   verifyBackup,
@@ -102,5 +103,47 @@ describe('backup full workflow', () => {
     await expect(
       restoreBackup({ file: archiveName, memphisRoot, backupRoot, confirm: true }),
     ).rejects.toThrow(/Checksum verification failed/);
+  });
+
+  it('lists fallback archives without tar', () => {
+    const root = mkdtempSync(join(tmpdir(), 'memphis-backup-fallback-list-'));
+    const archivePath = join(root, 'fallback.tar.gz');
+    writeFileSync(
+      archivePath,
+      gzipSync(
+        Buffer.from(
+          JSON.stringify({
+            format: 'memphis-backup-v1',
+            entries: [
+              { path: 'chains', kind: 'dir' },
+              { path: 'chains/journal/000001.json', kind: 'file', contentBase64: 'e30=' },
+            ],
+          }),
+          'utf8',
+        ),
+      ),
+    );
+
+    const entries = listArchiveContents(archivePath, {
+      tarList: () => {
+        throw new Error('spawnSync tar EPERM');
+      },
+    });
+
+    expect(entries).toEqual(['chains/', 'chains/journal/000001.json']);
+  });
+
+  it('does not parse non-fallback gzip archives as JSON when tar listing is unavailable', () => {
+    const root = mkdtempSync(join(tmpdir(), 'memphis-backup-real-tar-unavailable-'));
+    const archivePath = join(root, 'real.tar.gz');
+    writeFileSync(archivePath, gzipSync(Buffer.from('./\0\0not-json', 'utf8')));
+
+    expect(() =>
+      listArchiveContents(archivePath, {
+        tarList: () => {
+          throw new Error('spawnSync tar EPERM');
+        },
+      }),
+    ).toThrow(/tar listing failed and archive is not a Memphis fallback archive/);
   });
 });

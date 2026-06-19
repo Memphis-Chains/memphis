@@ -12,12 +12,19 @@ import {
 describe('surface policy', () => {
   it('treats cli chat as operator and telegram as full-tier companion chat by default', () => {
     const cliPolicy = resolveSurfacePolicy('cli.chat', {} as NodeJS.ProcessEnv);
+    const tuiPolicy = resolveSurfacePolicy('tui', {} as NodeJS.ProcessEnv);
+    const tuiLocalPolicy = resolveSurfacePolicy('tui.local', {} as NodeJS.ProcessEnv);
     const telegramPolicy = resolveSurfacePolicy('telegram', {} as NodeJS.ProcessEnv);
 
     expect(cliPolicy.surfaceClass).toBe('operator');
     expect(cliPolicy.maxToolTier).toBe(2);
     expect(cliPolicy.allowUrlFetch).toBe(true);
     expect(cliPolicy.allowUnknownTools).toBe(true);
+
+    expect(tuiPolicy.surfaceClass).toBe('operator');
+    expect(tuiPolicy.maxToolTier).toBe(2);
+    expect(tuiPolicy.allowUnknownTools).toBe(true);
+    expect(tuiLocalPolicy.surfaceClass).toBe('operator');
 
     expect(telegramPolicy.surfaceClass).toBe('chat');
     expect(telegramPolicy.maxToolTier).toBe(2);

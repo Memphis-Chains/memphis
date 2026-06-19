@@ -51,6 +51,10 @@ export function classifyToolOutput(output: string): 'success' | 'error' | 'unkno
 export interface InstrumentOptions {
   /** Attributes evaluated *after* fn runs (e.g. classifying the result). */
   postAttributes?: (result: unknown) => SpanAttributes;
+  /** Optional status override for operations that return structured error payloads instead of throwing. */
+  statusFromResult?: (result: unknown) => SpanStatus | undefined;
+  /** Optional error-message override for operations that return structured error payloads instead of throwing. */
+  errorMessageFromResult?: (result: unknown) => string | undefined;
 }
 
 /**
@@ -95,6 +99,12 @@ export async function instrument<T>(
   const finalAttrs: SpanAttributes = { ...attributes };
   if (status === 'ok' && options.postAttributes && result !== undefined) {
     Object.assign(finalAttrs, options.postAttributes(result));
+  }
+  if (status === 'ok' && options.statusFromResult && result !== undefined) {
+    status = options.statusFromResult(result) ?? status;
+    if (status === 'error' && options.errorMessageFromResult) {
+      errorMessage = options.errorMessageFromResult(result);
+    }
   }
 
   recordLocalSpan({
