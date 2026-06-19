@@ -457,8 +457,23 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     description: 'Append case entry',
     inputSchema: z
       .object({
-        entry: z.object({
-          case_type: z.enum([
+        entry: z
+          .object({
+            case_type: z.enum([
+              'nominative',
+              'genitive',
+              'dative',
+              'accusative',
+              'instrumental',
+              'locative',
+              'ablative',
+              'vocative',
+            ]),
+          })
+          .passthrough()
+          .optional(),
+        case_type: z
+          .enum([
             'nominative',
             'genitive',
             'dative',
@@ -467,13 +482,34 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
             'locative',
             'ablative',
             'vocative',
-          ]),
-        }).passthrough(),
+          ])
+          .optional(),
+        entity: z.string().optional(),
+        action: z.string().optional(),
+        timestamp: z.string().optional(),
+        owner: z.string().optional(),
+        possessed: z.string().optional(),
+        giver: z.string().optional(),
+        recipient: z.string().optional(),
+        object: z.string().optional(),
+        subject: z.string().optional(),
+        verb: z.string().optional(),
+        actor: z.string().optional(),
+        instrument: z.string().optional(),
+        target: z.string().optional(),
+        location: z.string().optional(),
+        origin: z.string().optional(),
+        destination: z.string().optional(),
+        invoker: z.string().optional(),
+        invocation: z.string().optional(),
         approval_request_id: z.string().optional(),
+      })
+      .refine((value) => Boolean(value.entry ?? value.case_type), {
+        message: 'Provide either entry.case_type or top-level case_type',
       })
       .strict(),
     helpText:
-      'Append a case entry to the cases chain — Memphis\'s linguistic-case knowledge graph. Each entry is anchored on a Polish grammatical case (nominative/genitive/dative/accusative/instrumental/locative/ablative/vocative) plus role fields (actor, target, instrument, location, etc.) drawn from the operator\'s `entry` payload. Indexed in the SQLite case-index for relational queries via memphis_case_query. Use to record structured observations the embedding index can\'t capture relationally — e.g. "X delegated Y to Z".',
+      'Append a case entry to the cases chain — Memphis\'s linguistic-case knowledge graph. Accepts either `{entry:{case_type,...}}` or top-level `{case_type,...}`. Each entry is anchored on a Polish grammatical case (nominative/genitive/dative/accusative/instrumental/locative/ablative/vocative) plus role fields: nominative needs entity/action/timestamp; instrumental needs actor/instrument/target; accusative needs subject/verb/object; locative needs entity/location. Indexed in SQLite for memphis_case_query. Use to record structured observations the embedding index can\'t capture relationally — e.g. "X delegated Y to Z".',
     cliFlags: [],
   },
   memphis_case_query: {
