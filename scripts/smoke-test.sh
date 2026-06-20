@@ -40,6 +40,37 @@ function saveRows(rows) {
   fs.writeFileSync(rowStorePath, JSON.stringify(rows), 'utf8');
 }
 
+function ok(data) {
+  return JSON.stringify({ ok: true, data });
+}
+
+function parseEnv(envJson) {
+  try {
+    return JSON.parse(envJson || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function dataDir(envJson, cwd) {
+  const env = parseEnv(envJson);
+  const raw =
+    env.MEMPHIS_DATA_DIR ||
+    process.env.MEMPHIS_DATA_DIR ||
+    path.join(env.HOME || process.env.HOME || cwd, '.memphis');
+  return path.resolve(cwd || process.cwd(), raw);
+}
+
+function normalizeChainName(input) {
+  const aliases = {
+    decision: 'decisions',
+    case: 'cases',
+    pattern: 'patterns',
+    reflection: 'reflections',
+  };
+  return aliases[input] || input;
+}
+
 module.exports = {
   chain_append: (chainJson, blockJson) => {
     const chain = JSON.parse(chainJson);
@@ -93,6 +124,26 @@ module.exports = {
     createdAt: new Date().toISOString(),
   }),
   vaultRetrieve: (_vault, entry) => Buffer.from(entry.ciphertext),
+  pathsResolveDataDir: (envJson, cwd) => ok(dataDir(envJson, cwd)),
+  pathsResolveVaultState: (envJson, cwd) => {
+    const env = parseEnv(envJson);
+    return ok(
+      env.MEMPHIS_VAULT_STATE_PATH || path.join(dataDir(envJson, cwd), 'vault-state.json')
+    );
+  },
+  pathsResolveVaultEntries: (envJson, cwd) => {
+    const env = parseEnv(envJson);
+    return ok(
+      env.MEMPHIS_VAULT_ENTRIES_PATH || path.join(dataDir(envJson, cwd), 'vault-entries.json')
+    );
+  },
+  pathsResolveChainsDir: (envJson, cwd) => ok(path.join(dataDir(envJson, cwd), 'chains')),
+  pathsResolveChainPath: (envJson, cwd, chainName) =>
+    ok(path.join(dataDir(envJson, cwd), 'chains', normalizeChainName(chainName))),
+  pathsResolveEmbedIndex: (envJson, cwd) => ok(path.join(dataDir(envJson, cwd), 'embeddings.ndjson')),
+  pathsResolveCaseIndex: (envJson, cwd) => ok(path.join(dataDir(envJson, cwd), 'case-index.sqlite')),
+  pathsResolveDatabasePath: (envJson, cwd) => ok(path.join(dataDir(envJson, cwd), 'memphis.db')),
+  pathsNormalizeChainName: (input) => ok(normalizeChainName(input)),
 };
 EOF
 
