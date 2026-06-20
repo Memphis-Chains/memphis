@@ -75,22 +75,28 @@ export function platformPackageName(triple: SupportedPlatformTriple): string {
 }
 
 /**
- * Try the platform sub-package first; fall back to the in-tree bridge
- * module path. Returns the loaded bridge or null if both fail.
+ * Try the freshly built in-tree bridge first; fall back to the platform
+ * sub-package and then the same in-tree path again. Returns the loaded
+ * bridge or null if all attempts fail.
  *
- * The platform sub-package path is what S9-1 distribution targets — once
- * published via S9-3 prebuilds.yml workflow, fresh `npm install` on supported
- * platforms picks the right `.node` automatically through `optionalDependencies`.
- * The in-tree fallback covers (a) source checkouts pre-publish, (b) build-from-
- * source on unsupported platforms, (c) operator override via env var.
+ * Source checkouts run `npm ci` before `npm run build`, so the optional
+ * platform package in `node_modules` can be older than the just-built
+ * `crates/memphis-napi/index.node`. Prefer the in-tree binary to keep CI
+ * and local development on the checked-out Rust contract.
+ *
+ * The platform sub-package path remains as a fallback for installs that
+ * do not include or cannot load the in-tree bridge.
  *
  * `inTreePath` is the directory containing the legacy `index.node` (per
- * resolveRustBridgePath in install-root.ts).
+ * resolveRustBridgePath in install-root.ts), or an explicit bridge file.
  */
 export function loadPlatformAwareBridge(
   inTreePath: string,
   rawProcess: typeof process = process,
 ): BridgeModule | null {
+  const inTreeBridge = loadBridgeModule(inTreePath);
+  if (inTreeBridge) return inTreeBridge;
+
   const triple = detectPlatformTriple(rawProcess);
   if (triple !== null) {
     try {
@@ -98,11 +104,10 @@ export function loadPlatformAwareBridge(
       const platformPkg = req(platformPackageName(triple)) as BridgeModule;
       if (platformPkg) return platformPkg;
     } catch {
-      // Platform sub-package not installed (operator on a build-from-source
-      // path, or pre-publish state where sub-packages don't exist yet).
-      // Fall through to in-tree fallback.
+      // Platform sub-package not installed or not loadable.
     }
   }
+
   return loadBridgeModule(inTreePath);
 }
 
