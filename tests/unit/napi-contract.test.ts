@@ -1,8 +1,13 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
   detectPlatformTriple,
   hasRequiredBridgeExports,
+  loadPlatformAwareBridge,
   platformPackageName,
   resolveBridgeContract,
   type BridgeAliasMap,
@@ -104,5 +109,31 @@ describe('platformPackageName', () => {
     expect(platformPackageName('linux-arm64-gnu')).toBe('@memphis-chains/memphis-linux-arm64-gnu');
     expect(platformPackageName('darwin-x64')).toBe('@memphis-chains/memphis-darwin-x64');
     expect(platformPackageName('darwin-arm64')).toBe('@memphis-chains/memphis-darwin-arm64');
+  });
+});
+
+describe('loadPlatformAwareBridge', () => {
+  it('prefers the checked-out in-tree bridge over an installed platform package', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-napi-contract-'));
+    const localBridge = join(dir, 'local-bridge.cjs');
+    writeFileSync(localBridge, "module.exports = { source: 'local' };\n", 'utf8');
+
+    const platformDir = join(
+      dir,
+      'node_modules',
+      '@memphis-chains',
+      'memphis-linux-x64-gnu',
+    );
+    mkdirSync(platformDir, { recursive: true });
+    writeFileSync(join(platformDir, 'index.js'), "module.exports = { source: 'platform' };\n", 'utf8');
+
+    const fakeProcess = {
+      platform: 'linux',
+      arch: 'x64',
+      report: { getReport: () => ({ header: { glibcVersionRuntime: '2.39' } }) },
+      cwd: () => dir,
+    } as unknown as typeof process;
+
+    expect(loadPlatformAwareBridge(localBridge, fakeProcess)).toMatchObject({ source: 'local' });
   });
 });

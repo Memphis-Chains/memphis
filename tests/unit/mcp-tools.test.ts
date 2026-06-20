@@ -58,7 +58,7 @@ describe('MCP tool: memphis_exec', () => {
       { ...process.env, GATEWAY_EXEC_RESTRICTED_MODE: 'false' },
     );
     expect(result.exitCode).toBe(0);
-    expect(result.stdout.trim()).toBe('ok\n1');
+    expect(result.stdout.trim().split(/\s+/)).toEqual(['ok', '1']);
   });
 
   it('blocks oversized arguments', () => {
