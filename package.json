@@ -45,6 +45,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "format:changed": "./scripts/format-check-changed.sh --write",
+    "format:check:changed": "./scripts/format-check-changed.sh",
     "cli": "tsx src/infra/cli/index.ts",
     "bench:run": "tsx benchmarks/run.ts",
     "bench:run:update-baseline": "tsx benchmarks/run.ts --update-baseline",
