@@ -89,7 +89,11 @@ run_check() {
 
   local start_ts end_ts duration_sec
   start_ts="$(date +%s)"
-  if "$@"; then
+
+  "$@"
+  local exit_code=$?
+
+  if [[ "$exit_code" -eq 0 ]]; then
     end_ts="$(date +%s)"
     duration_sec=$((end_ts - start_ts))
     record_result "PASS" "$name" "$duration_sec"
@@ -97,7 +101,6 @@ run_check() {
     return 0
   fi
 
-  local exit_code=$?
   end_ts="$(date +%s)"
   duration_sec=$((end_ts - start_ts))
   record_result "FAIL" "$name" "$duration_sec" "exit=${exit_code}"
@@ -117,10 +120,10 @@ print_text "Repo: ${ROOT_DIR}"
 print_text "Timestamp (UTC): $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
 format_failed=0
-run_check "Format check" npm run -s format:check || format_failed=1
+run_check "Format check" npm run -s format:check:changed || format_failed=1
 if [[ "$format_failed" -eq 1 && "$AUTOFIX" -eq 1 ]]; then
-  run_check "Format write (autofix)" npm run -s format
-  run_check "Format check (post-autofix)" npm run -s format:check
+  run_check "Format write (autofix)" npm run -s format:changed
+  run_check "Format check (post-autofix)" npm run -s format:check:changed
 fi
 
 lint_failed=0
