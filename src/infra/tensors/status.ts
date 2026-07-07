@@ -9,6 +9,7 @@ export interface TensorStatus {
   surfacePolicy: typeof DEFAULT_TENSOR_SURFACE_POLICY;
   memoryEmbedding: {
     bridge: ReturnType<typeof getRustEmbedAdapterStatus>;
+    truthRole: 'derived-recall-index';
     configured: {
       dim: number;
       dtype: 'f32';
@@ -17,6 +18,10 @@ export interface TensorStatus {
       persistenceEnabled: boolean;
       persistencePath: string;
       legacyDimMismatch: boolean;
+    };
+    runtime: {
+      persistenceEnabled: boolean | 'unknown';
+      persistenceLoadState: string | 'unknown';
     };
     meta: ReturnType<typeof memoryEmbeddingMeta>;
   };
@@ -72,6 +77,7 @@ export function getTensorStatus(rawEnv: NodeJS.ProcessEnv = process.env): Tensor
     surfacePolicy: DEFAULT_TENSOR_SURFACE_POLICY,
     memoryEmbedding: {
       bridge,
+      truthRole: 'derived-recall-index',
       configured: {
         dim,
         dtype: 'f32',
@@ -80,6 +86,10 @@ export function getTensorStatus(rawEnv: NodeJS.ProcessEnv = process.env): Tensor
         persistenceEnabled,
         persistencePath,
         legacyDimMismatch: readLegacyDimMismatch(persistencePath, dim),
+      },
+      runtime: {
+        persistenceEnabled: 'unknown',
+        persistenceLoadState: bridge.embedApiAvailable ? 'runtime-dependent' : 'unknown',
       },
       meta: memoryEmbeddingMeta({
         dim,

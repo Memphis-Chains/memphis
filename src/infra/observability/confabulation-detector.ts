@@ -364,6 +364,7 @@ function findToolFencedAsCode(modelClaim: string): { matched: string; toolName: 
 const STATUS_TOOL_WHITELIST = new Set<string>([
   'memphis_slo_status',
   'memphis_journal',
+  'memphis_lr_dashboard',
   'memphis_self_describe',
   'memphis_health',
   'memphis_ready',

@@ -489,8 +489,11 @@ export function listActiveTier3Sessions(
  *
  * The overrides:
  *   - bump the surface's MAX_TOOL_TIER to 3
+ *   - allow registered tools not known to the surface prompt
+ *   - allow URL fetch/operator override on the elevated surface
  *   - set MEMPHIS_AUTONOMY_MODE=full (flips restrictedMode=false)
  *   - set MEMPHIS_TIER3_FS_UNRESTRICTED=true (fs-permission bypass)
+ *   - allow memphis_web_fetch to reach operator-local services
  */
 export function buildTier3EnvOverride(
   surface: Tier3Surface,
@@ -502,8 +505,12 @@ export function buildTier3EnvOverride(
   const slug = surface.toUpperCase();
   return {
     [`MEMPHIS_SURFACE_${slug}_MAX_TOOL_TIER`]: '3',
+    [`MEMPHIS_SURFACE_${slug}_ALLOW_UNKNOWN_TOOLS`]: 'true',
+    [`MEMPHIS_SURFACE_${slug}_ALLOW_URL_FETCH`]: 'true',
+    [`MEMPHIS_SURFACE_${slug}_ALLOW_OPERATOR_OVERRIDE`]: 'true',
     MEMPHIS_AUTONOMY_MODE: 'full',
     MEMPHIS_TIER3_FS_UNRESTRICTED: 'true',
+    MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK: 'true',
   };
 }
 

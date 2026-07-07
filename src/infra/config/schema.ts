@@ -164,6 +164,11 @@ export const envSchema = z.object({
   // hand — included in schema for visibility in `memphis config show` and for
   // typed validation of test seams.
   MEMPHIS_TIER3_FS_UNRESTRICTED: boolFromString.optional(),
+  // Set by tier-3/full-access Telegram turns when the operator wants
+  // memphis_web_fetch to inspect local dashboards and managed services.
+  MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK: boolFromString.optional(),
+  // Additional comma-separated read-only roots for memphis_code_read.
+  MEMPHIS_CODE_READ_EXTRA_ROOTS: z.string().optional(),
   MEMPHIS_SAFE_MODE: boolFromString.default(false),
   MEMPHIS_STRICT_MODE: boolFromString.default(false),
   MEMPHIS_FAULT_INJECT: z.string().optional(),

@@ -46,6 +46,7 @@ import { runMemphisHealth } from '../mcp/tools/health.js';
 import { runMemphisJournal } from '../mcp/tools/journal.js';
 import { runMemphisKartograf } from '../mcp/tools/kartograf.js';
 import { runMemphisLoopStep } from '../mcp/tools/loop-step.js';
+import { runMemphisLrDashboard } from '../mcp/tools/lr-dashboard.js';
 import { runMemphisMediaIngest } from '../mcp/tools/media-ingest.js';
 import { runMemphisPackage } from '../mcp/tools/package.js';
 import { runMemphisPresence } from '../mcp/tools/presence.js';
@@ -653,6 +654,44 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
       },
     }),
     buildTool({
+      name: 'memphis_lr_dashboard',
+      description:
+        'Read status or add one validated entry to the local LR Dashboard SQLite store without shell, localhost fetch, or journal writes.',
+      inputSchema: buildRegistryInputJsonSchema('memphis_lr_dashboard', {
+        propertyDescriptions: {
+          action: 'status = inspect DB path/count; add_entry = insert one dashboard row',
+          measuredAt: 'Measurement timestamp/date, e.g. 2026-07-07',
+          category: 'Dashboard category, e.g. body-ph',
+          marker: 'Measurement marker, e.g. urine_ph or saliva_ph',
+          value: 'Measurement value as text, e.g. 6.8',
+          unit: 'Measurement unit, e.g. pH',
+          note: 'Optional short note',
+        },
+      }),
+      isConcurrencySafe: false,
+      isReadOnly: false,
+      validateInput(args) {
+        const actionRaw = optionalString(args, 'action') ?? 'status';
+        const action: 'status' | 'add_entry' =
+          actionRaw === 'add_entry' ? 'add_entry' : 'status';
+        if (actionRaw !== 'status' && actionRaw !== 'add_entry') {
+          throw new AppError('VALIDATION_ERROR', 'action must be status or add_entry', 400);
+        }
+        return {
+          action,
+          measuredAt: optionalString(args, 'measuredAt'),
+          category: optionalString(args, 'category'),
+          marker: optionalString(args, 'marker'),
+          value: optionalString(args, 'value'),
+          unit: optionalString(args, 'unit'),
+          note: optionalString(args, 'note'),
+        };
+      },
+      execute(input) {
+        return runMemphisLrDashboard(input, deps.rawEnv);
+      },
+    }),
+    buildTool({
       name: 'memphis_providers',
       description: 'Inspect configured providers and available models',
       inputSchema: { type: 'object', properties: {} },
@@ -686,7 +725,11 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
         return { url: requiredString(args, 'url') };
       },
       async execute(input) {
-        return runMemphisWebFetch(input);
+        return runMemphisWebFetch(input, {
+          allowPrivateNetwork:
+            ((deps.rawEnv ?? process.env).MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK ?? '')
+              .toLowerCase() === 'true',
+        });
       },
     }),
     buildTool({

@@ -29,7 +29,7 @@ use crate::error::EmbedError;
 pub static SHUTDOWN_BARRIER: AtomicBool = AtomicBool::new(false);
 
 /// Set the process-wide shutdown barrier. Called by `embed_shutdown()`
-/// in the NAPI crate after `pipeline.clear()` completes — from this
+/// in the NAPI crate after `pipeline.flush()` completes — from this
 /// point on, any subsequent Drop of an EmbedPipeline (including the
 /// implicit Drop of the OnceLock<Mutex<EmbedPipeline>> static at
 /// `dlclose` time) leaks the heavy fields rather than freeing them.

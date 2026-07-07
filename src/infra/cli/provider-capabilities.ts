@@ -1,5 +1,6 @@
 import { parseBool } from '../../core/env.js';
 import type { ProviderName } from '../../core/types.js';
+import { resolveModelCapabilitySnapshot } from '../../providers/model-capabilities.js';
 
 type ProviderType = 'local' | 'remote';
 
@@ -152,48 +153,12 @@ export function listConfiguredProviders(env: NodeJS.ProcessEnv): ProviderListIte
   }));
 }
 
-function openAiCompatibleCapabilities(model: string): ModelCapability {
-  const normalized = model.toLowerCase();
-
-  let contextWindow = 8192;
-  if (
-    normalized.includes('gpt-4.1') ||
-    normalized.includes('gpt-4o') ||
-    normalized.includes('o1') ||
-    normalized.includes('deepseek') ||
-    normalized.includes('glm-4')
-  ) {
-    contextWindow = 128000;
-  } else if (normalized.includes('gpt-3.5')) {
-    contextWindow = 16385;
-  }
-
-  const supportsVision =
-    normalized.includes('vision') ||
-    normalized.includes('gpt-4o') ||
-    normalized.includes('omni') ||
-    normalized.includes('claude-3') ||
-    normalized.includes('llava') ||
-    normalized.includes('glm-4v');
-
+function toCliCapability(provider: ProviderName, model: string): ModelCapability {
+  const snapshot = resolveModelCapabilitySnapshot(provider, model);
   return {
-    supports_streaming: true,
-    supports_vision: supportsVision,
-    context_window: contextWindow,
-  };
-}
-
-function ollamaCapabilities(model: string): ModelCapability {
-  const normalized = model.toLowerCase();
-  const supportsVision =
-    normalized.includes('llava') ||
-    normalized.includes('vision') ||
-    normalized.includes('moondream');
-
-  return {
-    supports_streaming: true,
-    supports_vision: supportsVision,
-    context_window: 8192,
+    supports_streaming: snapshot?.supportsStreaming ?? true,
+    supports_vision: snapshot?.supportsVision ?? false,
+    context_window: snapshot?.contextWindowTokens ?? 8192,
   };
 }
 
@@ -237,7 +202,7 @@ async function listRemoteModels(
         return models.map((model) => ({
           provider,
           model,
-          capabilities: openAiCompatibleCapabilities(model),
+          capabilities: toCliCapability(provider, model),
         }));
       }
     } catch {
@@ -249,7 +214,7 @@ async function listRemoteModels(
     {
       provider,
       model: cfg.model,
-      capabilities: openAiCompatibleCapabilities(cfg.model),
+      capabilities: toCliCapability(provider, cfg.model),
     },
   ];
 }
@@ -269,7 +234,7 @@ async function listOllamaModels(env: NodeJS.ProcessEnv): Promise<ModelListItem[]
       return names.map((model) => ({
         provider: 'ollama',
         model,
-        capabilities: ollamaCapabilities(model),
+        capabilities: toCliCapability('ollama', model),
       }));
     }
   } catch {
@@ -281,7 +246,7 @@ async function listOllamaModels(env: NodeJS.ProcessEnv): Promise<ModelListItem[]
     {
       provider: 'ollama',
       model: fallbackModel,
-      capabilities: ollamaCapabilities(fallbackModel),
+      capabilities: toCliCapability('ollama', fallbackModel),
     },
   ];
 }
@@ -291,11 +256,7 @@ function listLocalFallbackModels(): ModelListItem[] {
     {
       provider: 'local-fallback',
       model: 'local-fallback-v0',
-      capabilities: {
-        supports_streaming: false,
-        supports_vision: false,
-        context_window: 2048,
-      },
+      capabilities: toCliCapability('local-fallback', 'local-fallback-v0'),
     },
   ];
 }

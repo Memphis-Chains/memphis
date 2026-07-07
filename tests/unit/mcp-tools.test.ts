@@ -84,6 +84,23 @@ describe('MCP tool: memphis_web_fetch', () => {
     await expect(runMemphisWebFetch({ url: 'http://127.0.0.1:8080' })).rejects.toThrow(AppError);
   });
 
+  it('allows loopback when operator private-network fetch is explicitly enabled', async () => {
+    const result = await runMemphisWebFetch(
+      { url: 'http://127.0.0.1:3001/api/health' },
+      {
+        allowPrivateNetwork: true,
+        fetch: async () =>
+          new Response('{"ok":true}', {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+    );
+
+    expect(result.status).toBe(200);
+    expect(result.content).toContain('"ok":true');
+  });
+
   it('blocks private network 192.168.x', async () => {
     await expect(runMemphisWebFetch({ url: 'http://192.168.1.1' })).rejects.toThrow(AppError);
   });

@@ -109,7 +109,7 @@ export function isTelegramToolsProbe(text: string): boolean {
 
 export function isTelegramModelProbe(text: string): boolean {
   const normalized = normalizeOperatorProbe(text);
-  return /^(model|model\?|what model|which model|what model do you use|what model do u use|provider|provider\?|route|route\?|jaki model|jakiego modelu)\??$/u.test(
+  return /^(model|model\?|what model|which model|what model do you use|what model do u use|provider|provider\?|route|route\?|jaki model|jakiego modelu|context window|context tokens|ile tokenów|ile tokenow|ile masz kontekstu|ile masz okna kontekstowego|okno kontekstowe)\??$/u.test(
     normalized,
   );
 }
@@ -155,10 +155,11 @@ export function buildTelegramTierEnvOverride(
       MEMPHIS_AUTONOMY_MODE: 'full',
       MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER: '3',
       MEMPHIS_SURFACE_TELEGRAM_ALLOW_URL_FETCH: 'true',
-      MEMPHIS_SURFACE_TELEGRAM_ALLOW_UNKNOWN_TOOLS: 'false',
+      MEMPHIS_SURFACE_TELEGRAM_ALLOW_UNKNOWN_TOOLS: 'true',
       MEMPHIS_SURFACE_TELEGRAM_ALLOW_OPERATOR_OVERRIDE: 'true',
       MEMPHIS_TIER3_FS_UNRESTRICTED: 'true',
       GATEWAY_EXEC_RESTRICTED_MODE: 'false',
+      MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK: 'true',
     };
   }
   if (tier === DEFAULT_TELEGRAM_SESSION_TIER) return undefined;

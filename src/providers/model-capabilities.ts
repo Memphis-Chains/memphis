@@ -52,14 +52,20 @@ function ollamaCapabilities(model: string): ModelCapabilitySnapshot {
 }
 
 function minimaxCapabilities(model: string): ModelCapabilitySnapshot {
-  // Updated 2026-05-12 to match the current MiniMax model lineup
-  // (https://platform.minimax.io/docs/guides/models-intro). All M2
-  // family models advertise the 200k-input / 128k-output window from
-  // M2's published spec; we pin to 200k here because that's the
-  // larger of the two and request-side truncation is what the runtime
-  // needs to guard against. The 32k fallback covers M1 + Text-01 +
-  // anything else not explicitly listed.
+  // Updated 2026-07-07 to keep runtime route, CLI `models list`, and
+  // provider introspection on the same source of truth. MiniMax-M3 is
+  // published as a native multimodal 1M-context model; M2-family models
+  // remain at 200k. The 32k fallback covers M1 + Text-01 + anything
+  // else not explicitly listed.
   const normalized = model.toLowerCase();
+  if (/^(minimax-)?m3$/i.test(model)) {
+    return {
+      contextWindowTokens: 1000000,
+      supportsStreaming: true,
+      supportsVision: true,
+      source: 'heuristic',
+    };
+  }
   // abab-6.5s is the shortest-context variant in the legacy abab
   // family (per old docs); keep the explicit override.
   if (normalized.includes('abab6.5s')) {
