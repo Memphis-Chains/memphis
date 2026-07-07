@@ -1,0 +1,34 @@
+[Unit]
+Description=LR Dashboard managed app (port 3001)
+After=network-online.target memphis.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/memphis/projects/lr-dashboard
+EnvironmentFile=/home/memphis/projects/lr-dashboard/.env
+Environment=HOST=127.0.0.1
+Environment=PORT=3001
+Environment=MEMPHIS_DATA_DIR=/home/memphis/.memphis
+Environment=MEMPHIS_APPS_DIR=/home/memphis/.memphis/apps
+Environment=APP_ID=lr-dashboard
+Environment=APP_ROOT=/home/memphis/.memphis/apps/lr-dashboard
+Environment=APP_HOME=/home/memphis/projects/lr-dashboard
+Environment=APP_STATE_DIR=/home/memphis/.memphis/apps/lr-dashboard/state
+Environment=APP_CONFIG_PATH=/home/memphis/.memphis/apps/lr-dashboard/config/app.json
+Environment=LR_DASHBOARD_HOME=/home/memphis/projects/lr-dashboard
+Environment=LR_DASHBOARD_STATE_DIR=/home/memphis/.memphis/apps/lr-dashboard/state
+Environment=LR_DASHBOARD_CONFIG_PATH=/home/memphis/.memphis/apps/lr-dashboard/config/app.json
+Environment=LR_DB_PATH=/home/memphis/.memphis/apps/lr-dashboard/state/lr.sqlite
+Environment=LR_BACKUP_DIR=/home/memphis/.memphis/apps/lr-dashboard/state/backups
+Environment=LR_PID_FILE=/home/memphis/.memphis/apps/lr-dashboard/state/lr-dashboard.pid
+Environment=LR_LOG_FILE=/home/memphis/.memphis/apps/lr-dashboard/state/lr-dashboard.log
+Environment=LR_LOG_REQUESTS=0
+ExecStart=/usr/bin/node /home/memphis/projects/lr-dashboard/src/server.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/home/memphis/.memphis/apps/lr-dashboard/state/lr-dashboard.systemd.log
+StandardError=append:/home/memphis/.memphis/apps/lr-dashboard/state/lr-dashboard.systemd.log
+
+[Install]
+WantedBy=default.target
