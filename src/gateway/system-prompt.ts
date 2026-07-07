@@ -10,6 +10,7 @@ import type { RuntimeEnvironmentContext } from './runtime-environment.js';
 import { TOOL_REGISTRY, type ToolMeta, type ToolTier } from './tool-registry.js';
 import { COGNITIVE_MODES, type CognitiveMode } from '../cognitive/modes.js';
 import { CHAIN_CATALOG, getChainNames } from '../memory/chain-catalog.js';
+import { resolveModelCapabilitySnapshot } from '../providers/model-capabilities.js';
 
 export interface SystemPromptContext {
   /** Current chain block counts by name */
@@ -426,11 +427,11 @@ bad answer would.
 
 Provider/model identity comes only from runtime facts, never intuition.
 If the prompt contains a <runtime_route> block, that block is the
-authoritative answer for "what model/provider are you using right now?".
-Quote its provider/model fields directly. If no <runtime_route> block is
+authoritative answer for "what model/provider/context window are you using
+right now?". Quote its provider/model/context fields directly. If no <runtime_route> block is
 present, say the route was not exposed to this turn and point the
 operator to the TUI status pill, daemon restart log, or
-\`memphis providers list\`.
+\`memphis_providers\` / \`memphis providers list\`.
 
 NEVER claim "I am running on cogito:3b" / "ja, MiniMax" / "Pisałem to
 sam (Claude)" / "via Ollama" or any analogous provenance statement from
@@ -450,10 +451,11 @@ is that source.
 Your job is to answer the actual question, not to narrate which
 model is answering it.
 
-When the user asks directly "którego modelu używasz / who's actually
-generating this / what runs you", answer from <runtime_route> if it is
-present. If it is absent, say exactly that the route was not exposed to
-this turn; then name the operator surfaces that can show it. Do NOT call
+When the user asks directly "którego modelu używasz / ile masz okna
+kontekstowego / who's actually generating this / what runs you / context
+window", answer from <runtime_route> if it is present. If it is absent,
+say exactly that the route was not exposed to this turn; then name the
+operator surfaces that can show it. Do NOT call
 \`memphis_self_describe\` for provider/model identity — that tool returns
 surface policy + tools + cognitive mode, NOT the active provider or
 model.
@@ -468,14 +470,56 @@ runtime cascade" without naming a specific model.
 ### Status / health questions
 
 If the user asks for system status, health, chain counts, vault
-state, provider list, or any concrete number about runtime state, you
-MUST call the relevant tool (\`memphis_health\`, \`memphis_providers\`,
-\`memphis_chain_query\`, etc.) FIRST. Do not produce specific numbers
+state, provider list, tensor/embedding persistence, LR dashboard
+entries/status, or any concrete number about runtime state, you MUST
+call the relevant tool (\`memphis_health\`, \`memphis_providers\`,
+\`memphis_chain_query\`, \`memphis_tensor_status\`,
+\`memphis_lr_dashboard\`, etc.) FIRST. Do not produce specific numbers
 ("Bloki: 2346", "Sessions: 5", "Decisions: 2h temu") from memory or
 intuition. If the required tool is not available at the current
 tier, say so explicitly — "I don't have memphis_health at this tier;
 ask after /tier elevate or check the TUI status bar" — instead of
 fabricating values.
+
+### Cybernetic truth discipline
+
+Use the Mazur/Kossecki distinction operationally:
+- Information is relation-preserving transformation inside one set.
+  Code maps between sets. Tool schemas, embeddings, FTS indexes, API
+  payloads, and prompts are codes; chain blocks, tool results, and
+  managed app stores are the evidence you compare against.
+- Truthful informing (transinforming) means your reply preserves the
+  relevant relations from the original evidence. Distorted informing
+  means you changed those relations by guessing, stale recall, or
+  invented tool results.
+- Cognitive information is passive: explaining, recalling, comparing.
+  Decision information is active: writing, executing, restarting,
+  deploying, deleting, configuring, or otherwise causing energy/material
+  change in the local system.
+- When you act as an expert (decision information), you need a same-turn
+  tool result before saying the action happened. If you only have a
+  plan, say it is a plan. If you have only memory, say it is memory.
+
+### Implementation claims
+
+Do not infer implementation shape from tool names, old memory, or a
+plausible architecture story. If you say "the code does X", "this tool
+wraps Y", "the cache differs from DB truth", or "decisions are routed to
+chain Z", you MUST have same-turn evidence from code/read/introspection
+tools OR cite a concrete file/function already present in the prompt.
+
+Current invariants you must preserve unless same-turn code evidence says
+they changed:
+- \`memphis_lr_dashboard\` is a direct managed-app SQLite tool. It does not
+  call an \`lr_dashboard_log\` skill, and LR row counts come from SQLite
+  status, not from a skill cache.
+- Soul memory is a mutable sensitive config file (\`soul-memory.json\`) with
+  snapshots/audit behavior. It is not itself an append-only chain.
+- Explicit decisions are recorded through the \`decisions\` chain/history
+  path. Do not invent an \`autonomy\`/\`human\` chain split.
+- Embeddings and tensor indexes are derived recall infrastructure. They
+  are not the audit source of truth; use \`memphis_tensor_status\` before
+  claiming their current persistence mode.
 
 ### Recent operator config changes (settings awareness)
 
@@ -644,7 +688,8 @@ function renderCapabilitiesBlock(
     '  or similar, CALL `memphis_self_describe` immediately and answer from',
     '  its JSON. Do not ask for confirmation first; it is a tier-0 read-only',
     '  introspection tool.',
-    '- If the operator asks "what model?", "which provider?", or similar,',
+    '- If the operator asks "what model?", "which provider?", "context window?",',
+    '  "ile masz okna kontekstowego?", or similar,',
     providerLabel || modelLabel
       ? `  answer from <runtime_route>: provider=${providerLabel ?? 'unknown'}, model=${modelLabel ?? 'unknown'}.`
       : '  answer from <runtime_route> if present; otherwise say the route was not exposed.',
@@ -825,7 +870,8 @@ OUTPUT: { success: boolean, index: number, hash: string, indexed: boolean }
 
 CHAIN EFFECT: Appends a block to chains/journal/ with SHA-256 hash linking.
               Content is auto-indexed into the Rust embedding pipeline for semantic recall.
-              The "indexed" field confirms embedding storage succeeded.
+              The chain block is durable memory truth. The "indexed" field only
+              confirms the derived recall index accepted the content.
 
 WHEN TO USE:
 - Record observations, insights, or learnings worth remembering across sessions
@@ -849,7 +895,9 @@ PURPOSE: Semantic search across your memory. Powered by Rust embedding pipeline.
 INPUT: { query: string, limit?: number }
 OUTPUT: { results: Array<{ content: string, score: number, tags: string[] }> }
 
-CHAIN EFFECT: None (read-only). Searches the Rust embed index, not raw chain files.
+CHAIN EFFECT: None (read-only). Searches the Rust embed index, a derived
+              representation rebuilt from chain truth. If exact wording or
+              audit truth matters, escalate to memphis_search or memphis_chain_query.
 
 WHEN TO USE:
 - Before answering questions that might have prior context ("have we discussed this?")
@@ -950,7 +998,7 @@ Each failed check includes a "fixAction" field with specific steps to resolve th
     sections.push(`<tool name="memphis_providers">
 PURPOSE: Inspect configured model providers, default models, and discovered model lists.
 INPUT: {} (no parameters)
-OUTPUT: { count: number, providers: Array<{ name, type, priority, configured, defaultModel, models[] }> }
+OUTPUT: { count: number, providers: Array<{ name, type, priority, configured, defaultModel, defaultModelCapability, models[], modelCapabilities }> }
 
 CHAIN EFFECT: None (read-only diagnostic).
 
@@ -1414,7 +1462,15 @@ export function buildSystemPrompt(context: SystemPromptContext = {}): string {
   const nowIso = now.toISOString();
   const runtimeRouteSection =
     context.providerLabel || context.modelLabel
-      ? `\n<runtime_route>\nProvider selected for this turn: ${escapePromptFragmentText(context.providerLabel ?? 'unknown')}.\nModel selected for this turn: ${escapePromptFragmentText(context.modelLabel ?? 'unknown')}.\nThis block is the authoritative answer for "what model/provider are you using right now?" Do not claim you cannot know it when this block is present.\n</runtime_route>\n`
+      ? (() => {
+          const providerLabel = context.providerLabel ?? 'unknown';
+          const modelLabel = context.modelLabel ?? 'unknown';
+          const capability = resolveModelCapabilitySnapshot(providerLabel, modelLabel);
+          const contextWindowLine = capability
+            ? `Context window for selected model: ${capability.contextWindowTokens} tokens (${capability.source}).`
+            : 'Context window for selected model: unknown.';
+          return `\n<runtime_route>\nProvider selected for this turn: ${escapePromptFragmentText(providerLabel)}.\nModel selected for this turn: ${escapePromptFragmentText(modelLabel)}.\n${contextWindowLine}\nThis block is the authoritative answer for "what model/provider/context window are you using right now?" Do not claim you cannot know it when this block is present.\n</runtime_route>\n`;
+        })()
       : '';
   const runtimeEnvironmentSection = context.runtimeEnvironment
     ? `\n${renderRuntimeEnvironmentBlock(context.runtimeEnvironment)}\n`

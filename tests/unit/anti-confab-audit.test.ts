@@ -51,6 +51,14 @@ describe('detectConfabulationClaims', () => {
     expect(result.violations).toHaveLength(0);
   });
 
+  it('skips persistence claims when memphis_lr_dashboard fired (whitelist hit)', () => {
+    const result = detectConfabulationClaims(
+      'Wynik zapisałem do dashboardu.',
+      new Set(['memphis_lr_dashboard']),
+    );
+    expect(result.violations).toHaveLength(0);
+  });
+
   it('flags "Tworzę plik" without memphis_fs_write (2026-05-05 incident)', () => {
     // Operator session 2026-05-05 16:06 + 16:19: bot announced
     // "Tworzę teraz plik HTML" twice without ever calling
@@ -161,6 +169,90 @@ describe('detectConfabulationClaims', () => {
     const result = detectConfabulationClaims(
       'My available tools are: memphis_recall, memphis_search.',
       new Set(['memphis_self_describe']),
+    );
+    expect(result.violations).toHaveLength(0);
+  });
+
+  // ── Runtime-status category ──────────────────────────────────────────
+
+  it('flags concrete dashboard status without a same-turn status tool', () => {
+    const result = detectConfabulationClaims('entries: 3, dbExists true.', new Set());
+    expect(result.violations.map((v) => v.category)).toContain('runtimeStatus');
+  });
+
+  it('does NOT flag concrete dashboard status when memphis_lr_dashboard fired', () => {
+    const result = detectConfabulationClaims(
+      'entries: 2, db exists.',
+      new Set(['memphis_lr_dashboard']),
+    );
+    expect(result.violations).toHaveLength(0);
+  });
+
+  it('flags embedding persistence claims without tensor status evidence', () => {
+    const result = detectConfabulationClaims(
+      'Embedding persistence disabled; recall is volatile.',
+      new Set(['memphis_recall']),
+    );
+    expect(result.violations.map((v) => v.category)).toContain('runtimeStatus');
+  });
+
+  it('does NOT flag embedding persistence claims when memphis_tensor_status fired', () => {
+    const result = detectConfabulationClaims(
+      'Persistence enabled for configured embeddings.',
+      new Set(['memphis_tensor_status']),
+    );
+    expect(result.violations).toHaveLength(0);
+  });
+
+  it('flags concrete journal/decision block IDs without same-turn persistence evidence', () => {
+    const result = detectConfabulationClaims(
+      'Audyt tej sesji: journal-128 oraz decisions#35 zapisane.',
+      new Set(['memphis_recall']),
+    );
+    const persistenceViolations = result.violations.filter((v) => v.category === 'persistence');
+    expect(persistenceViolations.map((v) => v.phrase.toLowerCase())).toEqual(
+      expect.arrayContaining(['journal-128', 'decisions#35']),
+    );
+  });
+
+  it('does NOT flag concrete journal/decision block IDs when write tools fired', () => {
+    const result = detectConfabulationClaims(
+      'Audyt tej sesji: journal-128 oraz decisions#35 zapisane.',
+      new Set(['memphis_journal', 'memphis_decide']),
+    );
+    expect(result.violations).toHaveLength(0);
+  });
+
+  // ── Implementation-claim category ─────────────────────────────────────
+
+  it('flags invented lr-dashboard wrapper implementation without code evidence', () => {
+    const result = detectConfabulationClaims(
+      'memphis_lr_dashboard jest skill wrapper i wywołuje skill lr_dashboard_log.',
+      new Set(['memphis_lr_dashboard']),
+    );
+    expect(result.violations.map((v) => v.category)).toContain('implementationClaim');
+  });
+
+  it('flags invented autonomy/human decision-chain split without code evidence', () => {
+    const result = detectConfabulationClaims(
+      'Decision chain ma explicit constructor: actor memphis idą do autonomy, human do human.',
+      new Set(['memphis_decide']),
+    );
+    expect(result.violations.map((v) => v.category)).toContain('implementationClaim');
+  });
+
+  it('does NOT flag implementation claims when code was read', () => {
+    const result = detectConfabulationClaims(
+      'Kod robi bezpośredni INSERT do SQLite.',
+      new Set(['memphis_code_read']),
+    );
+    expect(result.violations).toHaveLength(0);
+  });
+
+  it('does NOT flag implementation claims with a concrete source citation', () => {
+    const result = detectConfabulationClaims(
+      'Kod robi bezpośredni INSERT w src/mcp/tools/lr-dashboard.ts:154.',
+      new Set(),
     );
     expect(result.violations).toHaveLength(0);
   });

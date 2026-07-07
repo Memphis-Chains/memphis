@@ -8,8 +8,9 @@ import {
 } from '../../src/gateway/turn-runtime.js';
 
 /**
- * Anti-confab Phase 2 — runtime warning footer + Phase 3 sentence
- * stripping. The detector lives in `anti-confab-audit.ts` (covered by
+ * Anti-confab runtime mitigation — Phase 3 sentence stripping is the
+ * default; Phase 2 warning footer remains available for tuning. The
+ * detector lives in `anti-confab-audit.ts` (covered by
  * `anti-confab-audit.test.ts`); this suite focuses on the reply-mutation
  * side that operators actually see.
  */
@@ -35,8 +36,8 @@ const multiViolation: ConfabAuditResult = {
 const noViolations: ConfabAuditResult = { violations: [] };
 
 describe('resolveConfabPhase', () => {
-  it('defaults to phase 2 when env unset', () => {
-    expect(resolveConfabPhase({})).toBe(2 satisfies ConfabMitigationPhase);
+  it('defaults to phase 3 when env unset', () => {
+    expect(resolveConfabPhase({})).toBe(3 satisfies ConfabMitigationPhase);
   });
 
   it('respects explicit MEMPHIS_ANTICONFAB_PHASE values', () => {
@@ -47,13 +48,13 @@ describe('resolveConfabPhase', () => {
   });
 
   it('falls back to default when env value is unrecognized', () => {
-    expect(resolveConfabPhase({ MEMPHIS_ANTICONFAB_PHASE: 'on' })).toBe(2);
-    expect(resolveConfabPhase({ MEMPHIS_ANTICONFAB_PHASE: '4' })).toBe(2);
-    expect(resolveConfabPhase({ MEMPHIS_ANTICONFAB_PHASE: '' })).toBe(2);
+    expect(resolveConfabPhase({ MEMPHIS_ANTICONFAB_PHASE: 'on' })).toBe(3);
+    expect(resolveConfabPhase({ MEMPHIS_ANTICONFAB_PHASE: '4' })).toBe(3);
+    expect(resolveConfabPhase({ MEMPHIS_ANTICONFAB_PHASE: '' })).toBe(3);
   });
 });
 
-describe('appendConfabWarning — Phase 2 (warn-append, default)', () => {
+describe('appendConfabWarning — Phase 2 (warn-append, legacy/tuning mode)', () => {
   it('appends a footer when violations are present', () => {
     const reply = 'Wszystko zrobione, zapisałem do journala.';
     const out = appendConfabWarning(reply, persistenceViolation, 2);
