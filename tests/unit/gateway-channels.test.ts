@@ -30,7 +30,9 @@ describe('telegram channel', () => {
     expect(mod.isTelegramModelProbe('provider?>')).toBe(true);
     expect(mod.isTelegramModelProbe('jaki model?')).toBe(true);
     expect(mod.isTelegramModelProbe('ile masz okna kontekstowego?')).toBe(true);
+    expect(mod.isTelegramModelProbe('status kontekstu?')).toBe(true);
     expect(mod.isTelegramModelProbe('context window?')).toBe(true);
+    expect(mod.isTelegramModelProbe('context status')).toBe(true);
     expect(mod.isTelegramModelProbe('use the model to answer')).toBe(false);
   });
 
