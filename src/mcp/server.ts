@@ -860,7 +860,13 @@ export function createMemphisMcpServer(
         },
       },
       withApprovalGate('memphis_web_fetch', webFetchPolicy, approvals, async ({ url }) => {
-        const result = await runMemphisWebFetch({ url });
+        const result = await runMemphisWebFetch(
+          { url },
+          {
+            allowPrivateNetwork:
+              (rawEnv.MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK ?? '').toLowerCase() === 'true',
+          },
+        );
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
           structuredContent: result as Record<string, unknown>,

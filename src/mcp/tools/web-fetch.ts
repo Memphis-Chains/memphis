@@ -2,6 +2,7 @@ import { lookup } from 'node:dns/promises';
 import net from 'node:net';
 
 import { MEMPHIS_WEB_FETCH_TIMEOUT_MS } from '../../config/env-registry.js';
+import { parseBool } from '../../core/env.js';
 import { AppError } from '../../core/errors.js';
 
 const MAX_BODY_CHARS = 4000;
@@ -98,9 +99,15 @@ export interface SafeFetchDeps {
    * fetch impl. Override in tests to simulate redirects.
    */
   fetch?: typeof fetch;
+  /**
+   * Operator-elevated mode for local dashboards and Memphis-managed services.
+   * Defaults closed because public web fetch must not be an SSRF primitive.
+   */
+  allowPrivateNetwork?: boolean;
 }
 
 async function assertHostSafe(host: string, deps: SafeFetchDeps): Promise<void> {
+  if (deps.allowPrivateNetwork) return;
   const resolver = deps.dnsLookup ?? ((h) => lookup(h, { all: true }));
   let addresses: Array<{ address: string }>;
   try {
@@ -127,7 +134,7 @@ async function assertHostSafe(host: string, deps: SafeFetchDeps): Promise<void> 
  * checks (catches the case where the URL is a direct private-IP literal
  * before we even try DNS).
  */
-function assertUrlShapeSafe(rawUrl: string): URL {
+function assertUrlShapeSafe(rawUrl: string, deps: SafeFetchDeps): URL {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
@@ -148,16 +155,16 @@ function assertUrlShapeSafe(rawUrl: string): URL {
   if (!host) {
     throw new AppError('VALIDATION_ERROR', 'URL blocked: empty host', 403);
   }
-  if (host === 'localhost') {
+  if (!deps.allowPrivateNetwork && host === 'localhost') {
     throw new AppError('VALIDATION_ERROR', 'URL blocked: localhost', 403);
   }
-  if (host.endsWith('.local') || host.endsWith('.internal')) {
+  if (!deps.allowPrivateNetwork && (host.endsWith('.local') || host.endsWith('.internal'))) {
     throw new AppError('VALIDATION_ERROR', 'URL blocked: .local/.internal domain', 403);
   }
   // Literal-IP shortcut: if the host is already an IP literal we can check
   // it directly without DNS.
   if (net.isIP(host) !== 0) {
-    if (isPrivateIp(host)) {
+    if (!deps.allowPrivateNetwork && isPrivateIp(host)) {
       throw new AppError(
         'VALIDATION_ERROR',
         `URL blocked: private/internal IP literal (${host})`,
@@ -174,9 +181,15 @@ export async function runMemphisWebFetch(
 ): Promise<MemphisWebFetchOutput> {
   const fetchImpl = deps.fetch ?? fetch;
   let currentUrl = input.url;
-  let currentParsed = assertUrlShapeSafe(currentUrl);
+  const effectiveDeps = {
+    ...deps,
+    allowPrivateNetwork:
+      deps.allowPrivateNetwork ??
+      parseBool(process.env.MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK, false),
+  };
+  let currentParsed = assertUrlShapeSafe(currentUrl, effectiveDeps);
 
-  await assertHostSafe(stripIpv6Brackets(currentParsed.hostname), deps);
+  await assertHostSafe(stripIpv6Brackets(currentParsed.hostname), effectiveDeps);
 
   let response: Response | null = null;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
@@ -193,8 +206,8 @@ export async function runMemphisWebFetch(
       if (!location) break;
       const next = new URL(location, currentUrl).toString();
       currentUrl = next;
-      currentParsed = assertUrlShapeSafe(currentUrl);
-      await assertHostSafe(stripIpv6Brackets(currentParsed.hostname), deps);
+      currentParsed = assertUrlShapeSafe(currentUrl, effectiveDeps);
+      await assertHostSafe(stripIpv6Brackets(currentParsed.hostname), effectiveDeps);
       if (hop === MAX_REDIRECTS) {
         throw new AppError('VALIDATION_ERROR', 'URL blocked: too many redirects', 403);
       }

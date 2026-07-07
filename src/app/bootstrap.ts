@@ -97,6 +97,7 @@ import type {
 import { buildChatDispatchWorkItem, type HttpChatRuntimeDeps } from '../infra/work/chat-work.js';
 import { LocalWorkerRunner } from '../infra/work/local-worker-runner.js';
 import { DEFAULT_LOCAL_WORKER_CAPABILITY_SCOPE } from '../infra/work/work-capabilities.js';
+import { resolveModelCapabilitySnapshot } from '../providers/model-capabilities.js';
 import { getCognitiveMode, ensureIskra, ensureSoulManifest } from '../soul/manifest.js';
 import { loadSoulMemory } from '../soul/memory.js';
 
@@ -738,12 +739,19 @@ async function startChannelGateway(container?: {
           'Use /status for route and /guide for the surface model.',
         ].join('\n');
       },
-      onModel: (context) =>
-        [
-          `Current route: provider=${provider.name}, model=${provider.defaultModel()}.`,
+      onModel: (context) => {
+        const model = provider.defaultModel();
+        const capability = resolveModelCapabilitySnapshot(provider.name, model);
+        const contextLine = capability
+          ? `Context window: ${capability.contextWindowTokens} tokens (${capability.source}).`
+          : 'Context window: not known by runtime capability registry.';
+        return [
+          `Current route: provider=${provider.name}, model=${model}.`,
+          contextLine,
           `Telegram tier: ${context.sessionTier}.`,
           'This is reported by the runtime, not inferred from the model prompt.',
-        ].join('\n'),
+        ].join('\n');
+      },
       onRecall: async (userId) => {
         const actorId = resolveActorId(userId, process.env);
         const ctx = await memory.recall(actorId, 'recent conversations topics identity', 8);

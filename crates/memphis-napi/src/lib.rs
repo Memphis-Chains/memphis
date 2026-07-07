@@ -292,6 +292,10 @@ fn embed_config_from_env() -> EmbedConfig {
     }
 }
 
+fn embed_persistence_enabled_from_env() -> bool {
+    parse_bool_env("RUST_EMBED_PERSIST_ENABLED", true)
+}
+
 fn embed_persistence_path_from_env() -> PathBuf {
     if let Ok(path) = std::env::var("RUST_EMBED_PERSIST_PATH") {
         let trimmed = path.trim();
@@ -330,7 +334,7 @@ fn get_embed_pipeline() -> Result<&'static Mutex<EmbedPipeline>, String> {
         return Ok(p);
     }
 
-    let persistence_enabled = parse_bool_env("RUST_EMBED_PERSIST_ENABLED", false);
+    let persistence_enabled = embed_persistence_enabled_from_env();
     let persistence = EmbedPersistenceConfig {
         enabled: persistence_enabled,
         index_path: embed_persistence_path_from_env(),
@@ -685,9 +689,11 @@ pub fn embed_reset() -> String {
 /// starts freeing NAPI env resources.
 ///
 /// Semantics:
-///   - If the pipeline was initialized: acquire the Mutex, drain via
-///     `clear()` (flushes persistence, empties the in-memory index),
-///     return {"shutdown": true, "was_initialized": true}.
+///   - If the pipeline was initialized: acquire the Mutex, flush persistence
+///     without clearing the in-memory index, return {"shutdown": true,
+///     "was_initialized": true}. The shutdown barrier below makes the later
+///     static Drop leak heap-heavy fields safely, so clearing is unnecessary
+///     and would destroy the persisted recall index.
 ///   - If never initialized: no-op, return {"shutdown": true,
 ///     "was_initialized": false}. Safe to call unconditionally.
 ///   - If Mutex is poisoned (another thread panicked while holding it):
@@ -701,10 +707,10 @@ pub fn embed_reset() -> String {
 pub fn embed_shutdown() -> String {
     let result = match EMBED_PIPELINE.get() {
         Some(pipeline_mutex) => match pipeline_mutex.lock() {
-            Ok(mut pipeline) => {
-                pipeline.clear();
-                ok(serde_json::json!({ "shutdown": true, "was_initialized": true }))
-            }
+            Ok(pipeline) => match pipeline.flush() {
+                Ok(_) => ok(serde_json::json!({ "shutdown": true, "was_initialized": true })),
+                Err(e) => err(format!("embed_shutdown_flush_failed: {e}")),
+            },
             Err(_) => err("embed_pipeline_lock_poisoned"),
         },
         None => ok(serde_json::json!({ "shutdown": true, "was_initialized": false })),
@@ -1122,10 +1128,10 @@ pub fn mv2_inspect(bytes_hex: String) -> String {
 mod tests {
     use super::{
         bridge_manifest, case_append, case_query, case_rebuild, chain_append, chain_validate,
-        embed_mode_from_env, embed_reset, embed_search, embed_search_tuned, embed_shutdown,
-        embed_store, paths_normalize_chain_name, paths_resolve_chain_path,
-        paths_resolve_chains_dir, paths_resolve_data_dir, paths_resolve_vault_entries,
-        paths_resolve_vault_state, soul_loop_step, soul_replay,
+        embed_mode_from_env, embed_persistence_enabled_from_env, embed_reset, embed_search,
+        embed_search_tuned, embed_shutdown, embed_store, paths_normalize_chain_name,
+        paths_resolve_chain_path, paths_resolve_chains_dir, paths_resolve_data_dir,
+        paths_resolve_vault_entries, paths_resolve_vault_state, soul_loop_step, soul_replay,
     };
     use memphis_core::block::{Block, BlockData, BlockType};
     use memphis_core::hash::compute_hash;
@@ -1164,6 +1170,20 @@ mod tests {
                 // before reading anything.
                 poisoned.into_inner()
             })
+    }
+
+    #[test]
+    fn embed_persistence_defaults_enabled_with_explicit_opt_out() {
+        let _guard = env_lock();
+        std::env::remove_var("RUST_EMBED_PERSIST_ENABLED");
+        assert!(embed_persistence_enabled_from_env());
+
+        std::env::set_var("RUST_EMBED_PERSIST_ENABLED", "false");
+        assert!(!embed_persistence_enabled_from_env());
+
+        std::env::set_var("RUST_EMBED_PERSIST_ENABLED", "true");
+        assert!(embed_persistence_enabled_from_env());
+        std::env::remove_var("RUST_EMBED_PERSIST_ENABLED");
     }
 
     struct TestCaseIndexPath {

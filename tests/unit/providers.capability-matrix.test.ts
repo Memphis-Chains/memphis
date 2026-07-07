@@ -2,6 +2,25 @@ import { describe, expect, test } from 'vitest';
 
 import { CapabilityMatrix } from '../../src/providers/capability-matrix.js';
 import { DynamicRouter } from '../../src/providers/dynamic-router.js';
+import { resolveModelCapabilitySnapshot } from '../../src/providers/model-capabilities.js';
+
+describe('resolveModelCapabilitySnapshot', () => {
+  test('reports MiniMax-M3 as a 1M-context multimodal model', () => {
+    expect(resolveModelCapabilitySnapshot('minimax', 'MiniMax-M3')).toMatchObject({
+      contextWindowTokens: 1000000,
+      supportsStreaming: true,
+      supportsVision: true,
+      source: 'heuristic',
+    });
+  });
+
+  test('keeps MiniMax M2-family context at 200k', () => {
+    expect(resolveModelCapabilitySnapshot('minimax', 'MiniMax-M2.7')).toMatchObject({
+      contextWindowTokens: 200000,
+      supportsVision: false,
+    });
+  });
+});
 
 describe('CapabilityMatrix', () => {
   test('finds provider by requirements', () => {

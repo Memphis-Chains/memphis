@@ -37,7 +37,12 @@
 
 import type { ChatMessage } from '../providers/index.js';
 
-export type ConfabClaimCategory = 'persistence' | 'search' | 'capability';
+export type ConfabClaimCategory =
+  | 'persistence'
+  | 'search'
+  | 'capability'
+  | 'runtimeStatus'
+  | 'implementationClaim';
 
 export interface ConfabClaimViolation {
   category: ConfabClaimCategory;
@@ -74,6 +79,10 @@ const FORBIDDEN_PHRASES: Record<ConfabClaimCategory, readonly string[]> = {
     'zaktualizowane',
     'wpisane',
     'zachowane',
+    'audyt tej sesji',
+    'audit for this session',
+    'wpisane jako',
+    'wpisane do',
     // Polish — file-creation phrases (operator session 2026-05-05
     // 16:06 + 16:19: bot announced "Tworzę teraz plik HTML" twice
     // before any memphis_fs_write fired — XML emit-as-text bug from
@@ -146,6 +155,63 @@ const FORBIDDEN_PHRASES: Record<ConfabClaimCategory, readonly string[]> = {
     'my available tools are',
     'my tier grants',
   ],
+  runtimeStatus: [
+    'entries:',
+    'health ok',
+    'health is ok',
+    'healthy',
+    'indexed',
+    'persistence enabled',
+    'persistence disabled',
+    'persistence_enabled',
+    'persistence: enabled',
+    'persistence: disabled',
+    'dbexists',
+    'db exists',
+  ],
+  implementationClaim: [
+    'wywołuje skill',
+    'wywoluje skill',
+    'skill wrapper',
+    'wrapperem który wywołuje',
+    'wrapperem ktory wywoluje',
+    'cache vs db',
+    'cache vs sqlite',
+    'skill-level cache',
+    'db-level',
+    'memory-model drift',
+    'decision chain ma',
+    'chain ma explicit constructor',
+    'explicit constructor',
+    'chain = autonomy',
+    'chain autonomy',
+    'autonomy chain',
+    'human chain',
+    'dzieli się na autonomy',
+    'dzieli sie na autonomy',
+    'idą do autonomy',
+    'ida do autonomy',
+    'kod robi',
+    'implementacja robi',
+    'source shows',
+    'the code does',
+    'the implementation does',
+    'calls lr_dashboard_log',
+    'invokes lr_dashboard_log',
+    'lr_dashboard_log',
+    'memphis_decide (tier-2',
+    'memphis_decide tier-2',
+  ],
+};
+
+const FORBIDDEN_PATTERNS: Partial<Record<ConfabClaimCategory, readonly RegExp[]>> = {
+  persistence: [
+    // Concrete durable block IDs are write/persistence claims unless a
+    // same-turn write/read tool supports them. Samples: "journal-128",
+    // "decisions#35".
+    /\bjournal-\d+\b/giu,
+    /\bdecisions?#\d+\b/giu,
+  ],
 };
 
 /**
@@ -158,6 +224,7 @@ const WHITELISTED_TOOLS: Record<ConfabClaimCategory, readonly string[]> = {
   persistence: [
     'memphis_soul_write',
     'memphis_journal',
+    'memphis_lr_dashboard',
     'memphis_decide',
     'memphis_case_append',
     'memphis_self_modify',
@@ -185,7 +252,32 @@ const WHITELISTED_TOOLS: Record<ConfabClaimCategory, readonly string[]> = {
     'memphis_brave_search',
   ],
   capability: ['memphis_self_describe', 'memphis_providers', 'memphis_health'],
+  runtimeStatus: [
+    'memphis_health',
+    'memphis_lr_dashboard',
+    'memphis_tensor_status',
+    'memphis_chain_query',
+    'memphis_self_describe',
+  ],
+  implementationClaim: [
+    'memphis_exec',
+    'memphis_code_read',
+    'memphis_self_describe',
+    'memphis_chain_query',
+  ],
 };
+
+/**
+ * Implementation claims are only allowed without a same-turn code/read
+ * tool when the reply itself pins the claim to a concrete source path.
+ * This is intentionally narrow: prose like "I read the code" is not
+ * enough; the operator needs a file/function anchor they can audit.
+ */
+function hasConcreteSourceCitation(reply: string): boolean {
+  return /(?:^|[\s([])(?:src|tests|crates|scripts|docs)\/[^\s)\]]+\.(?:ts|tsx|js|mjs|rs|json|md)(?::\d+)?/u.test(
+    reply,
+  );
+}
 
 /**
  * Extract the set of tool names that were invoked by the assistant
@@ -295,6 +387,27 @@ function findPhraseMatches(
   return matches;
 }
 
+function findPatternMatches(
+  haystack: string,
+  patterns: readonly RegExp[] = [],
+): { phrase: string; start: number; end: number; excerpt: string }[] {
+  const matches: { phrase: string; start: number; end: number; excerpt: string }[] = [];
+  for (const pattern of patterns) {
+    pattern.lastIndex = 0;
+    for (const match of haystack.matchAll(pattern)) {
+      const text = match[0];
+      const idx = match.index ?? -1;
+      if (idx < 0) continue;
+      const end = idx + text.length;
+      const excerptStart = Math.max(0, idx - 24);
+      const excerptEnd = Math.min(haystack.length, end + 24);
+      const excerpt = haystack.slice(excerptStart, excerptEnd).replace(/\s+/g, ' ').trim();
+      matches.push({ phrase: text, start: idx, end, excerpt });
+    }
+  }
+  return matches;
+}
+
 /**
  * Scan a model reply for confabulation violations. Returns the list
  * of violations (empty if all forbidden-phrase categories are either
@@ -312,8 +425,12 @@ export function detectConfabulationClaims(
     // category — the bot earned the right to make these claims.
     const whitelistHit = WHITELISTED_TOOLS[category].some((name) => toolSet.has(name));
     if (whitelistHit) continue;
+    if (category === 'implementationClaim' && hasConcreteSourceCitation(reply)) continue;
 
-    const matches = findPhraseMatches(reply, FORBIDDEN_PHRASES[category]);
+    const matches = [
+      ...findPhraseMatches(reply, FORBIDDEN_PHRASES[category]),
+      ...findPatternMatches(reply, FORBIDDEN_PATTERNS[category]),
+    ];
     for (const match of matches) {
       if (looksQuoted(reply, match.start, match.end)) continue;
       violations.push({

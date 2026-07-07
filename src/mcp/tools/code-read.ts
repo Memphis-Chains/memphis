@@ -6,11 +6,11 @@
  * but code inspection is a common Tier 1 need. memphis_code_read fills that gap.
  */
 
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, realpathSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { isInsideMemphisSandbox } from './fs-permission.js';
+import { isInsideMemphisSandbox, realpathOrNearest } from './fs-permission.js';
 import { AppError } from '../../core/errors.js';
 
 export type MemphisCodeReadInput = {
@@ -44,19 +44,68 @@ function resolvePath(inputPath: string): string {
 }
 
 /**
- * Verify the resolved path lives under ~/memphis/.
- * Uses isInsideMemphisSandbox which realpath-resolves symlinks — a prior
- * version relied on path.normalize only, which let a symlink inside the
- * sandbox point outward and readFileSync would happily follow it (#132).
+ * Read-only inspection roots. Keep this narrower than arbitrary $HOME:
+ * Memphis source, Memphis operator data, and operator project checkouts are
+ * enough for normal agent work while still avoiding accidental secret reads.
  */
-function assertInMemphisDir(resolvedPath: string): void {
-  if (!isInsideMemphisSandbox(resolvedPath)) {
-    throw new AppError(
-      'VALIDATION_ERROR',
-      `Path '${resolvedPath}' is outside the allowed ~/memphis/ directory`,
-      403,
-    );
+function allowedReadRoots(): string[] {
+  const home = os.homedir();
+  const baseRoots = [
+    path.join(home, 'memphis'),
+    path.join(home, '.memphis'),
+    path.join(home, 'projects'),
+  ];
+  const extraRoots = (process.env.MEMPHIS_CODE_READ_EXTRA_ROOTS ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => (item.startsWith('~/') ? path.join(home, item.slice(2)) : path.resolve(item)));
+  return [...baseRoots, ...extraRoots];
+}
+
+const ALWAYS_BLOCKED_READ_PATTERNS: RegExp[] = [
+  /(^|\/)\.env$/,
+  /(^|\/)\.env\.[^/]+$/,
+  /(^|\/)vault-state\.json$/,
+  /(^|\/)vault-entries\.json$/,
+  /(^|\/)\.git\//,
+  /(^|\/)\.git$/,
+  /(^|\/)node_modules\//,
+];
+
+function realpathRoot(root: string): string {
+  try {
+    return realpathSync(root);
+  } catch {
+    return path.normalize(root);
   }
+}
+
+function assertInMemphisDir(resolvedPath: string): void {
+  const normalized = path.normalize(resolvedPath);
+  for (const pattern of ALWAYS_BLOCKED_READ_PATTERNS) {
+    if (pattern.test(normalized)) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        `Path '${resolvedPath}' is blocked because it may contain secrets or generated state`,
+        403,
+      );
+    }
+  }
+
+  if (isInsideMemphisSandbox(resolvedPath)) return;
+
+  const realTarget = realpathOrNearest(resolvedPath);
+  for (const root of allowedReadRoots()) {
+    const realRoot = realpathRoot(root);
+    if (realTarget === realRoot || realTarget.startsWith(realRoot + path.sep)) return;
+  }
+
+  throw new AppError(
+    'VALIDATION_ERROR',
+    `Path '${resolvedPath}' is outside the allowed read roots: ~/memphis, ~/.memphis, ~/projects`,
+    403,
+  );
 }
 
 const MAX_LINE_COUNT = 2000;
