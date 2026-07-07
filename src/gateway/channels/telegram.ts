@@ -109,7 +109,7 @@ export function isTelegramToolsProbe(text: string): boolean {
 
 export function isTelegramModelProbe(text: string): boolean {
   const normalized = normalizeOperatorProbe(text);
-  return /^(model|model\?|what model|which model|what model do you use|what model do u use|provider|provider\?|route|route\?|jaki model|jakiego modelu|context window|context tokens|ile tokenów|ile tokenow|ile masz kontekstu|ile masz okna kontekstowego|okno kontekstowe)\??$/u.test(
+  return /^(model|model\?|what model|which model|what model do you use|what model do u use|provider|provider\?|route|route\?|jaki model|jakiego modelu|context window|context tokens|context status|ile tokenów|ile tokenow|ile masz kontekstu|ile masz okna kontekstowego|okno kontekstowe|status kontekstu)\??$/u.test(
     normalized,
   );
 }
