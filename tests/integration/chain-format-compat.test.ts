@@ -15,7 +15,7 @@
 // v3.0 build), add a fixture directory `tests/fixtures/chain-v1.x/` with
 // frozen JSON files and a parallel test that points MEMPHIS_DATA_DIR at
 // the fixture and asserts verifyChainIntegrity passes.
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -81,6 +81,26 @@ describe('chain format round-trip (write → verify)', () => {
     const result = await verifyChainIntegrity('journal');
     expect(result.ok).toBe(true);
     expect(result.blockCount).toBe(3);
+  });
+
+  it('canonicalizes structured payloads on the TypeScript fallback', async () => {
+    await appendBlock('insights', {
+      type: 'insight',
+      source: 'reflection-loop',
+      insights: [{ title: 'Keep runtime state canonical' }],
+      tags: ['reflection', 42],
+    });
+
+    const blockPath = join(dataDir, 'chains', 'insights', '000001.json');
+    const block = JSON.parse(readFileSync(blockPath, 'utf8')) as {
+      data: Record<string, unknown>;
+    };
+
+    expect(block.data.type).toBe('insight');
+    expect(typeof block.data.content).toBe('string');
+    expect(block.data.tags).toEqual(['reflection']);
+    expect(block.data.source).toBe('reflection-loop');
+    expect(block.data.insights).toEqual([{ title: 'Keep runtime state canonical' }]);
   });
 
   it('verifies multi-chain integrity in one pass', async () => {
