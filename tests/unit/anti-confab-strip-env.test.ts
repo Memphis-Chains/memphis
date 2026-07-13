@@ -1,6 +1,6 @@
 /**
- * S1 operator decision 2026-05-12: phase 3 (strip-sentence) opt-in
- * via the cleaner `MEMPHIS_ANTICONFAB_STRIP=1` env alias.
+ * Operator decision 2026-07-07: phase 3 (strip-sentence) is the default;
+ * `MEMPHIS_ANTICONFAB_STRIP=1` remains a force-on alias.
  * `MEMPHIS_ANTICONFAB_PHASE` still works for back-compat + A/B.
  */
 import { describe, expect, it } from 'vitest';
@@ -8,8 +8,8 @@ import { describe, expect, it } from 'vitest';
 import { resolveConfabPhase } from '../../src/gateway/turn-runtime.js';
 
 describe('resolveConfabPhase — MEMPHIS_ANTICONFAB_STRIP alias', () => {
-  it('default (no envs set) is phase 2 (warn-append)', () => {
-    expect(resolveConfabPhase({})).toBe(2);
+  it('default (no envs set) is phase 3 (strip-sentence)', () => {
+    expect(resolveConfabPhase({})).toBe(3);
   });
 
   it.each(['1', 'true', 'on', 'TRUE', 'On'])(
@@ -22,7 +22,7 @@ describe('resolveConfabPhase — MEMPHIS_ANTICONFAB_STRIP alias', () => {
   it.each(['0', 'false', 'off', ''])(
     'MEMPHIS_ANTICONFAB_STRIP=%s does NOT flip — falls back to phase env or default',
     (value) => {
-      expect(resolveConfabPhase({ MEMPHIS_ANTICONFAB_STRIP: value })).toBe(2);
+      expect(resolveConfabPhase({ MEMPHIS_ANTICONFAB_STRIP: value })).toBe(3);
     },
   );
 

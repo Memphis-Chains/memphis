@@ -76,6 +76,16 @@ function pickResults(items: BraveWebItem[] | undefined, source: 'web' | 'news'):
     }));
 }
 
+function describeFetchError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const cause = (err as Error & { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    const code = (cause as Error & { code?: string }).code;
+    return code ? `${err.message} (${code}: ${cause.message})` : `${err.message} (${cause.message})`;
+  }
+  return err.message;
+}
+
 export async function runMemphisBraveSearch(
   input: MemphisBraveSearchInput,
   rawEnv: NodeJS.ProcessEnv = process.env,
@@ -98,8 +108,8 @@ export async function runMemphisBraveSearch(
       count: 0,
       error:
         apiKey?.startsWith('VAULT:') ?? false
-          ? `BRAVE_API_KEY references vault entry "${apiKey?.slice(6)}" but vault didn't resolve it. Run \`memphis vault add ${apiKey?.slice(6)} --key <real-key>\` or set BRAVE_API_KEY directly.`
-          : 'BRAVE_API_KEY not set. Get a key at https://api.search.brave.com/ (free 2000 queries/month) and set BRAVE_API_KEY or vault-store via `memphis vault add brave_api_key --key <key>` then BRAVE_API_KEY=VAULT:brave_api_key.',
+          ? `BRAVE_API_KEY references vault entry "${apiKey?.slice(6)}" but vault didn't resolve it. Run \`memphis brave configure --key <token>\` or set BRAVE_API_KEY directly.`
+          : 'BRAVE_API_KEY not set. Get a key at https://api.search.brave.com/ (free 2000 queries/month), then run `memphis brave configure --key <token>`.',
     };
   }
 
@@ -157,7 +167,7 @@ export async function runMemphisBraveSearch(
       query: input.query,
       results: [],
       count: 0,
-      error: `Brave Search failed: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Brave Search failed: ${describeFetchError(err)}`,
     };
   }
 }

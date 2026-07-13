@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -86,7 +86,11 @@ describe('registry-backed JSON schemas', () => {
   });
 
   it('keeps batch-4 executor tool schemas registry-derived instead of hand-maintained', () => {
-    const source = readFileSync(join(process.cwd(), 'src/gateway/tool-executor.ts'), 'utf8');
+    const domainsDir = join(process.cwd(), 'src/gateway/tool-executor/domains');
+    const source = readdirSync(domainsDir)
+      .filter((entry) => entry.endsWith('.ts'))
+      .map((entry) => readFileSync(join(domainsDir, entry), 'utf8'))
+      .join('\n');
 
     for (const toolName of [
       'memphis_recall',

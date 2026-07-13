@@ -10,6 +10,8 @@ import {
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
+import type { CommandHandler } from './command-handler.js';
+import { MEMPHIS_KARTOGRAF_ENABLE } from '../../../config/env-registry.js';
 import { getDataDir } from '../../../config/paths.js';
 import {
   sha256Hex,
@@ -17,7 +19,6 @@ import {
   type CheckpointEnvelope,
 } from '../../../kartograf/checkpoint.js';
 import type { CliContext } from '../context.js';
-import type { CommandHandler } from './command-handler.js';
 import { print } from '../utils/render.js';
 
 /**
@@ -380,7 +381,7 @@ async function handleQuery(context: CliContext): Promise<boolean> {
     return false;
   }
 
-  if (process.env.MEMPHIS_KARTOGRAF_ENABLE !== '1') {
+  if (MEMPHIS_KARTOGRAF_ENABLE.read(process.env) !== '1') {
     print(
       {
         ok: false,

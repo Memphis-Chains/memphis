@@ -1,7 +1,10 @@
 import { lookup } from 'node:dns/promises';
 import net from 'node:net';
 
-import { MEMPHIS_WEB_FETCH_TIMEOUT_MS } from '../../config/env-registry.js';
+import {
+  MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK,
+  MEMPHIS_WEB_FETCH_TIMEOUT_MS,
+} from '../../config/env-registry.js';
 import { parseBool } from '../../core/env.js';
 import { AppError } from '../../core/errors.js';
 
@@ -185,7 +188,7 @@ export async function runMemphisWebFetch(
     ...deps,
     allowPrivateNetwork:
       deps.allowPrivateNetwork ??
-      parseBool(process.env.MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK, false),
+      parseBool(MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK.read(process.env), false),
   };
   let currentParsed = assertUrlShapeSafe(currentUrl, effectiveDeps);
 

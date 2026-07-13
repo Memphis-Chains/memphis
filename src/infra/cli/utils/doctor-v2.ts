@@ -27,6 +27,7 @@ import { join, resolve } from 'node:path';
 import YAML from 'yaml';
 
 import { checkDependencies } from './dependencies.js';
+import { printDoctorHumanReport } from './doctor-render.js';
 import {
   MEMPHIS_VAULT_PEPPER,
   MEMPHIS_VOICE_MODE,
@@ -220,7 +221,7 @@ export type DoctorOptions = {
   getContainer?: () => DoctorContainer;
 };
 
-const tierTitle: Record<DoctorTier | 'A', string> = {
+export const doctorTierTitle: Record<DoctorTier | 'A', string> = {
   1: 'Tier 1: Core Infrastructure',
   2: 'Tier 2: Provider Health',
   3: 'Tier 3: Performance',
@@ -2434,43 +2435,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
 }
 
 export function printDoctorHumanV2(report: DoctorReport): void {
-  const icon = (l: DoctorCheckLevel): string => (l === 'pass' ? '✓' : l === 'warn' ? '⚠' : '✗');
-  const border = '═'.repeat(76);
-  // Header must agree with the command's exit code. `report.ok` tracks
-  // the internal `requiredFailures` metric — a required check can be
-  // `warn` (e.g. `levelFrom(…, { required: true })`) which contributes
-  // to `report.ok=false` AND process.exitCode=1 without appearing in
-  // `summary.fail`. Using `summary.fail === 0` for the header produced
-  // a banner that said PASS while the command was actually failing,
-  // which Codex caught on PR #186. Bind the verdict to `report.ok`.
-  const passed = report.ok;
-  console.log(`╔${border}╗`);
-  console.log(`║ ${`MEMPHIS DOCTOR v2.0 ${passed ? 'PASS' : 'FAIL'}`.padEnd(75)}║`);
-  console.log(`╚${border}╝`);
-
-  for (const tier of [1, 2, 3, 4, 5, 6, 'A'] as const) {
-    const tierChecks = report.checks.filter((c) => c.tier === tier);
-    if (tierChecks.length === 0) continue;
-    console.log(`\n┌─ ${tierTitle[tier]}`);
-    for (const check of tierChecks) {
-      console.log(`│ ${icon(check.level)} ${check.title}: ${check.detail}`);
-      if (check.fix && check.level !== 'pass') console.log(`│   ↳ fix: ${check.fix}`);
-    }
-  }
-
-  console.log(
-    `\nSummary: total=${report.summary.total} pass=${report.summary.pass} warn=${report.summary.warn} fail=${report.summary.fail}`,
-  );
-  console.log(
-    `Repair: status=${report.repairStatus} repairable=${report.repairable ? 'yes' : 'no'} action=${report.recommendedAction}`,
-  );
-  console.log(
-    `First-run plan: ${report.firstRunPlan.summary} next=${report.firstRunPlan.nextCommand}`,
-  );
-  if (report.repairs.length > 0) {
-    console.log('Repairs applied:');
-    for (const r of report.repairs) console.log(`  - ${r}`);
-  }
+  printDoctorHumanReport(report);
 }
 
 // Backward-compatible exports

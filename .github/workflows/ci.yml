@@ -70,6 +70,19 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Dead-code gate
+        run: npm run deadcode:check
+
+      - name: TypeScript coverage baseline
+        run: npm run test:coverage
+
+      - name: Upload TypeScript coverage baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: typescript-coverage
+          path: coverage/
+          if-no-files-found: error
+
       - name: Signed-block gate
         run: npx vitest run tests/integration/signed-block-gate.test.ts
         env:

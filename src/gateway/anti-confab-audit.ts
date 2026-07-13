@@ -67,6 +67,8 @@ export interface ConfabAuditResult {
 const FORBIDDEN_PHRASES: Record<ConfabClaimCategory, readonly string[]> = {
   persistence: [
     // Polish — past-tense or present "I am saving" claims
+    'zapisuję',
+    'zapisuje',
     'zapisałem',
     'zapisaliśmy',
     'zaktualizowałem',
@@ -168,6 +170,10 @@ const FORBIDDEN_PHRASES: Record<ConfabClaimCategory, readonly string[]> = {
     'persistence: disabled',
     'dbexists',
     'db exists',
+    'brave_api_key not set',
+    'brave api key not set',
+    'brave search — brave_api_key not set',
+    'brave search - brave_api_key not set',
   ],
   implementationClaim: [
     'wywołuje skill',
@@ -224,7 +230,7 @@ const WHITELISTED_TOOLS: Record<ConfabClaimCategory, readonly string[]> = {
   persistence: [
     'memphis_soul_write',
     'memphis_journal',
-    'memphis_lr_dashboard',
+    'memphis_lr_dashboard:add_entry',
     'memphis_decide',
     'memphis_case_append',
     'memphis_self_modify',
@@ -258,6 +264,8 @@ const WHITELISTED_TOOLS: Record<ConfabClaimCategory, readonly string[]> = {
     'memphis_tensor_status',
     'memphis_chain_query',
     'memphis_self_describe',
+    'memphis_brave_search',
+    'memphis_config_show',
   ],
   implementationClaim: [
     'memphis_exec',
@@ -283,15 +291,25 @@ function hasConcreteSourceCitation(reply: string): boolean {
  * Extract the set of tool names that were invoked by the assistant
  * in this turn. Mirrors `extractFrameToolCalls` in turn-runtime.ts
  * (kept duplicated rather than imported to avoid a circular shape).
+ * Action-specific evidence is included where a read/status action is
+ * not enough to support a write claim.
  */
 export function extractToolsCalled(messages: ChatMessage[]): Set<string> {
   const names = new Set<string>();
   for (const msg of messages) {
     if (msg.role !== 'assistant') continue;
-    const toolCalls = (msg as ChatMessage & { tool_calls?: { name?: string }[] }).tool_calls;
+    const toolCalls = (
+      msg as ChatMessage & {
+        tool_calls?: { name?: string; arguments?: Record<string, unknown> }[];
+      }
+    ).tool_calls;
     if (!Array.isArray(toolCalls)) continue;
     for (const call of toolCalls) {
-      if (call?.name) names.add(call.name);
+      if (!call?.name) continue;
+      names.add(call.name);
+      if (call.name === 'memphis_lr_dashboard' && call.arguments?.action === 'add_entry') {
+        names.add('memphis_lr_dashboard:add_entry');
+      }
     }
   }
   return names;
