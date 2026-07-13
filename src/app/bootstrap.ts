@@ -63,6 +63,7 @@ import {
   getSchedulerRuntimeStatus,
   resolveConfiguredSchedulerExecutionTarget,
   startScheduler,
+  stopScheduler,
 } from '../infra/runtime/scheduler.js';
 import { writeSecurityCriticalEvent } from '../infra/runtime/security-critical.js';
 import {
@@ -557,7 +558,7 @@ export async function bootstrap(): Promise<void> {
   }
 
   // ── Optional channel gateway ────────────────────────────────────
-  await startChannelGateway({
+  const channelGateway = await startChannelGateway({
     orchestration: container.orchestration,
     evolveSessionRepository: container.evolveSessionRepository,
     operatorChatSessionRepository: container.operatorChatSessionRepository,
@@ -566,7 +567,7 @@ export async function bootstrap(): Promise<void> {
 
   const localWorker = startLocalWorkerIfEnabled(container);
 
-  startReflectionLoop({ rawEnv: process.env });
+  const reflectionLoop = startReflectionLoop({ rawEnv: process.env });
 
   // Closes deferred item #5 — operators can opt into scheduled rotation
   // via MEMPHIS_CHAIN_ROTATE_INTERVAL_MS. Default (env unset) is no-op.
@@ -608,6 +609,7 @@ export async function bootstrap(): Promise<void> {
       { name: 'chain-rotation-loop', stop: () => chainRotationHandle.stop() },
       { name: 'scheduled-backup-loop', stop: () => scheduledBackupHandle.stop() },
       ...(localWorker ? [{ name: 'local-worker', stop: () => localWorker.stop() }] : []),
+      ...createRuntimeLifecycleStoppers({ channelGateway, reflectionLoop }),
       // 2026-05-12 SEGV diagnosis: 5/8 SIGSEGVs today landed during
       // graceful shutdown, all with the same V8 JIT stack signature
       // (NULL deref at offset ...5e2). Kartograf's OnnxKartografSession
@@ -632,6 +634,30 @@ export async function bootstrap(): Promise<void> {
   // commit was the cause of a prior crash, this resets the auto-revert
   // bookkeeping for the new (presumably-good) code.
   recordBootSuccess(process.env);
+}
+
+type StoppableRuntime = {
+  stop(): void | Promise<void>;
+};
+
+/**
+ * Background services that bootstrap starts outside the HTTP server.
+ * Keep this list explicit so every started service has an equivalent
+ * graceful-shutdown path. The scheduler is a process singleton, hence its
+ * module-level stopper rather than an instance handle.
+ */
+export function createRuntimeLifecycleStoppers(options: {
+  channelGateway: GatewayHandle | null;
+  reflectionLoop: StoppableRuntime;
+  stopSchedulerFn?: () => void;
+}): Array<{ name: string; stop: () => void | Promise<void> }> {
+  return [
+    ...(options.channelGateway
+      ? [{ name: 'channel-gateway', stop: () => options.channelGateway!.stop() }]
+      : []),
+    { name: 'reflection-loop', stop: () => options.reflectionLoop.stop() },
+    { name: 'scheduler', stop: options.stopSchedulerFn ?? stopScheduler },
+  ];
 }
 
 const bootstrapLog = createPinoLogger({ level: LOG_LEVEL.read(process.env) });

@@ -167,11 +167,16 @@ function listChainDirectories(rawEnv: NodeJS.ProcessEnv = process.env): string[]
   try {
     return readdirSync(chainsRoot, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
+      .filter((entry) => !isArchivedChainDirectory(entry.name))
       .map((entry) => entry.name)
       .sort((left, right) => left.localeCompare(right));
   } catch {
     return [];
   }
+}
+
+function isArchivedChainDirectory(name: string): boolean {
+  return /(?:^|[.-])(?:backup|bak|repair-backup|repair-backups)(?:[.-]|$)/iu.test(name);
 }
 
 export function scanLegacyChainState(rawEnv: NodeJS.ProcessEnv = process.env): LegacyScanResult {

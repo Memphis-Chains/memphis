@@ -1172,6 +1172,17 @@ mod tests {
             })
     }
 
+    /// Serialize tests that mutate the process-wide embed pipeline. Cargo
+    /// runs unit tests in parallel, but `EMBED_PIPELINE` and its shutdown
+    /// barrier are intentionally process-wide runtime state.
+    fn embed_lock() -> MutexGuard<'static, ()> {
+        static EMBED_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
+        EMBED_MUTEX
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn embed_persistence_defaults_enabled_with_explicit_opt_out() {
         let _guard = env_lock();
@@ -1259,6 +1270,11 @@ mod tests {
 
     #[test]
     fn embed_bridge_roundtrip_json() {
+        let _env_guard = env_lock();
+        let _embed_guard = embed_lock();
+        // The NAPI pipeline is a process-wide singleton. Unit tests must not
+        // initialize it against the operator's real ~/.memphis embed index.
+        std::env::set_var("RUST_EMBED_PERSIST_ENABLED", "false");
         let _ = embed_reset();
         let a = embed_store(
             "doc-a".to_string(),
@@ -1279,23 +1295,31 @@ mod tests {
 
         let tuned = embed_search_tuned("DETERMINISTIC?!".to_string(), Some(1), None);
         assert!(tuned.contains("\"ok\":true"));
+        std::env::remove_var("RUST_EMBED_PERSIST_ENABLED");
     }
 
     #[test]
     fn embed_shutdown_is_idempotent_and_handles_uninitialized() {
+        let _env_guard = env_lock();
+        let _embed_guard = embed_lock();
+        // Keep singleton initialization hermetic for the same reason as the
+        // roundtrip test above. Shutdown then has no operator-owned file to
+        // flush and cannot inherit a stale/unwritable persistence path.
+        std::env::set_var("RUST_EMBED_PERSIST_ENABLED", "false");
         // After reset the pipeline IS initialized (get_or_init happens in
         // embed_reset path). Still valid to shutdown — should clear.
         let _ = embed_reset();
         let first = embed_shutdown();
-        assert!(first.contains("\"ok\":true"));
+        assert!(first.contains("\"ok\":true"), "unexpected shutdown response: {first}");
         assert!(first.contains("\"shutdown\":true"));
 
         // Second call must also succeed (idempotency guarantee for
         // graceful-shutdown.ts which may be invoked twice under racing
         // SIGTERM+SIGINT).
         let second = embed_shutdown();
-        assert!(second.contains("\"ok\":true"));
+        assert!(second.contains("\"ok\":true"), "unexpected shutdown response: {second}");
         assert!(second.contains("\"shutdown\":true"));
+        std::env::remove_var("RUST_EMBED_PERSIST_ENABLED");
     }
 
     #[test]
@@ -1433,6 +1457,7 @@ mod tests {
 
     #[test]
     fn case_append_returns_valid_envelope() {
+        let _guard = env_lock();
         let case_index = TestCaseIndexPath::new("case-append-valid");
         let entry = serde_json::json!({
             "case_type": "instrumental",
@@ -1454,6 +1479,7 @@ mod tests {
 
     #[test]
     fn case_append_rejects_invalid_entry() {
+        let _guard = env_lock();
         let case_index = TestCaseIndexPath::new("case-append-invalid");
         let entry = serde_json::json!({
             "case_type": "instrumental",
@@ -1476,6 +1502,7 @@ mod tests {
 
     #[test]
     fn case_query_returns_results() {
+        let _guard = env_lock();
         let case_index = TestCaseIndexPath::new("case-query");
         let db_str = case_index.db_path_string();
 
@@ -1508,6 +1535,7 @@ mod tests {
 
     #[test]
     fn case_rebuild_reindexes_blocks() {
+        let _guard = env_lock();
         let case_index = TestCaseIndexPath::new("case-rebuild");
         let db_str = case_index.db_path_string();
 

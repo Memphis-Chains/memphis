@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { isInsideMemphisSandbox, realpathOrNearest } from './fs-permission.js';
+import { MEMPHIS_CODE_READ_EXTRA_ROOTS } from '../../config/env-registry.js';
 import { AppError } from '../../core/errors.js';
 
 export type MemphisCodeReadInput = {
@@ -55,7 +56,7 @@ function allowedReadRoots(): string[] {
     path.join(home, '.memphis'),
     path.join(home, 'projects'),
   ];
-  const extraRoots = (process.env.MEMPHIS_CODE_READ_EXTRA_ROOTS ?? '')
+  const extraRoots = MEMPHIS_CODE_READ_EXTRA_ROOTS.read(process.env)
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean)

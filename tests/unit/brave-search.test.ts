@@ -55,7 +55,7 @@ describe('runMemphisBraveSearch', () => {
     const out = await runMemphisBraveSearch({ query: 'foo' }, {});
     expect(out.error).toContain('BRAVE_API_KEY not set');
     expect(out.error).toContain('https://api.search.brave.com/');
-    expect(out.error).toContain('memphis vault add brave_api_key');
+    expect(out.error).toContain('memphis brave configure --key <token>');
   });
 
   it('returns vault-unresolved error when env still holds VAULT: prefix at runtime', async () => {
@@ -65,7 +65,7 @@ describe('runMemphisBraveSearch', () => {
     );
     expect(out.error).toContain('vault entry "brave_api_key"');
     expect(out.error).toContain("vault didn't resolve");
-    expect(out.error).toContain('memphis vault add brave_api_key');
+    expect(out.error).toContain('memphis brave configure --key <token>');
   });
 
   // ── HTTP error responses ─────────────────────────────────────────────
