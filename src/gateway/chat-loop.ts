@@ -18,6 +18,7 @@ import type {
   SessionStore,
 } from './chat-types.js';
 import { deriveConversationContext } from './conversation-identity.js';
+import { handleLrDashboardFastPath } from './lr-dashboard-fast-path.js';
 import { runTurnRuntime } from './turn-runtime.js';
 import { LOG_LEVEL } from '../config/env-registry.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
@@ -53,6 +54,23 @@ export async function handleMessage(
   const history = sessions.get(conversation.conversationId);
   const adapter = adapterMap.get(message.channel);
   const rawEnv = message.rawEnvOverride ? { ...process.env, ...message.rawEnvOverride } : undefined;
+
+  const lrFastPath = handleLrDashboardFastPath({
+    text: message.text,
+    timestamp: message.timestamp,
+    rawEnv,
+  });
+  if (lrFastPath.handled) {
+    const reply = lrFastPath.reply ?? 'Zapisane w LR Dashboard.';
+    await adapter?.send(conversation.replyTargetId, reply);
+    sessions.append(conversation.conversationId, message.text, reply, {
+      channel: message.channel,
+      actorId: conversation.actorId,
+      conversationId: conversation.conversationId,
+      replyTargetId: conversation.replyTargetId,
+    });
+    return;
+  }
 
   const result = await runTurnRuntime({
     input: message.text,

@@ -1,14 +1,14 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { resolveInstallRoot } from '../infra/runtime/install-root.js';
 
 const TOOL_NAME_PATTERN = /['"`](memphis_[a-z0-9_]+)['"`]/g;
-const REGISTRY_ENTRY_PATTERN = /^\s*(memphis_[a-z0-9_]+):\s*\{/gm;
-const EXECUTOR_BUILD_TOOL_PATTERN =
-  /buildTool\(\{\s*name:\s*['"`](memphis_[a-z0-9_]+)['"`]/gs;
-const MCP_REGISTER_TOOL_PATTERN =
-  /server\.registerTool\(\s*['"`](memphis_[a-z0-9_]+)['"`]/gs;
+// Registry values may be inline objects or imported domain-owned metadata.
+// The property key remains the canonical tool name in both forms.
+const REGISTRY_ENTRY_PATTERN = /^\s*(memphis_[a-z0-9_]+):/gm;
+const EXECUTOR_BUILD_TOOL_PATTERN = /buildTool\(\{\s*name:\s*['"`](memphis_[a-z0-9_]+)['"`]/gs;
+const MCP_REGISTER_TOOL_PATTERN = /server\.registerTool\(\s*['"`](memphis_[a-z0-9_]+)['"`]/gs;
 
 export type ToolSurfaceName = 'registry' | 'inProcessExecutor' | 'mcpServer';
 
@@ -29,6 +29,7 @@ export type ToolSurfaceAuditReport = {
 type ToolSurfaceSource = {
   surface: ToolSurfaceName;
   relativePath: string;
+  additionalDirectory?: string;
   extractNames: (source: string) => string[];
 };
 
@@ -36,11 +37,13 @@ const TOOL_SURFACE_SOURCES: readonly ToolSurfaceSource[] = [
   {
     surface: 'registry',
     relativePath: 'src/gateway/tool-registry.ts',
+    additionalDirectory: 'src/gateway/tool-registry',
     extractNames: (source) => extractToolNames(source, REGISTRY_ENTRY_PATTERN),
   },
   {
     surface: 'inProcessExecutor',
     relativePath: 'src/gateway/tool-executor.ts',
+    additionalDirectory: 'src/gateway/tool-executor/domains',
     extractNames: (source) => extractToolNames(source, EXECUTOR_BUILD_TOOL_PATTERN),
   },
   {
@@ -51,8 +54,9 @@ const TOOL_SURFACE_SOURCES: readonly ToolSurfaceSource[] = [
 ];
 
 function extractToolNames(source: string, pattern: RegExp = TOOL_NAME_PATTERN): string[] {
-  return [...new Set([...source.matchAll(pattern)].map((match) => match[1] as string))]
-    .sort((a, b) => a.localeCompare(b));
+  return [...new Set([...source.matchAll(pattern)].map((match) => match[1] as string))].sort(
+    (a, b) => a.localeCompare(b),
+  );
 }
 
 function readToolSurfaceNames(
@@ -60,7 +64,14 @@ function readToolSurfaceNames(
   source: ToolSurfaceSource,
 ): { path: string; names: string[] } {
   const path = resolve(root, source.relativePath);
-  const content = readFileSync(path, 'utf8');
+  const additionalContent = source.additionalDirectory
+    ? readdirSync(resolve(root, source.additionalDirectory))
+        .filter((entry) => entry.endsWith('.ts'))
+        .sort()
+        .map((entry) => readFileSync(resolve(root, source.additionalDirectory!, entry), 'utf8'))
+        .join('\n')
+    : '';
+  const content = `${readFileSync(path, 'utf8')}\n${additionalContent}`;
   return {
     path,
     names: source.extractNames(content),

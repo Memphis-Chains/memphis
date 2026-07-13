@@ -111,6 +111,10 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('memphis_health');
     expect(prompt).toContain('memphis_lr_dashboard');
     expect(prompt).toContain('memphis_tensor_status');
+    expect(prompt).toContain('external API key status');
+    expect(prompt).toContain('memphis_brave_search');
+    expect(prompt).toContain('memphis_config_show');
+    expect(prompt).toContain('BRAVE_API_KEY not set');
     expect(prompt).toMatch(/LR dashboard\s+entries\/status/);
     expect(prompt).toContain('tensor/embedding persistence');
     expect(prompt).toContain('Do not produce specific numbers');
@@ -201,6 +205,7 @@ describe('gateway system prompt', () => {
     // operator-specific narrative shipped.
     expect(prompt).toContain('zapisane');
     expect(prompt).toContain('zapisałem');
+    expect(prompt).toContain('zapisuję');
     expect(prompt).toContain('ładuję');
     expect(prompt).toContain('"saved"');
     expect(prompt).toContain('"persisted"');
@@ -209,6 +214,9 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('memphis_soul_write');
     expect(prompt).toContain('memphis_journal');
     expect(prompt).toContain('memphis_decide');
+    expect(prompt).toContain('LR Dashboard health measurements');
+    expect(prompt).toContain('action=add_entry');
+    expect(prompt).toContain('marker="urine_ph"');
     // Audit-chain reference so operator knows there's a verifiable trail
     expect(prompt).toContain('~/.memphis/chains/cases/');
     // Negative: no operator-specific narrative leaks (multi-tenant

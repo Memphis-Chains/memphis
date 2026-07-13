@@ -334,6 +334,34 @@ export const MEMPHIS_SAFE_MODE = defineStringAccessor({
   defaultValue: '',
 });
 
+export const MEMPHIS_KARTOGRAF_ENABLE = defineStringAccessor({
+  name: 'MEMPHIS_KARTOGRAF_ENABLE',
+  envKey: 'MEMPHIS_KARTOGRAF_ENABLE',
+  description: 'Enable the opt-in Kartograf ONNX runtime when set to "1"',
+  defaultValue: '',
+});
+
+export const MEMPHIS_NAPI_HARD_EXIT = defineStringAccessor({
+  name: 'MEMPHIS_NAPI_HARD_EXIT',
+  envKey: 'MEMPHIS_NAPI_HARD_EXIT',
+  description: 'Use the NAPI hard-exit fallback for teardown races when set to "1"',
+  defaultValue: '',
+});
+
+export const MEMPHIS_CODE_READ_EXTRA_ROOTS = defineStringAccessor({
+  name: 'MEMPHIS_CODE_READ_EXTRA_ROOTS',
+  envKey: 'MEMPHIS_CODE_READ_EXTRA_ROOTS',
+  description: 'Comma-separated additional roots allowed by memphis_code_read',
+  defaultValue: '',
+});
+
+export const MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK = defineStringAccessor({
+  name: 'MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK',
+  envKey: 'MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK',
+  description: 'Allow memphis_web_fetch to reach private network addresses when true',
+  defaultValue: '',
+});
+
 /**
  * Fault injection toggle for testing. Honored by task-queue-wal +
  * a few other resilience paths. Empty / unset = off. Don't enable in
@@ -699,6 +727,10 @@ export const ENV_REGISTRY: readonly EnvAccessor<unknown>[] = [
   MEMPHIS_OCR_LANG,
   MEMPHIS_VAULT_PEPPER,
   MEMPHIS_SAFE_MODE,
+  MEMPHIS_KARTOGRAF_ENABLE,
+  MEMPHIS_NAPI_HARD_EXIT,
+  MEMPHIS_CODE_READ_EXTRA_ROOTS,
+  MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK,
   MEMPHIS_FAULT_INJECT,
   BRAVE_API_KEY,
   PINATA_API_KEY,

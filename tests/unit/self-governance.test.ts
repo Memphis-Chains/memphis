@@ -182,6 +182,9 @@ describe('self-governance snapshot', () => {
     expect(snapshot.capable).toBe(false);
     expect(snapshot.canSelfModify).toBe(false);
     expect(snapshot.blockingReasons).toContain('SLO failing (default): tool_error_rate');
+    expect(snapshot.recommendedActions).toContain(
+      'Run memphis slo status --json and inspect recent telemetry before increasing autonomy',
+    );
   });
 
   it('does not block capability on historical 7d SLO failures when fresh windows pass', () => {
