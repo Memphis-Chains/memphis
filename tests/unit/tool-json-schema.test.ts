@@ -79,6 +79,16 @@ describe('registry-backed JSON schemas', () => {
     });
   });
 
+  it('does not require fields whose registry schema supplies a default', () => {
+    const schema = buildRegistryInputJsonSchema('memphis_lr_dashboard');
+
+    expect(schema.properties?.action).toMatchObject({
+      enum: ['status', 'add_entry'],
+      default: 'status',
+    });
+    expect(schema.required ?? []).not.toContain('action');
+  });
+
   it('fails loudly for unknown or schema-less tools', () => {
     expect(() => buildRegistryInputJsonSchema('memphis_nope')).toThrow(
       /No registry inputSchema/,

@@ -116,6 +116,19 @@ interface CanonicalHashData {
   tags: string[];
 }
 
+function normalizeBlockData(data: Record<string, unknown>): Record<string, unknown> {
+  const tags = Array.isArray(data.tags)
+    ? data.tags.filter((value): value is string => typeof value === 'string')
+    : [];
+  const content = typeof data.content === 'string' ? data.content : JSON.stringify(data);
+  const type = typeof data.type === 'string' ? data.type : 'journal';
+  const passthrough = Object.fromEntries(
+    Object.entries(data).filter(([key]) => !['type', 'content', 'tags'].includes(key)),
+  );
+
+  return { ...passthrough, type, content, tags };
+}
+
 export interface ChainExportEnvelope {
   chainName: string;
   exportedAt: string;
@@ -148,6 +161,7 @@ export async function appendBlock(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<AppendBlockResult> {
   const normalizedChainName = normalizeChainName(chainName) ?? chainName;
+  const normalizedData = normalizeBlockData(data);
   // Block 1853 incident (2026-05-12) — refuse `system`/`security`
   // chain writes from VITEST processes that haven't opted in. Throws
   // a clear error rather than silent-skipping; emitRuntimeSecurityEvent's
@@ -161,7 +175,7 @@ export async function appendBlock(
   if (status.backend === 'rust-napi') {
     try {
       const adapter = new NapiChainAdapter(rawEnv);
-      return await adapter.appendBlock(normalizedChainName, data);
+      return await adapter.appendBlock(normalizedChainName, normalizedData);
     } catch (error) {
       throw new Error(`rust chain append failed: ${String(error)}`, { cause: error });
     }
@@ -193,7 +207,7 @@ export async function appendBlock(
       index: nextIndex,
       timestamp,
       chain: normalizedChainName,
-      data,
+      data: normalizedData,
       prev_hash: previousBlock?.hash ?? GENESIS_PREV_HASH,
     };
     const block: ChainBlock = {
