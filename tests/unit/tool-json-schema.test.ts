@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -79,6 +79,16 @@ describe('registry-backed JSON schemas', () => {
     });
   });
 
+  it('does not require fields whose registry schema supplies a default', () => {
+    const schema = buildRegistryInputJsonSchema('memphis_lr_dashboard');
+
+    expect(schema.properties?.action).toMatchObject({
+      enum: ['status', 'add_entry'],
+      default: 'status',
+    });
+    expect(schema.required ?? []).not.toContain('action');
+  });
+
   it('fails loudly for unknown or schema-less tools', () => {
     expect(() => buildRegistryInputJsonSchema('memphis_nope')).toThrow(
       /No registry inputSchema/,
@@ -86,7 +96,11 @@ describe('registry-backed JSON schemas', () => {
   });
 
   it('keeps batch-4 executor tool schemas registry-derived instead of hand-maintained', () => {
-    const source = readFileSync(join(process.cwd(), 'src/gateway/tool-executor.ts'), 'utf8');
+    const domainsDir = join(process.cwd(), 'src/gateway/tool-executor/domains');
+    const source = readdirSync(domainsDir)
+      .filter((entry) => entry.endsWith('.ts'))
+      .map((entry) => readFileSync(join(domainsDir, entry), 'utf8'))
+      .join('\n');
 
     for (const toolName of [
       'memphis_recall',

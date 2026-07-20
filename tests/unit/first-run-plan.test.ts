@@ -68,4 +68,45 @@ describe('first-run status report', () => {
     expect(report.plan.nextCommand).toBe('memphis repair runtime');
     expect(report.plan.preview).toBeNull();
   });
+
+  it('ignores archived chain directories when detecting active legacy state', () => {
+    const runtimeDir = mkdtempSync(join(tmpdir(), 'memphis-first-run-plan-archive-'));
+    const envPath = join(runtimeDir, '.env');
+    writeFileSync(envPath, 'DEFAULT_PROVIDER=local-fallback\n', 'utf8');
+    const chainsRoot = join(runtimeDir, '.memphis', 'chains');
+    const chainDir = join(chainsRoot, 'journal');
+    const backupDir = join(chainsRoot, 'journal.backup-2026-07-07T15-07-23-108Z');
+    mkdirSync(chainDir, { recursive: true });
+    mkdirSync(backupDir, { recursive: true });
+    writeFileSync(
+      join(chainDir, '000001.json'),
+      JSON.stringify(
+        {
+          index: 1,
+          timestamp: new Date('2026-04-01T12:00:00.000Z').toISOString(),
+          chain: 'journal',
+          data: { message: 'active legacy block' },
+          prev_hash: '0'.repeat(64),
+          hash: '1'.repeat(64),
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+    writeFileSync(join(backupDir, '000001.json'), '{not json', 'utf8');
+
+    process.env = {
+      ...originalEnv,
+      MEMPHIS_DATA_DIR: join(runtimeDir, '.memphis'),
+      MEMPHIS_ENV_FILE: envPath,
+    };
+
+    const report = inspectFirstRunStatusReport(process.env);
+    expect(report.state).toBe('legacy-migrateable');
+    expect(report.legacyChains).toEqual(['journal']);
+    expect(report.reasons).not.toEqual(
+      expect.arrayContaining([expect.stringContaining('journal.backup')]),
+    );
+  });
 });

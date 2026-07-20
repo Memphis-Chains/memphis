@@ -131,7 +131,7 @@ export function buildSelfGovernanceSnapshot(
   if (failingSloLabels.size > 0) {
     addUnique(
       recommendedActions,
-      'Investigate failing fresh SLO windows using memphis_slo_status and recent telemetry before increasing autonomy',
+      'Run memphis slo status --json and inspect recent telemetry before increasing autonomy',
     );
   }
 

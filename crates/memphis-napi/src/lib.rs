@@ -292,6 +292,10 @@ fn embed_config_from_env() -> EmbedConfig {
     }
 }
 
+fn embed_persistence_enabled_from_env() -> bool {
+    parse_bool_env("RUST_EMBED_PERSIST_ENABLED", true)
+}
+
 fn embed_persistence_path_from_env() -> PathBuf {
     if let Ok(path) = std::env::var("RUST_EMBED_PERSIST_PATH") {
         let trimmed = path.trim();
@@ -330,7 +334,7 @@ fn get_embed_pipeline() -> Result<&'static Mutex<EmbedPipeline>, String> {
         return Ok(p);
     }
 
-    let persistence_enabled = parse_bool_env("RUST_EMBED_PERSIST_ENABLED", false);
+    let persistence_enabled = embed_persistence_enabled_from_env();
     let persistence = EmbedPersistenceConfig {
         enabled: persistence_enabled,
         index_path: embed_persistence_path_from_env(),
@@ -685,9 +689,11 @@ pub fn embed_reset() -> String {
 /// starts freeing NAPI env resources.
 ///
 /// Semantics:
-///   - If the pipeline was initialized: acquire the Mutex, drain via
-///     `clear()` (flushes persistence, empties the in-memory index),
-///     return {"shutdown": true, "was_initialized": true}.
+///   - If the pipeline was initialized: acquire the Mutex, flush persistence
+///     without clearing the in-memory index, return {"shutdown": true,
+///     "was_initialized": true}. The shutdown barrier below makes the later
+///     static Drop leak heap-heavy fields safely, so clearing is unnecessary
+///     and would destroy the persisted recall index.
 ///   - If never initialized: no-op, return {"shutdown": true,
 ///     "was_initialized": false}. Safe to call unconditionally.
 ///   - If Mutex is poisoned (another thread panicked while holding it):
@@ -701,10 +707,10 @@ pub fn embed_reset() -> String {
 pub fn embed_shutdown() -> String {
     let result = match EMBED_PIPELINE.get() {
         Some(pipeline_mutex) => match pipeline_mutex.lock() {
-            Ok(mut pipeline) => {
-                pipeline.clear();
-                ok(serde_json::json!({ "shutdown": true, "was_initialized": true }))
-            }
+            Ok(pipeline) => match pipeline.flush() {
+                Ok(_) => ok(serde_json::json!({ "shutdown": true, "was_initialized": true })),
+                Err(e) => err(format!("embed_shutdown_flush_failed: {e}")),
+            },
             Err(_) => err("embed_pipeline_lock_poisoned"),
         },
         None => ok(serde_json::json!({ "shutdown": true, "was_initialized": false })),
@@ -1122,10 +1128,10 @@ pub fn mv2_inspect(bytes_hex: String) -> String {
 mod tests {
     use super::{
         bridge_manifest, case_append, case_query, case_rebuild, chain_append, chain_validate,
-        embed_mode_from_env, embed_reset, embed_search, embed_search_tuned, embed_shutdown,
-        embed_store, paths_normalize_chain_name, paths_resolve_chain_path,
-        paths_resolve_chains_dir, paths_resolve_data_dir, paths_resolve_vault_entries,
-        paths_resolve_vault_state, soul_loop_step, soul_replay,
+        embed_mode_from_env, embed_persistence_enabled_from_env, embed_reset, embed_search,
+        embed_search_tuned, embed_shutdown, embed_store, paths_normalize_chain_name,
+        paths_resolve_chain_path, paths_resolve_chains_dir, paths_resolve_data_dir,
+        paths_resolve_vault_entries, paths_resolve_vault_state, soul_loop_step, soul_replay,
     };
     use memphis_core::block::{Block, BlockData, BlockType};
     use memphis_core::hash::compute_hash;
@@ -1164,6 +1170,31 @@ mod tests {
                 // before reading anything.
                 poisoned.into_inner()
             })
+    }
+
+    /// Serialize tests that mutate the process-wide embed pipeline. Cargo
+    /// runs unit tests in parallel, but `EMBED_PIPELINE` and its shutdown
+    /// barrier are intentionally process-wide runtime state.
+    fn embed_lock() -> MutexGuard<'static, ()> {
+        static EMBED_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
+        EMBED_MUTEX
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    #[test]
+    fn embed_persistence_defaults_enabled_with_explicit_opt_out() {
+        let _guard = env_lock();
+        std::env::remove_var("RUST_EMBED_PERSIST_ENABLED");
+        assert!(embed_persistence_enabled_from_env());
+
+        std::env::set_var("RUST_EMBED_PERSIST_ENABLED", "false");
+        assert!(!embed_persistence_enabled_from_env());
+
+        std::env::set_var("RUST_EMBED_PERSIST_ENABLED", "true");
+        assert!(embed_persistence_enabled_from_env());
+        std::env::remove_var("RUST_EMBED_PERSIST_ENABLED");
     }
 
     struct TestCaseIndexPath {
@@ -1239,6 +1270,11 @@ mod tests {
 
     #[test]
     fn embed_bridge_roundtrip_json() {
+        let _env_guard = env_lock();
+        let _embed_guard = embed_lock();
+        // The NAPI pipeline is a process-wide singleton. Unit tests must not
+        // initialize it against the operator's real ~/.memphis embed index.
+        std::env::set_var("RUST_EMBED_PERSIST_ENABLED", "false");
         let _ = embed_reset();
         let a = embed_store(
             "doc-a".to_string(),
@@ -1259,23 +1295,31 @@ mod tests {
 
         let tuned = embed_search_tuned("DETERMINISTIC?!".to_string(), Some(1), None);
         assert!(tuned.contains("\"ok\":true"));
+        std::env::remove_var("RUST_EMBED_PERSIST_ENABLED");
     }
 
     #[test]
     fn embed_shutdown_is_idempotent_and_handles_uninitialized() {
+        let _env_guard = env_lock();
+        let _embed_guard = embed_lock();
+        // Keep singleton initialization hermetic for the same reason as the
+        // roundtrip test above. Shutdown then has no operator-owned file to
+        // flush and cannot inherit a stale/unwritable persistence path.
+        std::env::set_var("RUST_EMBED_PERSIST_ENABLED", "false");
         // After reset the pipeline IS initialized (get_or_init happens in
         // embed_reset path). Still valid to shutdown — should clear.
         let _ = embed_reset();
         let first = embed_shutdown();
-        assert!(first.contains("\"ok\":true"));
+        assert!(first.contains("\"ok\":true"), "unexpected shutdown response: {first}");
         assert!(first.contains("\"shutdown\":true"));
 
         // Second call must also succeed (idempotency guarantee for
         // graceful-shutdown.ts which may be invoked twice under racing
         // SIGTERM+SIGINT).
         let second = embed_shutdown();
-        assert!(second.contains("\"ok\":true"));
+        assert!(second.contains("\"ok\":true"), "unexpected shutdown response: {second}");
         assert!(second.contains("\"shutdown\":true"));
+        std::env::remove_var("RUST_EMBED_PERSIST_ENABLED");
     }
 
     #[test]
@@ -1413,6 +1457,7 @@ mod tests {
 
     #[test]
     fn case_append_returns_valid_envelope() {
+        let _guard = env_lock();
         let case_index = TestCaseIndexPath::new("case-append-valid");
         let entry = serde_json::json!({
             "case_type": "instrumental",
@@ -1434,6 +1479,7 @@ mod tests {
 
     #[test]
     fn case_append_rejects_invalid_entry() {
+        let _guard = env_lock();
         let case_index = TestCaseIndexPath::new("case-append-invalid");
         let entry = serde_json::json!({
             "case_type": "instrumental",
@@ -1456,6 +1502,7 @@ mod tests {
 
     #[test]
     fn case_query_returns_results() {
+        let _guard = env_lock();
         let case_index = TestCaseIndexPath::new("case-query");
         let db_str = case_index.db_path_string();
 
@@ -1488,6 +1535,7 @@ mod tests {
 
     #[test]
     fn case_rebuild_reindexes_blocks() {
+        let _guard = env_lock();
         let case_index = TestCaseIndexPath::new("case-rebuild");
         let db_str = case_index.db_path_string();
 

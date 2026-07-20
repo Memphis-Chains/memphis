@@ -4,6 +4,8 @@
 // pattern. File-level disable per Sprint ι policy — accessor would
 // add registry weight without consumer benefit.
 //
+import { parseBool } from '../core/env.js';
+
 const GITHUB_RE = /(?:https?:\/\/)?github\.com\/([^/\s]+)\/([^/\s#?]+)/i;
 const URL_RE =
   /(?:https?:\/\/[^\s]+|www\.[^\s]+|[\w][\w-]*\.(?:com|pl|org|net|io|dev|ai|uk|de|fr|eu|info|co|me|app|gg|tv|cc|us|ca|br|ru|cn|jp|kr|in|au|nz|cz|sk|lt|lv|ee|se|no|fi|dk|nl|be|at|ch|it|es|pt|ro|hu|bg|hr|rs|si|ua|by|kz|xyz|tech|club|space|site|online|pro|store|shop|blog|live|world)(?:\/[^\s]*)?)/gi;
@@ -14,6 +16,10 @@ function normalizeUrl(raw: string): string {
 }
 
 type FetchedContext = { url: string; content: string };
+export type FetchUrlsFromMessageOptions = {
+  rawEnv?: NodeJS.ProcessEnv;
+  allowPrivateNetwork?: boolean;
+};
 
 async function fetchGithubRepo(owner: string, repo: string): Promise<string> {
   const headers: Record<string, string> = {
@@ -75,12 +81,13 @@ async function fetchWebPage(url: string): Promise<string> {
     .slice(0, 2000);
 }
 
-function isSafeUrl(url: string): boolean {
+function isSafeUrl(url: string, allowPrivateNetwork = false): boolean {
   try {
     const parsed = new URL(url);
     if (!['http:', 'https:'].includes(parsed.protocol)) return false;
     if (parsed.search.length > 200) return false;
     const host = parsed.hostname.toLowerCase();
+    if (allowPrivateNetwork) return true;
     if (
       host === 'localhost' ||
       host === '127.0.0.1' ||
@@ -98,14 +105,22 @@ function isSafeUrl(url: string): boolean {
 
 const MAX_TOTAL_FETCHED_CHARS = 4000;
 
-export async function fetchUrlsFromMessage(text: string): Promise<FetchedContext[]> {
+export async function fetchUrlsFromMessage(
+  text: string,
+  options: FetchUrlsFromMessageOptions = {},
+): Promise<FetchedContext[]> {
   const urls = [...new Set(text.match(URL_RE) ?? [])].slice(0, 3);
   if (urls.length === 0) return [];
+  const allowPrivateNetwork =
+    options.allowPrivateNetwork ??
+    parseBool(options.rawEnv?.MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK, false);
 
   const results = await Promise.allSettled(
     urls.map(async (rawUrl): Promise<FetchedContext> => {
       const url = normalizeUrl(rawUrl);
-      if (!isSafeUrl(url)) return { url, content: '[blocked: URL failed safety check]' };
+      if (!isSafeUrl(url, allowPrivateNetwork)) {
+        return { url, content: '[blocked: URL failed safety check]' };
+      }
       const ghMatch = url.match(GITHUB_RE);
       if (ghMatch) return { url, content: await fetchGithubRepo(ghMatch[1], ghMatch[2]) };
       return { url, content: await fetchWebPage(url) };

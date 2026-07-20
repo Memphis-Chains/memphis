@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -74,5 +74,59 @@ describe('CLI health', () => {
         guidedConversation: expect.objectContaining({ createdBlocks: 4 }),
       }),
     });
+  });
+
+  it('prints JSON for slo status command', async () => {
+    const runtimeDir = mkdtempSync(join(tmpdir(), 'memphis-cli-slo-'));
+    const dataDir = join(runtimeDir, '.memphis');
+    const envFile = join(runtimeDir, '.env');
+    const telemetryDir = join(dataDir, 'telemetry');
+    mkdirSync(telemetryDir, { recursive: true });
+
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const spans = [
+      ...Array.from({ length: 10 }, (_, i) => ({
+        ts: new Date(now.getTime() - i * 1000).toISOString(),
+        name: 'turn.dispatch',
+        status: 'ok',
+        durationMs: 100 + i,
+        attrs: { 'turn.timing_ms': 100 + i },
+      })),
+      ...Array.from({ length: 10 }, (_, i) => ({
+        ts: new Date(now.getTime() - (20 + i) * 1000).toISOString(),
+        name: 'provider.completion',
+        status: 'ok',
+      })),
+      ...Array.from({ length: 10 }, (_, i) => ({
+        ts: new Date(now.getTime() - (40 + i) * 1000).toISOString(),
+        name: 'tool.call',
+        status: 'ok',
+      })),
+    ];
+    writeFileSync(
+      join(telemetryDir, `spans-${today}.jsonl`),
+      `${spans.map((span) => JSON.stringify(span)).join('\n')}\n`,
+      'utf8',
+    );
+
+    const out = await runCli(['slo', 'status', '--days', '1', '--json'], {
+      env: {
+        MEMPHIS_DATA_DIR: dataDir,
+        MEMPHIS_ENV_FILE: envFile,
+      },
+    });
+
+    const data = JSON.parse(out);
+    expect(data.ok).toBe(true);
+    expect(data.allSlosPassing).toBe(true);
+    expect(data.windowDays).toBe(1);
+    expect(data.failingSlos).toEqual([]);
+    expect(data.slos.map((slo: { name: string }) => slo.name)).toEqual([
+      'p99_turn_latency_ms',
+      'confabulation_rate',
+      'provider_error_rate',
+      'tool_error_rate',
+    ]);
   });
 });
