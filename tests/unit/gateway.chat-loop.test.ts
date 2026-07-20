@@ -1,3 +1,8 @@
+import { mkdirSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import Database from 'better-sqlite3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const runTurnRuntime = vi.fn(
@@ -153,5 +158,90 @@ describe('gateway chat loop', () => {
     );
     expect(sessions.get).toHaveBeenCalledWith('primary::operator:local');
     expect(adapter.send).toHaveBeenCalledWith('chat-7', 'assistant reply');
+  });
+
+  it('short-circuits LR Dashboard urine pH save requests without calling the LLM', async () => {
+    const { handleMessage } = await import('../../src/gateway/chat-loop.js');
+    const runtimeDir = mkdtempSync(join(tmpdir(), 'memphis-gateway-lr-fast-path-'));
+    const dataDir = join(runtimeDir, '.memphis');
+    mkdirSync(dataDir, { recursive: true });
+
+    const adapter = {
+      name: 'telegram' as const,
+      start: vi.fn(),
+      stop: vi.fn(),
+      send: vi.fn(async () => undefined),
+    };
+    const sessions = {
+      get: vi.fn(() => []),
+      append: vi.fn(),
+    };
+    const memory = {
+      recall: vi.fn(async () => ({ items: [] })),
+      store: vi.fn(async () => undefined),
+      isAvailable: vi.fn(() => true),
+    };
+    const llm = {
+      complete: vi.fn(async () => ({ content: 'should not run' })),
+    };
+
+    await handleMessage(
+      {
+        id: 'msg-lr-1',
+        channel: 'telegram',
+        userId: 'telegram:1',
+        chatId: '1',
+        text: 'zapisz pH moczu 6.2',
+        timestamp: new Date('2026-07-08T11:03:00.000Z'),
+        rawEnvOverride: {
+          MEMPHIS_DATA_DIR: dataDir,
+        },
+      },
+      {
+        adapters: [adapter],
+        memory,
+        llm,
+        sessions,
+      },
+      new Map([['telegram', adapter]]),
+    );
+
+    expect(runTurnRuntime).not.toHaveBeenCalled();
+    expect(llm.complete).not.toHaveBeenCalled();
+    expect(adapter.send).toHaveBeenCalledWith(
+      '1',
+      'Zapisane w LR Dashboard: pH moczu 6.2 (2026-07-08), id=1.',
+    );
+    expect(sessions.append).toHaveBeenCalledWith(
+      'primary::telegram:1',
+      'zapisz pH moczu 6.2',
+      'Zapisane w LR Dashboard: pH moczu 6.2 (2026-07-08), id=1.',
+      {
+        actorId: 'telegram:1',
+        channel: 'telegram',
+        conversationId: 'primary::telegram:1',
+        replyTargetId: '1',
+      },
+    );
+
+    const db = new Database(join(dataDir, 'apps', 'lr-dashboard', 'state', 'lr.sqlite'), {
+      readonly: true,
+    });
+    try {
+      const rows = db
+        .prepare('SELECT measured_at, category, marker, value, unit FROM entries')
+        .all();
+      expect(rows).toEqual([
+        {
+          measured_at: '2026-07-08',
+          category: 'body-ph',
+          marker: 'urine_ph',
+          value: '6.2',
+          unit: 'pH',
+        },
+      ]);
+    } finally {
+      db.close();
+    }
   });
 });

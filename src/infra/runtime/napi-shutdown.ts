@@ -40,6 +40,7 @@ import {
   hasEmbedShutdownRun,
   markEmbedShutdownCalled,
 } from './embed-shutdown-state.js';
+import { MEMPHIS_NAPI_HARD_EXIT } from '../../config/env-registry.js';
 import { flushAllPinoStreamsSync } from '../logging/pino.js';
 
 let installed = false;
@@ -96,7 +97,7 @@ interface NapiShutdownOptions {
 
 function isHardExitEnabled(options: NapiShutdownOptions): boolean {
   if (typeof options.hardExit === 'boolean') return options.hardExit;
-  return process.env.MEMPHIS_NAPI_HARD_EXIT === '1';
+  return MEMPHIS_NAPI_HARD_EXIT.read(process.env) === '1';
 }
 
 /**

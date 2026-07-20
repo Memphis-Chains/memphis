@@ -18,6 +18,9 @@ describe('tensor status', () => {
 
     expect(out.memoryEmbedding.configured.dim).toBe(32);
     expect(out.memoryEmbedding.configured.dtype).toBe('f32');
+    expect(out.memoryEmbedding.truthRole).toBe('derived-recall-index');
+    expect(out.memoryEmbedding.configured.persistenceEnabled).toBe(true);
+    expect(out.memoryEmbedding.runtime.persistenceEnabled).toBe('unknown');
     expect(out.memoryEmbedding.meta.kind).toBe('memory_embedding');
     expect(out.memoryEmbedding.meta.exposeRawValues).toBe(false);
     expect(out.kartograf.mode).toBe('stub');
@@ -37,5 +40,24 @@ describe('tensor status', () => {
     } as NodeJS.ProcessEnv);
 
     expect(out.memoryEmbedding.configured.legacyDimMismatch).toBe(true);
+  });
+
+  it('defaults configured embedding persistence to enabled', () => {
+    const out = getTensorStatus({
+      RUST_CHAIN_ENABLED: 'false',
+    } as NodeJS.ProcessEnv);
+
+    expect(out.memoryEmbedding.configured.persistenceEnabled).toBe(true);
+    expect(out.memoryEmbedding.meta.persistenceEnabled).toBe(true);
+  });
+
+  it('keeps explicit embedding persistence opt-out', () => {
+    const out = getTensorStatus({
+      RUST_CHAIN_ENABLED: 'false',
+      RUST_EMBED_PERSIST_ENABLED: 'false',
+    } as NodeJS.ProcessEnv);
+
+    expect(out.memoryEmbedding.configured.persistenceEnabled).toBe(false);
+    expect(out.memoryEmbedding.meta.persistenceEnabled).toBe(false);
   });
 });

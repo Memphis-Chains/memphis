@@ -26,6 +26,22 @@ function normalizeRequired(value: unknown): string[] | undefined {
   return required.length > 0 ? required : undefined;
 }
 
+function semanticRequiredKeys(schema: unknown): Set<string> | undefined {
+  if (!schema || typeof schema !== 'object') return undefined;
+  const maybeShape = (schema as { shape?: unknown; _def?: { shape?: unknown } }).shape
+    ?? (schema as { _def?: { shape?: unknown } })._def?.shape;
+  const shape = typeof maybeShape === 'function' ? maybeShape() : maybeShape;
+  if (!shape || typeof shape !== 'object' || Array.isArray(shape)) return undefined;
+
+  const required = new Set<string>();
+  for (const [key, fieldSchema] of Object.entries(shape as Record<string, unknown>)) {
+    const maybeOptional = fieldSchema as { isOptional?: unknown };
+    if (typeof maybeOptional.isOptional === 'function' && maybeOptional.isOptional()) continue;
+    required.add(key);
+  }
+  return required;
+}
+
 export function buildRegistryInputJsonSchema(
   toolName: string,
   options: RegistryInputJsonSchemaOptions = {},
@@ -40,7 +56,12 @@ export function buildRegistryInputJsonSchema(
   delete schema.$schema;
 
   const properties = cloneJsonObject(schema.properties);
-  const required = new Set(normalizeRequired(schema.required) ?? []);
+  const semanticRequired = semanticRequiredKeys(meta.inputSchema);
+  const required = new Set(
+    (normalizeRequired(schema.required) ?? []).filter(
+      (key) => semanticRequired === undefined || semanticRequired.has(key),
+    ),
+  );
   const omitTransportKeys = options.omitTransportKeys ?? true;
 
   if (omitTransportKeys) {

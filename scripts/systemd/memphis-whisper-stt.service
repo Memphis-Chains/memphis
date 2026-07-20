@@ -13,12 +13,12 @@ Type=simple
 ExecStart=%h/.cache/whisper-server-venv/bin/python3 %h/.local/share/memphis/voice-server/whisper-server.py
 Restart=on-failure
 RestartSec=15
-# Match scripts/voice-install.sh defaults — port 9000, medium model,
-# CUDA preferred (faster-whisper falls back to CPU automatically when
-# CUDA libs are absent).
+# Boot-safe local profile for this host: the medium CUDA-first default
+# can stall before the HTTP port opens, while small CPU/int8 comes up
+# reliably and is still usable for daily Polish STT.
 Environment=WHISPER_PORT=9000
-Environment=WHISPER_MODEL=medium
-Environment=WHISPER_DEVICE=cuda
+Environment=WHISPER_MODEL=small
+Environment=WHISPER_DEVICE=cpu
 Environment=WHISPER_COMPUTE=int8
 StandardOutput=append:%h/.memphis/logs/whisper-server.log
 StandardError=append:%h/.memphis/logs/whisper-server.log

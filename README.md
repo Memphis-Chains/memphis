@@ -4,6 +4,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522-339933)](https://nodejs.org)
 [![Rust](https://img.shields.io/badge/rust-stable-orange)](https://www.rust-lang.org)
+[![Website](https://img.shields.io/badge/website-memphis--v5.pl-ff6b35)](https://memphis-v5.pl)
 
 **Sovereign AI that runs on your machine, remembers in chains you own, and answers to no one but you.**
 
@@ -12,6 +13,8 @@ Memphis is a local-first cognitive runtime born from [Oswobodzeni](https://oswob
 Every decision Memphis makes is recorded. Every secret is encrypted at rest. Every tool it touches requires your authorization. This is not a chatbot — it is a sovereign cognitive system designed for operators who refuse to rent their intelligence from Big Tech.
 
 **Current version: `v1.10.0`** (matches `package.json`) | **Status: production-ready for operator-supervised runtime** — Kartograf ONNX runtime + `memphis_kartograf` tool + `kartograf-zone-router` built-in skill, Telegram document/PDF ingestion (pdftotext + raw text + image-as-doc), full MiniMax model lineup (12 chat models, accurate context windows), first-class skill composition (`memphis_skill_*`), provider auto-failover on stream timeout, tier-3 session persistence across daemon restart, degraded boot + vault-recovery runbook. See [`CHANGELOG.md`](./CHANGELOG.md) for full history.
+
+**Public surface:** [memphis-v5.pl](https://memphis-v5.pl) · [start](https://memphis-v5.pl/start/) · [docs](https://memphis-v5.pl/docs/) · [roadmap](https://memphis-v5.pl/roadmap/) · [llms.txt](https://memphis-v5.pl/llms.txt) · [agents.json](https://memphis-v5.pl/agents.json)
 
 ---
 
@@ -44,17 +47,21 @@ memphis tui                     # open the native operator cockpit
 
 > **macOS operators**: `memphis service install` wires a systemd-user unit, so the step above is a no-op on macOS. Either run the runtime in a terminal with `npm run dev` while you need it, or provision a `launchd` plist at `~/Library/LaunchAgents/chains.memphis.runtime.plist` that `exec`s the same command. The remaining steps (`memphis init`, `memphis provider add …`, `memphis tui`) work identically across Linux, macOS, and WSL.
 
+> **If `memphis: command not found`** after install: the post-install `npm link` step is path-scoped. Run `hash -r` to refresh the shell hash, or `which memphis` to confirm the binary location, then either add that directory to `PATH` or re-run `npm link` from the repo root.
+
 That's it. Sovereign AI running on your machine, with encrypted vault, chain-backed memory, 200k-token Claude access (if you added anthropic), and local Ollama fallback when the network's down.
 
 **What you get in 5 minutes** (past the Rust build, which dominates the 8-minute clock):
 
 - **Encrypted vault** — Argon2id + AES-256-GCM, separate operator and vault passphrases, 2FA Q&A recovery
-- **3-tier provider cascade** — `anthropic → ollama → local-fallback`. One drops, next takes over automatically
-- **Chain-backed memory** — journal / decisions / reflections / 8 semantic case roles, every block SHA-256 linked and Ed25519 signed
+- **Provider cascade** — `anthropic → ollama → local-fallback` by default; add `minimax`, `deepseek`, or `glm` via `memphis provider add`. One drops, next takes over automatically
+- **Chain-backed memory** — journal / decisions / reflections / 8 semantic case roles, every block SHA-256 linked (Ed25519 signing activates when `RUST_CHAIN_REQUIRE_SIGNATURES=true`)
 - **Native TUI cockpit** (Rust) — chat, memory browser, session history, vault, cases, system health, all in one terminal
 - **Telegram-ready** — [`memphis setup telegram`](./docs/operator/CLI-REFERENCE.md) or `.env` config for remote bot access
 - **MCP-ready** — stdio + HTTP transport for Claude Code / ChatGPT / Cursor integration
 - **HTTP API** — Fastify on `:3000`, bearer-token protected, `/v1/chat/*`, `/v1/ops/status`, `/v1/vault/*`, SSE session events
+- **Kartograf ONNX runtime** — `memphis kartograf …` for embedding + zone routing; ~700 MB checkpoint, lazy-loaded
+- **Skills composition** — `memphis skills …` for scaffold / validate / install skills without round-tripping through generic file-write tools
 
 **New to Memphis?** Step-by-step walkthrough — [English](./docs/operator/install-fresh-user.en.md) or [Polish](./docs/operator/install-fresh-user.pl.md) (12 steps with verification after each) assumes zero prior knowledge and explains what each command does and why.
 
@@ -67,7 +74,7 @@ That's it. Sovereign AI running on your machine, with encrypted vault, chain-bac
 Technology can be chains or keys. The centralized AI model — where your conversations, your data, your business logic live on someone else's servers, governed by someone else's policies — is a sovereignty problem. Memphis solves it:
 
 - **Your machine, your memory.** Nothing leaves your hardware unless you explicitly send it.
-- **Chain-backed truth.** Every journal entry, decision, reflection, and system event is written to append-only SHA-256 signed chains. No silent edits. No disappearing history.
+- **Chain-backed truth.** Every journal entry, decision, reflection, and system event is written to append-only SHA-256 linked chains. No silent edits. No disappearing history. Ed25519 block signing is available behind an opt-in flag (`RUST_CHAIN_REQUIRE_SIGNATURES=true`) for environments that need cryptographic non-repudiation; the default is SHA-256 linkage only.
 - **Vault-sealed secrets.** AES-256-GCM + Argon2id encryption. API keys, tokens, passphrases — everything lives in a vault that requires your passphrase to unlock.
 - **Provider independence.** Run local models via Ollama, or connect to MiniMax, DeepSeek, GLM. If one goes down, Memphis cascades to the next. If all go down, the local fallback keeps you running.
 - **Self-modification under your control.** Memphis can evolve its own code — but only through a gated process: git snapshot, branch, test suite, your approval. Tier 2 vault passphrase required.
@@ -132,7 +139,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/
 
 | Capability                 | What It Means                                                                                                                                                                                                            |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Chain Memory**           | 7 append-only, SHA-256 signed chains: journal, decisions, reflections, cases, patterns, collective, system. Session memory and conversation compaction now sit on top as derived overlays, not separate memory truths.   |
+| **Chain Memory**           | 7 append-only, SHA-256 linked chains (journal, decisions, reflections, cases, patterns, collective, system). Ed25519 signing activates when `RUST_CHAIN_REQUIRE_SIGNATURES=true`. Session memory and conversation compaction now sit on top as derived overlays, not separate memory truths. |
 | **Encrypted Vault**        | AES-256-GCM + Argon2id. All API keys, tokens, and passphrases live here. Not in `.env`. Not in plaintext. In the vault.                                                                                                  |
 | **5 Cognitive Modes**      | A (Capture), B (Inference), C (Prediction), D (Collective), E (Meta-Reflection). Toggle per session. Each writes to its own chain.                                                                                       |
 | **Rust TUI**               | Native operator cockpit with live chat streaming, transcript scrollback, wrapped output, busy animation, token/context telemetry, and pressure visibility across Overview, Chat, Memory, Sessions, Vault, Cases, System. |
@@ -150,7 +157,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/
 ```
 Operator (you)
   |
-  +-- CLI (memphis <cmd>)          -- 58+ commands, your control surface
+  +-- CLI (memphis <cmd>)          -- 88 top-level commands, your control surface
   +-- Rust TUI (memphis tui)       -- Native terminal cockpit
   +-- HTTP API (:3000)             -- Fastify, token-authenticated
   +-- MCP Server                   -- JSON-RPC 2.0, tier-gated tools
@@ -163,16 +170,18 @@ Operator (you)
   |     +-- work/                  -- local worker runner, polling, session tokens
   |
   +-- Rust Core (crates/)
-  |     +-- memphis-core           -- Chain integrity, Ed25519 signing
+  |     +-- memphis-core           -- Chain integrity, SHA-256 linking, optional Ed25519 (RUST_CHAIN_REQUIRE_SIGNATURES=true)
   |     +-- memphis-vault          -- AES-GCM encryption, Argon2 KDF
   |     +-- memphis-embed          -- Embeddings pipeline
+  |     +-- memphis-export         -- Chain export + migration utilities
+  |     +-- memphis-paths          -- Cross-platform path resolution
   |     +-- memphis-tui            -- Native operator console
   |     +-- memphis-napi           -- Node.js bridge (N-API)
   |     +-- memphis-operator       -- Native chat runtime
   |     +-- memphis-case-index     -- Case chain indexing
   |
   +-- Storage (yours, on your disk)
-        +-- ~/.memphis/chains/     -- Append-only signed chains (source of truth)
+        +-- ~/.memphis/chains/     -- Append-only SHA-256 linked chains, source of truth (Ed25519 optional via RUST_CHAIN_REQUIRE_SIGNATURES)
         +-- data/memphis.db        -- SQLite indexes (derived, rebuildable)
         +-- data/vault-entries.json -- Encrypted secrets (AES-256-GCM)
 ```

@@ -69,13 +69,14 @@ describe('gateway system prompt', () => {
     const prompt = buildSystemPrompt({
       availableTools: ['memphis_self_describe', 'memphis_self_modify'],
       providerLabel: 'minimax',
-      modelLabel: 'MiniMax-M2.7',
+      modelLabel: 'MiniMax-M3',
     });
 
     expect(prompt).toContain('Self-identity honesty');
     expect(prompt).toContain('<runtime_route>');
     expect(prompt).toContain('Provider selected for this turn: minimax.');
-    expect(prompt).toContain('Model selected for this turn: MiniMax-M2.7.');
+    expect(prompt).toContain('Model selected for this turn: MiniMax-M3.');
+    expect(prompt).toContain('Context window for selected model: 1000000 tokens (heuristic).');
     expect(prompt).toContain('answer from <runtime_route>');
     expect(prompt).not.toContain('You DO NOT KNOW which provider or model');
     expect(prompt).not.toContain("I can't\nread the active route");
@@ -84,7 +85,7 @@ describe('gateway system prompt', () => {
     // 2026-06-19: runtime_route is now the authoritative source when
     // present. memphis_self_describe remains wrong for provider/model
     // identity; it only carries surface/tools/cognitive mode.
-    expect(prompt).toContain('memphis providers list');
+    expect(prompt).toContain('memphis_providers');
     expect(prompt).toContain('Do NOT call');
     // Don't bake provenance lies into self-modify outputs.
     // (Match across line breaks since the source-code wrapping
@@ -98,12 +99,38 @@ describe('gateway system prompt', () => {
     // tool call. The system-prompt now requires a real tool call before
     // any concrete number lands in the reply.
     const prompt = buildSystemPrompt({
-      availableTools: ['memphis_health', 'memphis_chain_query'],
+      availableTools: [
+        'memphis_health',
+        'memphis_chain_query',
+        'memphis_lr_dashboard',
+        'memphis_tensor_status',
+      ],
     });
 
     expect(prompt).toContain('Status / health questions');
     expect(prompt).toContain('memphis_health');
+    expect(prompt).toContain('memphis_lr_dashboard');
+    expect(prompt).toContain('memphis_tensor_status');
+    expect(prompt).toContain('external API key status');
+    expect(prompt).toContain('memphis_brave_search');
+    expect(prompt).toContain('memphis_config_show');
+    expect(prompt).toContain('BRAVE_API_KEY not set');
+    expect(prompt).toMatch(/LR dashboard\s+entries\/status/);
+    expect(prompt).toContain('tensor/embedding persistence');
     expect(prompt).toContain('Do not produce specific numbers');
+  });
+
+  it('emits the Mazur/Kossecki cybernetic truth discipline', () => {
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_journal', 'memphis_recall'],
+    });
+
+    expect(prompt).toContain('Cybernetic truth discipline');
+    expect(prompt).toContain('Mazur/Kossecki');
+    expect(prompt).toContain('Truthful informing');
+    expect(prompt).toContain('Cognitive information is passive');
+    expect(prompt).toContain('Decision information is active');
+    expect(prompt).toContain('same-turn');
   });
 
   it('teaches the bot to read [chain_hits] + escalate to memphis_recall/search/chain_query for memory questions', () => {
@@ -178,6 +205,7 @@ describe('gateway system prompt', () => {
     // operator-specific narrative shipped.
     expect(prompt).toContain('zapisane');
     expect(prompt).toContain('zapisałem');
+    expect(prompt).toContain('zapisuję');
     expect(prompt).toContain('ładuję');
     expect(prompt).toContain('"saved"');
     expect(prompt).toContain('"persisted"');
@@ -186,6 +214,9 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('memphis_soul_write');
     expect(prompt).toContain('memphis_journal');
     expect(prompt).toContain('memphis_decide');
+    expect(prompt).toContain('LR Dashboard health measurements');
+    expect(prompt).toContain('action=add_entry');
+    expect(prompt).toContain('marker="urine_ph"');
     // Audit-chain reference so operator knows there's a verifiable trail
     expect(prompt).toContain('~/.memphis/chains/cases/');
     // Negative: no operator-specific narrative leaks (multi-tenant

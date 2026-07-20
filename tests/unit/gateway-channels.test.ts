@@ -29,6 +29,10 @@ describe('telegram channel', () => {
     expect(mod.isTelegramModelProbe('model?')).toBe(true);
     expect(mod.isTelegramModelProbe('provider?>')).toBe(true);
     expect(mod.isTelegramModelProbe('jaki model?')).toBe(true);
+    expect(mod.isTelegramModelProbe('ile masz okna kontekstowego?')).toBe(true);
+    expect(mod.isTelegramModelProbe('status kontekstu?')).toBe(true);
+    expect(mod.isTelegramModelProbe('context window?')).toBe(true);
+    expect(mod.isTelegramModelProbe('context status')).toBe(true);
     expect(mod.isTelegramModelProbe('use the model to answer')).toBe(false);
   });
 
@@ -49,8 +53,10 @@ describe('telegram channel', () => {
       expect(mod.buildTelegramTierEnvOverride('chat-1', 2)).toMatchObject({
         MEMPHIS_AUTONOMY_MODE: 'full',
         MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER: '3',
+        MEMPHIS_SURFACE_TELEGRAM_ALLOW_UNKNOWN_TOOLS: 'true',
         MEMPHIS_TIER3_FS_UNRESTRICTED: 'true',
         GATEWAY_EXEC_RESTRICTED_MODE: 'false',
+        MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK: 'true',
       });
     } finally {
       if (previous === undefined) delete process.env.MEMPHIS_TIER2_FULL_ACCESS;

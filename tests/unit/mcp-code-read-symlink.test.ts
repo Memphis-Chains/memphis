@@ -96,4 +96,30 @@ describe('mcp code-read — symlink escape protection (#132)', () => {
       rmSync(outsideDir, { recursive: true, force: true });
     }
   });
+
+  it('reads Memphis operator data and project files outside ~/memphis', () => {
+    const dataDir = path.join(env.tmpHome, '.memphis', 'apps', 'lr-dashboard');
+    const projectDir = path.join(env.tmpHome, 'projects', 'lr-dashboard');
+    mkdirSync(dataDir, { recursive: true });
+    mkdirSync(projectDir, { recursive: true });
+    writeFileSync(path.join(dataDir, 'manifest.json'), '{"name":"lr-dashboard"}\n', 'utf8');
+    writeFileSync(path.join(projectDir, 'package.json'), '{"name":"lr-dashboard"}\n', 'utf8');
+
+    const dataResult = runMemphisCodeRead({ path: path.join(dataDir, 'manifest.json') });
+    const projectResult = runMemphisCodeRead({ path: path.join(projectDir, 'package.json') });
+
+    expect(dataResult.error).toBeUndefined();
+    expect(dataResult.content).toContain('lr-dashboard');
+    expect(projectResult.error).toBeUndefined();
+    expect(projectResult.content).toContain('lr-dashboard');
+  });
+
+  it('still refuses secret-shaped files in newly allowed roots', () => {
+    const dataDir = path.join(env.tmpHome, '.memphis', 'apps', 'lr-dashboard');
+    mkdirSync(dataDir, { recursive: true });
+    const envPath = path.join(dataDir, '.env');
+    writeFileSync(envPath, 'SECRET=value\n', 'utf8');
+
+    expect(() => runMemphisCodeRead({ path: envPath })).toThrow(/blocked/i);
+  });
 });

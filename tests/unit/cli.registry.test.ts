@@ -18,6 +18,7 @@ describe('CLI command registry', () => {
     const commands = listCliCompletionCommands();
 
     expect(commands).toContain('setup');
+    expect(commands).toContain('slo');
     expect(commands).toContain('apps');
     expect(commands).toContain('skills');
     expect(commands).toContain('providers:health');
