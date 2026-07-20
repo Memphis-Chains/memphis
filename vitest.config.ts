@@ -6,6 +6,18 @@ export default defineConfig({
     testTimeout: 15000,
     include: ['tests/**/*.test.ts'],
     exclude: ['.memphis-intake/**', 'reference/**', 'node_modules/**', 'dist/**'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json-summary', 'html'],
+      reportsDirectory: 'coverage',
+      exclude: ['tests/**', 'scripts/**', 'dist/**', '**/*.d.ts'],
+      thresholds: {
+        statements: 66,
+        branches: 57,
+        functions: 72,
+        lines: 67,
+      },
+    },
     env: {
       MEMPHIS_API_TOKEN: '',
       RUST_CHAIN_ENABLED: 'true',

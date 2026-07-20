@@ -1,0 +1,16 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "src/mcp/server.ts",
+    "scripts/recover-vault-init.mjs",
+    "scripts/ollama-compat-bridge.mjs",
+    "scripts/start-dashboard.js",
+    "scripts/ascii-art.ts",
+    "scripts/celebrate.ts",
+    "scripts/progress-viz.ts"
+  ],
+  "ignore": [
+    "benchmark-search.ts",
+    "benchmarks/performance-suite.ts"
+  ]
+}

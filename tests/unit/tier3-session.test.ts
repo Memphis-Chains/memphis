@@ -414,8 +414,12 @@ describe('buildTier3EnvOverride', () => {
     const overrides = buildTier3EnvOverride('telegram', 'operator', testEnv);
     expect(overrides).toEqual({
       MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER: '3',
+      MEMPHIS_SURFACE_TELEGRAM_ALLOW_UNKNOWN_TOOLS: 'true',
+      MEMPHIS_SURFACE_TELEGRAM_ALLOW_URL_FETCH: 'true',
+      MEMPHIS_SURFACE_TELEGRAM_ALLOW_OPERATOR_OVERRIDE: 'true',
       MEMPHIS_AUTONOMY_MODE: 'full',
       MEMPHIS_TIER3_FS_UNRESTRICTED: 'true',
+      MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK: 'true',
     });
   });
 });

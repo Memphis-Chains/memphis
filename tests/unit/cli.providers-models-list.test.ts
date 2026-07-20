@@ -51,7 +51,7 @@ describe('CLI providers/models list', () => {
         DECENTRALIZED_LLM_MODEL: 'decentralized-model',
         MINIMAX_API_KEY: 'minimax-key',
         MINIMAX_BASE_URL: 'http://127.0.0.1:9',
-        MINIMAX_MODEL: 'MiniMax-M2.7',
+        MINIMAX_MODEL: 'MiniMax-M3',
         DEEPSEEK_API_KEY: 'deepseek-key',
         DEEPSEEK_API_BASE: 'http://127.0.0.1:9',
         DEEPSEEK_MODEL: 'deepseek-chat',
@@ -94,5 +94,18 @@ describe('CLI providers/models list', () => {
       expect(typeof model.capabilities.supports_vision).toBe('boolean');
       expect(typeof model.capabilities.context_window).toBe('number');
     }
+    expect(data.models).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          provider: 'minimax',
+          model: 'MiniMax-M3',
+          capabilities: expect.objectContaining({
+            supports_streaming: true,
+            supports_vision: true,
+            context_window: 1000000,
+          }),
+        }),
+      ]),
+    );
   });
 });

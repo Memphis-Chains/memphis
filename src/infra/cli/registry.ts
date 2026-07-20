@@ -82,6 +82,7 @@ export const CLI_COMMAND_REGISTRY = [
       'service',
       'reset',
       'repair',
+      'slo',
       'kill-zombies',
       'readiness',
       // Closure sprint Z.5.1 (2026-05-09): `demo` was registered in
@@ -301,6 +302,7 @@ export const CLI_COMPLETION_COMMANDS = [
   'reset',
   'worker',
   'repair',
+  'slo',
   'provider',
   'providers:health',
   'providers',

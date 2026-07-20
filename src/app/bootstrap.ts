@@ -63,6 +63,7 @@ import {
   getSchedulerRuntimeStatus,
   resolveConfiguredSchedulerExecutionTarget,
   startScheduler,
+  stopScheduler,
 } from '../infra/runtime/scheduler.js';
 import { writeSecurityCriticalEvent } from '../infra/runtime/security-critical.js';
 import {
@@ -97,6 +98,7 @@ import type {
 import { buildChatDispatchWorkItem, type HttpChatRuntimeDeps } from '../infra/work/chat-work.js';
 import { LocalWorkerRunner } from '../infra/work/local-worker-runner.js';
 import { DEFAULT_LOCAL_WORKER_CAPABILITY_SCOPE } from '../infra/work/work-capabilities.js';
+import { resolveModelCapabilitySnapshot } from '../providers/model-capabilities.js';
 import { getCognitiveMode, ensureIskra, ensureSoulManifest } from '../soul/manifest.js';
 import { loadSoulMemory } from '../soul/memory.js';
 
@@ -556,7 +558,7 @@ export async function bootstrap(): Promise<void> {
   }
 
   // ── Optional channel gateway ────────────────────────────────────
-  await startChannelGateway({
+  const channelGateway = await startChannelGateway({
     orchestration: container.orchestration,
     evolveSessionRepository: container.evolveSessionRepository,
     operatorChatSessionRepository: container.operatorChatSessionRepository,
@@ -565,7 +567,7 @@ export async function bootstrap(): Promise<void> {
 
   const localWorker = startLocalWorkerIfEnabled(container);
 
-  startReflectionLoop({ rawEnv: process.env });
+  const reflectionLoop = startReflectionLoop({ rawEnv: process.env });
 
   // Closes deferred item #5 — operators can opt into scheduled rotation
   // via MEMPHIS_CHAIN_ROTATE_INTERVAL_MS. Default (env unset) is no-op.
@@ -607,6 +609,7 @@ export async function bootstrap(): Promise<void> {
       { name: 'chain-rotation-loop', stop: () => chainRotationHandle.stop() },
       { name: 'scheduled-backup-loop', stop: () => scheduledBackupHandle.stop() },
       ...(localWorker ? [{ name: 'local-worker', stop: () => localWorker.stop() }] : []),
+      ...createRuntimeLifecycleStoppers({ channelGateway, reflectionLoop }),
       // 2026-05-12 SEGV diagnosis: 5/8 SIGSEGVs today landed during
       // graceful shutdown, all with the same V8 JIT stack signature
       // (NULL deref at offset ...5e2). Kartograf's OnnxKartografSession
@@ -631,6 +634,30 @@ export async function bootstrap(): Promise<void> {
   // commit was the cause of a prior crash, this resets the auto-revert
   // bookkeeping for the new (presumably-good) code.
   recordBootSuccess(process.env);
+}
+
+type StoppableRuntime = {
+  stop(): void | Promise<void>;
+};
+
+/**
+ * Background services that bootstrap starts outside the HTTP server.
+ * Keep this list explicit so every started service has an equivalent
+ * graceful-shutdown path. The scheduler is a process singleton, hence its
+ * module-level stopper rather than an instance handle.
+ */
+export function createRuntimeLifecycleStoppers(options: {
+  channelGateway: GatewayHandle | null;
+  reflectionLoop: StoppableRuntime;
+  stopSchedulerFn?: () => void;
+}): Array<{ name: string; stop: () => void | Promise<void> }> {
+  return [
+    ...(options.channelGateway
+      ? [{ name: 'channel-gateway', stop: () => options.channelGateway!.stop() }]
+      : []),
+    { name: 'reflection-loop', stop: () => options.reflectionLoop.stop() },
+    { name: 'scheduler', stop: options.stopSchedulerFn ?? stopScheduler },
+  ];
 }
 
 const bootstrapLog = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
@@ -738,12 +765,19 @@ async function startChannelGateway(container?: {
           'Use /status for route and /guide for the surface model.',
         ].join('\n');
       },
-      onModel: (context) =>
-        [
-          `Current route: provider=${provider.name}, model=${provider.defaultModel()}.`,
+      onModel: (context) => {
+        const model = provider.defaultModel();
+        const capability = resolveModelCapabilitySnapshot(provider.name, model);
+        const contextLine = capability
+          ? `Context window: ${capability.contextWindowTokens} tokens (${capability.source}).`
+          : 'Context window: not known by runtime capability registry.';
+        return [
+          `Current route: provider=${provider.name}, model=${model}.`,
+          contextLine,
           `Telegram tier: ${context.sessionTier}.`,
           'This is reported by the runtime, not inferred from the model prompt.',
-        ].join('\n'),
+        ].join('\n');
+      },
       onRecall: async (userId) => {
         const actorId = resolveActorId(userId, process.env);
         const ctx = await memory.recall(actorId, 'recent conversations topics identity', 8);

@@ -157,24 +157,23 @@ export function appendProviderStamp(
  *   1 — log-only; emit `prompt.output.confab_claim` event, reply
  *       passes through unmodified. (Original Phase 1 ship behavior.)
  *   2 — warn-append; emit `prompt.output.confab_warned`, append a
- *       runtime warning footer to the reply. (Default — autonomy
- *       cycle needs visible correction signal.)
+ *       runtime warning footer to the reply. (Legacy mode; useful
+ *       for detector tuning when operators want to inspect raw claims.)
  *   3 — strip-sentence; emit `prompt.output.confab_stripped`, regex-
- *       replace the offending sentence(s). Operator opt-in only;
- *       higher false-positive risk than warn-append.
+ *       replace the offending sentence(s). Default — unsupported
+ *       claims should not stay visible as if they were valid.
  *
  * Anything else falls back to the default (2). Operator can force
  * a specific phase per-process for A/B comparisons.
  */
 export type ConfabMitigationPhase = 0 | 1 | 2 | 3;
-export const DEFAULT_CONFAB_PHASE: ConfabMitigationPhase = 2;
+export const DEFAULT_CONFAB_PHASE: ConfabMitigationPhase = 3;
 
 export function resolveConfabPhase(rawEnv: NodeJS.ProcessEnv): ConfabMitigationPhase {
-  // S1 operator decision 2026-05-12: phase 3 (strip-sentence) stays
-  // opt-in. Operators get a single-purpose toggle
-  // (`MEMPHIS_ANTICONFAB_STRIP=1`) so they don't have to remember the
-  // numeric phase scale. The explicit phase env still works for A/B
-  // experiments + back-compat with existing configs.
+  // Operator decision 2026-07-07: phase 3 (strip-sentence) is the default
+  // because warning footers still leave unsupported claims in front of the
+  // operator. The explicit phase env remains for A/B experiments and for
+  // temporarily returning to phase 2 while tuning phrase lists.
   const stripRaw = (rawEnv.MEMPHIS_ANTICONFAB_STRIP ?? '').trim().toLowerCase();
   if (stripRaw === '1' || stripRaw === 'true' || stripRaw === 'on') return 3;
 
@@ -760,11 +759,18 @@ function buildPerTurnIntrospectionFragment(options: {
 }): string {
   const lines: string[] = [];
   if (options.providerLabel || options.modelLabel) {
+    const capability =
+      options.providerLabel && options.modelLabel
+        ? resolveModelCapabilitySnapshot(options.providerLabel, options.modelLabel)
+        : undefined;
     lines.push(
       '<runtime_route>',
       `Provider selected for this turn: ${options.providerLabel ?? 'unknown'}.`,
       `Model selected for this turn: ${options.modelLabel ?? 'unknown'}.`,
-      'This block is the authoritative answer for "what model/provider are you using right now?" Do not claim you cannot know it when this block is present.',
+      capability
+        ? `Context window for selected model: ${capability.contextWindowTokens} tokens (${capability.source}).`
+        : 'Context window for selected model: unknown.',
+      'This block is the authoritative answer for "what model/provider/context window are you using right now?" Do not claim you cannot know it when this block is present.',
       '</runtime_route>',
     );
   }
@@ -785,6 +791,7 @@ async function prepareTextTurn(
   availableTools: string[],
   classification: InputRiskClassification | undefined,
   surfacePolicy: SurfacePolicy,
+  rawEnv: NodeJS.ProcessEnv,
   conversationOverlay?: ConversationPromptOverlay,
 ): Promise<PreparedTurn> {
   let recalledMemory: Array<{ content: string; score: number }> = [];
@@ -833,7 +840,7 @@ async function prepareTextTurn(
         blockedCapabilities.push('url_fetch_surface_policy_blocked');
       }
     } else if (!highRisk) {
-      const fetched = await fetchUrlsFromMessage(input);
+      const fetched = await fetchUrlsFromMessage(input, { rawEnv });
       const allowedFetched = [];
       for (const item of fetched) {
         const assessment = inspectPromptFragment(item.content, 'fetched_content');
@@ -1237,6 +1244,7 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
             availableTools,
             classification,
             surfacePolicy,
+            rawEnvWithTier3,
             conversationOverlay,
           )
         : await prepareMessagesTurn(
@@ -1376,9 +1384,9 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
     // and cross-reference the tool calls that fired in this turn. If
     // a forbidden phrase appears WITHOUT the matching whitelisted tool,
     // emit a runtime security event AND, depending on
-    // `MEMPHIS_ANTICONFAB_PHASE`, optionally mutate the reply
-    // (warn-append at phase 2 — the default; strip-sentence at
-    // phase 3 — opt-in).
+  // `MEMPHIS_ANTICONFAB_PHASE`, optionally mutate the reply
+  // (strip-sentence at phase 3 — the default; warn-append at
+  // phase 2 — legacy/tuning mode).
     //
     // Hoisted out of the try{} so the cleanedOutput chain below can
     // splice the warning footer in. Audit failure is non-fatal — `null`
@@ -1471,8 +1479,8 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
         : '';
 
     const baseOutput = stripThinkBlocks(guarded.output, rawEnvWithTier3) + truncationNote;
-    // Anti-confab Phase 2 splice: append the runtime warning footer (or
-    // strip the offending sentences at Phase 3) BEFORE the provider
+    // Anti-confab splice: strip the offending sentences at Phase 3 (default)
+    // or append the runtime warning footer at Phase 2 BEFORE the provider
     // stamp so the operator-facing tail reads
     //   `[memphis: claim flagged …] — via anthropic/claude-sonnet-4-6`
     // rather than the other way around. Phase 1 / Phase 0 / null audit
