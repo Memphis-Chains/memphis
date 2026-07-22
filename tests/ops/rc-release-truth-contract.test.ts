@@ -75,6 +75,7 @@ describe('rc release truth contract', () => {
     const releaseGates = read(path.join('scripts', 'run-release-gates.sh'));
     const releaseScript = read(path.join('scripts', 'release.sh'));
     const prepareRc = read(path.join('scripts', 'prepare-release-candidate.sh'));
+    const versionSync = read(path.join('scripts', 'set-release-version.mjs'));
     const releaseWorkflow = read(path.join('.github', 'workflows', 'release.yml'));
     const releaseDraftWorkflow = read(
       path.join('.github', 'workflows', 'release-draft-dispatch.yml'),
@@ -130,6 +131,11 @@ describe('rc release truth contract', () => {
     expect(releaseGates).toContain('npm run -s ops:release-preflight -- --json');
     expect(releaseScript).toContain('bash ./scripts/run-release-gates.sh');
     expect(prepareRc).toContain('bash ./scripts/run-release-gates.sh');
+    expect(releaseScript).toContain('node ./scripts/set-release-version.mjs');
+    expect(prepareRc).toContain('node ./scripts/set-release-version.mjs');
+    expect(versionSync).toContain("writeJson('npm-shrinkwrap.json'");
+    expect(versionSync).toContain("replaceExactlyOnce(\n  'README.md'");
+    expect(versionSync).toContain("replaceExactlyOnce(\n  'README.pl.md'");
     expect(releaseWorkflow).toContain('bash ./scripts/run-release-gates.sh');
     expect(releaseDraftWorkflow).toContain('bash ./scripts/run-release-gates.sh');
     expect(releaseDraftWorkflow).toContain('Quality gates run in this workflow:');
