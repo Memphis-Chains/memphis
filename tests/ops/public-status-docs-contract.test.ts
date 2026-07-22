@@ -21,10 +21,11 @@ describe('public status and license docs contract', () => {
     // the assertion follows automatically.
     const pkg = JSON.parse(read('package.json')) as { version: string };
     expect(readme).toContain(`\`v${pkg.version}\``);
-    // "production-ready" is the load-bearing claim; the trailing scope
-    // phrase ("for first install" / "for operator-supervised runtime")
-    // changes per release narrative and shouldn't pin the test.
-    expect(readme).toContain('production-ready');
+    // Keep the public maturity claim explicit without overstating broad
+    // production readiness. The runtime still assumes active operator
+    // supervision and documents deferred work separately.
+    expect(readme).toContain('Status: operator-supervised runtime');
+    expect(readme).toContain('docs/dev/v1.10.0-deferred-work.md');
     // S10-1 (PR following S9-0): README links point to canonical
     // subdir paths — bare `docs/X.md` 404s when the file lives under
     // `docs/operator/`, `docs/historical/`, or `docs/dev/`.
@@ -43,8 +44,7 @@ describe('public status and license docs contract', () => {
     // `(docs/operator/X.md)` from matching when somewhere in the
     // string there's a slash before `docs/` — only block links
     // that start at `docs/` or `./docs/`.
-    const bareDocLinks =
-      readme.match(/\((?:\.\/)?docs\/[^/)]+\.md(?:#[^)]*)?\)/g) ?? [];
+    const bareDocLinks = readme.match(/\((?:\.\/)?docs\/[^/)]+\.md(?:#[^)]*)?\)/g) ?? [];
     const allowed = (link: string) =>
       /^\((?:\.\/)?docs\/ROADMAP-CURRENT\.md(?:#[^)]*)?\)$/.test(link);
     const unexpected = bareDocLinks.filter((link) => !allowed(link));
