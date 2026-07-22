@@ -1,5 +1,46 @@
 ## Unreleased
 
+## v1.11.0 - 2026-07-22
+
+This release closes the 50-commit stabilization and modernization window after
+`v1.10.0`. It advances the operator-supervised runtime without changing the
+project's local-first trust boundary, and restores the public documentation and
+release metadata to the executable state of `main`.
+
+### Runtime and operator experience
+
+- Completed the runtime modernization closeout and restored readiness
+  invariants across the native operator, CLI, HTTP, MCP, and Telegram surfaces.
+- Added plan-aware self-coding, operator-mode execution guidance, and stronger
+  provider identity/context reporting based on the route actually used.
+- Added chunked, multi-vector embeddings for content above 4 KB and repaired
+  chain reads, case tool payloads, Rust-compatible block hash validation, and
+  shutdown handling for the embedding and Kartograf runtimes.
+- Persisted Telegram photo/document attachments, tightened the gateway execution
+  policy path, and installed reboot-safe local runtime services.
+
+### Security and reliability
+
+- Made vault initialization fail closed when encrypted entries already exist,
+  unless the operator explicitly requests a forced reinitialization.
+- Isolated test audit writes from live chains, hardened known-fork startup
+  handling, and added machine-local/secret artifact protections to `.gitignore`.
+- Updated vulnerable Rust and npm dependencies, including `tar` `7.5.20`,
+  `sharp` `0.35.3`, `fast-uri` `3.1.4`, and the OpenTelemetry Jaeger propagator
+  `2.10.0`; the production audit gate reports no high or critical advisories.
+- Repaired source-build N-API resolution, release smoke ordering, fresh-install
+  verification, and nightly CI range selection.
+
+### Public and release contract
+
+- Replaced stale README snapshots with the current 11-chain, provider-routing,
+  authorization, bootstrap, and CLI contracts.
+- Added a maintained Polish operator README and verified the public website,
+  installation, and documentation entry points.
+- Synchronized release version updates across `package.json`,
+  `npm-shrinkwrap.json`, and both public READMEs so future RC and GA automation
+  cannot publish contradictory version metadata.
+
 ## v1.10.0 - 2026-05-12
 
 Closes the 10-day window since `v1.9.2` (2026-05-08 → 2026-05-12) — 91

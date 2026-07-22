@@ -14,7 +14,7 @@ Memphis is a local-first cognitive runtime born from [Oswobodzeni](https://oswob
 
 Durable runtime actions are written to operator-owned chains. Secrets are encrypted at rest, and sensitive tools are guarded by explicit authorization tiers. Memphis is more than a chat interface: it is a sovereign cognitive runtime designed for operators who want to own their memory, configuration, and execution boundary.
 
-**Current version: `v1.10.0`** (matches `package.json`) | **Status: operator-supervised runtime** — native Rust cockpit, chain-backed memory, encrypted vault, local and cloud provider routing, MCP/HTTP/Telegram surfaces, Kartograf ONNX inference, and composable skills. See [`CHANGELOG.md`](./CHANGELOG.md) for release details and [`docs/dev/v1.10.0-deferred-work.md`](./docs/dev/v1.10.0-deferred-work.md) for explicit deferrals.
+**Current version: `v1.11.0`** (matches `package.json`) | **Status: operator-supervised runtime** — native Rust cockpit, chain-backed memory, encrypted vault, local and cloud provider routing, MCP/HTTP/Telegram surfaces, Kartograf ONNX inference, and composable skills. See [`CHANGELOG.md`](./CHANGELOG.md) for release details and [`docs/dev/v1.10.0-deferred-work.md`](./docs/dev/v1.10.0-deferred-work.md) for the previous release's explicit deferrals.
 
 **Public surface:** [memphis-v5.pl](https://memphis-v5.pl) · [start](https://memphis-v5.pl/start/) · [docs](https://memphis-v5.pl/docs/) · [roadmap](https://memphis-v5.pl/roadmap/) · [llms.txt](https://memphis-v5.pl/llms.txt) · [agents.json](https://memphis-v5.pl/agents.json)
 
