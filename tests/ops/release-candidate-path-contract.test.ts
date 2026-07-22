@@ -29,7 +29,8 @@ describe('release candidate path contract', () => {
     );
     expect(releaseRunbook).toContain('./scripts/release.sh --version 1.0.0');
 
-    expect(readme).toContain('./scripts/prepare-release-candidate.sh --version 1.2.2-rc.1');
+    expect(readme).toContain('./scripts/prepare-release-candidate.sh --version X.Y.Z-rc.1');
+    expect(readme).toContain('./scripts/release.sh --version X.Y.Z');
     expect(readme).toContain('.github/workflows/release-draft-dispatch.yml');
     expect(readme).toContain('.github/workflows/release.yml');
   });
