@@ -1,6 +1,6 @@
 {
   "name": "@memphis-chains/memphis",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "description": "Memphis sovereign AI runtime with chain-backed memory, encrypted vault, and a native operator console",
   "main": "dist/index.js",
   "type": "module",
@@ -217,15 +217,17 @@
   "overrides": {
     "@babel/core": "^7.29.7",
     "@grpc/grpc-js": "^1.14.4",
+    "@opentelemetry/propagator-jaeger": "^2.10.0",
     "brace-expansion": "^5.0.6",
     "esbuild": "^0.28.1",
-    "fast-uri": ">=3.1.2",
-    "hono": ">=4.12.26",
+    "fast-uri": "^3.1.4",
+    "hono": "^4.12.31",
     "ip-address": ">=10.2.0",
     "js-yaml": "^4.2.0",
     "markdown-it": "^14.2.0",
     "protobufjs": "^7.6.4",
     "qs": "^6.15.2",
+    "sharp": "^0.35.3",
     "tar": "^7.5.20",
     "vite": "^8.0.16"
   },

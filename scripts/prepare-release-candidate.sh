@@ -162,14 +162,9 @@ echo "Current version: ${CURRENT_VERSION}"
 echo "RC version:      ${VERSION}"
 
 if [[ "$DRY_RUN" == "true" ]]; then
-  echo "[dry-run] bump package.json version to ${VERSION}"
+  echo "[dry-run] synchronize package, lockfile, and README versions to ${VERSION}"
 else
-  node -e "
-const fs = require('fs');
-const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-pkg.version = '${VERSION}';
-fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\\n');
-"
+  node ./scripts/set-release-version.mjs "${VERSION}"
 fi
 
 if grep -q "^## ${TAG} - " CHANGELOG.md; then
@@ -192,7 +187,7 @@ else
 fi
 
 run_cmd bash ./scripts/run-release-gates.sh
-run_cmd git add package.json CHANGELOG.md
+run_cmd git add package.json npm-shrinkwrap.json README.md README.pl.md CHANGELOG.md
 run_cmd git commit -m "chore(release): ${TAG}"
 
 echo
