@@ -61,10 +61,10 @@ finally knows about its actual model lineup.
 
 - **Kartograf ONNX runtime** — the Q2-spec `Runtime (onnxruntime-node)`
   closure. `memphis_kartograf` tool gates on `MEMPHIS_KARTOGRAF_ENABLE=1`
-  + an installed checkpoint, lazy-loads the ~700-MB ONNX graph as a
-  process singleton, returns a 256-d embedding + 12-class zone
-  distribution per call. Replaces `StubKartografSession` which was
-  silently emitting zero vectors. (#573)
+  - an installed checkpoint, lazy-loads the ~700-MB ONNX graph as a
+    process singleton, returns a 256-d embedding + 12-class zone
+    distribution per call. Replaces `StubKartografSession` which was
+    silently emitting zero vectors. (#573)
 - **Kartograf v4 training stack** — DeBERTa-v3-base + LoRA fine-tune
   pipeline (`tools/training/train-kartograf.py`) producing signed
   Ed25519 checkpoint envelopes. Operator-grade GPU (GTX 960 / Maxwell
@@ -76,12 +76,12 @@ finally knows about its actual model lineup.
   `checkpointId` in the audit trail so writes can be traced to the
   model version that picked them. (#573)
 - **First-class skill composition** — five `memphis_skill_{list,show,
-  create,validate,install}` tools so Memphis can scaffold + validate
-  + install skills without round-tripping via `memphis_fs_write` +
-  `memphis_exec memphis skills create`. The validator catches schema
-  mistakes BEFORE install with a `suggestedFix` hint ("did you mean
-  memphis_self_describe?"). Anti-confab rule E rejects fake tool
-  names in code fences via Levenshtein nearest-match. (#572)
+create,validate,install}` tools so Memphis can scaffold + validate
+  - install skills without round-tripping via `memphis_fs_write` +
+    `memphis_exec memphis skills create`. The validator catches schema
+    mistakes BEFORE install with a `suggestedFix` hint ("did you mean
+    memphis_self_describe?"). Anti-confab rule E rejects fake tool
+    names in code fences via Levenshtein nearest-match. (#572)
 - **Telegram document / PDF ingestion** — `bot.on('message:document')`
   handler. PDFs go through `pdftotext -layout` (poppler), text files
   read raw UTF-8, images-as-documents reuse the vision+OCR pipeline,
@@ -92,7 +92,7 @@ finally knows about its actual model lineup.
   `platform.minimax.io/docs/guides/models-intro` (2026-05-12 snapshot).
   All 12 current chat models exposed in `listModels()`: M2.7 +
   highspeed, M2.5 + highspeed, M2 (200k/128k), M2.1 + highspeed,
-  m2-her (roleplay), plus legacy M1 / Text-01 / abab-*. Per-model
+  m2-her (roleplay), plus legacy M1 / Text-01 / abab-\*. Per-model
   context windows in `minimaxCapabilities()` (M2 family = 200k; was
   hardcoded 32k for every model). Endpoint routing fixed to handle
   `m2-her` (which doesn't have the `MiniMax-` prefix). (#575)
@@ -553,7 +553,7 @@ Y1 Q1 foundation — compressed sprint shipped the write → export → train �
 
 ### Added
 
-- **N36 Kartograf spec** (#249) — `docs/dev/KARTOGRAF-SPEC.md` freezes ModernBERT-base + 256d embedding head + 12-class zone classifier + trust-tiered distribution model. Supersedes the WATRA-* doc family.
+- **N36 Kartograf spec** (#249) — `docs/dev/KARTOGRAF-SPEC.md` freezes ModernBERT-base + 256d embedding head + 12-class zone classifier + trust-tiered distribution model. Supersedes the WATRA-\* doc family.
 - **N25 dep policy + CI gate** (#248) — `docs/dev/DEPENDENCY-POLICY.md`, `.github/pull_request_template.md`, `.github/workflows/dep-freeze-check.yml`. Symmetric diff over npm/Cargo/pip/vendor with per-block keys catches add/bump/remove uniformly; blocked class rejects outright.
 - **N30 quarterly-gate workflow** (#248) — `.github/workflows/quarterly-gate.yml` + `scripts/quarterly-exit-test-q1.sh`. Runs on the real last Monday of each quarter-end month + `workflow_dispatch` with a `current` default choice.
 - **N37 Kartograf corpus pipeline** (#251) — `tools/training/kartograf-corpus.py`. Realpath containment + denylist (broadened `.env*` / `*.env` / vault) + decoded-content secret scan + zone catalog alignment assertion (hard-fail). Produces `train.jsonl` + `eval.jsonl` + signed summary.
