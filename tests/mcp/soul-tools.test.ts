@@ -122,6 +122,15 @@ describe('runMemphisSoulWrite', () => {
     };
   }
 
+  it('rejects an empty updates payload instead of reporting a successful no-op', async () => {
+    const deps = makeWriteDeps();
+
+    await expect(runMemphisSoulWrite({ updates: {} }, deps)).rejects.toThrow(
+      /updates.*at least one of.*user.*self.*context/i,
+    );
+    expect(deps.update).not.toHaveBeenCalled();
+  });
+
   it('returns success with updated sections', async () => {
     const deps = makeWriteDeps();
     const result = await runMemphisSoulWrite({ updates: { user: { name: 'Bob' } } }, deps);
@@ -158,17 +167,6 @@ describe('runMemphisSoulWrite', () => {
     expect(result.updated).toEqual(['user', 'self', 'context']);
   });
 
-  it('returns empty updated array for no-op update', async () => {
-    const deps = makeWriteDeps();
-    const result = await runMemphisSoulWrite({ updates: {} }, deps);
-
-    expect(result.success).toBe(true);
-    expect(result.updated).toEqual([]);
-    // Should not call update at all
-    expect(deps.update).not.toHaveBeenCalled();
-    expect(deps.appendSoulAudit).not.toHaveBeenCalled();
-  });
-
   it('records genitive and accusative case entries for each section', async () => {
     const deps = makeWriteDeps();
     await runMemphisSoulWrite({ updates: { user: { preferences: ['detailed'] } } }, deps);
@@ -201,7 +199,9 @@ describe('runMemphisSoulWrite', () => {
 
   it('surfaces soul chain audit failure without hiding the memory update', async () => {
     const deps = makeWriteDeps();
-    (deps.appendSoulAudit as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('hash mismatch'));
+    (deps.appendSoulAudit as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('hash mismatch'),
+    );
 
     const result = await runMemphisSoulWrite({ updates: { user: { name: 'Bob' } } }, deps);
 

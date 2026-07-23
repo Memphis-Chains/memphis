@@ -158,6 +158,7 @@ describe('memphis mcp server', () => {
     await stableClient.connect(stableClientTransport);
     const stableTools = await stableClient.listTools();
     const stableNames = stableTools.tools.map((tool) => tool.name);
+    expect(stableNames).toContain('memphis_chain_verify');
     expect(stableNames).not.toContain('memphis_chain_query');
     expect(stableNames).not.toContain('memphis_providers');
     expect(stableNames).not.toContain('memphis_system_info');

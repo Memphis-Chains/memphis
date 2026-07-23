@@ -1,3 +1,4 @@
+import { AppError } from '../../core/errors.js';
 import { CaseChainAdapter } from '../../infra/storage/case-chain-adapter.js';
 import { appendBlock, type AppendBlockResult } from '../../infra/storage/chain-adapter.js';
 import { scanContent } from '../../security/content-scan.js';
@@ -100,7 +101,11 @@ export async function runMemphisSoulWrite(
   if (input.updates.context) updatedSections.push('context');
 
   if (updatedSections.length === 0) {
-    return { success: true, updated: [], timestamp: new Date().toISOString() };
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'tool memphis_soul_write: `updates` must contain at least one of `user`, `self`, or `context`',
+      400,
+    );
   }
 
   const scan = scanContent(JSON.stringify(input.updates), 'memory');

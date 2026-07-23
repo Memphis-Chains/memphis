@@ -6,6 +6,7 @@ import {
   runMemphisCaseQuery,
 } from '../../../mcp/tools/case-entry.js';
 import { runMemphisChainQuery } from '../../../mcp/tools/chain-query.js';
+import { runMemphisChainVerify } from '../../../mcp/tools/chain-verify.js';
 import { runMemphisLrDashboard } from '../../../mcp/tools/lr-dashboard.js';
 import { buildRegistryInputJsonSchema } from '../../tool-json-schema.js';
 import { buildTool, type RuntimeToolDefinition } from '../../tool-runtime.js';
@@ -85,6 +86,23 @@ export function createStorageRuntimeTools(
       },
       execute(input) {
         return runMemphisChainQuery(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_chain_verify',
+      description: 'Verify chain hashes, indexes, and prev-hash links',
+      inputSchema: buildRegistryInputJsonSchema('memphis_chain_verify', {
+        propertyDescriptions: {
+          chain: 'Optional canonical chain name; omit to verify all chains',
+        },
+      }),
+      isConcurrencySafe: true,
+      isReadOnly: true,
+      validateInput(args) {
+        return { chain: optionalString(args, 'chain') };
+      },
+      execute(input) {
+        return runMemphisChainVerify(input, rawEnv);
       },
     }),
     buildTool({
