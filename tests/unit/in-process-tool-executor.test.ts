@@ -51,6 +51,7 @@ describe('in-process tool executor', () => {
   it('keeps preview tools disabled unless the feature flag is enabled', () => {
     const stableExecutor = createInProcessToolExecutor({ rawEnv: {} });
     const stableNames = stableExecutor.listTools().map((tool) => tool.name);
+    expect(stableNames).toContain('memphis_chain_verify');
     expect(stableNames).not.toContain('memphis_chain_query');
     expect(stableNames).not.toContain('memphis_providers');
     expect(stableNames).not.toContain('memphis_system_info');
@@ -224,5 +225,16 @@ describe('in-process tool executor', () => {
         },
       }),
     ).rejects.toThrow(/Correct shape[\s\S]*activeWork[\s\S]*String-shape fields/);
+  });
+
+  it('rejects an empty soul_write update instead of returning success with updated:[]', async () => {
+    const executor = createInProcessToolExecutor();
+    await expect(
+      executor.execute({
+        id: 'call-soul-write-empty',
+        name: 'memphis_soul_write',
+        arguments: { updates: {} },
+      }),
+    ).rejects.toThrow(/updates.*at least one of.*user.*self.*context/i);
   });
 });
