@@ -31,11 +31,15 @@ export const SOUL_TOOLS: Record<string, ToolMeta> = {
     description: 'Update soul memory',
     inputSchema: z
       .object({
-        updates: z.object({
-          user: z.record(z.string(), z.unknown()).optional(),
-          self: z.record(z.string(), z.unknown()).optional(),
-          context: z.record(z.string(), z.unknown()).optional(),
-        }),
+        updates: z
+          .object({
+            user: z.record(z.string(), z.unknown()).optional(),
+            self: z.record(z.string(), z.unknown()).optional(),
+            context: z.record(z.string(), z.unknown()).optional(),
+          })
+          .refine((updates) => Object.keys(updates).length > 0, {
+            message: '`updates` must contain at least one of `user`, `self`, or `context`',
+          }),
         approval_request_id: z.string().optional(),
       })
       .strict(),

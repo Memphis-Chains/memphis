@@ -67,7 +67,9 @@ export function createInProcessMemoryClient(
         return;
       }
 
-      const content = `[${userId}] User: ${userText}\nAssistant: ${assistantReply.slice(0, 500)}`;
+      const assistantLimit = 500;
+      const storedAssistantReply = assistantReply.slice(0, assistantLimit);
+      const content = `[${userId}] User: ${userText}\nAssistant: ${storedAssistantReply}`;
       const result = await runMemphisJournal({
         content,
         tags: ['conversation', userId],
@@ -75,6 +77,15 @@ export function createInProcessMemoryClient(
         conversationId: binding?.conversationId,
         sessionId: binding?.sessionId,
         turnId: binding?.turnId,
+        truncation:
+          assistantReply.length > assistantLimit
+            ? {
+                field: 'assistantReply',
+                originalLength: assistantReply.length,
+                storedLength: storedAssistantReply.length,
+                limit: assistantLimit,
+              }
+            : undefined,
       });
       if (!result.success) {
         throw new Error(result.error ?? 'memory_store_blocked');

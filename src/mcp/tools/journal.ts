@@ -27,6 +27,12 @@ export type MemphisJournalInput = {
   conversationId?: string;
   sessionId?: string;
   turnId?: string;
+  truncation?: {
+    field: string;
+    originalLength: number;
+    storedLength: number;
+    limit: number;
+  };
 };
 
 export type MemphisJournalOutput = {
@@ -83,5 +89,6 @@ export async function runMemphisJournal(
     conversationId: input.conversationId,
     sessionId: input.sessionId,
     turnId: input.turnId,
+    truncation: input.truncation,
   });
 }

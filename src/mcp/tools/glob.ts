@@ -73,10 +73,7 @@ function safeRealpath(target: string): string {
   }
 }
 
-function assertInProject(
-  resolvedPath: string,
-  rawEnv: NodeJS.ProcessEnv = process.env,
-): void {
+function assertInProject(resolvedPath: string, rawEnv: NodeJS.ProcessEnv = process.env): void {
   const realResolved = safeRealpath(resolvedPath);
   const extraRoots = buildAdditionalReadRoots(rawEnv).map(safeRealpath);
   const realProjectRoot = safeRealpath(PROJECT_ROOT);
@@ -104,6 +101,63 @@ function findFd(): string | null {
     }
   }
   return null;
+}
+
+function normalizeGlobPath(value: string): string {
+  return value.replaceAll(path.sep, '/').replace(/^\.\//, '');
+}
+
+/**
+ * Backend-independent glob matcher used by the `find` fallback. Keep this
+ * deliberately small: Memphis documents `*`, `?`, and `**`; character-class
+ * and brace expansion are not part of the tool contract.
+ */
+export function matchesGlobPattern(candidate: string, pattern: string): boolean {
+  const normalizedCandidate = normalizeGlobPath(candidate);
+  const normalizedPattern = normalizeGlobPath(pattern);
+  let expression = '^';
+
+  for (let index = 0; index < normalizedPattern.length; index += 1) {
+    const char = normalizedPattern[index];
+    const next = normalizedPattern[index + 1];
+    const afterNext = normalizedPattern[index + 2];
+
+    if (char === '*' && next === '*') {
+      if (afterNext === '/') {
+        expression += '(?:.*/)?';
+        index += 2;
+      } else {
+        expression += '.*';
+        index += 1;
+      }
+      continue;
+    }
+    if (char === '*') {
+      expression += '[^/]*';
+      continue;
+    }
+    if (char === '?') {
+      expression += '[^/]';
+      continue;
+    }
+    expression += char.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+  }
+
+  expression += '$';
+  return new RegExp(expression).test(normalizedCandidate);
+}
+
+function isImplicitlyIgnored(relativePath: string): boolean {
+  return normalizeGlobPath(relativePath)
+    .split('/')
+    .some(
+      (segment) =>
+        segment.startsWith('.') ||
+        segment === 'node_modules' ||
+        segment === 'dist' ||
+        segment === 'target' ||
+        segment === 'coverage',
+    );
 }
 
 export function runMemphisGlob(input: MemphisGlobInput): MemphisGlobOutput {
@@ -142,16 +196,26 @@ export function runMemphisGlob(input: MemphisGlobInput): MemphisGlobOutput {
         },
       );
     } else {
-      // Fallback to find + shell glob approximation
-      output = execFileSync(
-        'find',
-        [searchPath, '-maxdepth', '10', '-type', 'f', '-name', input.pattern],
-        {
-          encoding: 'utf8',
-          timeout: 10_000,
-          maxBuffer: 1024 * 1024,
-        },
-      );
+      // `find -name` only matches basenames, so patterns such as
+      // `src/**/*.ts` silently returned zero while fd returned matches.
+      // Enumerate files and apply the same path-aware glob contract here.
+      const discovered = execFileSync('find', [searchPath, '-maxdepth', '10', '-type', 'f'], {
+        encoding: 'utf8',
+        timeout: 10_000,
+        maxBuffer: 8 * 1024 * 1024,
+      })
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .filter((file) => {
+          const relativeToSearch = path.relative(searchPath, file);
+          return (
+            !isImplicitlyIgnored(relativeToSearch) &&
+            matchesGlobPattern(relativeToSearch, input.pattern)
+          );
+        })
+        .slice(0, limit);
+      output = discovered.join('\n');
     }
 
     const allFiles = output.trim().split('\n').filter(Boolean);

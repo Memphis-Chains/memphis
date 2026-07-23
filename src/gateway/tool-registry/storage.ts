@@ -161,4 +161,25 @@ export const STORAGE_TOOLS: Record<string, ToolMeta> = {
       },
     ],
   },
+  memphis_chain_verify: {
+    name: 'memphis_chain_verify',
+    tier: 0,
+    capabilities: ['read'],
+    description: 'Verify chain hashes, indexes, and prev-hash links before diagnosing corruption',
+    inputSchema: z
+      .object({
+        chain: z.string().optional(),
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+    helpText:
+      'Authoritative read-only chain verifier. Pass one canonical chain name or omit it to verify every chain. A shortened content preview is never evidence of corruption: only a failed memphis_chain_verify result may support that diagnosis.',
+    cliFlags: [
+      {
+        name: '--chain',
+        description: 'Optional chain name; omit to verify all chains.',
+        takesValue: true,
+      },
+    ],
+  },
 };

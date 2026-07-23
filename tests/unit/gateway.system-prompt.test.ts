@@ -42,20 +42,16 @@ describe('gateway system prompt', () => {
     });
 
     expect(prompt).toContain('## Tool discipline');
-    expect(prompt).toContain(
-      'They are NEVER how you reply to the user.',
-    );
+    expect(prompt).toContain('They are NEVER how you reply to the user.');
     expect(prompt).toContain(
       'After executing any tool call(s), you MUST produce a plain text response',
     );
-    expect(prompt).toContain(
-      'Save context you want to recall in FUTURE sessions',
-    );
-    expect(prompt).toContain(
-      'This is NOT where your reply to the user goes',
-    );
+    expect(prompt).toContain('Save context you want to recall in FUTURE sessions');
+    expect(prompt).toContain('This is NOT where your reply to the user goes');
     // Negative: legacy misleading line must be gone
-    expect(prompt).not.toContain('PURPOSE: Write to the journal chain. This is your persistent memory.');
+    expect(prompt).not.toContain(
+      'PURPOSE: Write to the journal chain. This is your persistent memory.',
+    );
   });
 
   it('emits the anti-confab self-identity guard (sprint 2026-05-04)', () => {
@@ -189,6 +185,20 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('Wywołuję teraz narzędzie');
   });
 
+  it('requires authoritative verification before diagnosing chain corruption', () => {
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_chain_verify', 'memphis_chain_query', 'memphis_soul_write'],
+    });
+
+    expect(prompt).toContain('CORRUPTION CLAIM GATE');
+    expect(prompt).toContain('memphis_chain_verify ran in THIS turn');
+    expect(prompt).toContain('A truncated preview is valid stored content');
+    expect(prompt).toContain('WRITE DIAGNOSIS EVIDENCE');
+    expect(prompt).toContain('successful no-op');
+    expect(prompt).toContain('<tool name="memphis_chain_verify">');
+    expect(prompt).toContain('Quote the verifier result');
+  });
+
   it('forbids persistence claims without an actual write tool call (anti-confab 2026-05-05)', () => {
     // Operator session 02:00 caught bot saying "Lądunę. Zapisane." after a
     // profile update conversation — without ever calling memphis_soul_write.
@@ -299,11 +309,7 @@ describe('gateway system prompt', () => {
     // absence ("nie mam", "zero results") — same confab pattern,
     // opposite framing.
     const prompt = buildSystemPrompt({
-      availableTools: [
-        'memphis_recall',
-        'memphis_chain_query',
-        'memphis_soul_read',
-      ],
+      availableTools: ['memphis_recall', 'memphis_chain_query', 'memphis_soul_read'],
     });
 
     expect(prompt).toContain('broaden the scope (anti-confab phase 4)');
@@ -315,9 +321,9 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('`cases` chain');
     expect(prompt).toContain('`reflections` chain');
     // Required tool batch listed
-    expect(prompt).toContain("memphis_soul_read");
-    expect(prompt).toContain("memphis_recall");
-    expect(prompt).toContain("memphis_chain_query");
+    expect(prompt).toContain('memphis_soul_read');
+    expect(prompt).toContain('memphis_recall');
+    expect(prompt).toContain('memphis_chain_query');
     // Forbidden negative phrases (PL + EN)
     expect(prompt).toContain('"nie mam żadnych"');
     expect(prompt).toContain('"zero"');
@@ -444,9 +450,7 @@ describe('gateway system prompt', () => {
     const prompt = buildSystemPrompt({
       availableTools: ['memphis_journal'],
     });
-    expect(prompt).toContain(
-      'NOTE: `memphis_self_describe` is NOT available on this surface.',
-    );
+    expect(prompt).toContain('NOTE: `memphis_self_describe` is NOT available on this surface.');
   });
 
   it('renders the effective surface + maxToolTier in <capabilities> when both are supplied (gap-analysis 2026-05-03)', () => {
@@ -462,9 +466,7 @@ describe('gateway system prompt', () => {
     });
 
     expect(prompt).toContain('Effective surface: telegram, max tool tier: 1.');
-    expect(prompt).toContain(
-      'Tools with a higher tier than this max have been stripped from',
-    );
+    expect(prompt).toContain('Tools with a higher tier than this max have been stripped from');
     expect(prompt).toContain('error: tool blocked by surface policy');
   });
 
@@ -720,7 +722,7 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain(
       '<tool_metadata tool="memphis_chain_query" feature_flag="experimental-tools">',
     );
-    expect(prompt).toContain("flag is currently enabled on this runtime");
+    expect(prompt).toContain('flag is currently enabled on this runtime');
   });
 
   it('renders installRoot/dataDir placeholders when paths are not provided (Sprint 0.5 G3)', () => {

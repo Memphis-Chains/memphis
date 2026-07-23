@@ -34,7 +34,7 @@ describe('tool registry', () => {
     // 2026-06-16: +2 tier-0 read — memphis_self_governance_status
     // (canonical supervised-operational autonomy readiness) and
     // memphis_tensor_status (canonical tensor/vector runtime truth).
-    expect(getToolNames(stableEnv)).toHaveLength(55);
+    expect(getToolNames(stableEnv)).toHaveLength(56);
   });
 
   it('hides experimental preview tools by default', () => {
@@ -74,6 +74,7 @@ describe('tool registry', () => {
       'memphis_soul_write',
       'memphis_case_append',
       'memphis_case_query',
+      'memphis_chain_verify',
       'memphis_loop_step',
       'memphis_lr_dashboard',
     ];
@@ -98,7 +99,7 @@ describe('tool registry', () => {
     // PR #593 (S5): +6 tier-0 — memphis_self_plan_{create,get,advance,cancel}
     //   + memphis_self_review + memphis_self_deploy_verify.
     // 2026-06-16: +2 tier-0 — memphis_self_governance_status + memphis_tensor_status.
-    expect(tier0.length).toBe(24);
+    expect(tier0.length).toBe(25);
     expect(tier0.every((t) => t.tier === 0)).toBe(true);
 
     const tier1 = getToolsByTier(1, stableEnv);

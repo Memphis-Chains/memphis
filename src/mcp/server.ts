@@ -16,6 +16,7 @@ import {
   runMemphisCaseQuery,
 } from './tools/case-entry.js';
 import { runMemphisChainQuery } from './tools/chain-query.js';
+import { runMemphisChainVerify } from './tools/chain-verify.js';
 import { runMemphisCodeRead } from './tools/code-read.js';
 import {
   runMemphisCognitiveModeSet,
@@ -39,10 +40,7 @@ import { runMemphisHealth } from './tools/health.js';
 import { runMemphisJournal } from './tools/journal.js';
 import { runMemphisKartograf } from './tools/kartograf.js';
 import { runMemphisLoopStep } from './tools/loop-step.js';
-import {
-  lrDashboardToolInputSchema,
-  runMemphisLrDashboard,
-} from './tools/lr-dashboard.js';
+import { lrDashboardToolInputSchema, runMemphisLrDashboard } from './tools/lr-dashboard.js';
 import { runMemphisMediaIngest } from './tools/media-ingest.js';
 import { runMemphisPackage } from './tools/package.js';
 import { runMemphisPresence } from './tools/presence.js';
@@ -1298,6 +1296,28 @@ export function createMemphisMcpServer(
           };
         },
       ),
+    );
+  }
+
+  const chainVerifyPolicy = getToolPolicy(permissions, 'memphis_chain_verify', resolvedManifest);
+  if (shouldRegisterTool('memphis_chain_verify', chainVerifyPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_chain_verify',
+      {
+        description:
+          'Authoritatively verify chain hashes, indexes, and prev-hash links before diagnosing corruption',
+        inputSchema: {
+          chain: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_chain_verify', chainVerifyPolicy, approvals, async ({ chain }) => {
+        const result = await runMemphisChainVerify({ chain }, rawEnv);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: toJsonRecord(result),
+        };
+      }),
     );
   }
 
