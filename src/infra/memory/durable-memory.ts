@@ -58,6 +58,17 @@ export type DurableMemoryStoreInput = {
    * `sessionFromEvent` priority; conversation_id wins if both are set.
    */
   sessionId?: string;
+  /**
+   * Present only when a producer intentionally shortened content before
+   * persistence. Chain integrity covers the stored content; this metadata
+   * prevents readers from mistaking a valid truncation for corruption.
+   */
+  truncation?: {
+    field: string;
+    originalLength: number;
+    storedLength: number;
+    limit: number;
+  };
 };
 
 export type DurableMemoryStoreResult = {
@@ -162,6 +173,10 @@ export async function storeDurableMemory(
   if (input.sessionId) {
     blockPayload.session_id = input.sessionId;
   }
+  if (input.truncation) {
+    blockPayload.truncated = true;
+    blockPayload.truncation = input.truncation;
+  }
   const block = await deps.append(chain, blockPayload);
 
   const memoryId = input.memoryId?.trim() || buildDefaultMemoryId(chain, block.index);
@@ -178,6 +193,12 @@ export async function storeDurableMemory(
           tags: input.tags ?? [],
           source: input.source ?? 'memphis',
           memory_id: memoryId,
+          ...(input.truncation
+            ? {
+                truncated: true,
+                truncation: input.truncation,
+              }
+            : {}),
         },
       },
       process.env,

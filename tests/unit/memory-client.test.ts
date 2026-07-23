@@ -75,4 +75,47 @@ describe('in-process memory client', () => {
       'Blocked journal content',
     );
   });
+
+  it('records explicit truncation metadata when an assistant reply exceeds the memory limit', async () => {
+    runMemphisJournal.mockResolvedValue({
+      success: true,
+      memoryId: 'journal-1',
+      index: 1,
+      hash: 'hash',
+      indexed: true,
+    });
+    const client = createInProcessMemoryClient({ NODE_ENV: 'production' });
+    const assistantReply = 'x'.repeat(750);
+
+    await client.store('u1', 'question', assistantReply);
+
+    expect(runMemphisJournal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining(`Assistant: ${'x'.repeat(500)}`),
+        truncation: {
+          field: 'assistantReply',
+          originalLength: 750,
+          storedLength: 500,
+          limit: 500,
+        },
+      }),
+    );
+  });
+
+  it('does not mark short assistant replies as truncated', async () => {
+    runMemphisJournal.mockResolvedValue({
+      success: true,
+      memoryId: 'journal-1',
+      index: 1,
+      hash: 'hash',
+      indexed: true,
+    });
+    const client = createInProcessMemoryClient({ NODE_ENV: 'production' });
+
+    await client.store('u1', 'question', 'short reply');
+
+    expect(runMemphisJournal).toHaveBeenCalledWith(
+      expect.objectContaining({ truncation: undefined }),
+    );
+  });
 });

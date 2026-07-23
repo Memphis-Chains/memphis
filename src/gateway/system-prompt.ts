@@ -719,9 +719,7 @@ function renderCapabilitiesBlock(
     '  tools — it lifts permissions on the existing tier-2 set.',
   );
   if (toolNames.includes('memphis_self_describe')) {
-    lines.push(
-      '- `memphis_self_describe` is in your available-tools list above.',
-    );
+    lines.push('- `memphis_self_describe` is in your available-tools list above.');
   } else {
     lines.push(
       '- NOTE: `memphis_self_describe` is NOT available on this surface.',
@@ -776,7 +774,7 @@ function renderTierSystemBlock(): string {
     '- Tier 2 = elevated, vault-passphrase-gated. Most write/exec tools live here (default for TUI and Telegram).',
     '- Tier 3 = NOT a tool tier. Zero tools are registered with tier: 3.',
     '',
-    'Tier 3 is a 3-hour PERMISSIONS SESSION that lifts the active surface\'s MAX_TOOL_TIER',
+    "Tier 3 is a 3-hour PERMISSIONS SESSION that lifts the active surface's MAX_TOOL_TIER",
     'and grants unrestricted FS mutation outside ~/.memphis/, freeform sudo, and',
     'MEMPHIS_AUTONOMY_MODE=full. It elevates EXISTING tier-2 tools, it does not add new tools.',
     '',
@@ -860,6 +858,7 @@ const HAND_AUTHORED_TOOLS = new Set([
   'memphis_recall',
   'memphis_search',
   'memphis_chain_query',
+  'memphis_chain_verify',
   'memphis_decide',
   'memphis_health',
   'memphis_providers',
@@ -969,6 +968,25 @@ GUIDANCE:
 - Start with chain + small limit for focused inspection
 - Use contains for literal substrings and tag for curated block tags
 - Prefer memphis_search or memphis_recall for normal retrieval; use memphis_chain_query when you need the raw ledger view
+</tool>`);
+  }
+
+  if (tools.includes('memphis_chain_verify')) {
+    sections.push(`<tool name="memphis_chain_verify">
+PURPOSE: Authoritatively verify chain hashes, indexes, and prev-hash links.
+INPUT: { chain?: string }
+OUTPUT: { ok: boolean, chainsChecked: number, blockCount: number, chain?: string, verifiedAt: string, error?: string }
+
+CHAIN EFFECT: None (read-only). Reads and validates every selected block.
+
+MANDATORY USE:
+- Call this tool before saying a chain or block is corrupt, broken, invalid,
+  read-blocked, or requires repair.
+- A shortened content preview, missing search hit, failed write, or query error
+  is NOT proof of corruption.
+- Quote the verifier result in the diagnosis. If it returns ok:true, explicitly
+  rule out chain corruption and investigate truncation, indexing, input shape,
+  or tool misuse instead.
 </tool>`);
   }
 
@@ -1381,10 +1399,7 @@ function renderCognitiveModeLine(mode: CognitiveMode, isActive: boolean): string
   ${cfg.description}`;
 }
 
-function renderCognitiveModesBlock(
-  active: CognitiveMode,
-  availableTools: string[],
-): string {
+function renderCognitiveModesBlock(active: CognitiveMode, availableTools: string[]): string {
   const modeLines = (Object.keys(COGNITIVE_MODES) as CognitiveMode[])
     .map((mode) => renderCognitiveModeLine(mode, mode === active))
     .join('\n\n');
@@ -1537,6 +1552,17 @@ CHAIN INTEGRITY:
 - NEVER construct a block manually. Always go through the tools
   (memphis_journal / memphis_decide / memphis_case_append / memphis_soul_write)
   which handle hashing, signing, and the append-lock correctly.
+- CORRUPTION CLAIM GATE: never claim that a chain/block is corrupt, broken,
+  read-blocked, or requires doctor/rebuild/repair unless
+  memphis_chain_verify ran in THIS turn and returned a failing result.
+  A truncated preview is valid stored content unless the verifier proves
+  otherwise. If verification returns ok:true, say "integrity verified" and
+  do not propose repair.
+- WRITE DIAGNOSIS EVIDENCE: before diagnosing serialization or persistence,
+  quote the sanitized tool input shape (keys and value types, never secrets)
+  and the exact result fields success/updated/error/index/hash. Distinguish:
+  error, rejected validation, successful no-op, intentional truncation, and
+  integrity failure. Do not convert one category into another by inference.
 
 APPEND LOCK:
 - Each chain directory (~/.memphis/chains/<name>/) uses a file-based
@@ -1613,12 +1639,12 @@ SELF-MODIFY GUARDS:
 </safety_invariants>
 <capabilities>
 ${renderCapabilitiesBlock(
-    tools,
-    context.surface,
-    context.maxToolTier,
-    context.providerLabel,
-    context.modelLabel,
-  )}
+  tools,
+  context.surface,
+  context.maxToolTier,
+  context.providerLabel,
+  context.modelLabel,
+)}
 </capabilities>
 <tier_system>
 ${renderTierSystemBlock()}
