@@ -10,8 +10,5 @@
     "scripts/celebrate.ts",
     "scripts/progress-viz.ts"
   ],
-  "ignore": [
-    "benchmark-search.ts",
-    "benchmarks/performance-suite.ts"
-  ]
+  "ignore": ["benchmark-search.ts", "benchmarks/performance-suite.ts"]
 }
