@@ -39,6 +39,7 @@ import { loadConfig } from '../../config/env.js';
 import { buildHealthPayload } from '../../http/health.js';
 import { resolveInstallRoot } from '../../runtime/install-root.js';
 import { repairRuntimeState, type RuntimeRepairResult } from '../../runtime/runtime-repair.js';
+import { reconcileScheduledTasks } from '../../runtime/scheduler.js';
 import { buildSecretAwareness, type SecretAwareness } from '../../secret-awareness.js';
 import type { CliContext } from '../context.js';
 import {
@@ -1210,6 +1211,7 @@ async function runInitCommand(context: CliContext): Promise<InitCommandResult> {
         rl?.close();
       }
       const refreshedStatus = inspectFirstRunStatus(process.env);
+      reconcileScheduledTasks({ apply: true });
       return {
         ok: true,
         action: repair ? 'legacy-migrated' : 'vault-restored',
@@ -1236,6 +1238,7 @@ async function runInitCommand(context: CliContext): Promise<InitCommandResult> {
         ],
       };
     }
+    reconcileScheduledTasks({ apply: true });
     return {
       ok: true,
       action: repair ? 'legacy-migrated' : 'already-initialized',
@@ -1324,6 +1327,7 @@ async function runInitCommand(context: CliContext): Promise<InitCommandResult> {
 
     const applied = await applyFirstRunPreview(preview, process.env);
     const finalStatus = inspectFirstRunStatus(process.env);
+    reconcileScheduledTasks({ apply: true });
     nextSteps.push('Run memphis health --json to verify the runtime is now fully initialized.');
     nextSteps.push('Start the runtime with npm run dev and open memphis tui.');
 

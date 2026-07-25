@@ -14,7 +14,7 @@ Memphis is a local-first cognitive runtime born from [Oswobodzeni](https://oswob
 
 Durable runtime actions are written to operator-owned chains. Secrets are encrypted at rest, and sensitive tools are guarded by explicit authorization tiers. Memphis is more than a chat interface: it is a sovereign cognitive runtime designed for operators who want to own their memory, configuration, and execution boundary.
 
-**Current version: `v1.11.0`** (matches `package.json`) | **Status: operator-supervised runtime** — native Rust cockpit, chain-backed memory, encrypted vault, local and cloud provider routing, MCP/HTTP/Telegram surfaces, Kartograf ONNX inference, and composable skills. See [`CHANGELOG.md`](./CHANGELOG.md) for release details and [`docs/dev/v1.10.0-deferred-work.md`](./docs/dev/v1.10.0-deferred-work.md) for the previous release's explicit deferrals.
+**Current version: `v1.12.0`** (matches `package.json`) | **Status: operator-supervised runtime** — native Rust cockpit, chain-backed memory, encrypted vault, local and cloud provider routing, MCP/HTTP/Telegram surfaces, Kartograf ONNX inference, and composable skills. See [`CHANGELOG.md`](./CHANGELOG.md) for release details and [`docs/dev/v1.10.0-deferred-work.md`](./docs/dev/v1.10.0-deferred-work.md) for the previous release's explicit deferrals.
 
 **Public surface:** [memphis-v5.pl](https://memphis-v5.pl) · [start](https://memphis-v5.pl/start/) · [docs](https://memphis-v5.pl/docs/) · [roadmap](https://memphis-v5.pl/roadmap/) · [llms.txt](https://memphis-v5.pl/llms.txt) · [agents.json](https://memphis-v5.pl/agents.json)
 
@@ -45,6 +45,16 @@ memphis init                    # passphrase, vault, identity, first chain write
 memphis provider add anthropic  # (optional) cloud provider — repeat for minimax/deepseek/glm
 memphis service install && memphis service restart  # Linux / WSL systemd-user only; see macOS note below
 memphis tui                     # open the native operator cockpit
+```
+
+`memphis init` also installs seven safe, typed scheduler jobs (health/SLO
+watch, scoped backup retention, read-only doctor diagnosis, daily/weekly
+reflection, attachment quarantine, and the 09:00 Europe/Warsaw operator
+briefing). They run inside Memphis—do not add a separate system crontab.
+
+```bash
+memphis schedule list
+memphis schedule reconcile --dry-run
 ```
 
 > **macOS operators**: `memphis service install` wires a systemd-user unit, so the step above is a no-op on macOS. Either run the runtime in a terminal with `npm run dev` while you need it, or provision a `launchd` plist at `~/Library/LaunchAgents/chains.memphis.runtime.plist` that `exec`s the same command. The remaining steps (`memphis init`, `memphis provider add …`, `memphis tui`) work identically across Linux, macOS, and WSL.
@@ -242,6 +252,8 @@ memphis telegram send            # Send message to operator
 memphis tui                      # Native Rust console
 memphis service install          # systemd user service
 memphis backup                   # Backup chains and state
+memphis schedule list            # Built-in jobs and their last/next run
+memphis schedule reconcile --dry-run # Preview canonical scheduler migration
 memphis evolve                   # Self-modification (tier 2)
 ```
 
