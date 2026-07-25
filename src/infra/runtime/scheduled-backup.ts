@@ -23,7 +23,7 @@
  *                                        older than this. Default 2× interval.
  *   MEMPHIS_BACKUP_KEEP                — retention for the cleaner that
  *                                        runs after each successful backup.
- *                                        Default keeps last 14 backups.
+ *                                        Default keeps last 7 scheduled backups.
  *
  * /v1/ops/status surfaces:
  *   { backups: { lastSuccessAt, lastDrillAt, lastError, ageMs, isStale, ... } }
@@ -110,9 +110,9 @@ function readDrillEveryN(rawEnv: NodeJS.ProcessEnv): number {
 
 function readKeep(rawEnv: NodeJS.ProcessEnv): number {
   const raw = rawEnv.MEMPHIS_BACKUP_KEEP?.trim();
-  if (!raw) return 14;
+  if (!raw) return 7;
   const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < 1) return 14;
+  if (!Number.isFinite(parsed) || parsed < 1) return 7;
   return Math.floor(parsed);
 }
 
@@ -176,7 +176,7 @@ export function startScheduledBackupLoop(
       // Re-read keep on each clean so /config set MEMPHIS_BACKUP_KEEP
       // actually takes effect immediately.
       const { cleanBackups } = await import('../cli/commands/backup.js');
-      await cleanBackups({ keep: readKeep(rawEnv) });
+      await cleanBackups({ keep: readKeep(rawEnv), tag: 'scheduled' });
     });
 
   let inFlight = false;
@@ -201,6 +201,16 @@ export function startScheduledBackupLoop(
       state.lastError = undefined;
       state.lastErrorAt = undefined;
       state.totalSuccess += 1;
+      let successOrdinal = state.totalSuccess;
+      if (!options.createBackupFn) {
+        try {
+          const { listBackups } = await import('../cli/commands/backup.js');
+          const archives = await listBackups();
+          successOrdinal = archives.backups.filter((backup) => backup.tag === 'scheduled').length;
+        } catch {
+          // The in-process count remains a safe fallback.
+        }
+      }
       log.info(
         {
           event: 'backup.scheduled.success',
@@ -216,7 +226,7 @@ export function startScheduledBackupLoop(
       });
 
       // Restore-drill every Nth success
-      if (state.totalSuccess % drillEveryN === 0) {
+      if (successOrdinal % drillEveryN === 0) {
         try {
           await drillFn(result.backupPath);
           state.lastDrillAt = new Date().toISOString();

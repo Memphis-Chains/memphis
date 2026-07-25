@@ -146,6 +146,7 @@ export type CliArgs = {
   allowedUserIds?: string;
   // Scheduler
   cronPattern?: string;
+  timezone?: string;
   // Backup restore
   pepperRestore?: string;
   // Consent mark (N11) — `consent` is shared with the trajectory export

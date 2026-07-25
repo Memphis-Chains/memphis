@@ -57,7 +57,6 @@ import {
 import { setLocalWorkerRuntimeStatus } from '../infra/runtime/local-worker-state.js';
 import { startReflectionLoop } from '../infra/runtime/reflection-loop.js';
 import { enforceSafeModeNoEgress, safeModeEnabled } from '../infra/runtime/safe-mode.js';
-import { startScheduledBackupLoop } from '../infra/runtime/scheduled-backup.js';
 import { reportSchedulerWorkerFallback } from '../infra/runtime/scheduler-alerts.js';
 import {
   getSchedulerRuntimeStatus,
@@ -578,7 +577,6 @@ export async function bootstrap(): Promise<void> {
   // set). Default (env unset) is no-op. Critical for client installs:
   // the first disk failure on an unscheduled-backup host wipes the
   // chain + vault and Memphis has no recovery path.
-  const scheduledBackupHandle = startScheduledBackupLoop({ rawEnv: process.env });
 
   // Closes deferred item #3 — OpenTelemetry overlay. Starts the SDK only
   // when MEMPHIS_OTEL_ENDPOINT is set. Unset = no-op for operators who
@@ -602,12 +600,9 @@ export async function bootstrap(): Promise<void> {
     rawEnv: process.env,
     stopFns: [
       { name: 'http-server', stop: () => app.close() },
-      ...(releaseProcessLock
-        ? [{ name: 'process-lock', stop: releaseProcessLock }]
-        : []),
+      ...(releaseProcessLock ? [{ name: 'process-lock', stop: releaseProcessLock }] : []),
       { name: 'heartbeat-watchdog', stop: () => watchdog.stop() },
       { name: 'chain-rotation-loop', stop: () => chainRotationHandle.stop() },
-      { name: 'scheduled-backup-loop', stop: () => scheduledBackupHandle.stop() },
       ...(localWorker ? [{ name: 'local-worker', stop: () => localWorker.stop() }] : []),
       ...createRuntimeLifecycleStoppers({ channelGateway, reflectionLoop }),
       // 2026-05-12 SEGV diagnosis: 5/8 SIGSEGVs today landed during
@@ -756,7 +751,8 @@ async function startChannelGateway(container?: {
           .map((tool) => tool.name)
           .sort((a, b) => a.localeCompare(b));
         const visibleTools = tools.slice(0, 40);
-        const overflow = tools.length > visibleTools.length ? tools.length - visibleTools.length : 0;
+        const overflow =
+          tools.length > visibleTools.length ? tools.length - visibleTools.length : 0;
         return [
           `Tools: ${tools.length} registered in this runtime.`,
           `Telegram tier: ${context.sessionTier}.`,

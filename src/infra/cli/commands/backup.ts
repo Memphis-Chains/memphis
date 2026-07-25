@@ -199,9 +199,7 @@ function tarSupportsWarningOpt(): boolean {
 }
 
 function tarWarningFlags(): string[] {
-  return tarSupportsWarningOpt()
-    ? ['--warning=no-file-changed', '--warning=no-file-removed']
-    : [];
+  return tarSupportsWarningOpt() ? ['--warning=no-file-changed', '--warning=no-file-removed'] : [];
 }
 
 /**
@@ -396,7 +394,10 @@ function extractFallbackArchive(archivePath: string, targetRoot: string): void {
   }
 }
 
-export function listArchiveContents(archivePath: string, options: ArchiveListOptions = {}): string[] {
+export function listArchiveContents(
+  archivePath: string,
+  options: ArchiveListOptions = {},
+): string[] {
   const fallback = tryReadFallbackArchive(archivePath);
   if (fallback) {
     return fallbackArchiveEntriesToPaths(fallback);
@@ -407,7 +408,9 @@ export function listArchiveContents(archivePath: string, options: ArchiveListOpt
   } catch (error) {
     if (isTarExecutionError(error)) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`tar listing failed and archive is not a Memphis fallback archive: ${message}`);
+      throw new Error(
+        `tar listing failed and archive is not a Memphis fallback archive: ${message}`,
+      );
     }
 
     throw error;
@@ -619,9 +622,7 @@ function applyRedactedDotEnv(memphisRoot: string): number {
   if (!existsSync(stagedPath)) return 0;
   const stagedRaw = readFileSync(stagedPath, 'utf8');
   const installEnvPath = resolveDotEnvPath();
-  const existingRaw = existsSync(installEnvPath)
-    ? readFileSync(installEnvPath, 'utf8')
-    : '';
+  const existingRaw = existsSync(installEnvPath) ? readFileSync(installEnvPath, 'utf8') : '';
   const existingKeys = new Set<string>();
   for (const line of existingRaw.split(/\r?\n/)) {
     const eq = line.indexOf('=');
@@ -651,9 +652,10 @@ function applyRedactedDotEnv(memphisRoot: string): number {
     return 0;
   }
 
-  const merged = existingRaw.endsWith('\n') || existingRaw === ''
-    ? `${existingRaw}# memphis-backup: restored .env keys (Phase C, ${new Date().toISOString()})\n${additions.join('\n')}\n`
-    : `${existingRaw}\n# memphis-backup: restored .env keys (Phase C, ${new Date().toISOString()})\n${additions.join('\n')}\n`;
+  const merged =
+    existingRaw.endsWith('\n') || existingRaw === ''
+      ? `${existingRaw}# memphis-backup: restored .env keys (Phase C, ${new Date().toISOString()})\n${additions.join('\n')}\n`
+      : `${existingRaw}\n# memphis-backup: restored .env keys (Phase C, ${new Date().toISOString()})\n${additions.join('\n')}\n`;
   writeFileSync(installEnvPath, merged, 'utf8');
 
   try {
@@ -1080,8 +1082,14 @@ export async function cleanBackups(
 }> {
   const backupRoot = getBackupsRoot(options);
   const keep = Math.max(0, options.keep ?? 7);
+  // When a tag is supplied, retention is scoped to that backup class.
+  // This prevents an automated scheduled cleaner from deleting manual,
+  // release, or pre-repair recovery points.
   const archives = getBackupArchives(backupRoot);
-  const toRemove = archives.slice(keep);
+  const candidates = options.tag
+    ? archives.filter((archive) => archive.tag === normalizeTag(options.tag))
+    : archives;
+  const toRemove = candidates.slice(keep);
 
   if (options.dryRun) {
     return { removed: [], wouldRemove: toRemove.map((a) => a.file), kept: keep };

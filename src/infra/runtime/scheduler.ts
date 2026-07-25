@@ -4,7 +4,7 @@
  * Built-in cron-like scheduler that allows Memphis to execute tasks
  * on a schedule without external cron/systemd timers.
  *
- * Tasks are stored in ~/.memphis/scheduler/tasks.json
+ * Tasks are stored in ~/.memphis/config/scheduler/tasks.json
  * Memphis worker checks every 30 seconds for tasks to execute.
  *
  * Example task:
@@ -21,11 +21,29 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs';
 import path, { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runReflectionCycle } from './reflection-loop.js';
+import type { BuiltinSchedulerJob } from './scheduler-builtins.js';
+import {
+  CANONICAL_SCHEDULER_TASKS,
+  LEGACY_SCHEDULER_TASK_IDS,
+  LEGACY_SCHEDULER_TASK_NAMES,
+} from './scheduler-defaults.js';
 import { getUserServiceStatus, resolveRuntimeRoot } from './user-service.js';
 import { HOME } from '../../config/env-registry.js';
 import { getConfigPath } from '../../config/paths.js';
@@ -37,22 +55,40 @@ import type { WorkPollingService } from '../work/work-polling-service.js';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface ScheduledTask {
+  schemaVersion: 2;
   id: string;
   cron: string; // Standard cron: "min hour day month dow"
+  /** IANA time zone. Missing legacy values are migrated to the host zone. */
+  timezone: string;
   name: string;
   command: SchedulerCommand;
   enabled: boolean;
   lastRun: string | null;
   nextRun: string | null;
-  lastStatus: 'success' | 'failed' | null;
+  lastStatus: SchedulerTaskStatus | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  lastError: string | null;
+  lastScheduledFor: string | null;
+  leaseOwner: string | null;
+  leaseExpiresAt: string | null;
   createdAt: string;
   runCount: number;
 }
 
+export type SchedulerTaskStatus =
+  | 'pending'
+  | 'running'
+  | 'success'
+  | 'failed'
+  | 'skipped'
+  | 'timed_out';
+
 export type SchedulerCommand =
   | { type: 'git-pull-build' }
   | { type: 'shell'; script: string }
-  | { type: 'reflection' }
+  | { type: 'reflection'; period?: 'daily' | 'weekly' }
+  | { type: 'builtin'; job: BuiltinSchedulerJob }
   | { type: 'http'; url: string; method?: string; body?: string };
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
@@ -71,19 +107,199 @@ export function getSchedulerLogsDir(): string {
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 
+function hostTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+}
+
+function normalizeTask(value: unknown): ScheduledTask | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  if (
+    typeof raw.id !== 'string' ||
+    typeof raw.cron !== 'string' ||
+    typeof raw.name !== 'string' ||
+    !raw.command ||
+    typeof raw.command !== 'object' ||
+    typeof raw.enabled !== 'boolean'
+  ) {
+    return null;
+  }
+  const timezone = typeof raw.timezone === 'string' ? raw.timezone : hostTimezone();
+  validateTimezone(timezone);
+  parseCron(raw.cron);
+  return {
+    schemaVersion: 2,
+    id: raw.id,
+    cron: raw.cron,
+    timezone,
+    name: raw.name,
+    command: raw.command as SchedulerCommand,
+    enabled: raw.enabled,
+    lastRun: typeof raw.lastRun === 'string' ? raw.lastRun : null,
+    nextRun: typeof raw.nextRun === 'string' ? raw.nextRun : null,
+    lastStatus: typeof raw.lastStatus === 'string' ? (raw.lastStatus as SchedulerTaskStatus) : null,
+    startedAt: typeof raw.startedAt === 'string' ? raw.startedAt : null,
+    finishedAt: typeof raw.finishedAt === 'string' ? raw.finishedAt : null,
+    lastError: typeof raw.lastError === 'string' ? raw.lastError : null,
+    lastScheduledFor: typeof raw.lastScheduledFor === 'string' ? raw.lastScheduledFor : null,
+    leaseOwner: typeof raw.leaseOwner === 'string' ? raw.leaseOwner : null,
+    leaseExpiresAt: typeof raw.leaseExpiresAt === 'string' ? raw.leaseExpiresAt : null,
+    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
+    runCount:
+      typeof raw.runCount === 'number' && Number.isFinite(raw.runCount)
+        ? Math.max(0, Math.floor(raw.runCount))
+        : 0,
+  };
+}
+
 export function loadTasks(): ScheduledTask[] {
-  const path = getSchedulerTasksPath();
-  if (!existsSync(path)) return [];
+  const tasksPath = getSchedulerTasksPath();
+  if (!existsSync(tasksPath)) return [];
   try {
-    return JSON.parse(readFileSync(path, 'utf8')) as ScheduledTask[];
-  } catch {
-    return [];
+    const parsed = JSON.parse(readFileSync(tasksPath, 'utf8')) as unknown;
+    if (!Array.isArray(parsed)) {
+      throw new Error('scheduler tasks store must contain a JSON array');
+    }
+    const tasks = parsed.map(normalizeTask);
+    if (tasks.some((task) => task === null)) {
+      throw new Error('scheduler tasks store contains an invalid task');
+    }
+    return tasks as ScheduledTask[];
+  } catch (error) {
+    throw new Error(
+      `Cannot load scheduler tasks from ${tasksPath}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
   }
 }
 
 export function saveTasks(tasks: ScheduledTask[]): void {
   mkdirSync(getSchedulerDir(), { recursive: true });
-  writeFileSync(getSchedulerTasksPath(), JSON.stringify(tasks, null, 2), 'utf8');
+  const tasksPath = getSchedulerTasksPath();
+  const tmpPath = `${tasksPath}.${process.pid}.${Date.now()}.tmp`;
+  const fd = openSync(tmpPath, 'wx', 0o600);
+  try {
+    writeSync(fd, `${JSON.stringify(tasks, null, 2)}\n`, undefined, 'utf8');
+  } finally {
+    closeSync(fd);
+  }
+  renameSync(tmpPath, tasksPath);
+  chmodSync(tasksPath, 0o600);
+}
+
+function withTaskStoreLock<T>(operation: () => T): T {
+  mkdirSync(getSchedulerDir(), { recursive: true });
+  const lockPath = join(getSchedulerDir(), 'tasks.lock');
+  let fd: number;
+  try {
+    fd = openSync(lockPath, 'wx', 0o600);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      if (Date.now() - statSync(lockPath).mtimeMs > 10 * 60 * 1000) {
+        unlinkSync(lockPath);
+        fd = openSync(lockPath, 'wx', 0o600);
+      } else {
+        throw new Error('scheduler task store is locked by another process');
+      }
+    } else {
+      throw error;
+    }
+  }
+  try {
+    writeSync(fd, `${process.pid}\n`);
+    return operation();
+  } finally {
+    closeSync(fd);
+    try {
+      unlinkSync(lockPath);
+    } catch {
+      // A stale-lock recovery may already have removed it.
+    }
+  }
+}
+
+export type SchedulerReconcileResult = {
+  changed: boolean;
+  added: string[];
+  updated: string[];
+  removed: string[];
+  preserved: string[];
+};
+
+export function reconcileScheduledTasks(
+  options: {
+    apply?: boolean;
+    now?: Date;
+  } = {},
+): SchedulerReconcileResult {
+  const current = loadTasks();
+  const canonicalIds = new Set(CANONICAL_SCHEDULER_TASKS.map((task) => task.id));
+  const legacy = current.filter(
+    (task) => LEGACY_SCHEDULER_TASK_IDS.has(task.id) || LEGACY_SCHEDULER_TASK_NAMES.has(task.name),
+  );
+  const custom = current.filter((task) => !canonicalIds.has(task.id) && !legacy.includes(task));
+  const added = CANONICAL_SCHEDULER_TASKS.filter(
+    (task) => !current.some((existing) => existing.id === task.id),
+  ).map((task) => task.id);
+  const updated = CANONICAL_SCHEDULER_TASKS.filter((task) => {
+    const existing = current.find((candidate) => candidate.id === task.id);
+    return (
+      existing &&
+      (existing.cron !== task.cron ||
+        existing.timezone !== task.timezone ||
+        existing.name !== task.name ||
+        JSON.stringify(existing.command) !== JSON.stringify(task.command) ||
+        !existing.enabled)
+    );
+  }).map((task) => task.id);
+  const result: SchedulerReconcileResult = {
+    changed: added.length > 0 || updated.length > 0 || legacy.length > 0,
+    added,
+    updated,
+    removed: legacy.map((task) => task.id),
+    preserved: custom.map((task) => task.id),
+  };
+  if (!options.apply || !result.changed) return result;
+
+  withTaskStoreLock(() => {
+    const latest = loadTasks();
+    const latestCustom = latest.filter(
+      (task) =>
+        !canonicalIds.has(task.id) &&
+        !LEGACY_SCHEDULER_TASK_IDS.has(task.id) &&
+        !LEGACY_SCHEDULER_TASK_NAMES.has(task.name),
+    );
+    const now = options.now ?? new Date();
+    const canonical = CANONICAL_SCHEDULER_TASKS.map((definition) => {
+      const existing = latest.find((task) => task.id === definition.id);
+      if (existing) {
+        return {
+          ...existing,
+          ...definition,
+          schemaVersion: 2 as const,
+          nextRun: getNextRun(definition.cron, now, definition.timezone).toISOString(),
+        };
+      }
+      return {
+        ...definition,
+        schemaVersion: 2 as const,
+        lastRun: null,
+        nextRun: getNextRun(definition.cron, now, definition.timezone).toISOString(),
+        lastStatus: null,
+        startedAt: null,
+        finishedAt: null,
+        lastError: null,
+        lastScheduledFor: null,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        createdAt: now.toISOString(),
+        runCount: 0,
+      } satisfies ScheduledTask;
+    });
+    saveTasks([...latestCustom, ...canonical]);
+  });
+  return result;
 }
 
 // ── Cron Parsing ──────────────────────────────────────────────────────────────
@@ -94,6 +310,8 @@ interface CronFields {
   dayOfMonth: number[];
   month: number[];
   dayOfWeek: number[];
+  dayOfMonthWildcard: boolean;
+  dayOfWeekWildcard: boolean;
 }
 
 /**
@@ -112,6 +330,9 @@ function parseCronField(field: string, min: number, max: number): number[] {
       // Step: */5 or 1-10/2
       const [range, stepStr] = part.split('/');
       const step = parseInt(stepStr, 10);
+      if (!Number.isInteger(step) || step <= 0) {
+        throw new Error(`Invalid cron step: ${part}`);
+      }
       let rangeValues: number[];
       if (range === '*') {
         rangeValues = Array.from({ length: max - min + 1 }, (_, i) => min + i);
@@ -139,10 +360,13 @@ function parseCronField(field: string, min: number, max: number): number[] {
     }
   }
 
+  if (values.some((value) => !Number.isInteger(value) || value < min || value > max)) {
+    throw new Error(`Cron field out of range (${min}-${max}): ${field}`);
+  }
   return [...new Set(values)].sort((a, b) => a - b);
 }
 
-function parseCron(cron: string): CronFields {
+export function parseCron(cron: string): CronFields {
   const parts = cron.trim().split(/\s+/);
   if (parts.length !== 5) {
     throw new Error(`Invalid cron expression: ${cron} (expected 5 fields)`);
@@ -153,34 +377,81 @@ function parseCron(cron: string): CronFields {
     dayOfMonth: parseCronField(parts[2], 1, 31),
     month: parseCronField(parts[3], 1, 12),
     dayOfWeek: parseCronField(parts[4], 0, 6),
+    dayOfMonthWildcard: parts[2] === '*',
+    dayOfWeekWildcard: parts[4] === '*',
   };
 }
 
-function matchesCron(cron: CronFields, date: Date): boolean {
-  const minute = date.getMinutes();
-  const hour = date.getHours();
-  const dayOfMonth = date.getDate();
-  const month = date.getMonth() + 1;
-  const dayOfWeek = date.getDay();
+type ZonedDateParts = {
+  minute: number;
+  hour: number;
+  dayOfMonth: number;
+  month: number;
+  dayOfWeek: number;
+};
+
+function validateTimezone(timezone: string): void {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(new Date());
+  } catch {
+    throw new Error(`Invalid IANA timezone: ${timezone}`);
+  }
+}
+
+function zonedDateParts(date: Date, timezone: string): ZonedDateParts {
+  validateTimezone(timezone);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour12: false,
+    minute: '2-digit',
+    hour: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    weekday: 'short',
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((part) => part.type === type)?.value ?? '';
+  const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(get('weekday'));
+  return {
+    minute: Number.parseInt(get('minute'), 10),
+    hour: Number.parseInt(get('hour'), 10) % 24,
+    dayOfMonth: Number.parseInt(get('day'), 10),
+    month: Number.parseInt(get('month'), 10),
+    dayOfWeek: weekday,
+  };
+}
+
+export function matchesCron(cron: CronFields, date: Date, timezone = hostTimezone()): boolean {
+  const { minute, hour, dayOfMonth, month, dayOfWeek } = zonedDateParts(date, timezone);
+  const domMatches = cron.dayOfMonth.includes(dayOfMonth);
+  const dowMatches = cron.dayOfWeek.includes(dayOfWeek);
+  const dayMatches =
+    cron.dayOfMonthWildcard && cron.dayOfWeekWildcard
+      ? true
+      : cron.dayOfMonthWildcard
+        ? dowMatches
+        : cron.dayOfWeekWildcard
+          ? domMatches
+          : domMatches || dowMatches;
 
   return (
     cron.minute.includes(minute) &&
     cron.hour.includes(hour) &&
-    cron.dayOfMonth.includes(dayOfMonth) &&
     cron.month.includes(month) &&
-    cron.dayOfWeek.includes(dayOfWeek)
+    dayMatches
   );
 }
 
-function getNextRun(cron: string, from: Date = new Date()): Date {
+export function getNextRun(cron: string, from: Date = new Date(), timezone = hostTimezone()): Date {
   const parsed = parseCron(cron);
+  validateTimezone(timezone);
   const next = new Date(from);
   next.setSeconds(0, 0);
 
   // Advance by 1 minute at a time until we find a match (max 1 year)
   for (let i = 0; i < 366 * 24 * 60; i++) {
     next.setMinutes(next.getMinutes() + 1);
-    if (matchesCron(parsed, next)) {
+    if (matchesCron(parsed, next, timezone)) {
       return next;
     }
   }
@@ -195,9 +466,12 @@ const PROJECT_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 export interface TaskResult extends Record<string, unknown> {
   taskId: string;
   success: boolean;
+  status?: Extract<SchedulerTaskStatus, 'success' | 'failed' | 'skipped' | 'timed_out'>;
   output: string;
   error?: string;
   durationMs: number;
+  truncated?: boolean;
+  originalLength?: number;
 }
 
 export type SchedulerExecutionTarget = 'local' | 'workers';
@@ -221,12 +495,44 @@ export type SchedulerRuntimeStatus = {
   };
 };
 
+const TASK_OUTPUT_LIMIT_BYTES = 256 * 1024;
+const TASK_LOG_ROTATE_BYTES = 5 * 1024 * 1024;
+const TASK_LOG_ROTATIONS = 5;
+
+function rotateTaskLog(logFile: string): void {
+  if (!existsSync(logFile) || statSync(logFile).size < TASK_LOG_ROTATE_BYTES) return;
+  const oldest = `${logFile}.${TASK_LOG_ROTATIONS}`;
+  if (existsSync(oldest)) unlinkSync(oldest);
+  for (let index = TASK_LOG_ROTATIONS - 1; index >= 1; index -= 1) {
+    const source = `${logFile}.${index}`;
+    if (existsSync(source)) renameSync(source, `${logFile}.${index + 1}`);
+  }
+  renameSync(logFile, `${logFile}.1`);
+}
+
 function logToFile(taskId: string, content: string): void {
   const logDir = getSchedulerLogsDir();
   mkdirSync(logDir, { recursive: true });
   const logFile = join(logDir, `${taskId}.log`);
+  rotateTaskLog(logFile);
   const timestamp = new Date().toISOString();
   writeFileSync(logFile, `[${timestamp}] ${content}\n`, { flag: 'a' });
+}
+
+function capOutput(value: string): {
+  output: string;
+  truncated: boolean;
+  originalLength: number;
+} {
+  const buffer = Buffer.from(value);
+  if (buffer.byteLength <= TASK_OUTPUT_LIMIT_BYTES) {
+    return { output: value, truncated: false, originalLength: buffer.byteLength };
+  }
+  return {
+    output: `${buffer.subarray(0, TASK_OUTPUT_LIMIT_BYTES).toString()}\n[output truncated]`,
+    truncated: true,
+    originalLength: buffer.byteLength,
+  };
 }
 
 function resolveSchedulerProjectRoot(): string {
@@ -326,7 +632,10 @@ export async function executeCommand(
         return {
           taskId,
           success: result.success,
+          status: result.timedOut ? 'timed_out' : result.success ? 'success' : 'failed',
           output: result.output,
+          truncated: result.truncated,
+          originalLength: result.originalLength,
           durationMs: Date.now() - start,
         };
       }
@@ -335,7 +644,7 @@ export async function executeCommand(
         logToFile(taskId, 'Running reflection');
         const summary = await runReflectionCycle({
           rawEnv: process.env,
-          periods: ['daily'],
+          periods: [command.period ?? 'daily'],
           trigger: 'scheduler',
         });
         logToFile(
@@ -350,27 +659,51 @@ export async function executeCommand(
         };
       }
 
+      case 'builtin': {
+        const { executeBuiltinSchedulerJob } = await import('./scheduler-builtins.js');
+        const result = await executeBuiltinSchedulerJob(command.job, process.env);
+        logToFile(taskId, result.output);
+        return {
+          taskId,
+          success: result.success,
+          status: result.skipped ? 'skipped' : result.success ? 'success' : 'failed',
+          output: result.output,
+          error: result.error,
+          durationMs: Date.now() - start,
+        };
+      }
+
       case 'http': {
         try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 30_000);
           const response = await fetch(command.url, {
             method: command.method ?? 'GET',
             body: command.body,
             headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
           });
-          const text = await response.text();
-          logToFile(taskId, `HTTP ${response.status}: ${text.slice(0, 500)}`);
+          const rawText = await response.text();
+          clearTimeout(timeout);
+          const text = capOutput(rawText);
+          logToFile(taskId, `HTTP ${response.status}: ${text.output}`);
           return {
             taskId,
             success: response.ok,
-            output: `HTTP ${response.status}: ${text.slice(0, 200)}`,
+            status: response.ok ? 'success' : 'failed',
+            output: `HTTP ${response.status}: ${text.output}`,
+            truncated: text.truncated,
+            originalLength: text.originalLength,
             durationMs: Date.now() - start,
           };
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Unknown error';
+          const timedOut = err instanceof Error && err.name === 'AbortError';
           logToFile(taskId, `HTTP error: ${msg}`);
           return {
             taskId,
             success: false,
+            status: timedOut ? 'timed_out' : 'failed',
             output: msg,
             error: msg,
             durationMs: Date.now() - start,
@@ -385,7 +718,16 @@ export async function executeCommand(
   }
 }
 
-function runShell(script: string, cwd: string): Promise<{ success: boolean; output: string }> {
+function runShell(
+  script: string,
+  cwd: string,
+): Promise<{
+  success: boolean;
+  output: string;
+  timedOut: boolean;
+  truncated: boolean;
+  originalLength: number;
+}> {
   // Sprint 3.2: HOME hardcoded to '/home/memphis' broke any operator
   // running Memphis under a different user (snap install, fresh-install
   // CLI on macOS, container with non-`memphis` user). Honor process.env
@@ -428,44 +770,84 @@ function runShell(script: string, cwd: string): Promise<{ success: boolean; outp
     const shell = spawn('/bin/bash', ['-lc', wrapper, 'bash', cwd, script], {
       cwd,
       env: { ...process.env, HOME: homeDir },
+      detached: process.platform !== 'win32',
     });
 
-    let stdout = '';
-    let stderr = '';
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let stdoutLength = 0;
+    let stderrLength = 0;
     let settled = false;
 
-    const settle = (result: { success: boolean; output: string }) => {
+    const settle = (success: boolean, timedOut = false, error?: string) => {
       if (settled) {
         return;
       }
       settled = true;
       clearTimeout(timeoutId);
-      resolve(result);
+      const stdoutText = Buffer.concat(stdout).toString();
+      const stderrText = Buffer.concat(stderr).toString();
+      const combined = error ?? stdoutText + (stderrText ? `\nSTDERR: ${stderrText}` : '');
+      const capped = capOutput(combined);
+      resolve({
+        success,
+        timedOut,
+        output: capped.output,
+        truncated:
+          capped.truncated ||
+          stdoutLength > TASK_OUTPUT_LIMIT_BYTES ||
+          stderrLength > TASK_OUTPUT_LIMIT_BYTES,
+        originalLength: stdoutLength + stderrLength,
+      });
     };
 
     shell.stdout?.on('data', (data) => {
-      stdout += data.toString();
+      const chunk = Buffer.from(data);
+      stdoutLength += chunk.byteLength;
+      const retained = Buffer.concat(stdout).byteLength;
+      if (retained < TASK_OUTPUT_LIMIT_BYTES) {
+        stdout.push(chunk.subarray(0, TASK_OUTPUT_LIMIT_BYTES - retained));
+      }
     });
     shell.stderr?.on('data', (data) => {
-      stderr += data.toString();
+      const chunk = Buffer.from(data);
+      stderrLength += chunk.byteLength;
+      const retained = Buffer.concat(stderr).byteLength;
+      if (retained < TASK_OUTPUT_LIMIT_BYTES) {
+        stderr.push(chunk.subarray(0, TASK_OUTPUT_LIMIT_BYTES - retained));
+      }
     });
 
     shell.on('close', (code) => {
-      settle({
-        success: code === 0,
-        output: stdout + (stderr ? `\nSTDERR: ${stderr}` : ''),
-      });
+      settle(code === 0);
     });
 
     shell.on('error', (err) => {
-      settle({ success: false, output: err.message });
+      settle(false, false, err.message);
     });
 
     // Timeout after 5 minutes
     const timeoutId = setTimeout(
       () => {
-        shell.kill();
-        settle({ success: false, output: 'Timeout after 5 minutes' });
+        if (process.platform !== 'win32' && shell.pid) {
+          try {
+            process.kill(-shell.pid, 'SIGTERM');
+          } catch {
+            shell.kill('SIGTERM');
+          }
+          setTimeout(() => {
+            if (!settled) {
+              try {
+                process.kill(-shell.pid!, 'SIGKILL');
+              } catch {
+                shell.kill('SIGKILL');
+              }
+            }
+          }, 5_000).unref();
+        } else {
+          shell.kill('SIGTERM');
+        }
+        settle(false, true, 'Timeout after 5 minutes');
       },
       5 * 60 * 1000,
     );
@@ -476,18 +858,35 @@ export function beginScheduledTaskRun(
   taskId: string,
   now: Date = new Date(),
 ): { task: ScheduledTask; nextRun: string } | null {
-  const tasks = loadTasks();
-  const idx = tasks.findIndex((task) => task.id === taskId);
-  if (idx === -1) return null;
+  try {
+    return withTaskStoreLock(() => {
+      const tasks = loadTasks();
+      const idx = tasks.findIndex((task) => task.id === taskId);
+      if (idx === -1) return null;
+      const task = tasks[idx];
+      const leaseExpires = task.leaseExpiresAt ? Date.parse(task.leaseExpiresAt) : 0;
+      if (task.lastStatus === 'running' && leaseExpires > now.getTime()) return null;
 
-  const nextRun = getNextRun(tasks[idx].cron, now).toISOString();
-  tasks[idx].lastRun = now.toISOString();
-  tasks[idx].nextRun = nextRun;
-  saveTasks(tasks);
-  return {
-    task: tasks[idx],
-    nextRun,
-  };
+      const scheduledFor = task.nextRun ?? now.toISOString();
+      if (task.lastScheduledFor === scheduledFor && task.lastStatus === 'success') return null;
+
+      const nextRun = getNextRun(task.cron, now, task.timezone).toISOString();
+      task.lastRun = now.toISOString();
+      task.startedAt = now.toISOString();
+      task.finishedAt = null;
+      task.lastError = null;
+      task.lastStatus = 'running';
+      task.lastScheduledFor = scheduledFor;
+      task.leaseOwner = `${process.pid}`;
+      task.leaseExpiresAt = new Date(now.getTime() + 61 * 60 * 1000).toISOString();
+      task.nextRun = nextRun;
+      saveTasks(tasks);
+      return { task: { ...task }, nextRun };
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('task store is locked')) return null;
+    throw error;
+  }
 }
 
 export async function completeScheduledTaskRun(
@@ -496,14 +895,20 @@ export async function completeScheduledTaskRun(
   nextRun: string,
   result: TaskResult,
 ): Promise<void> {
-  const tasks = loadTasks();
-  const idx = tasks.findIndex((task) => task.id === taskId);
-  if (idx !== -1) {
-    tasks[idx].lastStatus = result.success ? 'success' : 'failed';
-    tasks[idx].runCount = (tasks[idx].runCount || 0) + 1;
-    tasks[idx].nextRun = nextRun;
-    saveTasks(tasks);
-  }
+  withTaskStoreLock(() => {
+    const tasks = loadTasks();
+    const idx = tasks.findIndex((task) => task.id === taskId);
+    if (idx !== -1) {
+      tasks[idx].lastStatus = result.status ?? (result.success ? 'success' : 'failed');
+      tasks[idx].lastError = result.error ?? (result.success ? null : result.output.slice(0, 500));
+      tasks[idx].finishedAt = new Date().toISOString();
+      tasks[idx].leaseOwner = null;
+      tasks[idx].leaseExpiresAt = null;
+      tasks[idx].runCount = (tasks[idx].runCount || 0) + 1;
+      tasks[idx].nextRun = nextRun;
+      saveTasks(tasks);
+    }
+  });
 
   try {
     await appendBlock('system', {
@@ -555,6 +960,7 @@ function buildTaskSnapshot(nowMs = Date.now()): SchedulerRuntimeStatus['tasks'] 
 
 export class MemphisScheduler {
   private timer: ReturnType<typeof setInterval> | null = null;
+  private tickInFlight = false;
   private readonly intervalMs: number;
   private runtime: SchedulerRuntimeOptions;
 
@@ -606,19 +1012,25 @@ export class MemphisScheduler {
   }
 
   async tick(): Promise<void> {
-    const tasks = loadTasks().filter((t) => t.enabled);
-    const now = new Date();
-
-    for (const task of tasks) {
-      if (!task.nextRun) {
-        // Initialize nextRun for new tasks
-        task.nextRun = getNextRun(task.cron).toISOString();
+    if (this.tickInFlight) return;
+    this.tickInFlight = true;
+    try {
+      const tasks = loadTasks().filter((t) => t.enabled);
+      const now = new Date();
+      for (const task of tasks) {
+        if (!task.nextRun) {
+          task.nextRun = getNextRun(task.cron, now, task.timezone).toISOString();
+        }
+        const leaseExpired =
+          task.lastStatus === 'running' &&
+          task.leaseExpiresAt !== null &&
+          Date.parse(task.leaseExpiresAt) <= now.getTime();
+        if (now >= new Date(task.nextRun) || leaseExpired) {
+          await this.runTask(task);
+        }
       }
-
-      const nextRunDate = new Date(task.nextRun);
-      if (now >= nextRunDate) {
-        await this.runTask(task);
-      }
+    } finally {
+      this.tickInFlight = false;
     }
   }
 
@@ -677,48 +1089,74 @@ export class MemphisScheduler {
   // ── Task Management ────────────────────────────────────────────────────────
 
   addTask(
-    task: Omit<ScheduledTask, 'lastRun' | 'nextRun' | 'lastStatus' | 'createdAt' | 'runCount'>,
+    task: Pick<ScheduledTask, 'id' | 'cron' | 'name' | 'command' | 'enabled'> &
+      Partial<Pick<ScheduledTask, 'timezone'>>,
   ): ScheduledTask {
-    const tasks = loadTasks();
-    const newTask: ScheduledTask = {
-      ...task,
-      lastRun: null,
-      nextRun: getNextRun(task.cron).toISOString(),
-      lastStatus: null,
-      createdAt: new Date().toISOString(),
-      runCount: 0,
-    };
-    tasks.push(newTask);
-    saveTasks(tasks);
-    return newTask;
+    return withTaskStoreLock(() => {
+      const tasks = loadTasks();
+      if (tasks.some((current) => current.id === task.id)) {
+        throw new Error(`Scheduled task already exists: ${task.id}`);
+      }
+      const timezone = task.timezone ?? hostTimezone();
+      validateTimezone(timezone);
+      const newTask: ScheduledTask = {
+        schemaVersion: 2,
+        ...task,
+        timezone,
+        lastRun: null,
+        nextRun: getNextRun(task.cron, new Date(), timezone).toISOString(),
+        lastStatus: null,
+        startedAt: null,
+        finishedAt: null,
+        lastError: null,
+        lastScheduledFor: null,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        createdAt: new Date().toISOString(),
+        runCount: 0,
+      };
+      tasks.push(newTask);
+      saveTasks(tasks);
+      return newTask;
+    });
   }
 
   removeTask(id: string): boolean {
-    const tasks = loadTasks();
-    const idx = tasks.findIndex((t) => t.id === id);
-    if (idx === -1) return false;
-    tasks.splice(idx, 1);
-    saveTasks(tasks);
-    return true;
+    return withTaskStoreLock(() => {
+      const tasks = loadTasks();
+      const idx = tasks.findIndex((t) => t.id === id);
+      if (idx === -1) return false;
+      tasks.splice(idx, 1);
+      saveTasks(tasks);
+      return true;
+    });
   }
 
   enableTask(id: string): boolean {
-    const tasks = loadTasks();
-    const idx = tasks.findIndex((t) => t.id === id);
-    if (idx === -1) return false;
-    tasks[idx].enabled = true;
-    tasks[idx].nextRun = getNextRun(tasks[idx].cron).toISOString();
-    saveTasks(tasks);
-    return true;
+    return withTaskStoreLock(() => {
+      const tasks = loadTasks();
+      const idx = tasks.findIndex((t) => t.id === id);
+      if (idx === -1) return false;
+      tasks[idx].enabled = true;
+      tasks[idx].nextRun = getNextRun(
+        tasks[idx].cron,
+        new Date(),
+        tasks[idx].timezone,
+      ).toISOString();
+      saveTasks(tasks);
+      return true;
+    });
   }
 
   disableTask(id: string): boolean {
-    const tasks = loadTasks();
-    const idx = tasks.findIndex((t) => t.id === id);
-    if (idx === -1) return false;
-    tasks[idx].enabled = false;
-    saveTasks(tasks);
-    return true;
+    return withTaskStoreLock(() => {
+      const tasks = loadTasks();
+      const idx = tasks.findIndex((t) => t.id === id);
+      if (idx === -1) return false;
+      tasks[idx].enabled = false;
+      saveTasks(tasks);
+      return true;
+    });
   }
 
   listTasks(): ScheduledTask[] {

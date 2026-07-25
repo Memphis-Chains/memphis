@@ -1,6 +1,14 @@
+import { execFileSync } from 'node:child_process';
+import { copyFileSync, existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import type { CommandHandler } from './command-handler.js';
 import {
+  getSchedulerDir,
+  getSchedulerLogsDir,
+  getSchedulerTasksPath,
   getScheduler,
+  reconcileScheduledTasks,
   type ScheduledTask,
   type SchedulerCommand,
 } from '../../runtime/scheduler.js';
@@ -19,6 +27,9 @@ export const scheduleCommandHandler: CommandHandler = {
 
     if (!subcommand || subcommand === 'list') {
       return handleList(context);
+    }
+    if (subcommand === 'reconcile') {
+      return handleReconcile(context);
     }
 
     // Phase 4.3 (autopilot 2026-05-08): close issue #278 — gate every
@@ -121,6 +132,7 @@ async function handleAdd(context: CliContext): Promise<boolean> {
   const name = context.args.name;
   const commandType = (context.args.taskType as string) || 'git-pull-build';
   const script = context.args.value; // for shell type
+  const timezone = context.args.timezone;
 
   if (!cron || !name) {
     console.error(
@@ -148,7 +160,25 @@ async function handleAdd(context: CliContext): Promise<boolean> {
   if (cmdType === 'git-pull-build') {
     command = { type: 'git-pull-build' };
   } else if (cmdType === 'reflection') {
-    command = { type: 'reflection' };
+    command = {
+      type: 'reflection',
+      period: script === 'weekly' ? 'weekly' : 'daily',
+    };
+  } else if (cmdType === 'builtin') {
+    const jobs = new Set([
+      'runtime-watch',
+      'scheduled-backup',
+      'doctor-diagnose',
+      'operator-briefing',
+      'attachment-retention',
+    ]);
+    if (!script || !jobs.has(script)) {
+      throw new Error(`builtin schedule requires --value <job>; jobs: ${[...jobs].join(', ')}`);
+    }
+    command = {
+      type: 'builtin',
+      job: script as Extract<SchedulerCommand, { type: 'builtin' }>['job'],
+    };
   } else if (cmdType === 'shell') {
     command = { type: 'shell', script: script || 'echo "no script"' };
   } else if (cmdType === 'http') {
@@ -166,6 +196,7 @@ async function handleAdd(context: CliContext): Promise<boolean> {
     name,
     command,
     enabled: true,
+    timezone,
   });
 
   console.log(`Task added: ${task.id}`);
@@ -174,6 +205,68 @@ async function handleAdd(context: CliContext): Promise<boolean> {
   console.log(`  Next run: ${new Date(task.nextRun!).toLocaleString()}`);
 
   return true;
+}
+
+async function handleReconcile(context: CliContext): Promise<boolean> {
+  const apply = context.args.apply === true && context.args.dryRun !== true;
+  if (apply) {
+    const { requireOperatorAuth } = await import('../../auth/operator-gate.js');
+    if (!(await requireOperatorAuth(undefined, process.env, context.args.operatorPassphrase))) {
+      throw new Error('Operator authentication failed.');
+    }
+  }
+  let backupDir: string | undefined;
+  if (apply) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    backupDir = join(getSchedulerDir(), 'migration-backups', stamp);
+    mkdirSync(backupDir, { recursive: true, mode: 0o700 });
+    const tasksPath = getSchedulerTasksPath();
+    if (existsSync(tasksPath)) copyFileSync(tasksPath, join(backupDir, 'tasks.json'));
+    const crontab = readCrontab();
+    writeFileSync(join(backupDir, 'crontab.txt'), crontab, { mode: 0o600 });
+    const logsDir = getSchedulerLogsDir();
+    if (existsSync(logsDir)) {
+      renameSync(logsDir, join(backupDir, 'logs'));
+    }
+  }
+  const result = reconcileScheduledTasks({ apply });
+  if (apply) removeLegacyMemphisCrontab();
+  const payload = { ...result, applied: apply };
+  if (backupDir) Object.assign(payload, { backupDir });
+  if (context.args.json) {
+    console.log(JSON.stringify(payload, null, 2));
+  } else {
+    console.log(`Scheduler reconcile ${apply ? 'applied' : 'dry-run'}:`);
+    console.log(`  add: ${result.added.join(', ') || 'none'}`);
+    console.log(`  update: ${result.updated.join(', ') || 'none'}`);
+    console.log(`  remove legacy: ${result.removed.join(', ') || 'none'}`);
+    console.log(`  preserve custom: ${result.preserved.join(', ') || 'none'}`);
+    if (!apply && result.changed) {
+      console.log('Run again with --apply after reviewing this diff.');
+    }
+  }
+  return true;
+}
+
+function readCrontab(): string {
+  try {
+    return execFileSync('crontab', ['-l'], { encoding: 'utf8' });
+  } catch {
+    return '';
+  }
+}
+
+function removeLegacyMemphisCrontab(): void {
+  const current = readCrontab();
+  const marker = '# memphis: daily-9am-briefing';
+  const kept = current
+    .split(/\r?\n/)
+    .filter((line) => !line.includes(marker))
+    .filter((line, index, lines) => line.length > 0 || index < lines.length - 1)
+    .join('\n');
+  if (kept === current.replace(/\n$/, '')) return;
+  const input = kept.length > 0 ? `${kept}\n` : '';
+  execFileSync('crontab', ['-'], { input, encoding: 'utf8' });
 }
 
 async function handleRemove(context: CliContext): Promise<boolean> {
@@ -316,13 +409,16 @@ Subcommands:
   enable                    Enable a task
   disable                   Disable a task
   run                       Run a task immediately
+  reconcile                 Preview/apply the canonical Memphis task set
   help                      Show this help
 
 Options:
   --cron "<pattern>"        Cron expression (e.g. "0 20 * * *")
   --name "<name>"           Task name
-  --type <type>             Task type: git-pull-build, reflection, shell, http
-  --value "<value>"         For shell/http: script or URL
+  --type <type>             Task type: git-pull-build, reflection, builtin, shell, http
+  --value "<value>"         Script, URL, reflection period, or builtin job
+  --timezone "<IANA>"       Time zone (default: host time zone)
+  --apply                   Apply reconcile (default is dry-run)
   --id <task-id>            Task ID for remove/enable/disable/run
   --runtime                 Enqueue "run" through the worker runtime instead of direct execution
 
@@ -336,6 +432,7 @@ Examples:
   memphis schedule add --cron "0 20 * * *" --name "Daily deploy" --type git-pull-build
   memphis schedule add --cron "0 9 * * 1-5" --name "Weekday reflection" --type reflection
   memphis schedule add --cron "*/15 * * * *" --name "Every 15 min" --type shell --value "echo hi"
+  memphis schedule reconcile --dry-run
   memphis schedule list
   memphis schedule enable --id task-1234567890
   memphis schedule disable --id task-1234567890
@@ -345,12 +442,13 @@ Examples:
 Task types:
   git-pull-build  - Git pull, run deploy pipeline, verify health, rollback on failure
   reflection      - Run Memphis reflection engine
+  builtin <job>   - Run a typed Memphis maintenance job
   shell <script>  - Run arbitrary shell command
   http <url>      - Make HTTP request
 
 Files:
-  Tasks stored in: ~/.memphis/scheduler/tasks.json
-  Logs in: ~/.memphis/scheduler/logs/
+  Tasks stored in: ~/.memphis/config/scheduler/tasks.json
+  Logs in: ~/.memphis/config/scheduler/logs/
 `);
   return true;
 }

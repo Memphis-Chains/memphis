@@ -2,7 +2,7 @@
  * memphis_cron — create, list, and manage scheduled tasks via the built-in scheduler.
  *
  * Tier 2: can execute shell commands on schedule.
- * Tasks persist in ~/.memphis/scheduler/tasks.json and survive restarts.
+ * Tasks persist in ~/.memphis/config/scheduler/tasks.json and survive restarts.
  *
  * Supported task types:
  *   - shell: run a shell script on schedule
@@ -26,7 +26,15 @@ export type MemphisCronInput = {
   /** Required for add: human-readable name */
   name?: string;
   /** Required for add: task type */
-  taskType?: 'shell' | 'reflection' | 'git-pull-build' | 'http';
+  taskType?: 'shell' | 'reflection' | 'git-pull-build' | 'builtin' | 'http';
+  timezone?: string;
+  period?: 'daily' | 'weekly';
+  job?:
+    | 'runtime-watch'
+    | 'scheduled-backup'
+    | 'doctor-diagnose'
+    | 'operator-briefing'
+    | 'attachment-retention';
   /** Required for shell type: the script to run */
   script?: string;
   /** Required for http type: URL to call */
@@ -43,6 +51,7 @@ export type MemphisCronOutput = {
     id: string;
     name: string;
     cron: string;
+    timezone: string;
     enabled: boolean;
     lastStatus: string | null;
     runCount: number;
@@ -56,6 +65,7 @@ function formatTask(t: ScheduledTask) {
     id: t.id,
     name: t.name,
     cron: t.cron,
+    timezone: t.timezone,
     enabled: t.enabled,
     lastStatus: t.lastStatus,
     runCount: t.runCount,
@@ -83,7 +93,11 @@ export function runMemphisCron(input: MemphisCronInput): MemphisCronOutput {
           command = { type: 'shell', script: input.script };
           break;
         case 'reflection':
-          command = { type: 'reflection' };
+          command = { type: 'reflection', period: input.period ?? 'daily' };
+          break;
+        case 'builtin':
+          if (!input.job) return { success: false, error: 'builtin type requires job' };
+          command = { type: 'builtin', job: input.job };
           break;
         case 'git-pull-build':
           command = { type: 'git-pull-build' };
@@ -103,6 +117,7 @@ export function runMemphisCron(input: MemphisCronInput): MemphisCronOutput {
         name: input.name,
         command,
         enabled: true,
+        timezone: input.timezone,
       });
       return { success: true, task: { id: task.id, name: task.name } };
     }
