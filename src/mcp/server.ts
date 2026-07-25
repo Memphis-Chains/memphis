@@ -793,7 +793,18 @@ export function createMemphisMcpServer(
           action: z.enum(['list', 'add', 'remove', 'enable', 'disable']),
           cron: z.string().optional(),
           name: z.string().optional(),
-          taskType: z.enum(['shell', 'reflection', 'git-pull-build', 'http']).optional(),
+          taskType: z.enum(['shell', 'reflection', 'git-pull-build', 'builtin', 'http']).optional(),
+          timezone: z.string().optional(),
+          period: z.enum(['daily', 'weekly']).optional(),
+          job: z
+            .enum([
+              'runtime-watch',
+              'scheduled-backup',
+              'doctor-diagnose',
+              'operator-briefing',
+              'attachment-retention',
+            ])
+            .optional(),
           script: z.string().optional(),
           url: z.string().optional(),
           method: z.string().optional(),

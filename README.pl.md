@@ -14,7 +14,7 @@ Memphis jest lokalnym runtime'em agenta poznawczego, powstałym z ruchu [Oswobod
 
 To nie jest wyłącznie interfejs czatu. Memphis łączy pamięć, narzędzia, modele lokalne i chmurowe oraz powierzchnie operatorskie w runtime, nad którym kontrolę zachowuje użytkownik.
 
-**Wersja:** `v1.11.0` · **Status:** runtime nadzorowany przez operatora · [historia zmian](./CHANGELOG.md)
+**Wersja:** `v1.12.0` · **Status:** runtime nadzorowany przez operatora · [historia zmian](./CHANGELOG.md)
 
 **Powierzchnie publiczne:** [strona](https://memphis-v5.pl) · [start](https://memphis-v5.pl/start/) · [dokumentacja](https://memphis-v5.pl/docs/) · [roadmapa](https://memphis-v5.pl/roadmap/) · [llms.txt](https://memphis-v5.pl/llms.txt) · [agents.json](https://memphis-v5.pl/agents.json)
 

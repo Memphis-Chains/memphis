@@ -195,6 +195,14 @@ export const CLI_COMMAND_REGISTRY = [
     createLazyHandlerLoader(() => import('./handlers/trust.handler.js'), 'trustCommandHandler'),
   ),
   createCommandRegistration(
+    'attachments',
+    ['attachments'],
+    createLazyHandlerLoader(
+      () => import('./handlers/attachments.handler.js'),
+      'attachmentsCommandHandler',
+    ),
+  ),
+  createCommandRegistration(
     'telegram',
     ['telegram'],
     createLazyHandlerLoader(
@@ -334,6 +342,7 @@ export const CLI_COMPLETION_COMMANDS = [
   'tensors',
   'self-governance',
   'schedule',
+  'attachments',
   'backup',
   'kill-zombies',
   'onboarding',

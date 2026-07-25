@@ -166,10 +166,12 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
           type: z.enum(['tool_call', 'wait', 'complete', 'error']),
           data: z.record(z.string(), z.unknown()),
         }),
-        limits: z.object({
-          max_steps: z.number().int(),
-          max_tool_calls: z.number().int(),
-        }).optional(),
+        limits: z
+          .object({
+            max_steps: z.number().int(),
+            max_tool_calls: z.number().int(),
+          })
+          .optional(),
         approval_request_id: z.string().optional(),
       })
       .strict(),
@@ -189,7 +191,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       })
       .strict(),
     helpText:
-      'GET a public HTTP(S) URL and return the body (truncated to safe length). Network-capability tool — surface policy controls whether it\'s available (Telegram blocks by default; CLI/MCP allow with approval). Returns content-type + body; redirects followed up to 5 hops; 30s timeout. Use to read external docs/APIs the operator referenced; do NOT use for crawling — narrow targets only.',
+      "GET a public HTTP(S) URL and return the body (truncated to safe length). Network-capability tool — surface policy controls whether it's available (Telegram blocks by default; CLI/MCP allow with approval). Returns content-type + body; redirects followed up to 5 hops; 30s timeout. Use to read external docs/APIs the operator referenced; do NOT use for crawling — narrow targets only.",
     cliFlags: [
       {
         name: '--url',
@@ -210,7 +212,18 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         action: z.enum(['list', 'add', 'remove', 'enable', 'disable']),
         cron: z.string().optional(),
         name: z.string().optional(),
-        taskType: z.enum(['shell', 'reflection', 'git-pull-build', 'http']).optional(),
+        taskType: z.enum(['shell', 'reflection', 'git-pull-build', 'builtin', 'http']).optional(),
+        timezone: z.string().optional(),
+        period: z.enum(['daily', 'weekly']).optional(),
+        job: z
+          .enum([
+            'runtime-watch',
+            'scheduled-backup',
+            'doctor-diagnose',
+            'operator-briefing',
+            'attachment-retention',
+          ])
+          .optional(),
         script: z.string().optional(),
         url: z.string().optional(),
         method: z.string().optional(),
@@ -229,8 +242,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       },
       {
         name: '--cron',
-        description:
-          'Recurring 5-field cron expression (e.g. `0 9 * * 1-5`). Required for add.',
+        description: 'Recurring 5-field cron expression (e.g. `0 9 * * 1-5`). Required for add.',
         takesValue: true,
       },
       {

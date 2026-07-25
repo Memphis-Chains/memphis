@@ -1,5 +1,32 @@
 ## Unreleased
 
+## v1.12.0 - 2026-07-25
+
+### Scheduler reliability
+
+- Replaced system-cron wrappers and stale shell tasks with seven typed,
+  timezone-aware Memphis scheduler jobs installed idempotently by `memphis
+init`.
+- Added atomic task storage, process-safe leases, truthful running/failed/
+  skipped/timed-out states, standard DOM/DOW cron semantics, IANA timezones,
+  bounded process output, process-group timeouts, HTTP timeouts, and log
+  rotation.
+- Added `memphis schedule reconcile`, which previews changes by default,
+  preserves custom tasks, archives scheduler state, and removes only the
+  explicitly tagged legacy Memphis crontab entry when applied.
+
+### Safe operations
+
+- Scoped automatic retention to seven `scheduled` backups so manual, release,
+  pre-repair, pre-restore, and legacy archives remain protected.
+- Replaced immediate attachment deletion with seven-day quarantine and a
+  thirty-day recovery window.
+- Made the daily doctor task diagnostic-only and corrected daily versus weekly
+  reflection semantics.
+- Rebuilt the 09:00 Europe/Warsaw briefing against the current health schema
+  and configured Telegram allowlist, with local audited skip behavior when no
+  recipient exists.
+
 ## v1.11.0 - 2026-07-22
 
 This release closes the 50-commit stabilization and modernization window after
