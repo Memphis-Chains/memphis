@@ -113,6 +113,26 @@ memphis backup clean --keep 7
 memphis backup clean --keep 7 --dry-run
 ```
 
+The built-in `scheduled-backup` job keeps seven backups tagged `scheduled`.
+Its cleaner never removes manual, release, pre-repair, pre-restore, or
+unclassified legacy archives.
+
+## Built-in scheduler
+
+`memphis init` installs the canonical scheduler jobs. Memphis is the only
+control plane; do not duplicate them in system cron.
+
+```bash
+memphis schedule list
+memphis schedule reconcile --dry-run
+memphis schedule reconcile --apply
+```
+
+Reconcile is dry-run by default. Apply requires operator authentication,
+backs up `tasks.json` and the current crontab, removes only the tagged legacy
+Memphis briefing entry, preserves custom tasks, and installs the canonical
+typed jobs.
+
 ---
 
 ## 2b) Systemd Service Management
@@ -371,7 +391,9 @@ ls /home/memphis/.memphis/config/scheduler/logs/
 cat /home/memphis/.memphis/config/scheduler/logs/<taskId>.log
 ```
 
-If the task is no longer needed: `memphis schedule cancel <taskId>`. If it's the morning git-pull-build report and tests are gating it, fix the test failure or temporarily disable until repaired.
+If a custom task is no longer needed, use `memphis schedule remove --id
+<taskId>`. Canonical tasks should be restored with `memphis schedule
+reconcile --dry-run`, reviewed, and then applied.
 
 ## Issue: metrics endpoint returns 404
 

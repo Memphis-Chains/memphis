@@ -15,7 +15,20 @@ const schedulerCommandSchema = z.discriminatedUnion('type', [
     type: z.literal('shell'),
     script: z.string().trim().min(1),
   }),
-  z.object({ type: z.literal('reflection') }),
+  z.object({
+    type: z.literal('reflection'),
+    period: z.enum(['daily', 'weekly']).optional(),
+  }),
+  z.object({
+    type: z.literal('builtin'),
+    job: z.enum([
+      'runtime-watch',
+      'scheduled-backup',
+      'doctor-diagnose',
+      'operator-briefing',
+      'attachment-retention',
+    ]),
+  }),
   z.object({
     type: z.literal('http'),
     url: z.string().trim().min(1),
