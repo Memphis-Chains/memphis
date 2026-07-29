@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { CommandHandler } from './command-handler.js';
@@ -221,7 +221,11 @@ async function handleReconcile(context: CliContext): Promise<boolean> {
     backupDir = join(getSchedulerDir(), 'migration-backups', stamp);
     mkdirSync(backupDir, { recursive: true, mode: 0o700 });
     const tasksPath = getSchedulerTasksPath();
-    if (existsSync(tasksPath)) copyFileSync(tasksPath, join(backupDir, 'tasks.json'));
+    if (existsSync(tasksPath)) {
+      const backupTasksPath = join(backupDir, 'tasks.json');
+      copyFileSync(tasksPath, backupTasksPath);
+      chmodSync(backupTasksPath, 0o600);
+    }
     const crontab = readCrontab();
     writeFileSync(join(backupDir, 'crontab.txt'), crontab, { mode: 0o600 });
     const logsDir = getSchedulerLogsDir();
