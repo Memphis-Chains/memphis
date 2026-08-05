@@ -99,6 +99,7 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   MINIMAX_MODEL: 'hot',
   MINIMAX_BASE_URL: 'hot',
   MINIMAX_VAULT_KEY: 'warm',
+  MINIMAX_VIDEO_VAULT_KEY: 'warm',
   DEEPSEEK_API_KEY: 'secret',
   DEEPSEEK_VAULT_KEY: 'warm',
   DEEPSEEK_MODEL: 'hot',

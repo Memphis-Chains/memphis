@@ -180,6 +180,25 @@ export const FOUNDATION_TOOLS: Record<string, ToolMeta> = {
       },
     ],
   },
+  memphis_minimax_h3: {
+    name: 'memphis_minimax_h3',
+    tier: 2,
+    capabilities: ['network', 'write'],
+    description: 'Generate or query an asynchronous MiniMax-H3 video task',
+    inputSchema: z
+      .object({
+        action: z.enum(['create', 'query']),
+        prompt: z.string().min(1).max(2000).optional(),
+        task_id: z.string().min(1).optional(),
+        duration: z.number().int().min(2).max(15).optional(),
+        resolution: z.enum(['768P', '2K']).optional(),
+        ratio: z.string().min(3).max(16).optional(),
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+    helpText:
+      'Create an asynchronous MiniMax-H3 video task from a text prompt, or query a task returned earlier. H3 is a video/audio generator, not the chat model. `create` uses 2K and 5 seconds by default; allowed durations are 2–15 seconds. Generation incurs MiniMax usage charges and requires approval. On success, query returns the task status and, once finished, the temporary output URL.',
+  },
   memphis_package: {
     name: 'memphis_package',
     tier: 2,
