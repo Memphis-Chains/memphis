@@ -103,6 +103,7 @@ export const envSchema = z.object({
   MINIMAX_MODEL: z.string().optional(),
   MINIMAX_BASE_URL: z.string().optional(),
   MINIMAX_VAULT_KEY: z.string().optional(),
+  MINIMAX_VIDEO_VAULT_KEY: z.string().optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
   DEEPSEEK_VAULT_KEY: z.string().optional(),
   DEEPSEEK_MODEL: z.string().optional(),
