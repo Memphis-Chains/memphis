@@ -137,3 +137,114 @@ describe('durable memory', () => {
     expect(index).not.toHaveBeenCalled();
   });
 });
+
+
+describe('durable memory type stamping (#legacy-migrateable-2026-09-01)', () => {
+  // Regression guard: every storeDurableMemory call must stamp a non-empty
+  // `data.type` on the payload. Without it, the firstRun validator at
+  // src/onboarding/first-run.ts:236 flags the block as legacy-shape, the
+  // runtime drops back to `legacy-migrateable`, and `memphis repair
+  // runtime --force` becomes a recurring chore. The fix in
+  // storeDurableMemory infers `type` from `input.type` first, then from
+  // `chain` (decisions→decision, system/soul→system_event, default→journal).
+  // These tests pin every branch.
+  it('stamps type=journal on default-chain journal writes', async () => {
+    const append = vi.fn(async () => ({
+      index: 100,
+      hash: 'h',
+      chain: 'journal',
+      timestamp: new Date().toISOString(),
+    }));
+    const index = vi.fn(() => ({ id: 'j-100', count: 1, dim: 32, provider: 't' }));
+
+    await storeDurableMemory(
+      { content: 'hello', source: 'mcp' },
+      { append: append as never, index: index as never },
+    );
+
+    expect(append).toHaveBeenCalledWith(
+      'journal',
+      expect.objectContaining({ type: 'journal', content: 'hello' }),
+    );
+  });
+
+  it('stamps type=decision when chain=decisions', async () => {
+    const append = vi.fn(async () => ({
+      index: 1,
+      hash: 'h',
+      chain: 'decisions',
+      timestamp: new Date().toISOString(),
+    }));
+    const index = vi.fn(() => ({ id: 'd-1', count: 1, dim: 32, provider: 't' }));
+
+    await storeDurableMemory(
+      { content: 'decided', chain: 'decisions' },
+      { append: append as never, index: index as never },
+    );
+
+    expect(append).toHaveBeenCalledWith(
+      'decisions',
+      expect.objectContaining({ type: 'decision' }),
+    );
+  });
+
+  it('stamps type=system_event when chain=system', async () => {
+    const append = vi.fn(async () => ({
+      index: 1,
+      hash: 'h',
+      chain: 'system',
+      timestamp: new Date().toISOString(),
+    }));
+    const index = vi.fn(() => ({ id: 's-1', count: 1, dim: 32, provider: 't' }));
+
+    await storeDurableMemory(
+      { content: 'event', chain: 'system' },
+      { append: append as never, index: index as never },
+    );
+
+    expect(append).toHaveBeenCalledWith(
+      'system',
+      expect.objectContaining({ type: 'system_event' }),
+    );
+  });
+
+  it('stamps type=system_event when chain=soul', async () => {
+    const append = vi.fn(async () => ({
+      index: 1,
+      hash: 'h',
+      chain: 'soul',
+      timestamp: new Date().toISOString(),
+    }));
+    const index = vi.fn(() => ({ id: 'so-1', count: 1, dim: 32, provider: 't' }));
+
+    await storeDurableMemory(
+      { content: 'audit', chain: 'soul' },
+      { append: append as never, index: index as never },
+    );
+
+    expect(append).toHaveBeenCalledWith(
+      'soul',
+      expect.objectContaining({ type: 'system_event' }),
+    );
+  });
+
+  it('honours explicit input.type when caller supplies it', async () => {
+    const append = vi.fn(async () => ({
+      index: 1,
+      hash: 'h',
+      chain: 'journal',
+      timestamp: new Date().toISOString(),
+    }));
+    const index = vi.fn(() => ({ id: 'j-1', count: 1, dim: 32, provider: 't' }));
+
+    await storeDurableMemory(
+      { content: 'custom', type: 'milestone' },
+      { append: append as never, index: index as never },
+    );
+
+    expect(append).toHaveBeenCalledWith(
+      'journal',
+      expect.objectContaining({ type: 'milestone' }),
+    );
+  });
+});
