@@ -12,6 +12,16 @@ export type DurableMemoryStoreInput = {
   source?: string;
   chain?: string;
   /**
+   * Explicit block type stamped on the persisted block. When omitted,
+   * `storeDurableMemory` infers a sensible default per chain
+   * (`journal` for the default chain, `decision` for `decisions`,
+   * `system_event` for `system` / `soul`). Without `type`, the
+   * firstRun validator in `src/onboarding/first-run.ts` flags the block
+   * as legacy-shape and `memphis repair runtime` cannot keep up with
+   * chronic writers (see issue #legacy-migrateable-2026-09-01).
+   */
+  type?: string;
+  /**
    * Turn identifier linking this memory block to a conversation turn.
    * Passed from `src/gateway/turn-runtime.ts::generateTurnId()` when the
    * write happens inside a user-initiated turn. `undefined` for
@@ -151,7 +161,23 @@ export async function storeDurableMemory(
 
   const chain = input.chain?.trim() || 'journal';
   const consent: SurfaceConsent = resolveConsent(input);
+  // Stamp `type` on the payload itself (defence-in-depth): even if a future
+  // chain-adapter regression bypasses `normalizeBlockData`'s default, the
+  // firstRun validator in `src/onboarding/first-run.ts` still sees a
+  // non-empty `data.type`. Without this, every memphis_journal write
+  // triggers legacy-migrateable state and `memphis repair runtime` becomes
+  // a recurring chore. Chain-specific defaults: 'journal' for the default
+  // chain, 'decision' for decisions, 'system_event' for system / soul.
+  const inferredType =
+    typeof input.type === 'string' && input.type.trim().length > 0
+      ? input.type.trim()
+      : chain === 'decisions'
+        ? 'decision'
+        : chain === 'soul' || chain === 'system'
+          ? 'system_event'
+          : 'journal';
   const blockPayload: Record<string, unknown> = {
+    type: inferredType,
     content: input.content,
     tags: input.tags ?? [],
     source: input.source ?? 'memphis',
