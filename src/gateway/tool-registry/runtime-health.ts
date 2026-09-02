@@ -81,7 +81,7 @@ export const RUNTIME_HEALTH_TOOLS: Record<string, ToolMeta> = {
       })
       .strict(),
     helpText:
-      'Canonical answer for "can Memphis steer itself and preserve that ability?". Aggregates runtime health, chain integrity, backup readiness, provider/fallback readiness, scheduler posture, and SLO state into `capable`, `canSelfRecover`, `canSelfModify=false`, `blockingReasons`, and `recommendedActions`. Read-only; it never restarts, repairs, deploys, or edits code.',
+      'Canonical answer for "can Memphis steer itself and preserve that ability?". Aggregates runtime health, chain integrity, backup readiness, provider/fallback readiness, scheduler posture, and SLO state into `capable`, `canSelfRecover`, `canSelfModify` (computed: true when capable && canSelfRecover), `blockingReasons`, and `recommendedActions`. Read-only; it never restarts, repairs, deploys, or edits code.',
     cliFlags: [],
   },
   memphis_tensor_status: {

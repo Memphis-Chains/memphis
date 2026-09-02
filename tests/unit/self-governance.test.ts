@@ -122,7 +122,7 @@ describe('self-governance snapshot', () => {
       mode: 'supervised-operational',
       capable: true,
       canSelfRecover: true,
-      canSelfModify: false,
+      canSelfModify: true, // Faza 1 fix: canSelfModify now computed as capable && canSelfRecover
       blockingReasons: [],
     });
   });
@@ -179,8 +179,8 @@ describe('self-governance snapshot', () => {
 
     const snapshot = buildSelfGovernanceSnapshot(input);
 
-    expect(snapshot.capable).toBe(false);
-    expect(snapshot.canSelfModify).toBe(false);
+    expect(snapshot.capable).toBe(false); // SLO fail → capable=false
+    expect(snapshot.canSelfModify).toBe(false); // Implied by capable=false
     expect(snapshot.blockingReasons).toContain('SLO failing (default): tool_error_rate');
     expect(snapshot.recommendedActions).toContain(
       'Run memphis slo status --json and inspect recent telemetry before increasing autonomy',
@@ -216,6 +216,8 @@ describe('self-governance snapshot', () => {
     const snapshot = buildSelfGovernanceSnapshot(input);
 
     expect(snapshot.capable).toBe(true);
+    expect(snapshot.canSelfRecover).toBe(true); // healthy chain+backup
+    expect(snapshot.canSelfModify).toBe(true); // Faza 1 fix
     expect(snapshot.sloWindows?.['7d']?.status).toBe('fail');
     expect(snapshot.blockingReasons).not.toContain('SLO failing (7d): tool_error_rate');
   });
