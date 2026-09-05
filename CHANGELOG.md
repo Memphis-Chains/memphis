@@ -1,5 +1,23 @@
 ## Unreleased
 
+## v1.13.0 - 2026-09-05
+
+### Skills and live operations
+
+- Added `lhpl-site-edit` v2.0.1 — server-side edit/deploy/rollback for static sites on lh.pl shared hosting (marcin-kukla.pl, holiskool.pl/.com, memphis-v5.pl). Subcommands include `discover`, `verify`, `snapshot`, `build-stage`, `deploy-file`, `edit-inline`, `rollback`, `diff`, and `deploy`/`deploy-all` via the canonical `deploy.sh`. Anti-fabrykacja block enforces operator confirmation for contact data (phone, NIP, address, calendly, PKD) before any content change.
+- Added `vault-secret-add` v1.0.0 — encrypt plaintext and append a new vault entry. Pure-Python implementation matching the Rust `memphis-vault` `encrypt_entry` algorithm (scrypt + AES-256-GCM v2). Atomic write with backup. Companion to `vault-decryption-skill`.
+- Added `lhpl-ssh-key-vault` v1.0.0 — rotate the lh.pl SSH private key into vault, then load on demand to a `/tmp/lhpl-key-*.pem` file with mode `0600` and a TTL sidecar. Real end-to-end ingest tested on 2026-09-05 (entry `entry-1788626472284`, fingerprint `109aa6fb54c9b3b73d0056078829d21a`, SSH connection via vault-loaded key succeeded).
+
+### Live deployments
+
+- Rebuilt `marcin-kukla.pl` as a single-page landing with clickable phone (`tel:+48532315254`), calendly link, full PKD listing (12 codes, primary `96.09.Z`), 6 service cards, and a `schema.org/LocalBusiness` JSON-LD block. Verified via curl HTTP 200, content sniff, and schema.org marker.
+- Trimmed operator-supplied rumuński from UI copy at the operator's request; kept `Rumunia` as a target market in `schema.org/LocalBusiness` so the brand can still sell there.
+
+### Skill registry
+
+- Registered the three new skills in `~/.memphis/skills/registry.json` (was previously orphaned in `drafts/` and `installed/` without a `catalog/` source or runtime registration). `lhpl-site-discovery` was absorbed into `lhpl-site-edit` as a `discover` subcommand.
+- Skill count: 11 installed (was 9).
+
 ## v1.12.0 - 2026-07-25
 
 ### Scheduler reliability
