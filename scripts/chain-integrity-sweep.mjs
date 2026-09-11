@@ -13,20 +13,17 @@
 //   1 — at least one block failed to parse (with details on stderr)
 //   2 — scan error (e.g. missing chains dir)
 
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const CHAINS_DIR = '/home/memphis/.memphis/chains';
 
-const args = new Set(process.argv.slice(2));
 function getArg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 ? process.argv[i + 1] : fallback;
 }
 const tail = Number(getArg('tail', '5'));
 const onlyChain = getArg('chain', null);
-
-function pad(n, w) { return String(n).padStart(w, '0'); }
 
 async function listBlocks(chainDir, tailN) {
   // Read directory, filter 000*.json, sort numerically by index, take last N
