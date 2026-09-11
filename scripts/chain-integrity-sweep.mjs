@@ -4,15 +4,22 @@
 // Defensive: never modifies any block. Read-only.
 //
 // Usage:
+<<<<<<< HEAD
 //   node scripts/chain-integrity-sweep.mjs                                       # check all chains, last 5 blocks each
 //   CHAINS_DIR=/tmp/foo node scripts/chain-integrity-sweep.mjs                   # sweep an alternate chains dir (CI / tests)
 //   node scripts/chain-integrity-sweep.mjs --tail 50                             # check last 50 blocks each
 //   node scripts/chain-integrity-sweep.mjs --chain cases --tail 20                # one chain only
+=======
+//   node scripts/chain-integrity-sweep.mjs           # check all chains, last 5 blocks each
+//   node scripts/chain-integrity-sweep.mjs --tail 50 # check last 50 blocks each
+//   node scripts/chain-integrity-sweep.mjs --chain cases --tail 20  # one chain only
+>>>>>>> 043a6e0 (feat(scripts): chain integrity sweep + hourly systemd timer)
 //
 // Exit codes:
 //   0 — all blocks parse OK
 //   1 — at least one block failed to parse (with details on stderr)
 //   2 — scan error (e.g. missing chains dir)
+<<<<<<< HEAD
 //
 // CHAINS_DIR environment variable (added 2026-09-21, ADR-008):
 //   - Defaults to /home/memphis/.memphis/chains for the operator's box
@@ -25,6 +32,15 @@ import { join } from 'node:path';
 
 const CHAINS_DIR = process.env.CHAINS_DIR || '/home/memphis/.memphis/chains';
 
+=======
+
+import { readdir, readFile, stat } from 'node:fs/promises';
+import { join } from 'node:path';
+
+const CHAINS_DIR = '/home/memphis/.memphis/chains';
+
+const args = new Set(process.argv.slice(2));
+>>>>>>> 043a6e0 (feat(scripts): chain integrity sweep + hourly systemd timer)
 function getArg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 ? process.argv[i + 1] : fallback;
@@ -32,6 +48,11 @@ function getArg(name, fallback) {
 const tail = Number(getArg('tail', '5'));
 const onlyChain = getArg('chain', null);
 
+<<<<<<< HEAD
+=======
+function pad(n, w) { return String(n).padStart(w, '0'); }
+
+>>>>>>> 043a6e0 (feat(scripts): chain integrity sweep + hourly systemd timer)
 async function listBlocks(chainDir, tailN) {
   // Read directory, filter 000*.json, sort numerically by index, take last N
   const all = (await readdir(chainDir))
@@ -75,6 +96,7 @@ async function main() {
     for (const r of checked) {
       if (!r.ok) {
         failures += 1;
+<<<<<<< HEAD
         console.error(
           JSON.stringify({
             ok: false,
@@ -83,6 +105,14 @@ async function main() {
             err: r.error,
           }),
         );
+=======
+        console.error(JSON.stringify({
+          ok: false,
+          chain,
+          file: r.file,
+          err: r.error,
+        }));
+>>>>>>> 043a6e0 (feat(scripts): chain integrity sweep + hourly systemd timer)
       } else {
         results.push({
           chain,
