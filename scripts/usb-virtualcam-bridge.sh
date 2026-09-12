@@ -5,8 +5,8 @@
 #
 # Użycie:
 #   bash scripts/usb-virtualcam-bridge.sh [SRC] [DST] [WIDTH] [HEIGHT] [FPS]
-#   SRC  : /dev/video0 (fizyczny grabber; default)
-#   DST  : /dev/video10 (v4l2loopback slot; default — match modules-load.d config)
+#   SRC  : /dev/video0 (auto-detect jeśli nie podany — bierze najmniejszy numer)
+#   DST  : /dev/video10 (default — match modules-load.d config)
 #   WxH  : 1280x720 (default)
 #   FPS  : 30 (default)
 #
@@ -19,7 +19,15 @@
 
 set -euo pipefail
 
-SRC="${1:-/dev/video0}"
+# Auto-detect SRC jeśli nie podany (najmniejszy /dev/video*)
+detect_src() {
+  for v in /dev/video{0,1,2,3,4,5,6,7}; do
+    [[ -e "$v" ]] && echo "$v" && return 0
+  done
+  return 1
+}
+
+SRC="${1:-$(detect_src || true)}"
 DST="${2:-/dev/video10}"
 WIDTH="${3:-1280}"
 HEIGHT="${4:-720}"
@@ -35,10 +43,13 @@ if [[ ! -e "$DST" ]]; then
   exit 1
 fi
 
-# Sprawdź czy SRC istnieje
-if [[ ! -e "$SRC" ]]; then
-  log "WARNING: $SRC nie istnieje — fizyczny grabber nie podłączony"
-  log "Podłącz grabber USB lub podaj inną ścieżkę jako argument 1"
+# Sprawdź czy SRC wykryty
+if [[ -z "$SRC" ]] || [[ ! -e "$SRC" ]]; then
+  log "ERROR: brak fizycznego grabbera USB"
+  log "Spodziewane urządzenia: /dev/video0 .. /dev/video7 — żadne nie istnieje"
+  log "WEPNIJ GRABBER USB do portu USB 3.0 i spróbuj ponownie"
+  log "Aktualny stan USB: $(lsusb | wc -l) urządzeń USB"
+  lsusb | sed 's/^/  /'
   exit 1
 fi
 
@@ -56,9 +67,8 @@ log "Zatrzymanie: Ctrl+C"
 # Cleanup trap
 trap 'echo; log "Zatrzymano (Ctrl+C)"; exit 0' INT TERM
 
-# Właściwy bridge — czytaj z SRC, dekoduj do raw, koduj NVENC H264, push do DST v4l2
-# Wymuszenie rozdzielczości i FPS (nie wszystkie grabbery je ustawiają)
-# NVENC H264 dla niskiego CPU; gdyby nie zadziałało — `libx264 -preset ultrafast`
+# Właściwy bridge — czytaj z SRC, push do DST v4l2loopback (bez transkodowania
+# żeby oszczędzić CPU — v4l2loopback akceptuje dowolny format)
 exec ffmpeg -hide_banner -loglevel warning \
   -f v4l2 -framerate "$FPS" -video_size "${WIDTH}x${HEIGHT}" -i "$SRC" \
   -f v4l2 "$DST"
