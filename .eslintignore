@@ -1,0 +1,17 @@
+# Memphis eslint ignore — match patterns in .gitignore that aren't tracked by git
+# but still live on disk during local self-modify cycles.
+
+# Tier-0 self-modify snapshot directories (created by memphis_self_modify before writes)
+.src-backup-*
+
+# Vault / config backups from tier-0 repairs
+.env.bak-pre-*
+*.bak-pre-*
+/tmp/*.bak-pre-*
+
+# Build artifacts (defensive — eslint shouldn't scan dist/ anyway)
+dist/
+coverage/
+
+# Generated docs snapshots
+docs/snapshots/
