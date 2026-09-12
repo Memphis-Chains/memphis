@@ -2,7 +2,6 @@
 # scripts/memphis-camera-preview.sh
 # Tier-0 helper: trwałe okno podglądu kamery USB.
 # Używa VLC (Qt interface) bo tworzy prawdziwe WM-managed okno widoczne w xwininfo.
-# gstreamer xvimagesink działa ale overlay nie pojawia się w X11 query (xfwm4 composite issue).
 #
 # Użycie:
 #   bash scripts/memphis-camera-preview.sh [video_device] [width] [height] [x] [y]
@@ -13,7 +12,7 @@
 #   PREVIEW_STICKY      true/false (always-on-top) — VLC ma --video-on-top
 #   PREVIEW_NO_AUDIO    true żeby pominąć audio (domyślnie false)
 
-set -euo pipefail
+set -eo pipefail
 
 DEVICE="${1:-/dev/video1}"
 WIN_W="${2:-640}"
@@ -47,9 +46,10 @@ if [[ ! -e "$DEVICE" ]] || ! v4l2-ctl -d "$DEVICE" --all >/dev/null 2>&1; then
   [[ -z "$DEVICE" ]] && { err "brak kamery USB"; exit 4; }
 fi
 
-# Ekran (do pozycjonowania)
-SCREEN_W=$(DISPLAY="$DISPLAY" xdpyinfo 2>/dev/null | awk '/dimensions:/ {print $1}' | cut -dx -f1)
-SCREEN_H=$(DISPLAY="$DISPLAY" xdpyinfo 2>/dev/null | awk '/dimensions:/ {print $1}' | cut -dx -f2)
+# Ekran (do pozycjonowania) — odporne na pusty wynik
+SCREEN_DIM=$(DISPLAY="$DISPLAY" xdpyinfo 2>/dev/null | awk '/dimensions:/ {print $2}' || echo "")
+SCREEN_W=$(echo "${SCREEN_DIM:-1680x1050}" | cut -dx -f1)
+SCREEN_H=$(echo "${SCREEN_DIM:-1680x1050}" | cut -dx -f2)
 [[ -z "$SCREEN_W" ]] && SCREEN_W=1680
 [[ -z "$SCREEN_H" ]] && SCREEN_H=1050
 
