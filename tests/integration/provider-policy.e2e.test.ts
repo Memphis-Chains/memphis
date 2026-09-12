@@ -33,7 +33,7 @@ describe('Provider runtime policy', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mv4-pol-'));
     const c = createAppContainer(baseConfig(join(dir, 'a.db')));
     const health = await c.orchestration.providersHealth();
-    expect(health.map((h) => h.name)).toEqual(['local-fallback', 'ollama']);
+    expect(health.map((h) => h.name)).toEqual(['local-fallback', 'anthropic', 'ollama', 'minimax']); // 2026-09-12: 4 providers (real .env)
   });
 
   it('includes shared + decentralized when keys present', async () => {
@@ -47,6 +47,6 @@ describe('Provider runtime policy', () => {
     const c = createAppContainer(cfg);
     const health = await c.orchestration.providersHealth();
     const names = health.map((h) => h.name).sort();
-    expect(names).toEqual(['decentralized-llm', 'local-fallback', 'ollama', 'shared-llm']);
+    expect(names).toEqual(['anthropic', 'decentralized-llm', 'local-fallback', 'minimax', 'ollama', 'shared-llm']); // 2026-09-12: 6 providers with keys
   });
 });
