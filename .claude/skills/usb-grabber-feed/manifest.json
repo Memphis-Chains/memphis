@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "id": "usb-grabber-feed",
+  "name": "USB Grabber Feed",
+  "description": "Trwały feed video+audio z USB grabbera (MACROSILICON MS2109, /dev/video0) do aplikacji lokalnych przez PipeWire (Ripper USB 0/1) i opcjonalny podgląd okna SDL. Use when you need continuous capture from a USB HDMI grabber for Telegram/Chrome/other PipeWire-aware apps, or to display the feed on the local screen for monitoring. Auto-loads v4l2loopback + gst-launch + pulsesrc command patterns.",
+  "tags": [
+    "usb",
+    "video",
+    "audio",
+    "grabber",
+    "v4l2",
+    "pipewire",
+    "telegram",
+    "feed",
+    "always-on"
+  ],
+  "tools": [
+    "memphis_exec",
+    "memphis_health",
+    "memphis_journal",
+    "memphis_cron"
+  ],
+  "workflow": [
+    "DIAGNOSE: uruchom memphis-probe żeby zweryfikować stan USB, /dev/video*, v4l2loopback, PipeWire sources. Zapisz stan do journal jako 'grabber-feed-baseline'.",
+    "VERIFY_MODULE: sprawdź 'lsmod | grep v4l2loopback'. Jeśli brak → potrzebne sudo modprobe v4l2loopback devices=2 video_nr=10,11 card_label=\"Ripper USB 0\",\"Ripper USB 1\" exclusive_caps=0,0 (tier-1, wymaga hasła).",
+    "VERIFY_GRABBER: sprawdź 'lsusb | grep 534d'. Jeśli brak → instrukcja operatora (fizyczne podłączenie).",
+    "VERIFY_PIPEWIRE: 'wpctl status | grep -A1 Sources' powinien pokazać Ripper USB 0/1 + USB Video. Jeśli brak → restart PipeWire.",
+    "TEST_FEED: uruchom memphis-grabber-test (3s test, video+audio entropy). Output JSON z verdict.",
+    "DISPLAY_ON_DEMAND: uruchom memphis-display dla podglądu w oknie SDL na lokalnym ekranie.",
+    "INSTALL_PERSIST: utwórz systemd user service memphis-grabber-feed.service (tier-1, ale plik tworzony w ~/.config/systemd/user, enable+start bez sudo).",
+    "AUDIT: co 24h, memphis_exec + journal wpis 'grabber-feed-audit' z aktualnym stanem."
+  ],
+  "promptHints": [
+    "Always run memphis-probe FIRST before any action — get current state from JSON.",
+    "v4l2loopback is shared resource — only ONE bridge can write to /dev/video10 at a time. Use 'pgrep -af memphis-bridge' to check for duplicates.",
+    "Tier-0 = no sudo: scripts in scripts/ and wrappers in ~/.local/bin/. Tier-1 = sudo one-time: persistent module config + usermod. Never modify src/ without explicit operator approval (tier-2).",
+    "Telegram via PipeWire sees /dev/video10 (Ripper USB 0) when bridge is active. Without bridge → 'Ripper USB 0' shows black/freeze. Default is Ripper USB 0 (wpctl set-default 68).",
+    "Audio routing is automatic: PipeWire pulsesrc picks up MS2109 USB Audio (ALSA hw:2,0). No config needed for Telegram mic.",
+    "Anti-confab phase 6: every figure VERIFIED from JSON output, lsmod, lsusb, wpctl. Never paraphrase counts."
+  ],
+  "examples": [
+    {
+      "prompt": "Uruchom trwały feed z grabbera USB dla Telegram",
+      "outcome": "Agent runs memphis-probe, memphis-grabber-test, then writes systemd user service memphis-grabber-feed.service, enables it, verifies with systemctl --user status. Records journal 'grabber-feed-baseline' + 'grabber-feed-active'."
+    },
+    {
+      "prompt": "Wyświetl feed grabbera na ekranie",
+      "outcome": "Agent runs memphis-display which opens SDL window with video and audio routed to local speakers/headphones."
+    },
+    {
+      "prompt": "Sprawdź czy feed działa",
+      "outcome": "Agent runs memphis-grabber-test (3s capture, JSON with verdict: DYNAMIC/PARTIAL/STATIC for video, ACTIVE/QUIET/NOISE/SILENT for audio)."
+    },
+    {
+      "prompt": "Restart feed (bridge się zawiesił)",
+      "outcome": "Agent runs systemctl --user restart memphis-grabber-feed.service. Verifies with systemctl --user status and journal tail."
+    }
+  ],
+  "notes": [
+    "Hardened against common pitfalls: module not loaded (sudo needed), grabber unplugged (USB reset), PipeWire stale (restart), bridge duplicate (pgrep first).",
+    "All tier-0 scripts are idempotent — safe to re-run.",
+    "Audio path: MS2109 USB Audio (card 2) → ALSA → PipeWire pulsesrc → applications. No manual routing.",
+    "Telegram Desktop (portable at /home/memphis/Downloads/Telegram/Telegram) is a PipeWire client — uses default source automatically."
+  ]
+}

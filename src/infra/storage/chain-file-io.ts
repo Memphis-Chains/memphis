@@ -137,6 +137,22 @@ export async function writeBlockAtomic(
     }
   }
 
+  // Capture previous content (if any) so we can roll back to it if the
+  // post-rename verification discovers the on-disk content does not match
+  // the intended payload. This guards against partial writes, race conditions,
+  // and serializer divergence (e.g. Rust NAPIbridge appending trailing
+  // characters to a JSON object — observed in cases chain 2026-09-07 and
+  // 2026-09-11, decision #98/#146).
+  let previousBytes: string | undefined;
+  try {
+    const prev = await stat(filename).catch(() => undefined);
+    if (prev?.isFile()) {
+      previousBytes = await readFile(filename, 'utf8');
+    }
+  } catch {
+    // best-effort: if stat/read fails, fall through without rollback option
+  }
+
   const tmpFilename = `${filename}.tmp-${process.pid}-${Date.now()}`;
   await writeFile(tmpFilename, payload, 'utf8');
   try {
@@ -144,6 +160,47 @@ export async function writeBlockAtomic(
   } catch (error) {
     await unlink(tmpFilename).catch(() => undefined);
     throw error;
+  }
+
+  // Read-after-write verification: the on-disk file must match what we
+  // intended to write. If a race condition, partial flush, or a buggy
+  // serializer appended trailing garbage, this catches it BEFORE the runtime
+  // tries to read the block during the next cognitive prelude.
+  try {
+    const written = await readFile(filename, 'utf8');
+    if (written !== payload) {
+      // Rollback to previous content (if any) before throwing so the chain
+      // does not contain a silently-corrupt block.
+      if (previousBytes !== undefined) {
+        await writeFile(filename, previousBytes, 'utf8');
+      } else {
+        // The block did not exist before; the safest rollback is to remove
+        // it entirely so the next-index computation treats this slot as empty.
+        await unlink(filename).catch(() => undefined);
+      }
+      throw new Error(
+        `writeBlockAtomic verification failed for ${filename}: ` +
+        `on-disk content does not match payload (len ${written.length} vs ${payload.length}). ` +
+        `This indicates a partial write, race condition, or serializer divergence. ` +
+        `Block rolled back to previous content. Re-run the originating append.`,
+      );
+    }
+  } catch (verificationError) {
+    // Rethrow our own verification error; ignore IO errors that would mask the
+    // real failure (the file rename already succeeded).
+    if (
+      verificationError instanceof Error &&
+      verificationError.message.startsWith('writeBlockAtomic verification failed')
+    ) {
+      throw verificationError;
+    }
+    // For unexpected IO errors during verification, log and proceed (the
+    // rename already happened; do not double-throw which would mask the
+    // success path).
+     
+    console.error(
+      `writeBlockAtomic: post-rename verify IO error (non-fatal): ${String(verificationError)}`,
+    );
   }
   return filename;
 }

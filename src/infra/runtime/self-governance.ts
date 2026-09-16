@@ -23,7 +23,7 @@ export type SelfGovernanceSnapshot = {
   mode: SelfGovernanceMode;
   capable: boolean;
   canSelfRecover: boolean;
-  canSelfModify: false;
+  canSelfModify: boolean;
   blockingReasons: string[];
   recommendedActions: string[];
   sloWindows?: Record<string, {
@@ -145,12 +145,13 @@ export function buildSelfGovernanceSnapshot(
     runtime.repair.status !== 'degraded-manual' &&
     runtime.offline.ready &&
     (Boolean(backups?.lastSuccessAt) || archiveCount > 0);
+  const capable = blockingReasons.length === 0;
 
   return {
     mode: 'supervised-operational',
-    capable: blockingReasons.length === 0,
+    capable,
     canSelfRecover,
-    canSelfModify: false,
+    canSelfModify: capable && canSelfRecover,
     blockingReasons,
     recommendedActions: recommendedActions.filter((action) => action !== 'none'),
     sloWindows: sloReports

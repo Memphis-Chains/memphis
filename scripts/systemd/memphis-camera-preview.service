@@ -1,0 +1,17 @@
+[Unit]
+Description=Memphis Camera Always-On Preview Window
+Documentation=man:gst-launch-1.0(1)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/home/memphis/memphis/scripts/memphis-camera-preview.sh /dev/video1 1280 720 30 50 50 640 360
+Restart=on-failure
+RestartSec=5
+Environment=DISPLAY=:0
+Environment=PREVIEW_TITLE=Memphis Camera
+Environment=PREVIEW_STICKY=true
+
+[Install]
+WantedBy=graphical-session.target

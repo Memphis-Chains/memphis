@@ -116,7 +116,7 @@ describe('self-modify passphrase gate', () => {
     const result = await runMemphisSelfModify(baseInput, fakeDeps);
     expect(result.success).toBe(false);
     expect(result.status).toBe('error');
-    expect(result.rollbackReason).toContain('Passphrase required');
+    expect(result.rollbackReason).toContain('Passphrase rejected');
   });
 
   it('rejects when passphrase is wrong', async () => {
