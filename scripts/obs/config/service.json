@@ -1,0 +1,14 @@
+{
+  "type": "rtmp_custom",
+  "settings": {
+    "server": "rtmp://a.rtmp.youtube.com/live2",
+    "key": "MEMPHIS_YOUTUBE_KEY_PLACEHOLDER"
+  },
+  "service": "YouTube - RTMPS",
+  "common": {
+    "service": "YouTube - RTMPS",
+    "server": "rtmp://a.rtmp.youtube.com/live2",
+    "key": "MEMPHIS_YOUTUBE_KEY_PLACEHOLDER",
+    "use_auth": false
+  }
+}

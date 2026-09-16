@@ -34,7 +34,7 @@ describe('tool registry', () => {
     // 2026-06-16: +2 tier-0 read — memphis_self_governance_status
     // (canonical supervised-operational autonomy readiness) and
     // memphis_tensor_status (canonical tensor/vector runtime truth).
-    expect(getToolNames(stableEnv)).toHaveLength(56);
+    expect(getToolNames(stableEnv)).toHaveLength(57); // 2026-09-12: +1 (memphis_minimax_h3)
   });
 
   it('hides experimental preview tools by default', () => {
@@ -125,7 +125,7 @@ describe('tool registry', () => {
     // memphis_skill_create, memphis_skill_install (write to drafts/installed dirs).
     // PR #593 (S5): +1 tier-2 — memphis_self_pr_open (execute+network,
     // pushes branch + opens PR via gh).
-    expect(tier2.length).toBe(25);
+    expect(tier2.length).toBe(26); // 2026-09-12: +1 (memphis_minimax_h3)
     expect(tier2.map((t) => t.name).sort()).toEqual(
       [
         'memphis_brave_search',
@@ -147,6 +147,7 @@ describe('tool registry', () => {
         'memphis_glob',
         'memphis_grep',
         'memphis_media_ingest',
+        'memphis_minimax_h3',
         'memphis_package',
         'memphis_restart',
         'memphis_self_modify',

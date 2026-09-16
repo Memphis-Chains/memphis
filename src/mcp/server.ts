@@ -42,6 +42,7 @@ import { runMemphisKartograf } from './tools/kartograf.js';
 import { runMemphisLoopStep } from './tools/loop-step.js';
 import { lrDashboardToolInputSchema, runMemphisLrDashboard } from './tools/lr-dashboard.js';
 import { runMemphisMediaIngest } from './tools/media-ingest.js';
+import { runMemphisMiniMaxH3 } from './tools/minimax-h3.js';
 import { runMemphisPackage } from './tools/package.js';
 import { runMemphisPresence } from './tools/presence.js';
 import { runMemphisProviders } from './tools/providers.js';
@@ -1565,6 +1566,39 @@ export function createMemphisMcpServer(
           };
         },
       ),
+    );
+  }
+
+  const minimaxH3Policy = getToolPolicy(permissions, 'memphis_minimax_h3', resolvedManifest);
+  if (shouldRegisterTool('memphis_minimax_h3', minimaxH3Policy, rawEnv)) {
+    server.registerTool(
+      'memphis_minimax_h3',
+      {
+        description: getToolDescription('memphis_minimax_h3'),
+        inputSchema: {
+          action: z.enum(['create', 'query']),
+          prompt: z.string().min(1).max(2000).optional(),
+          task_id: z.string().min(1).optional(),
+          duration: z.number().int().min(2).max(15).optional(),
+          resolution: z.enum(['768P', '2K']).optional(),
+          ratio: z.string().min(3).max(16).optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_minimax_h3', minimaxH3Policy, approvals, async (args) => {
+        if (args.action === 'create' && !args.prompt) throw new Error('prompt is required when action=create');
+        if (args.action === 'query' && !args.task_id) throw new Error('task_id is required when action=query');
+        const result = await runMemphisMiniMaxH3(
+          args.action === 'create'
+            ? { action: 'create', prompt: args.prompt!, duration: args.duration, resolution: args.resolution, ratio: args.ratio }
+            : { action: 'query', task_id: args.task_id! },
+          rawEnv,
+        );
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: toJsonRecord(result),
+        };
+      }),
     );
   }
 

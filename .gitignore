@@ -172,3 +172,30 @@ data/demo-plan-b.json
 /src/infra/public-chat-gateway.ts
 /src/infra/public-chat-contract.ts
 /tests/unit/public-chat-contract.test.ts
+# ── Local-only strategic packs (operator workspace) ──────────────────────────
+# Contains business ops, grant plans, pricing, founder context.
+# Export: /home/memphis/watra.zip for transfer between devices.
+_Watra/
+watra.zip
+
+# ── Operator-private artifacts (v1.13 publication hardening) ────────────────
+# These were staged by mistake in v1.13 cycle: personal research notes,
+# WordPress exports, pilot client docs, session scratch files.
+# Always per-operator-machine; never part of Memphis public source.
+docs/operator/*.md
+docs/operator/*.html
+docs/operator-activity-dashboard.*
+docs/operator-dashboard.*
+docs/pilots/memphis-*.md
+.agent-prompts/
+.README-PROPOSAL*.md
+.README-SESSION-NOTES.md
+wp-json*.json
+*.bak-pre-*
+
+# tier-0 self-modify src/ backup (auto-created before src edit)
+.src-backup-*
+
+# github PAT file (created by scripts/set-github-pat.mjs)
+.github-pat
+*.github-pat

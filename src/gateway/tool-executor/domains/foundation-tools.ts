@@ -6,6 +6,7 @@ import { runMemphisFsOps } from '../../../mcp/tools/fs-ops.js';
 import { runMemphisFsWrite } from '../../../mcp/tools/fs-write.js';
 import { runMemphisHealthCheck } from '../../../mcp/tools/health-check.js';
 import { runMemphisMediaIngest } from '../../../mcp/tools/media-ingest.js';
+import { runMemphisMiniMaxH3 } from '../../../mcp/tools/minimax-h3.js';
 import { runMemphisPackage } from '../../../mcp/tools/package.js';
 import { runMemphisWebSearch } from '../../../mcp/tools/web-search.js';
 import { buildRegistryInputJsonSchema } from '../../tool-json-schema.js';
@@ -158,6 +159,40 @@ export function createFoundationRuntimeTools(rawEnv?: NodeJS.ProcessEnv): Runtim
       },
       async execute(input) {
         return runMemphisMediaIngest(input, rawEnv);
+      },
+    }),
+    buildTool({
+      name: 'memphis_minimax_h3',
+      description: 'Generate or query an asynchronous MiniMax-H3 video task',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['create', 'query'] },
+          prompt: { type: 'string', description: 'Video prompt; required when action=create' },
+          task_id: { type: 'string', description: 'Task id; required when action=query' },
+          duration: { type: 'number', description: 'Seconds (2-15; default 5)' },
+          resolution: { type: 'string', enum: ['768P', '2K'] },
+          ratio: { type: 'string', description: 'Optional aspect ratio, e.g. 16:9' },
+        },
+        required: ['action'],
+      },
+      isReadOnly: false,
+      isConcurrencySafe: false,
+      validateInput(args) {
+        const action = requiredString(args, 'action') as 'create' | 'query';
+        if (action === 'create') {
+          return {
+            action,
+            prompt: requiredString(args, 'prompt'),
+            duration: optionalIntegerInRange(args, 'duration', 2, 15),
+            resolution: optionalString(args, 'resolution') as '768P' | '2K' | undefined,
+            ratio: optionalString(args, 'ratio'),
+          };
+        }
+        return { action, task_id: requiredString(args, 'task_id') };
+      },
+      async execute(input) {
+        return runMemphisMiniMaxH3(input, rawEnv);
       },
     }),
     buildTool({

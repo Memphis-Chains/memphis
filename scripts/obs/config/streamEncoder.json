@@ -1,0 +1,29 @@
+[Simple]
+FilePath=/home/memphis/Videos/obs-recording-%Y-%m-%d_%H-%M-%S.mp4
+RecFormat=mp4
+RecQuality=High
+RecEncoder=SIMPLE_FFMPEG_NVENC
+RecRateControl=CQP
+RecCQLevel=20
+RecPreset=Quality
+RecMuxer=mp4
+
+[Adv]
+FFmpegSaveFilter=""
+FFmpegOutputFormat=""
+FFmpegVEncoder=""
+FFmpegVEncoderSettings=""
+FFmpegAACBitrate=128
+FFmpegABitrate=128
+
+[Audio]
+Track1Name=Audio Desktop
+Track2Name=Audio Mic
+
+[Stream1]
+VBitrate=4500
+ABitrate=128
+Track1=1
+Track2=2
+Encoder=SIMPLE_FFMPEG_NVENC
+Preset=Quality

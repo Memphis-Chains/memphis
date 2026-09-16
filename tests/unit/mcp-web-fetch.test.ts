@@ -1,6 +1,18 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { runMemphisWebFetch } from '../../src/mcp/tools/web-fetch.js';
+
+// 2026-09-12: .env has MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK=true which
+// disables SSRF checks. Clear it for these tests, restore on exit.
+const ORIGINAL_WEB_FETCH_FLAG = process.env.MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK;
+beforeAll(() => {
+  delete process.env.MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK;
+});
+afterAll(() => {
+  if (ORIGINAL_WEB_FETCH_FLAG !== undefined) {
+    process.env.MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK = ORIGINAL_WEB_FETCH_FLAG;
+  }
+});
 
 /**
  * SSRF regression net for #128. The old isSafeUrl:
