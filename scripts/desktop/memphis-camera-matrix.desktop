@@ -1,0 +1,31 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Memphis Camera Stream → Matrix
+GenericName=Live USB Camera to Matrix room
+Comment=Wysyła obraz z kamery USB (1280x720) do pokoju Matrix jako sekwencja JPEG. Wymaga vault matrix_*.
+Exec=/home/memphis/memphis/scripts/desktop/memphis-stream-default.sh
+Icon=com.obsproject.Studio
+Terminal=true
+Categories=AudioVideo;Video;
+Keywords=camera;matrix;stream;memphis;live;
+StartupNotify=true
+StartupWMClass=memphis-camera-stream-matrix
+Actions=Single;Burst;Test;Probe;
+Path=/home/memphis
+
+[Desktop Action Single]
+Name=Wyślij jedną klatkę (test)
+Exec=/home/memphis/memphis/scripts/desktop/memphis-stream-single.sh
+
+[Desktop Action Burst]
+Name=Stream co 5s (thumbnail)
+Exec=/home/memphis/memphis/scripts/desktop/memphis-stream-burst.sh
+
+[Desktop Action Test]
+Name=Test kamery (preview window)
+Exec=/home/memphis/.local/bin/memphis-camera-preview
+
+[Desktop Action Probe]
+Name=Probe kamery (log only)
+Exec=/home/memphis/memphis/scripts/desktop/memphis-camera-probe.sh

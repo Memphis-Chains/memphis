@@ -2678,10 +2678,18 @@ fn run_native_journal(
         });
     }
 
+    // Fix #legacy-migrateable-2026-09-01: every journal block must carry
+    // `type: "journal"` so the firstRun validator at
+    // src/onboarding/first-run.ts:236 does not flag this block as
+    // legacy-shape. Without this, every native chat journal write
+    // regresses the runtime to `legacy-migrateable` and
+    // `memphis repair runtime --force` becomes a recurring chore
+    // instead of a one-shot migration.
     let append = append_generic_block(
         &runtime.config.data_dir,
         "journal",
         json!({
+            "type": "journal",
             "content": content,
             "tags": tags,
             "source": "memphis-rust",

@@ -1,0 +1,99 @@
+{
+  "current_scene": "Memphis Camera",
+  "current_program_scene": "Memphis Camera",
+  "current_transition": "Fade",
+  "scene_order": [
+    { "name": "Memphis Camera" },
+    { "name": "Memphis Desktop" },
+    { "name": "Memphis Mixed" }
+  ],
+  "sources": [
+    {
+      "name": "Camera MS2109 (USB Grabber)",
+      "id": "v4l2_input",
+      "settings": {
+        "device_id": "/dev/video1",
+        "input": 0,
+        "format": "YUYV",
+        "resolution": "1280x720",
+        "framerate": "30",
+        "hue": 0.0,
+        "saturation": 0.0,
+        "brightness": 50,
+        "contrast": 50,
+        "buffering": false
+      },
+      "mixers": 0,
+      "sync": 0,
+      "volume": 1.0,
+      "balance": 0.5,
+      "enabled": true,
+      "muted": false,
+      "push-to-mute": false,
+      "push-to-mute-delay": 0,
+      "push-to-talk": false,
+      "push-to-talk-delay": 0,
+      "hotkeys": {},
+      "deinterlace": 0,
+      "deinterlace_mode": 0,
+      "monitoring_type": 0,
+      "private_settings": {}
+    },
+    {
+      "name": "Audio Desktop (PulseAudio)",
+      "id": "pulse_output_capture",
+      "settings": {
+        "device_id": "default"
+      },
+      "mixers": 0,
+      "sync": 0,
+      "volume": 0.7,
+      "balance": 0.5,
+      "enabled": true,
+      "muted": false,
+      "push-to-mute": false,
+      "push-to-mute-delay": 0,
+      "push-to-talk": false,
+      "push-to-talk-delay": 0,
+      "hotkeys": {},
+      "deinterlace": 0,
+      "deinterlace_mode": 0,
+      "monitoring_type": 0,
+      "private_settings": {}
+    },
+    {
+      "name": "Audio Mic",
+      "id": "pulse_input_capture",
+      "settings": {
+        "device_id": "default"
+      },
+      "mixers": 0,
+      "sync": 0,
+      "volume": 1.0,
+      "balance": 0.5,
+      "enabled": true,
+      "muted": false,
+      "push-to-mute": false,
+      "push-to-mute-delay": 0,
+      "push-to-talk": false,
+      "push-to-talk-delay": 0,
+      "hotkeys": {},
+      "deinterlace": 0,
+      "deinterlace_mode": 0,
+      "monitoring_type": 0,
+      "private_settings": {}
+    }
+  ],
+  "groups": [],
+  "saved_projectors": [],
+  "preview_locked": false,
+  "scaling_enabled": false,
+  "scaling_level": 0,
+  "scaling_off_x": 0.0,
+  "scaling_off_y": 0.0,
+  "transitions": [
+    { "name": "Fade", "id": "fade_transition", "duration": 500 }
+  ],
+  "name": "Memphis",
+  "sources_size": { "x": 1280, "y": 720 }
+}

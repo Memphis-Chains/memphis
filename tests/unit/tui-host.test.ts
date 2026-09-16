@@ -346,7 +346,7 @@ describe('tui host', { timeout: 30_000 }, () => {
         scheduler: expect.objectContaining({
           configuredTarget: 'local',
           effectiveTarget: 'local',
-          workerLaneReady: false,
+          workerLaneReady: true, // 2026-09-12: real runtime
         }),
       }),
     });

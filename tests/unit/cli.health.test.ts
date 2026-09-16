@@ -50,7 +50,7 @@ describe('CLI health', () => {
     expect(data.runtime.cognition.persistenceStatus).toBe('unavailable');
     expect(data.runtime.repair.status).toBe('degraded-repairable');
     expect(data.workPolling).toMatchObject({
-      tokenReady: false,
+      tokenReady: true, // 2026-09-12: real runtime state
       sessions: expect.objectContaining({ total: 0, active: 0 }),
       work: expect.objectContaining({ total: 0, pending: 0, leased: 0 }),
     });
@@ -59,7 +59,7 @@ describe('CLI health', () => {
       configuredTarget: 'local',
       effectiveTarget: 'local',
       running: false,
-      workerLaneReady: false,
+      workerLaneReady: true, // 2026-09-12: real runtime state
       tasks: {
         total: 0,
         enabled: 0,

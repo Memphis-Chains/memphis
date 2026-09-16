@@ -1,8 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { AppError } from '../../src/core/errors.js';
 import { runMemphisExec } from '../../src/mcp/tools/exec.js';
 import { runMemphisWebFetch } from '../../src/mcp/tools/web-fetch.js';
+
+// 2026-09-12: .env has MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK=true
+// (operator opt-in for local dashboards). That env var disables SSRF
+// checks in runMemphisWebFetch. Web-fetch tests expect default behavior
+// (SSRF blocks private hosts), so the entire web_fetch describe block
+// must run with the env var cleared. We snapshot and restore.
+const ORIGINAL_WEB_FETCH_FLAG = process.env.MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK;
+beforeAll(() => {
+  delete process.env.MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK;
+});
+afterAll(() => {
+  if (ORIGINAL_WEB_FETCH_FLAG !== undefined) {
+    process.env.MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK = ORIGINAL_WEB_FETCH_FLAG;
+  }
+});
 
 describe('MCP tool: memphis_exec', () => {
   it('executes allowlisted command (echo)', () => {
