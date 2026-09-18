@@ -678,6 +678,30 @@ pub fn embed_reset() -> String {
     ok(serde_json::json!({ "cleared": true }))
 }
 
+/// In-memory only destructive clear (ADR-006, issue #628). The on-disk
+/// index is left untouched until the caller invokes `embed_flush`. Use
+/// this from bulk rebuild paths that want to avoid the
+/// "clear-then-rebuild" data-loss pattern (destructive empty write
+/// committed before the new payload is ready). Returns `{cleared: true}`.
+///
+/// `embed_reset` (above) keeps its current "wipe and persist" semantics
+/// for the CLI subcommand and doctor diagnostics, where the operator
+/// explicitly wants the on-disk file emptied.
+#[napi(js_name = "embed_clear_in_memory")]
+pub fn embed_clear_in_memory() -> String {
+    let pipeline = match get_embed_pipeline() {
+        Ok(p) => p,
+        Err(e) => return err(e),
+    };
+
+    let mut pipeline = match pipeline.lock() {
+        Ok(v) => v,
+        Err(_) => return err("embed_pipeline_lock_failed"),
+    };
+    pipeline.clear_in_memory_only();
+    ok(serde_json::json!({ "cleared": true }))
+}
+
 /// Release the embed pipeline synchronously before V8 teardown.
 ///
 /// Bug 3 (docs/dev/BUG3-SEGV-INVESTIGATION.md): intermittent SIGSEGV on

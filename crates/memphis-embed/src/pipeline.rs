@@ -904,6 +904,21 @@ impl EmbedPipeline {
         self.persist_best_effort();
     }
 
+    /// In-memory only destructive clear. The on-disk index is left untouched —
+    /// the caller MUST follow with `flush()` to materialise a replacement, or
+    /// accept that the next `with_persistence` load sees the previous index.
+    ///
+    /// Added in ADR-006 to fix the embed reindex data-loss path (issue #628):
+    /// bulk rebuilders no longer have to choose between "wipe to empty before
+    /// I know whether rebuild will succeed" and "leave stale data in memory".
+    /// The destructive on-disk write then happens only after the bulk upsert
+    /// succeeds and the materialising flush commits atomically via the
+    /// `write tmp + fs::rename` already used by `persist_now_json_v1` /
+    /// `persist_now_ndjson_v2`.
+    pub fn clear_in_memory_only(&mut self) {
+        self.docs.clear();
+    }
+
     fn load_docs_from_disk(
         &self,
         index_path: &Path,
@@ -1564,6 +1579,54 @@ mod tests {
 
         pipeline.flush().expect("flush");
         assert!(path.exists(), "flush must materialize {}", path.display());
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// ADR-006 regression: the bulk rebuilder MUST be able to drop the
+    /// previous index from the in-memory HashMap without committing a
+    /// destructive empty write to disk. If the process is killed (SIGKILL,
+    /// OOM, JS exception, racing reindex) between the in-memory clear and
+    /// the materialising flush, the on-disk file must remain byte-identical
+    /// to what the previous flush produced — that's the index the next
+    /// `with_persistence` load will pick up.
+    #[test]
+    fn clear_in_memory_only_leaves_disk_unchanged_on_drop() {
+        let path = temp_path("clear-in-memory-only");
+        let mut pipeline = EmbedPipeline::with_persistence(
+            EmbedConfig::default(),
+            EmbedPersistenceConfig {
+                enabled: true,
+                index_path: path.clone(),
+            },
+        )
+        .expect("pipeline");
+
+        // Seed + materialise a known-good payload.
+        pipeline.set_auto_persist(false);
+        pipeline.upsert("doc-1", "first").expect("upsert 1");
+        pipeline.upsert("doc-2", "second").expect("upsert 2");
+        pipeline.flush().expect("flush");
+        assert!(path.exists(), "seed flush must materialise");
+
+        let pre_clear = std::fs::read(&path).expect("read pre-clear snapshot");
+
+        // Simulate the bulk rebuilder: in-memory clear, repopulate with
+        // different items, then SIGKILL-equivalent (drop the pipeline
+        // without flushing). The on-disk file must NOT reflect the new
+        // state — and crucially must NOT be the destructive empty payload
+        // the old `clear()` would have written.
+        pipeline.clear_in_memory_only();
+        pipeline
+            .upsert("doc-3", "third")
+            .expect("upsert 3 after in-memory clear");
+        drop(pipeline);
+
+        let post_drop = std::fs::read(&path).expect("read post-drop snapshot");
+        assert_eq!(
+            pre_clear, post_drop,
+            "clear_in_memory_only must NOT modify the on-disk index"
+        );
 
         let _ = std::fs::remove_file(path);
     }
