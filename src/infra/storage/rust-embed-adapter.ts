@@ -16,6 +16,7 @@ const EMBED_BRIDGE_ALIASES = {
   embed_search: ['embed_search', 'embedSearch'],
   embed_search_tuned: ['embed_search_tuned', 'embedSearchTuned'],
   embed_reset: ['embed_reset', 'embedReset'],
+  embed_clear_in_memory: ['embed_clear_in_memory', 'embedClearInMemory'],
   embed_flush: ['embed_flush', 'embedFlush'],
 } satisfies BridgeAliasMap<
   | 'embed_store'
@@ -23,6 +24,7 @@ const EMBED_BRIDGE_ALIASES = {
   | 'embed_search'
   | 'embed_search_tuned'
   | 'embed_reset'
+  | 'embed_clear_in_memory'
   | 'embed_flush'
 >;
 
@@ -35,6 +37,11 @@ interface NormalizedEmbedBridge {
   embed_search: (query: string, topK?: number, tagsJson?: string) => string;
   embed_search_tuned?: (query: string, topK?: number, tagsJson?: string) => string;
   embed_reset: () => string;
+  // ADR-006: in-memory-only clear. Optional so an OLDER NAPI binary that
+  // predates the bulk-safe reindex path still loads. New build of the
+  // NAPI crate exports it; legacy builds degrade to `embed_reset()` on
+  // the caller side (embed-reindex.ts) if needed.
+  embed_clear_in_memory?: () => string;
   embed_flush?: () => string;
 }
 
@@ -384,6 +391,31 @@ export function embedSearchTuned(
 export function embedReset(rawEnv: NodeJS.ProcessEnv = process.env): { cleared: boolean } {
   const bridge = getBridgeOrThrow(rawEnv);
   embedSearchCache.clear();
+  return parseEnvelope(bridge.embed_reset());
+}
+
+/**
+ * In-memory only destructive clear (ADR-006, issue #628). The on-disk
+ * index is left untouched until the caller invokes `embedFlush()`. Use
+ * this from the bulk rebuilder instead of `embedReset()` — the legacy
+ * `embedReset` commits a destructive empty write to disk before the new
+ * payload is ready, which is the data-loss path documented in #628.
+ *
+ * Falls back to `embedReset()` if the loaded NAPI crate predates the
+ * ADR-006 surface. The fallback is unsafe for the rebuilder but keeps
+ * single-shot clears working on legacy builds.
+ */
+export function embedClearInMemory(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): { cleared: boolean } {
+  const bridge = getBridgeOrThrow(rawEnv);
+  embedSearchCache.clear();
+  if (typeof bridge.embed_clear_in_memory === 'function') {
+    return parseEnvelope(bridge.embed_clear_in_memory());
+  }
+  // Legacy NAPI: best-effort degradation. Caller MUST be aware this is
+  // not the safe path — the bulk rebuilder should detect the missing
+  // binding at startup and refuse to proceed.
   return parseEnvelope(bridge.embed_reset());
 }
 

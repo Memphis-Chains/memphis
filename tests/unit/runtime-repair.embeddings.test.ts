@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const embedReset = vi.fn(() => ({ cleared: true }));
+const embedClearInMemory = vi.fn(() => ({ cleared: true }));
 const embedStore = vi.fn(() => ({ id: 'mock', count: 1, dim: 32, provider: 'mock' }));
 const embedStoreMany = vi.fn((items: Array<{ id: string; text: string; tags?: string[] }>) => ({
   inserted: items.length,
@@ -25,6 +26,7 @@ const getRustEmbedAdapterStatus = vi.fn(() => ({
 
 vi.mock('../../src/infra/storage/rust-embed-adapter.js', () => ({
   embedReset,
+  embedClearInMemory,
   embedStore,
   embedStoreMany,
   embedFlush,
@@ -98,7 +100,13 @@ describe('runtime repair embeddings', () => {
     const result = await repairRuntimeState({ rawEnv: env });
 
     expect(result.ok).toBe(true);
-    expect(embedReset).toHaveBeenCalledTimes(1);
+    // ADR-006: rebuild path uses the in-memory-only clear so a crash
+    // between clear and flush leaves the previous on-disk index intact.
+    // The destructive `embedReset` (which commits an empty payload to
+    // disk first) MUST NOT be called by the rebuilder — regression
+    // guard for issue #628.
+    expect(embedClearInMemory).toHaveBeenCalledTimes(1);
+    expect(embedReset).not.toHaveBeenCalled();
     // Bulk-first path: items batched into a single embedStoreMany call,
     // then a single embedFlush at the end of the rebuild. The per-item
     // embedStore is the legacy fallback only when bulk isn't available.

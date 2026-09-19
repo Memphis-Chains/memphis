@@ -7,7 +7,7 @@ import { getChainPath, getReadableChainPaths, normalizeChainName } from '../../c
 import { getSearchableChainNames } from '../../memory/chain-catalog.js';
 import {
   embedFlush,
-  embedReset,
+  embedClearInMemory,
   embedStore,
   embedStoreMany,
   isEmbedBulkAvailable,
@@ -253,7 +253,13 @@ export function rebuildDerivedEmbeddings(
   const failureSamples: string[] = [];
 
   if (shouldReset) {
-    embedReset(rawEnv);
+    // ADR-006 (issue #628): use the in-memory-only clear so a crash
+    // between this call and the materialising `embedFlush` below leaves
+    // the previous on-disk index intact. `embedReset` would commit a
+    // destructive empty write to disk right now — if the rebuild then
+    // fails or is interrupted, the operator's previous embedding history
+    // is gone (decision #156: 4832→0; 2026-09-17: ~205 lost to a race).
+    embedClearInMemory(rawEnv);
   }
 
   // 1. Walk all chains, derive the exact-search entry per block, and
