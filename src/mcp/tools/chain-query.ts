@@ -42,11 +42,33 @@ export async function runMemphisChainQuery(input: ChainQueryInput): Promise<Chai
   }
 
   if (input.contains) {
-    const needle = input.contains.toLowerCase();
-    blocks = blocks.filter((b) => {
-      const content = typeof b.data === 'string' ? b.data : JSON.stringify(b.data);
-      return content.toLowerCase().includes(needle);
-    });
+    // Tokenised case-insensitive AND match (decision #190, item 5).
+    //
+    // The previous substring check returned false negatives for any
+    // query that wasn't an exact contiguous phrase in the block.
+    // Example: query "embed reindex" missed the block "rebuild
+    // derived embeddings" because the words weren't adjacent.
+    //
+    // Tokenise the query on whitespace, lowercase each token, require
+    // every token to appear somewhere in the block content (order-
+    // independent AND). Tokens retain Unicode characters intact so
+    // operator-language blocks (Polish ą/ę/ó etc.) match correctly.
+    const tokens = input.contains
+      .toLowerCase()
+      .split(/\s+/)
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0);
+    if (tokens.length === 0) {
+      // Empty query after tokenisation — return nothing rather than
+      // silently returning every block.
+      blocks = [];
+    } else {
+      blocks = blocks.filter((b) => {
+        const content = typeof b.data === 'string' ? b.data : JSON.stringify(b.data);
+        const lower = content.toLowerCase();
+        return tokens.every((token) => lower.includes(token));
+      });
+    }
   }
 
   if (input.tag) {
