@@ -5,6 +5,7 @@
 // add registry weight without consumer benefit.
 //
 import { parseBool } from '../core/env.js';
+import { isHostSafe } from '../core/ssrf-guard.js';
 
 const GITHUB_RE = /(?:https?:\/\/)?github\.com\/([^/\s]+)\/([^/\s#?]+)/i;
 const URL_RE =
@@ -81,26 +82,37 @@ async function fetchWebPage(url: string): Promise<string> {
     .slice(0, 2000);
 }
 
+/**
+ * Synchronous URL-shape + private-IP check used by `fetchUrlsFromMessage`
+ * to gate the gateway turn-runtime auto-fetch path.
+ *
+ * Previously a weak prefix-only check that missed 169.254/16 (cloud
+ * metadata: AWS / GCP / Azure), IPv6 loopback / ULA / link-local, IPv4-
+ * mapped IPv6, and 172.32/12 false-positive-blocked. ADR-007 consolidates
+ * the rules into `src/core/ssrf-guard.ts` so a single block-list change
+ * applies to both this path and `src/mcp/tools/web-fetch.ts`.
+ *
+ * For non-IP hostnames the helper is intentionally fail-closed: a
+ * poisoned public hostname that resolves to a private IP would otherwise
+ * slip past this synchronous check. The async `assertHostSafe` does the
+ * DNS resolution and per-address re-check.
+ */
 function isSafeUrl(url: string, allowPrivateNetwork = false): boolean {
+  let parsed: URL;
   try {
-    const parsed = new URL(url);
-    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
-    if (parsed.search.length > 200) return false;
-    const host = parsed.hostname.toLowerCase();
-    if (allowPrivateNetwork) return true;
-    if (
-      host === 'localhost' ||
-      host === '127.0.0.1' ||
-      host === '0.0.0.0' ||
-      host.startsWith('192.168.') ||
-      host.startsWith('10.') ||
-      host.startsWith('172.')
-    )
-      return false;
-    return true;
+    parsed = new URL(url);
   } catch {
     return false;
   }
+  if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+  if (parsed.search.length > 200) return false;
+  const host = parsed.hostname;
+  if (allowPrivateNetwork) return true;
+  // isHostSafe handles literal-IP + .local/.internal + IPv6 literal
+  // checks. Non-IP hostnames return false here so the caller has to
+  // run a DNS resolution before declaring the URL safe — that's the
+  // rebinding defence.
+  return isHostSafe(host, { allowPrivateNetwork });
 }
 
 const MAX_TOTAL_FETCHED_CHARS = 4000;
