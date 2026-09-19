@@ -8,7 +8,12 @@
     "scripts/start-dashboard.js",
     "scripts/ascii-art.ts",
     "scripts/celebrate.ts",
-    "scripts/progress-viz.ts"
+    "scripts/progress-viz.ts",
+    "scripts/chain-integrity-sweep.mjs",
+    "scripts/runtime-warmup.mjs",
+    "scripts/scheduled-backup-runner.mjs",
+    "scripts/set-github-pat.mjs",
+    "scripts/wal-checkpoint.mjs"
   ],
   "ignore": ["benchmark-search.ts", "benchmarks/performance-suite.ts"]
 }
