@@ -1,5 +1,21 @@
 [workspace]
-members = ["crates/*"]
+# Phase G-minimal: the Tauri shell at apps/memphis-gui/src-tauri is
+# added to the workspace so it can reference memphis-operator /
+# memphis-core by path and participate in the unified `cargo build
+# --workspace`. The pure Rust crates are still under crates/; the
+# `apps/*` namespace is reserved for executable targets (Tauri,
+# CLI distribution binaries, ad-hoc tooling).
+members = [
+  "crates/*",
+  "apps/memphis-gui/src-tauri",
+]
+exclude = [
+  # apps/memphis-chain-draft is the operator-local Phase 1 chain MVP
+  # workspace. Excluded so `cargo check --workspace` from the host
+  # repo doesn't pick it up. After passphrase-gate commit + ADR-010
+  # adoption, this exclusion is removed.
+  "apps/memphis-chain-draft",
+]
 resolver = "2"
 
 [workspace.dependencies]
