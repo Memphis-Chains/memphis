@@ -5,61 +5,86 @@ on:
   schedule:
     - cron: '30 3 * * 1' # Monday 03:30 UTC
 
+# Top-level 'permissions: issues: write' is kept as defence-in-depth:
+# if MEMPHIS_BOT_TOKEN rotation leaves the secret unset, the workflow
+# fails fast with a clear 'permission denied' rather than silently
+# attempting the issue.* call with the default GITHUB_TOKEN (which
+# returns 403 "Resource not accessible by integration" because the
+# GitHub Actions integration-app cannot write issues in this org).
+permissions:
+  issues: write
+
 jobs:
   weekly-kpi:
     runs-on: ubuntu-latest
     steps:
-      - name: Compute and publish weekly KPI
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const title = '📊 Weekly Ollama Runtime KPI';
-            const now = new Date();
-            const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      - name: Compute weekly KPI
+        id: kpi
+        env:
+          GH_TOKEN: ${{ secrets.MEMPHIS_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          title='📊 Weekly Ollama Runtime KPI'
+          now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          # GNU and BSD/macOS differ on date -d. ubuntu-latest is GNU.
+          since=$(date -u -d "$now - 7 days" +%Y-%m-%dT%H:%M:%SZ)
+          week_ending=$(echo "$now" | cut -c1-10)
 
-            const { data: closedIssues } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'closed',
-              per_page: 100,
-              since
-            });
+          # Closed issues in the past 7d, filtered by title and
+          # excluding pull-requests (which share /issues endpoint).
+          jql_filter='.[] | select(.title == "🚨 Nightly Ollama runtime smoke failed") | select(.pull_request == null)'
+          closed_list=$(gh api --paginate \
+            -H "Accept: application/vnd.github+json" \
+            "repos/${{ github.repository }}/issues?state=closed&since=${since}&per_page=100" \
+            | jq -c "[$jql_filter]")
 
-            const incidents = closedIssues.filter((i) => !i.pull_request && i.title === '🚨 Nightly Ollama runtime smoke failed');
-            const mttrMinutes = incidents
-              .map((i) => (new Date(i.closed_at) - new Date(i.created_at)) / 60000)
-              .filter((v) => Number.isFinite(v));
-            const avgMttr = mttrMinutes.length ? (mttrMinutes.reduce((a, b) => a + b, 0) / mttrMinutes.length).toFixed(1) : 'n/a';
+          incidents_count=$(printf '%s' "$closed_list" | jq 'length')
 
-            const body = [
-              `Week ending: ${now.toISOString().slice(0,10)}`,
-              '',
-              `Closed incidents: ${incidents.length}`,
-              `Average MTTR (minutes): ${avgMttr}`,
-              '',
-              `Source window: since ${since}`
-            ].join('\n');
+          # Mean Time To Recovery in minutes (closed_at - created_at).
+          mttr=$(printf '%s' "$closed_list" | jq -r '
+            if length == 0 then "n/a"
+            else
+              (map(
+                ((.closed_at | fromdateiso8601) - (.created_at | fromdateiso8601)) / 60
+              ) | add / length) | tostring | (tonumber | . * 10 | floor | ./10 | tostring)
+            end
+          ')
 
-            const { data: openIssues } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              per_page: 100
-            });
-            const existing = openIssues.find((i) => !i.pull_request && i.title === title);
+          body=$(printf 'Week ending: %s\n\nClosed incidents: %s\nAverage MTTR (minutes): %s\n\nSource window: since %s' \
+            "$week_ending" "$incidents_count" "$mttr" "$since")
 
-            if (existing) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existing.number,
-                body
-              });
-            } else {
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title,
-                body
-              });
-            }
+          echo "title=$title"  >> "$GITHUB_OUTPUT"
+          echo "body<<EOF"      >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$body" >> "$GITHUB_OUTPUT"
+          echo "EOF"           >> "$GITHUB_OUTPUT"
+
+      - name: Publish weekly KPI
+        env:
+          GH_TOKEN: ${{ secrets.MEMPHIS_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          title='${{ steps.kpi.outputs.title }}'
+          body='${{ steps.kpi.outputs.body }}'
+
+          # Look for an existing open issue with the same title to comment
+          # on instead of posting a duplicate. Pagination kept simple
+          # (first page, per_page=100) because weekly volume is small.
+          existing_number=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            "repos/${{ github.repository }}/issues?state=open&per_page=100" \
+            | jq -r --arg t "$title" \
+                '.[] | select(.pull_request == null) | select(.title == $t) | .number' \
+            | head -n1)
+
+          if [ -n "$existing_number" ]; then
+            gh issue comment "$existing_number" \
+              --repo "${{ github.repository }}" \
+              --body "$body" >/dev/null
+            echo "commented on #$existing_number"
+          else
+            new_url=$(gh issue create \
+              --repo "${{ github.repository }}" \
+              --title "$title" \
+              --body "$body")
+            echo "created: $new_url"
+          fi
