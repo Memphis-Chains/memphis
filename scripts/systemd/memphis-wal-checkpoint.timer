@@ -1,0 +1,10 @@
+[Unit]
+Description=Run memphis WAL checkpoint every 6h
+
+[Timer]
+OnCalendar=*-*-* 00/6:00:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

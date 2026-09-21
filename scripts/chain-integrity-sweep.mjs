@@ -4,19 +4,26 @@
 // Defensive: never modifies any block. Read-only.
 //
 // Usage:
-//   node scripts/chain-integrity-sweep.mjs           # check all chains, last 5 blocks each
-//   node scripts/chain-integrity-sweep.mjs --tail 50 # check last 50 blocks each
-//   node scripts/chain-integrity-sweep.mjs --chain cases --tail 20  # one chain only
+//   node scripts/chain-integrity-sweep.mjs                                       # check all chains, last 5 blocks each
+//   CHAINS_DIR=/tmp/foo node scripts/chain-integrity-sweep.mjs                   # sweep an alternate chains dir (CI / tests)
+//   node scripts/chain-integrity-sweep.mjs --tail 50                             # check last 50 blocks each
+//   node scripts/chain-integrity-sweep.mjs --chain cases --tail 20                # one chain only
 //
 // Exit codes:
 //   0 — all blocks parse OK
 //   1 — at least one block failed to parse (with details on stderr)
 //   2 — scan error (e.g. missing chains dir)
+//
+// CHAINS_DIR environment variable (added 2026-09-21, ADR-008):
+//   - Defaults to /home/memphis/.memphis/chains for the operator's box
+//   - Overrides by tests / CI / portable verification passes a tmpdir
+//     so the sweep is hermetic. The systemd unit does NOT set the env
+//     var, so operator behaviour is unchanged.
 
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const CHAINS_DIR = '/home/memphis/.memphis/chains';
+const CHAINS_DIR = process.env.CHAINS_DIR || '/home/memphis/.memphis/chains';
 
 function getArg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);
