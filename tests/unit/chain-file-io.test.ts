@@ -6,6 +6,14 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+// Importing from `node:fs/promises` here (alphabetically before `node:os`
+// per eslint `import/order`) is safe even though the module is mocked
+// further down: vitest hoists `vi.mock(...)` above all imports, so by
+// the time this binding is evaluated `readFile` is already the wrapped
+// `vi.fn` from the factory below, not Node's native impl. Moving the
+// import here keeps the lint alphabetisation satisfied while preserving
+// the rollback-test behaviour that relies on the mocked binding.
+import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -51,8 +59,6 @@ vi.mock('node:fs/promises', async () => {
     readFile: vi.fn(refs.realFsPromises.readFile),
   };
 });
-
-import { readFile } from 'node:fs/promises';
 
 import {
   listBlockFiles,
