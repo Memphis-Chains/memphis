@@ -24,7 +24,11 @@ describe('CLI worker command', () => {
       ok: true,
       mode: 'worker.status',
       snapshot: {
-        tokenReady: true,
+        // Same env-dependence as cli.health.test.ts — true locally
+        // (vault unlocked), false in CI (no operator state). The
+        // `worker.status` command is the contract; the flag's boolean
+        // value is operator-state-dependent.
+        tokenReady: expect.any(Boolean),
       },
     });
   });
