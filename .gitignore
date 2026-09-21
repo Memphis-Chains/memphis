@@ -161,7 +161,12 @@ data/demo-plan-b.json
 # ── Local product/private prototypes quarantined from public repo ────────────
 # 2026-06-17 cleanup: these are operator-local or deferred prototypes, not
 # public source until explicitly reviewed and reintroduced.
-/apps/
+#
+# Phase G-minimal (2026-09-21) re-introduces /apps/memphis-gui/ for the
+# Tauri desktop shell. The blanket /apps/ ignore is lifted into specific
+# ignore targets so the Tauri scaffold can be tracked. Anything else
+# under /apps/ remains in quarantine by default.
+!/apps/memphis-gui/
 /001743.json
 /leads.json
 /manifest.json
