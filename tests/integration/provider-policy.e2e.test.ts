@@ -2,10 +2,25 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createAppContainer } from '../../src/app/container.js';
 import type { AppConfig } from '../../src/infra/config/schema.js';
+
+// The provider registry filters entries by the presence of their API
+// keys. In CI envs those env vars are empty, which would remove
+// `anthropic`/`minimax` (and friends) from `providersHealth()` even when
+// the test sets them via cfg. Stub them in `beforeAll` so the registry
+// behaves the same locally and in CI; vi.stubEnv auto-restores after
+// the suite, so no test-pollution across files.
+beforeAll(() => {
+  vi.stubEnv('ANTHROPIC_API_KEY', 'ci-mock-anthropic');
+  vi.stubEnv('MINIMAX_API_KEY', 'ci-mock-minimax');
+});
+
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 
 function baseConfig(db: string): AppConfig {
   return {
