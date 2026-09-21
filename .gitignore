@@ -230,6 +230,3 @@ docs/issues/
 .test-tmp/
 
 
-# site backend runtime data (analytics db + salt) - never commit
-docs/site/data/*
-!docs/site/data/.htaccess
