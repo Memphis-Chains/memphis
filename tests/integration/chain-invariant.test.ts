@@ -31,7 +31,7 @@
  * Time budget: under 5 seconds on a 4-core 2.5 GHz machine.
  */
 
-import { execFileSync, type SpawnSyncReturns } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import {
   cpSync,
   existsSync,

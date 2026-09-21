@@ -38,6 +38,9 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Install
+        run: npm ci
+
       - name: Run chain-invariant integration test
         run: npx vitest run tests/integration/chain-invariant.test.ts
 
