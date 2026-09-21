@@ -7,11 +7,13 @@ on:
 
 # Grant the workflow's auto-provided GITHUB_TOKEN enough scope to create
 # and comment on issues. The default token for scheduled workflows is
-# read-only on issues/comments; without this block, both 'create' and
-# 'createComment' calls fail with 403 "Resource not accessible by
-# integration" (last seen on run 35581859870 — 2026-09-21 09:11 UTC).
-# Per GitHub docs this is the canonical fix: scopes are grants, not
-# secrets, so no additional repo secret is required.
+# read-only on issues/comments; without this block, 'issues.create' and
+# 'issues.createComment' fail with 403 "Resource not accessible by
+# integration" when only GITHUB_TOKEN is in play (last seen on run
+# 35581859870 — 2026-09-21 09:11 UTC). Kept as defence-in-depth: even
+# with the custom PAT below, falling back to GITHUB_TOKEN on a secret-
+# rotation failure yields a clear 'permission denied' rather than a
+# silent scope downgrade.
 permissions:
   issues: write
 
@@ -22,6 +24,19 @@ jobs:
       - name: Compute and publish weekly KPI
         uses: actions/github-script@v7
         with:
+          # Use a dedicated PAT (MEMPHIS_BOT_TOKEN) instead of the
+          # auto-provided GITHUB_TOKEN. The default integration token
+          # for scheduled workflows in this org returns "Resource not
+          # accessible by integration" on issues.* calls even with
+          # permissions: issues: write accepted (response header
+          # x-accepted-github-permissions: issues=write — confirmed
+          # via run 35607257998, 2026-09-21 13:41 UTC). The repo-level
+          # PAT bypasses the integration-app restriction.
+          #
+          # Set with: gh secret set MEMPHIS_BOT_TOKEN < ~/.memphis/.github-pat
+          # Rotation: aligned with the operator's local PAT rotation
+          # cadence (see scripts/set-github-pat.mjs).
+          github-token: ${{ secrets.MEMPHIS_BOT_TOKEN }}
           script: |
             const title = '📊 Weekly Ollama Runtime KPI';
             const now = new Date();
