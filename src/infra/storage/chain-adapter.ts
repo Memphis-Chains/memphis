@@ -95,6 +95,42 @@ export interface AppendBlockResult {
 
 const GENESIS_PREV_HASH = '0'.repeat(64);
 const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+
+// Allowlist of chain directories under ~/.memphis/chains/ that
+// verifyChainIntegrity is permitted to scan. Anything outside this
+// list is treated as a sidecar audit / non-chain storage and skipped.
+// Prevents the class of bugs where a sidecar writer (e.g.
+// halt-aware-destructive-ops) drops non-conforming blocks under
+// chains/ and crashes memphis at next BOOT with `invalid block shape`.
+// See postmortem docs/postmortems/2026-09-22-chains-halt-invalid-block-shape.md,
+// action A2.
+//
+// Override via env var MEMPHIS_CHAINS_ALLOWLIST (comma-separated).
+const DEFAULT_CHAIN_ALLOWLIST: ReadonlySet<string> = new Set([
+  // 10 active core chains
+  'autonom_archive',
+  'cases',
+  'collective',
+  'decisions',
+  'insights',
+  'journal',
+  'patterns',
+  'reflections',
+  'soul',
+  'system',
+  // 3 frozen backup snapshots — these are valid chain blocks too
+  'cases.backup-2026-07-07T15-07-23-108Z',
+  'journal.backup-1784913076785',
+  'system.backup-1782897312539',
+]);
+
+function getChainAllowlist(rawEnv: NodeJS.ProcessEnv = process.env): ReadonlySet<string> {
+  const explicit = rawEnv.MEMPHIS_CHAINS_ALLOWLIST;
+  if (explicit !== undefined && explicit !== '') {
+    return new Set(explicit.split(',').map((s) => s.trim()).filter(Boolean));
+  }
+  return DEFAULT_CHAIN_ALLOWLIST;
+}
 const APPEND_LOCK_FILE = '.append.lock';
 const APPEND_LOCK_RETRY_MS = 10;
 const APPEND_LOCK_MAX_ATTEMPTS = 200;
@@ -786,9 +822,22 @@ export async function verifyChainIntegrity(
   const rawEnv = _rawEnv ?? process.env;
 
   const baseDir = path.resolve(getChainPath(undefined, rawEnv));
+  const allowlist = getChainAllowlist(rawEnv);
+  const allDirs = (await fs.readdir(baseDir).catch(() => [])).filter((name) =>
+    SAFE_CHAIN_NAME.test(name),
+  );
   const selectedChains = chainName
     ? [normalizeChainName(chainName) ?? chainName]
-    : (await fs.readdir(baseDir).catch(() => [])).filter((name) => SAFE_CHAIN_NAME.test(name));
+    : allDirs.filter((name) => allowlist.has(name));
+  const skipped = chainName ? [] : allDirs.filter((name) => !allowlist.has(name));
+  if (skipped.length > 0) {
+    // Non-fatal: sidecar writers (halt-aware audit, log dumps, …)
+    // sometimes leave directories here that aren't real chains.
+    // List them once so an operator can spot a misconfigured writer.
+    console.warn(
+      `[chain-adapter] skipping ${skipped.length} non-allowlisted chain dir(s) under ${baseDir}: ${skipped.join(', ')}. Set MEMPHIS_CHAINS_ALLOWLIST to scan explicitly.`,
+    );
+  }
 
   let chainsChecked = 0;
   let blockCount = 0;
