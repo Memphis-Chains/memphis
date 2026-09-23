@@ -18,6 +18,7 @@ import {
 import { runMemphisChainQuery } from './tools/chain-query.js';
 import { runMemphisChainVerify } from './tools/chain-verify.js';
 import { runMemphisCodeRead } from './tools/code-read.js';
+import { runMemphisCommitCulture } from './tools/commit-culture.js';
 import {
   runMemphisCognitiveModeSet,
   runMemphisConfigReload,
@@ -987,6 +988,47 @@ export function createMemphisMcpServer(
           structuredContent: result as Record<string, unknown>,
         };
       }),
+    );
+  }
+
+  const commitCulturePolicy = getToolPolicy(permissions, 'memphis_commit_culture', resolvedManifest);
+  if (shouldRegisterTool('memphis_commit_culture', commitCulturePolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_commit_culture',
+      {
+        description:
+          'Culture-aware git commit: validates staged files (no secrets), enforces conventional commit format (feat/fix/ci/docs/refactor/test/chore/perf/build), auto-detects scope from staged paths, auto-links referenced postmortems. See docs/dev/commit-culture-interface.md.',
+        inputSchema: {
+          subcommand: z.enum(['auto', 'preview', 'dry-run', 'amend']).optional(),
+          type: z
+            .enum(['feat', 'fix', 'ci', 'docs', 'refactor', 'test', 'chore', 'perf', 'build'])
+            .optional(),
+          scope: z.string().regex(/^[a-z0-9_-]+$/).optional(),
+          subject: z
+            .string()
+            .min(3)
+            .max(80)
+            .regex(/^[a-z].*/)
+            .optional(),
+          body: z.string().optional(),
+          link: z.array(z.string()).optional(),
+          coAuthor: z.array(z.string()).optional(),
+          noVerify: z.boolean().optional(),
+          allowStagedNovel: z.boolean().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_commit_culture',
+        commitCulturePolicy,
+        approvals,
+        async (input) => {
+          const result = runMemphisCommitCulture(input);
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as Record<string, unknown>,
+          };
+        },
+      ),
     );
   }
 

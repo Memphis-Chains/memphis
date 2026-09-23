@@ -295,8 +295,20 @@ blockCount: 11958
 
 ## Open questions
 
-1. **Why did `RestartPreventExitStatus=101 102 103` not stop the loop?**
-   user-mode systemd limitation? Wrong directive? Need a controlled test.
+1. **Why did `RestartPreventExitStatus=101 102 103` not stop the loop?** ✅ **Resolved 2026-09-22 (session: Mavis restart).**
+   The 298-reboot storm was caused by the **live user unit** at
+   `/home/memphis/.config/systemd/user/memphis.service` deploying with
+   `Restart=always` — which **completely ignores** `RestartPreventExitStatus`
+   per systemd semantics. The directive was set in the unit, but `Restart=always`
+   overrides it. The fix (A3) verified the directive works in isolation; the
+   *cause* was the wrong `Restart=` value, not user-mode systemd behaviour.
+   Resolution applied:
+   - Live unit updated 2026-09-22 13:00 to `Restart=on-failure` +
+     `StartLimitBurst=5` + `StartLimitIntervalSec=300`.
+   - Template `ops/memphis.service` updated same day to match (was
+     `Restart=always`/`RestartSec=3`/`RestartPreventExitStatus=103` only).
+   See commit fixing `ops/memphis.service` for the exact diff and the cross-link
+   comment that now sits in both unit files.
 2. **Why is `chains/halt/` timestamp `000022` 09:43:48Z but journalctl
    shows timer runs at 00:41:20 and 11:43:47?** Either the timestamp in
    the JSON is from `verify.sh`'s `data.kind=halt-verify` reporting
