@@ -111,7 +111,10 @@ async function scheduledBackup(rawEnv: NodeJS.ProcessEnv): Promise<BuiltinJobRes
   const backupEnv = { ...rawEnv };
   delete backupEnv.MEMPHIS_BACKUP_INTERVAL_MS;
   const handle = startScheduledBackupLoop({ rawEnv: backupEnv });
-  const state = await handle.tickNow();
+  // Always run drill after cron-based backup (forceDrill bypasses every-N gating).
+  // Per postmortem 2026-09-22 A2 — drill should fire every backup so we know
+  // restore path works daily, not weekly by luck.
+  const state = await handle.tickNow({ forceDrill: true });
   handle.stop();
   if (state.lastError) {
     return { success: false, output: state.lastError, error: state.lastError };
@@ -119,8 +122,8 @@ async function scheduledBackup(rawEnv: NodeJS.ProcessEnv): Promise<BuiltinJobRes
   return {
     success: true,
     output: `Backup created: ${state.lastSuccessFile ?? 'unknown'}; drill=${
-      state.lastDrillOk === undefined ? 'not-due' : state.lastDrillOk ? 'pass' : 'fail'
-    }`,
+      state.lastDrillOk === undefined ? 'not-attempted' : state.lastDrillOk ? 'pass' : 'fail'
+    }${state.lastDrillError ? ` (${state.lastDrillError})` : ''}`,
   };
 }
 

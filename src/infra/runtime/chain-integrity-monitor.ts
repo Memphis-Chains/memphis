@@ -237,11 +237,21 @@ export async function runChainIntegrityScan(options: {
       blocksScanned++;
       const filePath = path.join(chainDir, file);
 
+interface RawBlock {
+  index?: number;
+  hash?: string;
+  prev_hash?: string;
+  timestamp?: string;
+  chain?: string;
+  data?: unknown;
+  [key: string]: unknown;
+}
+
       let raw: string;
-      let block: Record<string, unknown>;
+      let block: RawBlock;
       try {
         raw = await fs.readFile(filePath, 'utf8');
-        block = JSON.parse(raw);
+        block = JSON.parse(raw) as RawBlock;
       } catch (err) {
         const issue: IntegrityIssue = {
           chain: entry,
@@ -309,7 +319,7 @@ export async function runChainIntegrityScan(options: {
         if (block.hash && typeof block.hash === 'string' && isGenesisByPrevHash) {
           const { hash: storedHash, ...withoutHash } = block;
           try {
-            const computed = hashBlock(withoutHash, crypto);
+            const computed = hashBlock(withoutHash as Parameters<typeof hashBlock>[0], crypto);
             if (computed !== storedHash) {
               const issue: IntegrityIssue = {
                 chain: entry,
