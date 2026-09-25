@@ -1,0 +1,11 @@
+{
+  "index": 0,
+  "hash": "sha256-decisions-000000",
+  "chain": "decisions",
+  "timestamp": "2026-01-01T00:00:00.000Z",
+  "prev_hash": "sha256-genesis",
+  "data": {
+    "type": "decision",
+    "content": "golden-fixture-decision-0"
+  }
+}

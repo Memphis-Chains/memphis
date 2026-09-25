@@ -582,6 +582,21 @@ function createArchive(memphisRoot: string, backupPath: string): void {
         '--exclude=./cache',
         '--exclude=./logs',
         '--exclude=*.lock',
+        // CRITICAL — never include vault or auth secrets. Culture requires
+        // secrets to be vault-managed, not file-committed; backing them up
+        // in plaintext violates that and creates a leak path if an
+        // archive is exfiltrated. Vault entries can be re-created from
+        // operator memory + vault recovery flow (see docs/runbooks/RESTORE-FROM-BACKUP.md).
+        '--exclude=./.tier2-passphrase',
+        '--exclude=./.github-pat',
+        '--exclude=./vault-entries.json',
+        '--exclude=./vault-state.json',
+        // Skip transient runtime PID files — recreated on next boot.
+        '--exclude=./memphis.pid',
+        '--exclude=./state/boot-failures.json*',
+        // Telemetry is regenerable and bloaty; skip unless explicitly
+        // requested via `--tag include-telemetry` (future flag).
+        '--exclude=./telemetry',
         '-C',
         memphisRoot,
         '.',
