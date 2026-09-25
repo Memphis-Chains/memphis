@@ -18,7 +18,11 @@ import {
 import { runMemphisChainQuery } from './tools/chain-query.js';
 import { runMemphisChainVerify } from './tools/chain-verify.js';
 import { runMemphisCodeRead } from './tools/code-read.js';
-import { runMemphisCommitCulture } from './tools/commit-culture.js';
+// Skeleton: memphis_commit_culture is intentionally NOT imported here until
+// tests + audit hook land (see docs/dev/commit-culture-interface.md).
+// The previous import lived here during 2026-09-22 hardening sprint and
+// was rolled back when the tool-surface audit (tests/unit/tool-surface-audit.test.ts)
+// flagged the registry mismatch (server wired, registry absent).
 import {
   runMemphisCognitiveModeSet,
   runMemphisConfigReload,
@@ -991,46 +995,14 @@ export function createMemphisMcpServer(
     );
   }
 
-  const commitCulturePolicy = getToolPolicy(permissions, 'memphis_commit_culture', resolvedManifest);
-  if (shouldRegisterTool('memphis_commit_culture', commitCulturePolicy, rawEnv)) {
-    server.registerTool(
-      'memphis_commit_culture',
-      {
-        description:
-          'Culture-aware git commit: validates staged files (no secrets), enforces conventional commit format (feat/fix/ci/docs/refactor/test/chore/perf/build), auto-detects scope from staged paths, auto-links referenced postmortems. See docs/dev/commit-culture-interface.md.',
-        inputSchema: {
-          subcommand: z.enum(['auto', 'preview', 'dry-run', 'amend']).optional(),
-          type: z
-            .enum(['feat', 'fix', 'ci', 'docs', 'refactor', 'test', 'chore', 'perf', 'build'])
-            .optional(),
-          scope: z.string().regex(/^[a-z0-9_-]+$/).optional(),
-          subject: z
-            .string()
-            .min(3)
-            .max(80)
-            .regex(/^[a-z].*/)
-            .optional(),
-          body: z.string().optional(),
-          link: z.array(z.string()).optional(),
-          coAuthor: z.array(z.string()).optional(),
-          noVerify: z.boolean().optional(),
-          allowStagedNovel: z.boolean().optional(),
-        },
-      },
-      withApprovalGate(
-        'memphis_commit_culture',
-        commitCulturePolicy,
-        approvals,
-        async (input) => {
-          const result = runMemphisCommitCulture(input);
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as Record<string, unknown>,
-          };
-        },
-      ),
-    );
-  }
+  // Skeleton: memphis_commit_culture was registered during the audit hardening
+  // sprint (2026-09-22) before tests + approval hook landed. The audit-hook
+  // surface-test (tests/unit/tool-surface-audit.test.ts) flags the registry
+  // mismatch because the tool is wired in MCP server.ts but absent from
+  // src/gateway/tool-registry.ts. Unregistered until the wire-up lands
+  // (see docs/dev/commit-culture-interface.md and the inline note above).
+  const _commitCulturePolicy = getToolPolicy(permissions, 'memphis_commit_culture', resolvedManifest);
+  void _commitCulturePolicy;
 
   const loopStepPolicy = getToolPolicy(permissions, 'memphis_loop_step', resolvedManifest);
   if (shouldRegisterTool('memphis_loop_step', loopStepPolicy, rawEnv)) {
