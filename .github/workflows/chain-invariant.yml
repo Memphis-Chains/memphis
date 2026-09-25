@@ -1,0 +1,53 @@
+name: chain-invariant
+
+# Offline-only invariant gate for the chain surface (Phase L, ADR-008).
+#
+# Runs the chain-integrity-sweep.mjs script against the committed
+# golden fixture in tests/fixtures/chain-invariant/. A regression
+# that breaks the sweep's structural-integrity contract (JSON.parse
+# fails OR required fields `index` / `hash` are missing) trips
+# this gate BEFORE it can land on main.
+#
+# Symmetric with the existing 'signed-block-gate' and
+# 'offline-invariant' CI jobs in .github/workflows/ci.yml. Lives
+# in a separate workflow file so that chain regressions can't
+# sneak in via a silently-skipped step inside the main quality-gate
+# matrix.
+#
+# Cost: under 5 seconds wall time, zero network, zero secrets.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # Belt-and-braces nightly — in case PR-only gates miss an
+    # accumulation that needs a sweep on the latest main.
+    - cron: '17 4 * * *'
+
+jobs:
+  chain-invariant:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Run chain-invariant integration test
+        run: npx vitest run tests/integration/chain-invariant.test.ts
+
+      - name: Upload sandbox dir on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chain-invariant-sandbox
+          path: .test-tmp/
+          if-no-files-found: ignore

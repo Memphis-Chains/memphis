@@ -199,7 +199,7 @@
     "chalk": "^5.6.2",
     "cli-progress": "^3.12.0",
     "dotenv": "^17.3.1",
-    "fastify": "^5.8.2",
+    "fastify": "^5.12.1",
     "grammy": "^1.41.1",
     "onnxruntime-node": "^1.21.0",
     "pino": "^10.3.1",
@@ -217,21 +217,29 @@
   "overrides": {
     "@babel/core": "^7.29.7",
     "@grpc/grpc-js": "^1.14.4",
+    "@hono/node-server": "^1.19.15",
     "@opentelemetry/propagator-jaeger": "^2.10.0",
+    "body-parser": "^2.2.3",
     "brace-expansion": "^5.0.6",
     "esbuild": "^0.28.1",
-    "fast-uri": "^3.1.4",
-    "hono": "^4.12.31",
-    "ip-address": ">=10.2.0",
+    "fast-uri": "^3.1.6",
+    "find-my-way": ">=9.7.0",
+    "hono": "^4.13.5",
+    "ip-address": ">=10.3.1",
     "js-yaml": "^4.2.0",
     "markdown-it": "^14.2.0",
-    "protobufjs": "^7.6.4",
-    "qs": "^6.15.2",
-    "sharp": "^0.35.3",
-    "tar": "^7.5.20",
+    "protobufjs": "^8.7.0",
+    "qs": "6.16.0",
+    "sharp": "^0.35.4",
+    "tar": "^7.5.21",
     "vite": "^8.0.16"
   },
   "peerDependencies": {
     "ollama": ">=0.5.0"
+  },
+  "allowScripts": {
+    "better-sqlite3": true,
+    "esbuild": true,
+    "onnxruntime-node": true
   }
 }

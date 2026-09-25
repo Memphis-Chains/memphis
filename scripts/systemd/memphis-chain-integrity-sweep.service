@@ -1,0 +1,19 @@
+[Unit]
+Description=Memphis chain integrity sweep (read-only, JSON.parse check on tail of every chain)
+After=local-fs.target
+Wants=memphis.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/memphis/memphis
+# Read-only probe — never modifies any block. Spawns Node and reads JSON.
+ExecStart=/usr/bin/node /home/memphis/memphis/scripts/chain-integrity-sweep.mjs --tail 50
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+Restart=no
+# Failure surfaces via exit code; status logged via journalctl.
+# No alerting sidecar in v1.13.4; detection only.
+
+[Install]
+WantedBy=default.target

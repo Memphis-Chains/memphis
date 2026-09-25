@@ -4,3 +4,13 @@ coverage/
 /target/
 data/
 .github/workflows/
+
+# Raw scraped HTML (prettier 3.x parses HTML and rejects malformed tags).
+# ECB press-release-raw.html has a duplicated </a> from the scraper — do
+# not autoformat; correct format requires manual scrub.
+notes/pontes/*.html
+
+# OBS Studio ini-style config (not JSON; prettier 3.x rejects 'F' at 2:1).
+# Renaming to .ini would be ideal but breaks the existing path references
+# in scripts/obs/*.
+scripts/obs/config/*.json

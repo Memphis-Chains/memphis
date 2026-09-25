@@ -1,0 +1,18 @@
+[Unit]
+Description=Memphis WAL checkpoint (every 6h)
+After=local-fs.target
+Wants=memphis.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/memphis/memphis
+# WAL checkpoint via Node — runs PRAGMA wal_checkpoint(TRUNCATE)
+# with PRAGMA integrity_check guard. No native deps.
+ExecStart=/usr/bin/node /home/memphis/memphis/scripts/wal-checkpoint.mjs
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+Restart=no
+
+[Install]
+WantedBy=default.target
