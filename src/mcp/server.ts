@@ -1001,7 +1001,11 @@ export function createMemphisMcpServer(
   // mismatch because the tool is wired in MCP server.ts but absent from
   // src/gateway/tool-registry.ts. Unregistered until the wire-up lands
   // (see docs/dev/commit-culture-interface.md and the inline note above).
-  const _commitCulturePolicy = getToolPolicy(permissions, 'memphis_commit_culture', resolvedManifest);
+  const _commitCulturePolicy = getToolPolicy(
+    permissions,
+    'memphis_commit_culture',
+    resolvedManifest,
+  );
   void _commitCulturePolicy;
 
   const loopStepPolicy = getToolPolicy(permissions, 'memphis_loop_step', resolvedManifest);
@@ -1600,11 +1604,19 @@ export function createMemphisMcpServer(
         },
       },
       withApprovalGate('memphis_minimax_h3', minimaxH3Policy, approvals, async (args) => {
-        if (args.action === 'create' && !args.prompt) throw new Error('prompt is required when action=create');
-        if (args.action === 'query' && !args.task_id) throw new Error('task_id is required when action=query');
+        if (args.action === 'create' && !args.prompt)
+          throw new Error('prompt is required when action=create');
+        if (args.action === 'query' && !args.task_id)
+          throw new Error('task_id is required when action=query');
         const result = await runMemphisMiniMaxH3(
           args.action === 'create'
-            ? { action: 'create', prompt: args.prompt!, duration: args.duration, resolution: args.resolution, ratio: args.ratio }
+            ? {
+                action: 'create',
+                prompt: args.prompt!,
+                duration: args.duration,
+                resolution: args.resolution,
+                ratio: args.ratio,
+              }
             : { action: 'query', task_id: args.task_id! },
           rawEnv,
         );

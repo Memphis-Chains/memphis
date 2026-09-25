@@ -75,12 +75,14 @@ async function main() {
     for (const r of checked) {
       if (!r.ok) {
         failures += 1;
-        console.error(JSON.stringify({
-          ok: false,
-          chain,
-          file: r.file,
-          err: r.error,
-        }));
+        console.error(
+          JSON.stringify({
+            ok: false,
+            chain,
+            file: r.file,
+            err: r.error,
+          }),
+        );
       } else {
         results.push({
           chain,

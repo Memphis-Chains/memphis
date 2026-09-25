@@ -29,22 +29,22 @@ out of `chains/`, runtime booted cleanly.
 
 ## Timeline (CEST, all 2026-09 unless noted)
 
-| Time | Event | Source |
-|---|---|---|
-| **21 22:36** | Mode change E→A | `config/PULSE.md` |
-| **21 22:40:33** | First 4× `halt-check` blocks written (000001–000004). Caller `memphis@memphis`. Targets `scripts/ci-workflow-install-step-lint.mjs` (already halted by `collective/000025`). | archive `.memphis-backup-broken-halt-chains-20260922-121016/000001-000004.json` |
-| **21 22:40:35** | First `halt-verify` block (000005). violations=0. | `000005.json` |
-| **21 22:40:57 – 22:41:46** | Burst of 16 more `halt-check` + 5 more `halt-verify` blocks (000006–000021). All same target file. Two `bypass` actions with reason `council-approved-…` suggest operator was testing the new skill's override path. | `000006-000021.json` |
-| **21 22:43:09** | Last healthy heartbeat of memphis (uptime 4808s). | `PULSE.md` |
-| **21 22:45:53** | Graceful SIGTERM, drained=true, remaining=0. End of pre-restart uptime 4972s. | `PULSE.md` |
-| **22 00:40:13 – 00:41:32** | 6 files in `skills/halt-aware-destructive-ops/` created (SKILL.md, audit.sh, bash-hook.sh, check.sh, register.sh, unregister.sh, verify.sh) — all 22 wrz 00:40–00:41, all staged in git but not yet committed (on branch `feat/phase-L-offline-invariant`). | filesystem mtime + `git status` |
-| **22 00:41:20** | `memphis-halt-integrity.timer` first run (`Persistent=true` catch-up from 21 09:00). Wrote `chains/halt/000022.json` (timestamp 09:43:48Z — clock-skew note below). | `journalctl -u memphis-halt-integrity.service` |
-| **22 09:43:48** | Timer run — added `chains/halt/000022.json` (`halt-verify`, violations=0, no halted resources). | `000022.json` |
-| **22 09:44:08** | First BOOT attempt → `chain integrity verification failed: chain integrity check failed for 000001.json: invalid block shape`. Exit 102. systemd unit triggers `Restart=on-failure` after 5s. | `journalctl -u memphis.service` |
-| **22 09:44 – 11:54** | Boot loop. 50+ failed restarts in first 3 minutes, continuing every ~5s. `boot-failures.json` grew to 50 entries. Telegram alerts from `runtime-watch.log` (last one 21 22:45 said `health=unhealthy`). | `boot-failures.json`, journalctl |
-| **22 12:10** | Manual stop of service + archive of `chains/halt/*.json` (22 files) to `~/.memphis-backup-broken-halt-chains-20260922-121016/` + delete empty parent dir + archive `boot-failures.json` to `.bak-20260922-121016`. | this session |
-| **22 12:10:26** | New BOOT — `health=healthy`, provider=`minimax`, model=`MiniMax-M3`. Server listening on 127.0.0.1:3000. | `PULSE.md` |
-| **22 12:11** | `memphis chain verify` → `ok:true, chainsChecked:10, blockCount:11958`. `health` endpoint returns `status:healthy`. | CLI + curl |
+| Time                       | Event                                                                                                                                                                                                                                                       | Source                                                                          |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| **21 22:36**               | Mode change E→A                                                                                                                                                                                                                                             | `config/PULSE.md`                                                               |
+| **21 22:40:33**            | First 4× `halt-check` blocks written (000001–000004). Caller `memphis@memphis`. Targets `scripts/ci-workflow-install-step-lint.mjs` (already halted by `collective/000025`).                                                                                | archive `.memphis-backup-broken-halt-chains-20260922-121016/000001-000004.json` |
+| **21 22:40:35**            | First `halt-verify` block (000005). violations=0.                                                                                                                                                                                                           | `000005.json`                                                                   |
+| **21 22:40:57 – 22:41:46** | Burst of 16 more `halt-check` + 5 more `halt-verify` blocks (000006–000021). All same target file. Two `bypass` actions with reason `council-approved-…` suggest operator was testing the new skill's override path.                                        | `000006-000021.json`                                                            |
+| **21 22:43:09**            | Last healthy heartbeat of memphis (uptime 4808s).                                                                                                                                                                                                           | `PULSE.md`                                                                      |
+| **21 22:45:53**            | Graceful SIGTERM, drained=true, remaining=0. End of pre-restart uptime 4972s.                                                                                                                                                                               | `PULSE.md`                                                                      |
+| **22 00:40:13 – 00:41:32** | 6 files in `skills/halt-aware-destructive-ops/` created (SKILL.md, audit.sh, bash-hook.sh, check.sh, register.sh, unregister.sh, verify.sh) — all 22 wrz 00:40–00:41, all staged in git but not yet committed (on branch `feat/phase-L-offline-invariant`). | filesystem mtime + `git status`                                                 |
+| **22 00:41:20**            | `memphis-halt-integrity.timer` first run (`Persistent=true` catch-up from 21 09:00). Wrote `chains/halt/000022.json` (timestamp 09:43:48Z — clock-skew note below).                                                                                         | `journalctl -u memphis-halt-integrity.service`                                  |
+| **22 09:43:48**            | Timer run — added `chains/halt/000022.json` (`halt-verify`, violations=0, no halted resources).                                                                                                                                                             | `000022.json`                                                                   |
+| **22 09:44:08**            | First BOOT attempt → `chain integrity verification failed: chain integrity check failed for 000001.json: invalid block shape`. Exit 102. systemd unit triggers `Restart=on-failure` after 5s.                                                               | `journalctl -u memphis.service`                                                 |
+| **22 09:44 – 11:54**       | Boot loop. 50+ failed restarts in first 3 minutes, continuing every ~5s. `boot-failures.json` grew to 50 entries. Telegram alerts from `runtime-watch.log` (last one 21 22:45 said `health=unhealthy`).                                                     | `boot-failures.json`, journalctl                                                |
+| **22 12:10**               | Manual stop of service + archive of `chains/halt/*.json` (22 files) to `~/.memphis-backup-broken-halt-chains-20260922-121016/` + delete empty parent dir + archive `boot-failures.json` to `.bak-20260922-121016`.                                          | this session                                                                    |
+| **22 12:10:26**            | New BOOT — `health=healthy`, provider=`minimax`, model=`MiniMax-M3`. Server listening on 127.0.0.1:3000.                                                                                                                                                    | `PULSE.md`                                                                      |
+| **22 12:11**               | `memphis chain verify` → `ok:true, chainsChecked:10, blockCount:11958`. `health` endpoint returns `status:healthy`.                                                                                                                                         | CLI + curl                                                                      |
 
 ---
 
@@ -68,12 +68,13 @@ The validation at `memphis/dist/infra/storage/chain-adapter.js:582`
 (`toChainBlock`) requires all six fields:
 
 ```js
-typeof block.index     === 'number' &&
-typeof block.timestamp === 'string' &&
-typeof block.chain     === 'string' &&
-typeof block.prev_hash === 'string' &&   // ← missing in halt checks
-typeof block.hash      === 'string' &&   // ← missing in halt checks
-typeof block.data      === 'object'  && !Array.isArray(block.data)
+typeof block.index === 'number' &&
+  typeof block.timestamp === 'string' &&
+  typeof block.chain === 'string' &&
+  typeof block.prev_hash === 'string' && // ← missing in halt checks
+  typeof block.hash === 'string' && // ← missing in halt checks
+  typeof block.data === 'object' &&
+  !Array.isArray(block.data);
 ```
 
 Missing `prev_hash` or `hash` throws `invalid block shape` and aborts
@@ -107,6 +108,7 @@ RestartPreventExitStatus=101 102 103
 ```
 
 The runbook `docs/runbooks/SYSTEMD_EXIT_CODES.md` explicitly says:
+
 > Exit `102`: Do not loop-restart. Restore from verified backup.
 
 Yet the runtime restarted 50+ times in three minutes. Two hypotheses
@@ -195,6 +197,7 @@ blockCount: 11958
 8. PULSE.md entry `2026-09-22T10:10:26.987Z BOOT health=healthy uptime=0s provider=minimax`.
 
 **No data loss from the user's "core" runtime:**
+
 - `soul/000256.json` (manual append OpenClaw v0.1.0) preserved.
 - Root-level `halt/` (4 active halted resources) preserved.
 - All 10 core chains (collective, soul, system, cases, decisions, insights,
@@ -204,6 +207,7 @@ blockCount: 11958
 - Soul-memory, scheduler tasks, PULSE.md, telegram config untouched.
 
 **Data loss scope:**
+
 - 22 `halt-check` + `halt-verify` audit records from 21 22:40:33 – 22 09:43:48.
   All archived, can be replayed once halt audit moves to a real sidecar.
 
@@ -220,32 +224,31 @@ blockCount: 11958
       `check.sh` and `verify.sh` to `~/.memphis/audit/halt/`. Use JSONL
       append-only (`~/.memphis/audit/halt/events.jsonl`), one event per line,
       no `index`/`prev_hash`/`hash`. Update SKILL.md accordingly.
-      *Owner:* operator + next session.
-      *Verification:* `ls ~/.memphis/audit/halt/` after a halt-check; no files
+      _Owner:_ operator + next session.
+      _Verification:_ `ls ~/.memphis/audit/halt/` after a halt-check; no files
       under `~/.memphis/chains/halt/`.
 - [ ] **A2. Add `MEMPHIS_CHAINS_ALLOWLIST` config** (env var + `config/`)
       listing which directories under `chains/` are real chains. Default
-      to the current 10 core chains + `cases.backup-*/` + `journal.backup-*/`
-      + `system.backup-*/`. `verifyChainIntegrity` only scans allowlisted
+      to the current 10 core chains + `cases.backup-*/` + `journal.backup-*/` + `system.backup-*/`. `verifyChainIntegrity` only scans allowlisted
       entries; unknown dirs emit a warning to `runtime-watch.log`.
-      *Verification:* `memphis chain verify --strict` with a stray directory
+      _Verification:_ `memphis chain verify --strict` with a stray directory
       in `chains/` should pass and warn, not crash.
 - [ ] **A3. Verify `RestartPreventExitStatus` actually stops restarts in
       user-mode systemd.** If it does not, switch the unit to
       `Restart=no` and add an external watchdog (e.g., a separate
       `memphis-watcher.service` that runs `memphis doctor --fix` after a
       single failure, then starts the daemon on green).
-      *Verification:* force `node … serve` to `exit 102` under test and observe
+      _Verification:_ force `node … serve` to `exit 102` under test and observe
       that systemd does not restart it again.
 - [ ] **A4. Hard rate-limit the service unit.**
-      ```ini
-      StartLimitBurst=5
-      StartLimitIntervalSec=300
-      ```
+      `ini
+StartLimitBurst=5
+StartLimitIntervalSec=300
+`
       in `memphis.service`. After 5 failed starts in 5 minutes, systemd
       gives up. Operators must then explicitly `systemctl reset-failed`.
-      *Verification:* force 5 failures and observe `Inactive (auto-restart
-      failed)` after burst limit.
+      _Verification:_ force 5 failures and observe `Inactive (auto-restart
+failed)` after burst limit.
 
 ### Detect earlier (P1)
 
@@ -253,7 +256,7 @@ blockCount: 11958
       cheap — read only header + last block, full verify once per hour).
       On failure: send Telegram alert + auto-archive the offending dir to
       `~/.memphis-backup-corrupt-chains/<ts>/` + leave runtime running.
-      *Verification:* artificially corrupt a non-critical chain block;
+      _Verification:_ artificially corrupt a non-critical chain block;
       expect Telegram alert within 5 min and `chains/<name>/` moved to
       backup.
 - [ ] **B2. Skill loader must dry-run.** `register.sh` / skill install
@@ -301,14 +304,14 @@ blockCount: 11958
    `Restart=always` — which **completely ignores** `RestartPreventExitStatus`
    per systemd semantics. The directive was set in the unit, but `Restart=always`
    overrides it. The fix (A3) verified the directive works in isolation; the
-   *cause* was the wrong `Restart=` value, not user-mode systemd behaviour.
+   _cause_ was the wrong `Restart=` value, not user-mode systemd behaviour.
    Resolution applied:
    - Live unit updated 2026-09-22 13:00 to `Restart=on-failure` +
      `StartLimitBurst=5` + `StartLimitIntervalSec=300`.
    - Template `ops/memphis.service` updated same day to match (was
      `Restart=always`/`RestartSec=3`/`RestartPreventExitStatus=103` only).
-   See commit fixing `ops/memphis.service` for the exact diff and the cross-link
-   comment that now sits in both unit files.
+     See commit fixing `ops/memphis.service` for the exact diff and the cross-link
+     comment that now sits in both unit files.
 2. **Why is `chains/halt/` timestamp `000022` 09:43:48Z but journalctl
    shows timer runs at 00:41:20 and 11:43:47?** Either the timestamp in
    the JSON is from `verify.sh`'s `data.kind=halt-verify` reporting
@@ -340,10 +343,10 @@ blockCount: 11958
    exit 102, do not assume systemd has stopped restarting. Check
    `boot-failures.json` and journalctl. Add `StartLimitBurst` until
    the directive is verified.
-5. **Skill add-on is now subject to dry-run before live** (once B2 lands).
+4. **Skill add-on is now subject to dry-run before live** (once B2 lands).
    For now: any skill that touches `~/.memphis/` should be reviewed
    manually before its timer is enabled.
-6. **22 halt blocks from 21 22:40 – 22 09:43 are preserved** in
+5. **22 halt blocks from 21 22:40 – 22 09:43 are preserved** in
    `~/.memphis-backup-broken-halt-chains-20260922-121016/`. They are
    a valid record of operator activity during the deep-restart of
    21 wrz — keep them, do not delete.
@@ -376,12 +379,12 @@ blockCount: 11958
 The four P0 action items from this postmortem were implemented in the
 same session (no overnight backlog). Outcomes:
 
-| Action | Status | Verification |
-|---|---|---|
-| **A1.** Halt audit moved from `chains/halt/` to `audit/halt/events.jsonl` | **Done** | `check.sh`, `verify.sh`, `audit.sh` updated in `skills/halt-aware-destructive-ops/`. Manual test: 4 events written to JSONL, `chains/halt/` no longer created. |
-| **A2.** `MEMPHIS_CHAINS_ALLOWLIST` + default allowlist in `chain-adapter.ts/js` | **Done** | `dist/infra/storage/chain-adapter.js` and `src/infra/storage/chain-adapter.ts` both patched. Stress test: created `chains/zzz_real_sidecar_test/000001.json` with missing `prev_hash`/`hash` — `chain verify` skipped it with warning, memphis stayed up. `.env` updated with explicit allowlist. |
-| **A3.** Verify `RestartPreventExitStatus` actually stops restarts | **Verified** | Controlled test (`test-exit-102.service` with `process.exit(102)`) showed systemd stopped restarting after first attempt. **The directive works on this host in user-mode.** The 298-reboot storm observed during the incident remains unexplained at this layer — see open question §1. |
-| **A4.** Hard rate limit (`StartLimitBurst=5`, `StartLimitIntervalSec=300`) | **Done** | `memphis.service` updated. After 5 failed starts within 5 minutes, systemd gives up. `systemd-analyze verify` passes. |
+| Action                                                                          | Status       | Verification                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A1.** Halt audit moved from `chains/halt/` to `audit/halt/events.jsonl`       | **Done**     | `check.sh`, `verify.sh`, `audit.sh` updated in `skills/halt-aware-destructive-ops/`. Manual test: 4 events written to JSONL, `chains/halt/` no longer created.                                                                                                                                    |
+| **A2.** `MEMPHIS_CHAINS_ALLOWLIST` + default allowlist in `chain-adapter.ts/js` | **Done**     | `dist/infra/storage/chain-adapter.js` and `src/infra/storage/chain-adapter.ts` both patched. Stress test: created `chains/zzz_real_sidecar_test/000001.json` with missing `prev_hash`/`hash` — `chain verify` skipped it with warning, memphis stayed up. `.env` updated with explicit allowlist. |
+| **A3.** Verify `RestartPreventExitStatus` actually stops restarts               | **Verified** | Controlled test (`test-exit-102.service` with `process.exit(102)`) showed systemd stopped restarting after first attempt. **The directive works on this host in user-mode.** The 298-reboot storm observed during the incident remains unexplained at this layer — see open question §1.          |
+| **A4.** Hard rate limit (`StartLimitBurst=5`, `StartLimitIntervalSec=300`)      | **Done**     | `memphis.service` updated. After 5 failed starts within 5 minutes, systemd gives up. `systemd-analyze verify` passes.                                                                                                                                                                             |
 
 ### New open questions raised during implementation
 
@@ -392,11 +395,11 @@ same session (no overnight backlog). Outcomes:
      at 11:42 CEST. Maybe an older systemd was active at that moment.
    - Exit code from the `node` wrapper is different from what systemd
      reports in `status=102/n/a` — needs `strace` to confirm.
-   Worth re-testing with a deliberately corrupted chain (mkdir
-   `chains/foo/000001.json` with broken shape) under the now-patched
-   `memphis.service`. With A2 in place, `chain verify` should already
-   skip the broken dir, so memphis should boot — and if A4 is correct,
-   even without that, the burst limit will fire after 5 attempts.
+     Worth re-testing with a deliberately corrupted chain (mkdir
+     `chains/foo/000001.json` with broken shape) under the now-patched
+     `memphis.service`. With A2 in place, `chain verify` should already
+     skip the broken dir, so memphis should boot — and if A4 is correct,
+     even without that, the burst limit will fire after 5 attempts.
 2. **`legacy block shape in system/006849.json`** appeared in
    `runtime.firstRun.reasons` after restart. The block is well-formed
    (has `hash`/`prev_hash`) but the first-run detector flags it as

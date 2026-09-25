@@ -17,9 +17,11 @@ The point of writing it down is so the next session knows (a) the soul chain wri
 ## Part 1 — Manual soul chain append (block 000256)
 
 ### What was asked
+
 Append an entry to the soul chain recording who released OpenClaw v0.1.0 (`https://github.com/Memphis-Chains/MemphisOS-OpenClaw/releases/tag/v0.1.0`). Conscious explicit trigger: operator said "Sprobuj zapisac do soul chain. Explicite." and then "go" after I asked for second confirmation.
 
 ### The fact that was recorded
+
 - OpenClaw v0.1.0 = AI gateway, Layer 3 of the Memphis ecosystem (`Memphis → MemphisOS → OpenClaw → Telegram/Discord`)
 - Released **2026-03-15T07:40:39Z**
 - By **Memphis-Chains** (org account on GitHub)
@@ -27,14 +29,15 @@ Append an entry to the soul chain recording who released OpenClaw v0.1.0 (`https
 - Body linki: `docs/FULL_INSTALL_GUIDE.md`, `docs/SOUL_GUIDE.md`
 
 ### What I learned the hard way
+
 **There is no CLI/MCP tool to append directly to the soul chain.** Available writers:
 
-| Tool | Chain written to |
-|---|---|
-| `memphis_journal` | journal |
-| `memphis_case_append` | cases |
-| `memphis_decide` | decisions |
-| `memphis_soul_write` | `~/.memphis/config/soul-memory.json` (config), **not** the soul chain |
+| Tool                             | Chain written to                                                                |
+| -------------------------------- | ------------------------------------------------------------------------------- |
+| `memphis_journal`                | journal                                                                         |
+| `memphis_case_append`            | cases                                                                           |
+| `memphis_decide`                 | decisions                                                                       |
+| `memphis_soul_write`             | `~/.memphis/config/soul-memory.json` (config), **not** the soul chain           |
 | (CLI) `memphis chain append ...` | only journal/decisions/cases/patterns/reflections — **soul is not in this set** |
 
 The only code that writes to soul is internal: `appendBlock('soul', ...)` in `src/soul/memory.ts:412` (triggered by `appendMemoryAction` / `burnMemoryAction`). These are fired by other memory events, not by operator intent.
@@ -42,6 +45,7 @@ The only code that writes to soul is internal: `appendBlock('soul', ...)` in `sr
 **To write to soul on operator request, the manual path is:**
 
 1. Reproduce the canonical-hash algorithm. Verify by reproducing the existing last block's hash:
+
    ```python
    import json, hashlib
    with open('~/.memphis/chains/soul/000255.json') as f:
@@ -61,6 +65,7 @@ The only code that writes to soul is internal: `appendBlock('soul', ...)` in `sr
    canonical_string = json.dumps(sort_keys(canonical_block), separators=(',', ':'))
    print(hashlib.sha256(canonical_string.encode()).hexdigest())
    ```
+
    This **must** match `block['hash']`. If it does not, do NOT write — algorithm is wrong.
 
 2. The hash algorithm matches `stableStringify` (sort keys recursively, `JSON.stringify` no indent) + sha256, then `toCanonicalHashData` reduces `data` to the 3-field form `{type, content, tags}`. See `src/core/stable-stringify.ts` and `src/infra/storage/chain-adapter.ts:503-512`. Rust side mirror: `crates/memphis-core/src/hash.rs:5` (`compute_hash`).
@@ -74,6 +79,7 @@ The only code that writes to soul is internal: `appendBlock('soul', ...)` in `sr
    - `data.tags` array of strings, can be empty
 
 4. Atomic write:
+
    ```python
    filename = f"{chains_dir}/{next_index:06d}.json"
    tmp_filename = f"{filename}.tmp-{os.getpid()}-{int(time.time()*1000)}"
@@ -87,17 +93,20 @@ The only code that writes to soul is internal: `appendBlock('soul', ...)` in `sr
 6. Round-trip verify by recomputing hash from the new file and comparing to stored hash.
 
 ### Result of my session
+
 - Wrote `000256.json` with hash `23fa915bbeb8a7d1b306c3bd526beb9d1632140f6c37a36bb385b8ec9fd91930`
 - `memphis_chain_verify soul` → ok:true, 256 blocks
 - Round-trip hash reproduce match: True
 - prev_hash linkage: 256.prev (`e9c6367d...`) = 255.hash (`e9c6367d...`)
 
 ### Caveats / what's not guaranteed
+
 - Rust NAPI backend may recompute hash on read using `serde_json::to_vec` (key order = struct field order, not alphabetic). For 3-field `CanonicalHashData {type, content, tags}` the alphabetic order matches declaration order, so it should match. **But unverified end-to-end.**
 - `MEMPHIS_SOUL_STRICT` env var does not exist in current config — no signature required for `memory.action` blocks. If strict mode is turned on later, future manual appends will fail validation. Check before writing.
 - The Rust `Block.data` struct is `BlockData { block_type, content, tags }` — TS-side `data` is a freeform record. The Rust strict validator reads `data.type`, `data.content`, `data.tags`. Extra fields in `data` are ignored by Rust, so including them is safe (e.g. `data.kind`, `data.source`, `data.schemaVersion`, `data.payload` are decorative).
 
 ### Decision chain reference
+
 `decisions[221]` — full record of the manual append, including VERIFIED/UNVERIFIED.
 
 ---
@@ -105,9 +114,11 @@ The only code that writes to soul is internal: `appendBlock('soul', ...)` in `sr
 ## Part 2 — Deepest-possible restart
 
 ### What was asked
+
 "Teraz zrestartuj systemy do najglebszego jaki potrafisz, a potem zobacz co przetrwalo."
 
 ### Sequence executed
+
 1. **Snapshot before** — record PIDs, last block of each chain, port assignments.
 2. **`systemctl --user restart memphis.service`** — graceful shutdown observed:
    ```
@@ -127,47 +138,52 @@ The only code that writes to soul is internal: `appendBlock('soul', ...)` in `sr
 
 ### What survived vs what had to come back
 
-| Layer | Before | After | Δ |
-|---|---|---|---|
-| memphis.service PID | 8905 (3d uptime) | 2678753 | new |
-| Port 3000 (memphis) | listening | listening | alive |
-| Port 3001 (lr-dashboard) | 8913 | 2679285 | restarted |
-| Port 5500 (piper TTS) | 32357 | 2678998 | restarted |
-| Port 8765 (dashboard) | 7132 | 2678908 | restarted |
-| Port 9000 (whisper STT) | 33632 | 2679000 | restarted |
-| Port 11434 (Ollama) | n/a | n/a | not touched |
-| Telegram gateway | ready | ready | survived |
-| Vault (11 entries) | integrity_ok | integrity_ok | survived |
-| **Soul block 000256 (manual)** | hash `23fa915b...` | hash `23fa915b...` | **survived atomic write** |
-| Decisions chain | 221 blocks | 221 blocks | intact |
-| Journal chain | 484 blocks | 484 blocks | intact |
-| Sessions (DB) | 20 rows | 20 rows | survived |
-| Embeddings | 1560 semantic_docs | 1560 | survived (loaded from index-v1.json) |
-| Case index SQLite | 20 rows | 20 rows | survived |
+| Layer                          | Before             | After              | Δ                                    |
+| ------------------------------ | ------------------ | ------------------ | ------------------------------------ |
+| memphis.service PID            | 8905 (3d uptime)   | 2678753            | new                                  |
+| Port 3000 (memphis)            | listening          | listening          | alive                                |
+| Port 3001 (lr-dashboard)       | 8913               | 2679285            | restarted                            |
+| Port 5500 (piper TTS)          | 32357              | 2678998            | restarted                            |
+| Port 8765 (dashboard)          | 7132               | 2678908            | restarted                            |
+| Port 9000 (whisper STT)        | 33632              | 2679000            | restarted                            |
+| Port 11434 (Ollama)            | n/a                | n/a                | not touched                          |
+| Telegram gateway               | ready              | ready              | survived                             |
+| Vault (11 entries)             | integrity_ok       | integrity_ok       | survived                             |
+| **Soul block 000256 (manual)** | hash `23fa915b...` | hash `23fa915b...` | **survived atomic write**            |
+| Decisions chain                | 221 blocks         | 221 blocks         | intact                               |
+| Journal chain                  | 484 blocks         | 484 blocks         | intact                               |
+| Sessions (DB)                  | 20 rows            | 20 rows            | survived                             |
+| Embeddings                     | 1560 semantic_docs | 1560               | survived (loaded from index-v1.json) |
+| Case index SQLite              | 20 rows            | 20 rows            | survived                             |
 
 ### Rule of thumb for next session
 
 **Persistent state survives every kind of restart:**
+
 - Soul / decisions / journal / cases / patterns / reflections / insights / system / collective chains (11 chains total, all on disk as JSON files with `chain-adapter.ts writeBlockAtomic` tmp+rename)
 - Vault (encrypted master key + entries, on disk)
 - SQLite DB (`memphis.db`, `case-index.sqlite`, `dashboard.db`)
 - Embeddings index (`~/.memphis/embed/index-v1.json`, atomic reindex per issue #628 fix)
 
 **In-memory state is wiped and recreated:**
+
 - memphis.service daemon process
 - All subprocess servers (TTS, STT, dashboards) unless they have systemd `Restart=on-failure` set
 - Active LLM context, in-flight turns (graceful drain observed)
 
 **Always-restart processes to expect:**
+
 - lr-dashboard (`lr-dashboard.service`)
 - dashboard :8765 (some monitor — possibly systemd or external, not pinned to a unit)
 - piper :5500 (`memphis-piper-tts.service`)
 - whisper :9000 (`memphis-whisper-stt.service`)
 
 **Stays dead until manually started:**
+
 - `memphis-grabber-feed.service` — disabled this session (broken auto-restart loop)
 
 ### Decision chain reference
+
 `decisions[222]` — full restart report with VERIFIED/UNVERIFIED matrix.
 
 ---
@@ -189,6 +205,7 @@ The only code that writes to soul is internal: `appendBlock('soul', ...)` in `sr
 ## Anti-confab
 
 **VERIFIED (live):**
+
 - Block 000256 atomic write survives restart (verified by `memphis_chain_verify soul` → 256 blocks OK; round-trip hash reproduce = `23fa915b...`).
 - memphis.service graceful shutdown exit code 0.
 - All 11 chains still hash-linked after restart.
@@ -196,10 +213,12 @@ The only code that writes to soul is internal: `appendBlock('soul', ...)` in `sr
 - Telegram gateway state "ready" both before and after.
 
 **UNVERIFIED:**
+
 - Rust NAPI backend recomputes the same hash on read for soul (algorithm matches but serialization paths differ — TS uses JSON.stringify of sorted map, Rust uses serde_json of struct in declaration order). For 3-key canonical data the order matches; for any non-canonical write it would diverge. Untested end-to-end.
 - The new memphis process (PID 2678753) hasn't yet written a fresh soul block (auto-reflection cycle every ~5min). If it does, that block's hash linkage from 256 must be valid — but it isn't there yet at the time of writing this.
 
 **OUT OF SCOPE:**
+
 - Full OS reboot (would kill the SSH session hosting this TUI).
 - Hard kill -9 on memphis.service (would lose unflushed WAL).
 - Re-enabling `memphis-grabber-feed.service` (operator action when video device available).
