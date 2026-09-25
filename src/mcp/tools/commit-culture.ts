@@ -29,8 +29,15 @@ const FORBIDDEN_PATTERNS: RegExp[] = [
 ];
 
 const ALLOWED_TYPES = new Set([
-  'feat', 'fix', 'ci', 'docs', 'refactor',
-  'test', 'chore', 'perf', 'build',
+  'feat',
+  'fix',
+  'ci',
+  'docs',
+  'refactor',
+  'test',
+  'chore',
+  'perf',
+  'build',
 ]);
 
 const SUBJECT_REGEX = /^[a-z].{2,79}$/; // 3-80 chars, lowercase first letter
@@ -64,9 +71,14 @@ export function runMemphisCommitCulture(input: CommitCultureInput): CommitCultur
   let staged: string[];
   try {
     const out = execFileSync('git', ['diff', '--cached', '--name-only'], {
-      encoding: 'utf8', cwd, timeout: 10_000,
+      encoding: 'utf8',
+      cwd,
+      timeout: 10_000,
     });
-    staged = out.split('\n').map((s) => s.trim()).filter(Boolean);
+    staged = out
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean);
   } catch (err) {
     return { ok: false, stage: 'rejected', reason: `git diff failed: ${String(err)}` };
   }
@@ -81,7 +93,8 @@ export function runMemphisCommitCulture(input: CommitCultureInput): CommitCultur
       for (const pat of FORBIDDEN_PATTERNS) {
         if (pat.test(f)) {
           return {
-            ok: false, stage: 'rejected',
+            ok: false,
+            stage: 'rejected',
             reason: `forbidden file in stage: ${f}`,
           };
         }
@@ -115,8 +128,10 @@ export function runMemphisCommitCulture(input: CommitCultureInput): CommitCultur
   // 5. Preview vs commit
   if (input.subcommand === 'preview' || input.subcommand === 'dry-run') {
     return {
-      ok: true, stage: 'previewed',
-      message: fullMessage, files: staged,
+      ok: true,
+      stage: 'previewed',
+      message: fullMessage,
+      files: staged,
     };
   }
 
@@ -126,12 +141,16 @@ export function runMemphisCommitCulture(input: CommitCultureInput): CommitCultur
     if (body) args.push('-m', body);
     if (input.noVerify) args.push('--no-verify');
     const out = execFileSync('git', args, {
-      encoding: 'utf8', cwd, timeout: 120_000,
+      encoding: 'utf8',
+      cwd,
+      timeout: 120_000,
     });
     const hashMatch = out.match(/\[[\w/]+ ([a-f0-9]+)\]/);
     return {
-      ok: true, stage: 'committed',
-      message: fullMessage, files: staged,
+      ok: true,
+      stage: 'committed',
+      message: fullMessage,
+      files: staged,
       hash: hashMatch?.[1],
     };
   } catch (err) {

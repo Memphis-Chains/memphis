@@ -12,6 +12,7 @@ Prevent unintended destructive operations on files explicitly marked HALT (e.g. 
 ## When to use
 
 Invoke `check.sh` BEFORE any of these operations:
+
 - `rm` (file deletion)
 - `rm -rf` (recursive deletion)
 - `mv` (move/rename)
@@ -24,13 +25,13 @@ Or install the bash hook in `~/.bashrc` for automatic guarding.
 
 ## Components
 
-| Component | Path | Purpose |
-|---|---|---|
-| Skill scripts | `~/memphis/skills/halt-aware-destructive-ops/` | `check.sh`, `register.sh`, `unregister.sh`, `audit.sh`, `verify.sh` |
-| HALT registry | `~/.memphis/halt/` | one file per halted resource; filename = sha256(resourcePath) prefix |
-| Audit log (JSONL) | `~/.memphis/audit/halt/events.jsonl` | append-only log of every check (pass/block/bypass) and verify run; moved out of `chains/` per postmortem 2026-09-22 (action A1) |
-| Bash hook | `~/.bashrc` (`halt_guard` function) | auto-guard via DEBUG trap preexec |
-| Cron integrity | `memphis-halt-integrity.{timer,service}` | daily 09:00 verify HALT files exist |
+| Component         | Path                                           | Purpose                                                                                                                         |
+| ----------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Skill scripts     | `~/memphis/skills/halt-aware-destructive-ops/` | `check.sh`, `register.sh`, `unregister.sh`, `audit.sh`, `verify.sh`                                                             |
+| HALT registry     | `~/.memphis/halt/`                             | one file per halted resource; filename = sha256(resourcePath) prefix                                                            |
+| Audit log (JSONL) | `~/.memphis/audit/halt/events.jsonl`           | append-only log of every check (pass/block/bypass) and verify run; moved out of `chains/` per postmortem 2026-09-22 (action A1) |
+| Bash hook         | `~/.bashrc` (`halt_guard` function)            | auto-guard via DEBUG trap preexec                                                                                               |
+| Cron integrity    | `memphis-halt-integrity.{timer,service}`       | daily 09:00 verify HALT files exist                                                                                             |
 
 ## HALT registry file format
 
@@ -462,6 +463,7 @@ StandardError=append:/home/memphis/.memphis/logs/halt-verify.log
 ```
 
 Enable:
+
 ```bash
 systemctl --user daemon-reload
 systemctl --user enable --now memphis-halt-integrity.timer
@@ -470,6 +472,7 @@ systemctl --user enable --now memphis-halt-integrity.timer
 ## Tests
 
 Manual smoke test:
+
 ```bash
 # Register a test halt
 ~/memphis/skills/halt-aware-destructive-ops/register.sh \

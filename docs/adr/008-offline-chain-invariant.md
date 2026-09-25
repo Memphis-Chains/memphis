@@ -33,7 +33,7 @@ exist on the operator's box:
 
 What is **missing**:
 
-- **No CI enforcement of the offline invariant at the *chain* surface.**
+- **No CI enforcement of the offline invariant at the _chain_ surface.**
   `tests/integration/offline-invariant.test.ts` exercises the runtime, but
   does not write a synthetic chain directory and verify that
   `chain-integrity-sweep.mjs` accepts it. A regression where the sweep
@@ -42,7 +42,7 @@ What is **missing**:
 - **Systemd units live outside the repo.** The operator's hourly cron
   (`memphis-chain-integrity-sweep.timer`) and corresponding
   `memphis-chain-integrity-sweep.service` exist only in `~/.config/systemd/
-  user/`. Reproducing the install on a clean operator machine requires
+user/`. Reproducing the install on a clean operator machine requires
   manual steps. Other operator-local install drift (whisper / piper / camera)
   is tracked in `scripts/systemd/*`; the chain sweep is not.
 - **CI quality-gate window for offline invariant** is currently 0 ms
@@ -63,7 +63,7 @@ Adopt **offline-only** invariant enforcement for the chain surface via:
 
 2. **New workflow `.github/workflows/chain-invariant.yml`** — runs on every
    `pull_request` event targeting `main`. Symmetric with `tests/integration/
-   signed-block-gate.test.ts` and `tests/integration/offline-invariant.test.ts`
+signed-block-gate.test.ts` and `tests/integration/offline-invariant.test.ts`
    already wired into `.github/workflows/ci.yml`. Block-merge protection
    prevents a regression that breaks the chain invariant from reaching `main`
    silently. No credentials, no remote runners, no caches — the test is
@@ -89,19 +89,19 @@ Adopt **offline-only** invariant enforcement for the chain surface via:
 Three alternatives were considered and rejected:
 
 A. **Spin up a live 3-node libp2p cluster in CI.** Estimated 4+ minutes per
-   run, requires Rust toolchain pinning, fragile under flaky networking,
-   and doesn't actually catch chain-corruption (clusters see coherent
-   views). Better suited to a separate coverage acceptance flow, not PR
-   gate.
+run, requires Rust toolchain pinning, fragile under flaky networking,
+and doesn't actually catch chain-corruption (clusters see coherent
+views). Better suited to a separate coverage acceptance flow, not PR
+gate.
 
 B. **Use a dockerised Memphis build.** Adds ~1 GB of `docker/memphis` image
-   maintenance, requires Docker-in-Docker runners (paid GH orgs only), and
-   reproduces the same offline-invariant black-box surface that the
-   golden fixture covers in <5 seconds.
+maintenance, requires Docker-in-Docker runners (paid GH orgs only), and
+reproduces the same offline-invariant black-box surface that the
+golden fixture covers in <5 seconds.
 
 C. **Spawn a node process running the full memphis runtime.** Requires
-   `npm run build`, fixture setup, teardown — multi-minute, redundant with
-   `tests/integration/offline-invariant.test.ts` already in CI.
+`npm run build`, fixture setup, teardown — multi-minute, redundant with
+`tests/integration/offline-invariant.test.ts` already in CI.
 
 The chosen golden-fixture approach is the **fastest** (under 5 seconds),
 the **most deterministic** (synthetic chains have known exact contents),

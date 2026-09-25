@@ -30,26 +30,27 @@ systemctl --user restart memphis.service
 
 ## Co JEST w backupie (od 2026-09-22)
 
-| Element | W backupie | Dlaczego |
-|---|---|---|
-| `chains/` (10 łańcuchów + 3 archiwa) | ✅ | rdzeń pamięci |
-| `audit/halt/` | ✅ | audit log (JSONL) |
-| `halt/` | ✅ | halt registry (per-resource) |
-| `config/soul-manifest.json` | ✅ | tożsamość agenta |
-| `state/` | ✅ | runtime state (self-coding-plans, slo-check.log) |
-| `scripts/` | ✅ | skill scripts + crons |
-| `embed/index-v1.json` + backupy | ✅ | vector index |
-| `case-index.sqlite` | ✅ | semantic case store |
-| `.env-redacted` | ✅ | config bez secrets |
-| `telemetry/` | ❌ excluded | regenerable, bloat |
-| `vault-entries.json`, `vault-state.json` | ❌ excluded | **secrets — recreate from operator memory** |
-| `.tier2-passphrase` | ❌ excluded | **master key — operator-only** |
-| `.github-pat` | ❌ excluded | **GitHub PAT — re-create via `gh auth login`** |
-| `.env` (oryginalny) | ❌ excluded | reconstructed via vault or manual |
-| `logs/`, `cache/`, `backups/`, `*.lock` | ❌ excluded | runtime artefacts |
+| Element                                  | W backupie  | Dlaczego                                         |
+| ---------------------------------------- | ----------- | ------------------------------------------------ |
+| `chains/` (10 łańcuchów + 3 archiwa)     | ✅          | rdzeń pamięci                                    |
+| `audit/halt/`                            | ✅          | audit log (JSONL)                                |
+| `halt/`                                  | ✅          | halt registry (per-resource)                     |
+| `config/soul-manifest.json`              | ✅          | tożsamość agenta                                 |
+| `state/`                                 | ✅          | runtime state (self-coding-plans, slo-check.log) |
+| `scripts/`                               | ✅          | skill scripts + crons                            |
+| `embed/index-v1.json` + backupy          | ✅          | vector index                                     |
+| `case-index.sqlite`                      | ✅          | semantic case store                              |
+| `.env-redacted`                          | ✅          | config bez secrets                               |
+| `telemetry/`                             | ❌ excluded | regenerable, bloat                               |
+| `vault-entries.json`, `vault-state.json` | ❌ excluded | **secrets — recreate from operator memory**      |
+| `.tier2-passphrase`                      | ❌ excluded | **master key — operator-only**                   |
+| `.github-pat`                            | ❌ excluded | **GitHub PAT — re-create via `gh auth login`**   |
+| `.env` (oryginalny)                      | ❌ excluded | reconstructed via vault or manual                |
+| `logs/`, `cache/`, `backups/`, `*.lock`  | ❌ excluded | runtime artefacts                                |
 
 > ⚠️ **PRZED 2026-09-22 20:16** backupy NIE wykluczały vault/secret plików. Istniejące archiwa
 > `scheduled-*.tar.gz` z 12-22.09 włącznie **zawierają plaintext**:
+>
 > - `.tier2-passphrase` (operator master key)
 > - `.github-pat` (GitHub admin PAT)
 > - `vault-entries.json` (vault content)
@@ -173,13 +174,13 @@ Vault jest **excluded z backup** (kultura). To znaczy, że po restore vault jest
 
 ### Jakie sekrety musisz pamiętać / mieć w 1Password
 
-| Secret | Skąd odtworzyć | Jak przywrócić |
-|---|---|---|
-| `MEMPHIS_TELEGRAM_BOT_TOKEN` | 1Password / BotFather | `memphis vault set telegram_bot_token <value>` |
-| `MEMPHIS_TELEGRAM_ALLOWED_USER_IDS` | ten sam co było | `memphis vault set telegram_allowed_user_ids 99999999` |
-| `MEMPHIS_API_TOKEN` | wygenerować na nowo: `memphis token generate` | `memphis vault set api_token <value>` |
-| Tier-2 passphrase | **musisz pamiętać** | `memphis vault unlock --passphrase <value>` |
-| GitHub PAT | `gh auth login` albo z 1Password | `vault set github_pat <pat>` |
+| Secret                              | Skąd odtworzyć                                | Jak przywrócić                                           |
+| ----------------------------------- | --------------------------------------------- | -------------------------------------------------------- |
+| `MEMPHIS_TELEGRAM_BOT_TOKEN`        | 1Password / BotFather                         | `memphis vault set telegram_bot_token <value>`           |
+| `MEMPHIS_TELEGRAM_ALLOWED_USER_IDS` | ten sam co było                               | `memphis vault set telegram_allowed_user_ids 99999999` |
+| `MEMPHIS_API_TOKEN`                 | wygenerować na nowo: `memphis token generate` | `memphis vault set api_token <value>`                    |
+| Tier-2 passphrase                   | **musisz pamiętać**                           | `memphis vault unlock --passphrase <value>`              |
+| GitHub PAT                          | `gh auth login` albo z 1Password              | `vault set github_pat <pat>`                             |
 
 **Bez tier-2 passphrase vault jest locked** — to jest celowe (kultura: secrets zarządzane, nie file-committed). Jeśli passphrase zapomniany, vault jest NIEODWRACALNY (rotated entries, new keys).
 
@@ -276,6 +277,7 @@ Dodaj `tool/spans` albo `decisions/chain` entry po każdym drill. Jeśli drill f
 ### D4. Documentation test (ten runbook jest częścią D4)
 
 Co kwartał: wykonaj pełny restore drill na osobnym katalogu, sprawdź że:
+
 - `chain verify` przechodzi
 - `soul-manifest.json` jest spójny
 - Audit log jest kompletny
@@ -287,14 +289,15 @@ Co kwartał: wykonaj pełny restore drill na osobnym katalogu, sprawdź że:
 
 Docelowo archiwa powinny lecieć poza host. Propozycja:
 
-| Provider | Setup | Koszt | Effort |
-|---|---|---|---|
-| `rclone` + Backblaze B2 | 5 min setup, $0.005/GB/mies | tani | 2h (config + timer) |
-| `rclone` + S3 kompatybilny (Scaleway, Wasabi) | 5 min setup | ~$0.01/GB | 2h |
-| `rsync` over SSH do zaufanego hosta | 0 koszt jeśli masz | free | 1h |
-| `borg` do innego dysku na tym samym hoście | local-only (nie pomaga przy awarii dysku) | free | 1h |
+| Provider                                      | Setup                                     | Koszt     | Effort              |
+| --------------------------------------------- | ----------------------------------------- | --------- | ------------------- |
+| `rclone` + Backblaze B2                       | 5 min setup, $0.005/GB/mies               | tani      | 2h (config + timer) |
+| `rclone` + S3 kompatybilny (Scaleway, Wasabi) | 5 min setup                               | ~$0.01/GB | 2h                  |
+| `rsync` over SSH do zaufanego hosta           | 0 koszt jeśli masz                        | free      | 1h                  |
+| `borg` do innego dysku na tym samym hoście    | local-only (nie pomaga przy awarii dysku) | free      | 1h                  |
 
 **Rekomendacja:** rclone + B2 (najtaniej, redundant, off-host). Plan:
+
 1. `apt install rclone`
 2. `rclone config` (B2 account + key)
 3. `scripts/offhost-sync.sh` — `rclone copy ~/.memphis/backups/ memphis-b2:backups/ --max-age 7d --include "*.tar.gz"`

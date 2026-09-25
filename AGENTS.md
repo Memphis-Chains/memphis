@@ -3,6 +3,7 @@
 This file contains Memphis-managed workspace context for agent tools.
 
 <!-- memphis:context:start -->
+
 ## Memphis Workspace Context
 
 - workspace: `memphis`
@@ -13,6 +14,7 @@ This file contains Memphis-managed workspace context for agent tools.
 - preferred formats: `markdown, json`
 
 ## Working Rules
+
 - Prefer local-first, auditable, and reversible changes.
 - Treat secrets as vault-managed values, not committed files.
 - Keep human-facing plans and notes in Markdown.
@@ -46,30 +48,30 @@ Add tool-specific notes below this line. Memphis only manages the block above.
 
 ### Project layout (this host)
 
-| Path | What |
-|---|---|
-| `/home/memphis/` | Workspace root. Operator home dir. |
-| `/home/memphis/memphis/` | Memphis repo (Node.js + Rust NAPI). Git branch: `feat/phase-L-offline-invariant`. |
-| `/home/memphis/memphis/.env` | Runtime secrets. **GITIGNORED. Never commit. Never print raw.** |
-| `/home/memphis/memphis/src/` | TypeScript source. Compiled to `dist/` (gitignored). |
-| `/home/memphis/memphis/dist/` | Compiled output. Gitignored. Regenerate with `npm run build`. |
-| `/home/memphis/memphis/skills/` | Skill catalog (bash scripts + SKILL.md). Each skill is a folder. |
-| `/home/memphis/memphis/docs/postmortems/` | Postmortems in operator's preferred format (see template below). |
-| `/home/memphis/memphis/tests/integration/` | Vitest integration tests. Includes `chain-format-compat.test.ts` — run this after touching `chain-adapter`. |
-| `/home/memphis/memphis/.memphis/` | Live runtime data (DO NOT touch unless restoring). |
-| `/home/memphis/.memphis/` | Runtime state — chains, vault, halt/, audit/, config/, logs/, backups/. **Audit `~/.memphis/audit/` is append-only** (JSONL since 2026-09-22). |
-| `/home/memphis/.minimax/` | Mavis (current AI runtime) config + sessions + caches. |
-| `/home/memphis/.config/systemd/user/` | systemd user units. `memphis.service`, `memphis-halt-integrity.{timer,service}`, etc. |
+| Path                                       | What                                                                                                                                           |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/home/memphis/`                           | Workspace root. Operator home dir.                                                                                                             |
+| `/home/memphis/memphis/`                   | Memphis repo (Node.js + Rust NAPI). Git branch: `feat/phase-L-offline-invariant`.                                                              |
+| `/home/memphis/memphis/.env`               | Runtime secrets. **GITIGNORED. Never commit. Never print raw.**                                                                                |
+| `/home/memphis/memphis/src/`               | TypeScript source. Compiled to `dist/` (gitignored).                                                                                           |
+| `/home/memphis/memphis/dist/`              | Compiled output. Gitignored. Regenerate with `npm run build`.                                                                                  |
+| `/home/memphis/memphis/skills/`            | Skill catalog (bash scripts + SKILL.md). Each skill is a folder.                                                                               |
+| `/home/memphis/memphis/docs/postmortems/`  | Postmortems in operator's preferred format (see template below).                                                                               |
+| `/home/memphis/memphis/tests/integration/` | Vitest integration tests. Includes `chain-format-compat.test.ts` — run this after touching `chain-adapter`.                                    |
+| `/home/memphis/memphis/.memphis/`          | Live runtime data (DO NOT touch unless restoring).                                                                                             |
+| `/home/memphis/.memphis/`                  | Runtime state — chains, vault, halt/, audit/, config/, logs/, backups/. **Audit `~/.memphis/audit/` is append-only** (JSONL since 2026-09-22). |
+| `/home/memphis/.minimax/`                  | Mavis (current AI runtime) config + sessions + caches.                                                                                         |
+| `/home/memphis/.config/systemd/user/`      | systemd user units. `memphis.service`, `memphis-halt-integrity.{timer,service}`, etc.                                                          |
 
 ### Critical paths for runtime triage
 
-| Symptom | Look here |
-|---|---|
-| Memphis won't boot | `journalctl --user -u memphis.service --since "10 min ago"`, then `~/.memphis/boot-failures.json` |
+| Symptom                 | Look here                                                                                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Memphis won't boot      | `journalctl --user -u memphis.service --since "10 min ago"`, then `~/.memphis/boot-failures.json`                                                    |
 | Chain integrity failure | `~/.memphis/chains/` — look for non-conforming dirs (no `hash`/`prev_hash`). `MEMPHIS_CHAINS_ALLOWLIST` skip list applied at `chain-adapter.js:789`. |
-| Halt audit issues | `~/.memphis/audit/halt/events.jsonl` (post-2026-09-22 — was `~/.memphis/chains/halt/` before, see incident below). |
-| LLM provider down | `~/.memphis/logs/memphis.log`, then `memphis providers health`. |
-| Telegram not delivering | `~/.memphis/state/telegram-attachments/`, `~/.memphis/logs/` for `memphis-telegram`. |
+| Halt audit issues       | `~/.memphis/audit/halt/events.jsonl` (post-2026-09-22 — was `~/.memphis/chains/halt/` before, see incident below).                                   |
+| LLM provider down       | `~/.memphis/logs/memphis.log`, then `memphis providers health`.                                                                                      |
+| Telegram not delivering | `~/.memphis/state/telegram-attachments/`, `~/.memphis/logs/` for `memphis-telegram`.                                                                 |
 
 ### Conventions
 
@@ -81,7 +83,7 @@ Add tool-specific notes below this line. Memphis only manages the block above.
   TL;DR → Timeline → Root cause → Evidence → Resolution → Lessons learned
   → Open questions → TL;DR for future sessions → Follow-ups → Anti-confab.
 - **Code style:** see `package.json` scripts (`npm run lint`, `npm run
-  format:check`). Tests live in `tests/`, organized by `unit/` /
+format:check`). Tests live in `tests/`, organized by `unit/` /
   `integration/`. New bash skills need a `SKILL.md` + scripts, plus a
   smoke test if they touch persistent storage.
 - **Secrets:** `MEMPHIS_*` env vars in `.env` are gitignored. Never
@@ -315,5 +317,5 @@ curl -sS -X POST http://localhost:6200/auth/login \
 > password has been rotated; agents and operators must re-set local
 > `$SYNJAR_OWNER_PASSWORD` after pulling. The git-history scrub
 > (filter-branch / BFG) is a separate operator action — see `git log
-> --all -S 'WatraAdmin'` to confirm which historical commits still expose
+--all -S 'WatraAdmin'` to confirm which historical commits still expose
 > it.

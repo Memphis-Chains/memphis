@@ -127,7 +127,12 @@ const DEFAULT_CHAIN_ALLOWLIST: ReadonlySet<string> = new Set([
 function getChainAllowlist(rawEnv: NodeJS.ProcessEnv = process.env): ReadonlySet<string> {
   const explicit = rawEnv.MEMPHIS_CHAINS_ALLOWLIST;
   if (explicit !== undefined && explicit !== '') {
-    return new Set(explicit.split(',').map((s) => s.trim()).filter(Boolean));
+    return new Set(
+      explicit
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
   }
   return DEFAULT_CHAIN_ALLOWLIST;
 }
@@ -184,7 +189,9 @@ export interface ChainExportEnvelope {
  * Append-only chain means both shapes coexist forever for the journal
  * chain. Callers must accept both to read the full config history.
  */
-function isConfigBlock(data: Record<string, unknown>): data is { type: string; key?: string; value?: string; kind?: string } {
+function isConfigBlock(
+  data: Record<string, unknown>,
+): data is { type: string; key?: string; value?: string; kind?: string } {
   if (typeof data?.type !== 'string') return false;
   if (data.type === 'config') return true;
   if (data.type === 'system_event' && data.kind === 'config') return true;
@@ -223,11 +230,15 @@ export async function appendBlock(
   const os = await import('node:os');
   const crypto = await import('node:crypto');
 
-  const chainsDir = resolveChainDir(normalizedChainName, {
-    homedir: os.homedir(),
-    resolve: path.resolve,
-    sep: path.sep,
-  }, rawEnv);
+  const chainsDir = resolveChainDir(
+    normalizedChainName,
+    {
+      homedir: os.homedir(),
+      resolve: path.resolve,
+      sep: path.sep,
+    },
+    rawEnv,
+  );
   await fs.mkdir(chainsDir, { recursive: true });
 
   return withAppendLock(chainsDir, fs, path, async () => {
@@ -295,11 +306,15 @@ export async function appendPrecomputedBlock(
   const path = await import('node:path');
   const rawEnv = _rawEnv ?? process.env;
 
-  const chainsDir = resolveChainDir(normalizedChainName, {
-    homedir: (await import('node:os')).homedir(),
-    resolve: path.resolve,
-    sep: path.sep,
-  }, rawEnv);
+  const chainsDir = resolveChainDir(
+    normalizedChainName,
+    {
+      homedir: (await import('node:os')).homedir(),
+      resolve: path.resolve,
+      sep: path.sep,
+    },
+    rawEnv,
+  );
 
   await fs.mkdir(chainsDir, { recursive: true });
 
@@ -725,7 +740,11 @@ function checkBlockHashMismatch(
     .update(stableStringify(rustCompatBlock))
     .digest('hex');
 
-  if (block.hash === expectedHash || block.hash === legacyStableHash || block.hash === rustCompatHash) {
+  if (
+    block.hash === expectedHash ||
+    block.hash === legacyStableHash ||
+    block.hash === rustCompatHash
+  ) {
     // Canonical or legacy or rust-compatible hash matches — pass
     return undefined;
   } else if (!isStrictChainValidation()) {

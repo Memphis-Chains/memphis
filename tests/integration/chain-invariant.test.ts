@@ -32,13 +32,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import {
-  cpSync,
-  existsSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
