@@ -6,7 +6,7 @@
 ## Why
 
 `memphis_git` (the existing tool) is a **thin wrapper** around git CLI. It enforces
-*tiering* (read vs write) and blocks dangerous args, but it does NOT enforce
+_tiering_ (read vs write) and blocks dangerous args, but it does NOT enforce
 project commit culture (conventional commits, postmortem cross-links, no
 secrets, author sign). Today the culture lives in `AGENTS.md` + agent memory
 only — meaning every commit is at the mercy of whoever runs it.
@@ -62,6 +62,7 @@ Examples
 ### 2. Scope auto-detection
 
 Walk staged paths; pick the **most common top-level dir** under the repo:
+
 - `skills/halt-aware-destructive-ops/...` → `skills`
 - `src/mcp/tools/...` → `tools`
 - `docs/postmortems/...` → `postmortems`
@@ -69,15 +70,15 @@ Walk staged paths; pick the **most common top-level dir** under the repo:
 
 ### 3. Type auto-detection (heuristics, no LLM)
 
-| Signal | Suggested type |
-|---|---|
-| Any new file under `tests/`, `*.test.ts`, `*_test.rs` | `test` |
-| Only changes to `docs/**` | `docs` |
-| Only changes to `.github/**`, `*.yml`, `Dockerfile` | `ci` |
-| New file in any other dir | `feat` |
-| Modified only (no new files) | `fix` |
-| `package.json` only | `chore` |
-| Bulk rename or only `*.lock` files | `chore` |
+| Signal                                                | Suggested type |
+| ----------------------------------------------------- | -------------- |
+| Any new file under `tests/`, `*.test.ts`, `*_test.rs` | `test`         |
+| Only changes to `docs/**`                             | `docs`         |
+| Only changes to `.github/**`, `*.yml`, `Dockerfile`   | `ci`           |
+| New file in any other dir                             | `feat`         |
+| Modified only (no new files)                          | `fix`          |
+| `package.json` only                                   | `chore`        |
+| Bulk rename or only `*.lock` files                    | `chore`        |
 
 Always print the suggested type and allow `--type` to override.
 
@@ -121,6 +122,7 @@ If body is empty and no links, single `-m`.
 On success, append a `commit_culture.commit` event to `system` chain via
 `memphis_decide` (if available) or directly to `~/.memphis/chains/system/`.
 Schema:
+
 ```json
 {
   "kind": "commit_culture.commit",

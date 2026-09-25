@@ -96,12 +96,9 @@ async function appendSystemGovernanceEvent(issue: IntegrityIssue): Promise<void>
   // Skip if memphis isn't running; we don't want scan to crash if it isn't.
   try {
     const dir = path.join(MEMPHIS_HOME, 'chains', 'system');
-    const files = (await fs.readdir(dir))
-      .filter((f) => f.endsWith('.json'))
-      .sort();
-    const lastIdx = files.length > 0
-      ? parseInt(files[files.length - 1].replace('.json', ''), 10)
-      : 0;
+    const files = (await fs.readdir(dir)).filter((f) => f.endsWith('.json')).sort();
+    const lastIdx =
+      files.length > 0 ? parseInt(files[files.length - 1].replace('.json', ''), 10) : 0;
     const nextIdx = lastIdx + 1;
     const filename = path.join(dir, `${String(nextIdx).padStart(6, '0')}.json`);
     const block = {
@@ -135,18 +132,13 @@ async function appendSystemGovernanceEvent(issue: IntegrityIssue): Promise<void>
   }
 }
 
-async function quarantineBlock(
-  issue: IntegrityIssue,
-): Promise<string | null> {
+async function quarantineBlock(issue: IntegrityIssue): Promise<string | null> {
   try {
     const targetDir = path.join(QUARANTINE_DIR, issue.chain);
     await fs.mkdir(targetDir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const baseName = path.basename(issue.file, '.json');
-    const quarantinePath = path.join(
-      targetDir,
-      `${baseName}.${issue.reason}.${stamp}.json`,
-    );
+    const quarantinePath = path.join(targetDir, `${baseName}.${issue.reason}.${stamp}.json`);
     // Read original, write to quarantine with manifest header
     const raw = await fs.readFile(issue.file, 'utf8');
     const manifest = {
@@ -169,10 +161,12 @@ async function quarantineBlock(
 /**
  * Scan all chains for integrity issues. Auto-quarantine bad blocks.
  */
-export async function runChainIntegrityScan(options: {
-  autoQuarantine?: boolean;
-  writeAlert?: boolean;
-} = {}): Promise<ScanResult> {
+export async function runChainIntegrityScan(
+  options: {
+    autoQuarantine?: boolean;
+    writeAlert?: boolean;
+  } = {},
+): Promise<ScanResult> {
   const autoQuarantine = options.autoQuarantine ?? true;
   const writeAlert = options.writeAlert ?? true;
   // Hard cap to prevent cascade-quarantine: one bad genesis + 200 cascade
@@ -199,13 +193,15 @@ export async function runChainIntegrityScan(options: {
       durationMs: Date.now() - start,
       chainsScanned: 0,
       blocksScanned: 0,
-      issues: [{
-        chain: '<root>',
-        index: -1,
-        reason: 'parse-error',
-        detail: `cannot read chains dir: ${err}`,
-        file: CHAINS_DIR,
-      }],
+      issues: [
+        {
+          chain: '<root>',
+          index: -1,
+          reason: 'parse-error',
+          detail: `cannot read chains dir: ${err}`,
+          file: CHAINS_DIR,
+        },
+      ],
       quarantined: 0,
     };
     return result;
@@ -225,9 +221,7 @@ export async function runChainIntegrityScan(options: {
     chainsScanned++;
     let blocks: string[];
     try {
-      blocks = (await fs.readdir(chainDir))
-        .filter((f) => f.endsWith('.json'))
-        .sort();
+      blocks = (await fs.readdir(chainDir)).filter((f) => f.endsWith('.json')).sort();
     } catch {
       continue;
     }
@@ -237,15 +231,15 @@ export async function runChainIntegrityScan(options: {
       blocksScanned++;
       const filePath = path.join(chainDir, file);
 
-interface RawBlock {
-  index?: number;
-  hash?: string;
-  prev_hash?: string;
-  timestamp?: string;
-  chain?: string;
-  data?: unknown;
-  [key: string]: unknown;
-}
+      interface RawBlock {
+        index?: number;
+        hash?: string;
+        prev_hash?: string;
+        timestamp?: string;
+        chain?: string;
+        data?: unknown;
+        [key: string]: unknown;
+      }
 
       let raw: string;
       let block: RawBlock;
@@ -263,7 +257,11 @@ interface RawBlock {
         issues.push(issue);
         if (autoQuarantine && quarantineBudget > 0) {
           const q = await quarantineBlock(issue);
-          if (q) { issue.quarantined = q; quarantined++; quarantineBudget--; }
+          if (q) {
+            issue.quarantined = q;
+            quarantined++;
+            quarantineBudget--;
+          }
         }
         continue;
       }
@@ -281,7 +279,11 @@ interface RawBlock {
         issues.push(issue);
         if (autoQuarantine && quarantineBudget > 0) {
           const q = await quarantineBlock(issue);
-          if (q) { issue.quarantined = q; quarantined++; quarantineBudget--; }
+          if (q) {
+            issue.quarantined = q;
+            quarantined++;
+            quarantineBudget--;
+          }
           // Don't update prevHash — chain is broken at this point
           continue;
         }
@@ -291,8 +293,7 @@ interface RawBlock {
       // Some chains start at index 0 (legacy backup chains), some at index 1.
       // Treat the FIRST block seen (prevHash === null) with a genesis prev_hash
       // as legitimate genesis.
-      const isGenesisByPrevHash = block.prev_hash === GENESIS_PREV_HASH
-        || block.prev_hash === '';
+      const isGenesisByPrevHash = block.prev_hash === GENESIS_PREV_HASH || block.prev_hash === '';
       const isGenesisByIndex = block.index === 0 || block.index === 1;
 
       if (prevHash === null) {
@@ -308,7 +309,11 @@ interface RawBlock {
           issues.push(issue);
           if (autoQuarantine && quarantineBudget > 0) {
             const q = await quarantineBlock(issue);
-            if (q) { issue.quarantined = q; quarantined++; quarantineBudget--; }
+            if (q) {
+              issue.quarantined = q;
+              quarantined++;
+              quarantineBudget--;
+            }
             continue;
           }
         }
@@ -331,7 +336,11 @@ interface RawBlock {
               issues.push(issue);
               if (autoQuarantine && quarantineBudget > 0) {
                 const q = await quarantineBlock(issue);
-                if (q) { issue.quarantined = q; quarantined++; quarantineBudget--; }
+                if (q) {
+                  issue.quarantined = q;
+                  quarantined++;
+                  quarantineBudget--;
+                }
                 continue;
               }
             }
@@ -356,7 +365,11 @@ interface RawBlock {
         issues.push(issue);
         if (autoQuarantine && quarantineBudget > 0) {
           const q = await quarantineBlock(issue);
-          if (q) { issue.quarantined = q; quarantined++; quarantineBudget--; }
+          if (q) {
+            issue.quarantined = q;
+            quarantined++;
+            quarantineBudget--;
+          }
           continue;
         }
       }

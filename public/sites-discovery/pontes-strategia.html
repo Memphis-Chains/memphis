@@ -1,208 +1,262 @@
 <!doctype html>
 <html lang="pl">
-<head>
-<meta charset="utf-8">
-<title>Pontes dla Memphis — 4 ścieżki</title>
-<style>
-  @page { size: A4; margin: 14mm; }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
-    color: #1a1a1a;
-    background: #fff;
-    font-size: 10.5pt;
-    line-height: 1.35;
-  }
-  header {
-    border-bottom: 2px solid #003299;
-    padding-bottom: 6mm;
-    margin-bottom: 6mm;
-  }
-  header h1 {
-    margin: 0 0 1mm 0;
-    font-size: 18pt;
-    color: #003299;
-    letter-spacing: -0.3px;
-  }
-  header .sub {
-    font-size: 9pt;
-    color: #555;
-  }
-  header .ref {
-    font-size: 8pt;
-    color: #888;
-    margin-top: 2mm;
-  }
-  .grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4mm;
-  }
-  .pillar {
-    border: 1px solid #d0d4e0;
-    border-radius: 2mm;
-    padding: 4mm;
-    background: #fafbff;
-    display: flex;
-    flex-direction: column;
-  }
-  .pillar h2 {
-    margin: 0 0 2mm 0;
-    font-size: 12pt;
-    color: #003299;
-    display: flex;
-    align-items: center;
-    gap: 2mm;
-  }
-  .pillar h2 .tag {
-    background: #003299;
-    color: #fff;
-    font-size: 8pt;
-    padding: 1mm 2mm;
-    border-radius: 1mm;
-    font-weight: 600;
-  }
-  .pillar h2 .verdict {
-    background: #c8d400;
-    color: #1a1a1a;
-  }
-  .pillar .thesis {
-    font-size: 9.5pt;
-    margin: 0 0 2mm 0;
-    color: #1a1a1a;
-  }
-  .pillar .body {
-    font-size: 9pt;
-    color: #333;
-    flex: 1;
-  }
-  .pillar .body ul {
-    margin: 1mm 0 2mm 0;
-    padding-left: 4mm;
-  }
-  .pillar .body li {
-    margin-bottom: 0.8mm;
-  }
-  .pillar .meta {
-    margin-top: 2mm;
-    padding-top: 2mm;
-    border-top: 1px dashed #c0c4d0;
-    font-size: 8pt;
-    color: #555;
-  }
-  .pillar .meta b { color: #003299; }
-  .footer {
-    margin-top: 6mm;
-    padding-top: 3mm;
-    border-top: 1px solid #d0d4e0;
-    font-size: 8pt;
-    color: #666;
-    display: flex;
-    justify-content: space-between;
-  }
-  .warn {
-    background: #fff4d4;
-    border-left: 3px solid #d4a000;
-    padding: 2mm 3mm;
-    margin: 3mm 0 0 0;
-    font-size: 8.5pt;
-  }
-  strong { color: #003299; }
-</style>
-</head>
-<body>
-<header>
-  <h1>Pontes dla Memphis — 4 ścieżki</h1>
-  <div class="sub">Kontekst: EBC uruchomił <strong>Pontes</strong> 21.09.2026 (DLT bridge, settlement w central bank money). Memphis szuka swojej roli.</div>
-  <div class="ref">Źródła: ecb.europa.eu/paym/target/pontes, ecb.pr260921_1, ecb.pmcg260128_adhoceligibility.pdf · 2026-09-22</div>
-</header>
+  <head>
+    <meta charset="utf-8" />
+    <title>Pontes dla Memphis — 4 ścieżki</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 14mm;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+        color: #1a1a1a;
+        background: #fff;
+        font-size: 10.5pt;
+        line-height: 1.35;
+      }
+      header {
+        border-bottom: 2px solid #003299;
+        padding-bottom: 6mm;
+        margin-bottom: 6mm;
+      }
+      header h1 {
+        margin: 0 0 1mm 0;
+        font-size: 18pt;
+        color: #003299;
+        letter-spacing: -0.3px;
+      }
+      header .sub {
+        font-size: 9pt;
+        color: #555;
+      }
+      header .ref {
+        font-size: 8pt;
+        color: #888;
+        margin-top: 2mm;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4mm;
+      }
+      .pillar {
+        border: 1px solid #d0d4e0;
+        border-radius: 2mm;
+        padding: 4mm;
+        background: #fafbff;
+        display: flex;
+        flex-direction: column;
+      }
+      .pillar h2 {
+        margin: 0 0 2mm 0;
+        font-size: 12pt;
+        color: #003299;
+        display: flex;
+        align-items: center;
+        gap: 2mm;
+      }
+      .pillar h2 .tag {
+        background: #003299;
+        color: #fff;
+        font-size: 8pt;
+        padding: 1mm 2mm;
+        border-radius: 1mm;
+        font-weight: 600;
+      }
+      .pillar h2 .verdict {
+        background: #c8d400;
+        color: #1a1a1a;
+      }
+      .pillar .thesis {
+        font-size: 9.5pt;
+        margin: 0 0 2mm 0;
+        color: #1a1a1a;
+      }
+      .pillar .body {
+        font-size: 9pt;
+        color: #333;
+        flex: 1;
+      }
+      .pillar .body ul {
+        margin: 1mm 0 2mm 0;
+        padding-left: 4mm;
+      }
+      .pillar .body li {
+        margin-bottom: 0.8mm;
+      }
+      .pillar .meta {
+        margin-top: 2mm;
+        padding-top: 2mm;
+        border-top: 1px dashed #c0c4d0;
+        font-size: 8pt;
+        color: #555;
+      }
+      .pillar .meta b {
+        color: #003299;
+      }
+      .footer {
+        margin-top: 6mm;
+        padding-top: 3mm;
+        border-top: 1px solid #d0d4e0;
+        font-size: 8pt;
+        color: #666;
+        display: flex;
+        justify-content: space-between;
+      }
+      .warn {
+        background: #fff4d4;
+        border-left: 3px solid #d4a000;
+        padding: 2mm 3mm;
+        margin: 3mm 0 0 0;
+        font-size: 8.5pt;
+      }
+      strong {
+        color: #003299;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Pontes dla Memphis — 4 ścieżki</h1>
+      <div class="sub">
+        Kontekst: EBC uruchomił <strong>Pontes</strong> 21.09.2026 (DLT bridge, settlement w central
+        bank money). Memphis szuka swojej roli.
+      </div>
+      <div class="ref">
+        Źródła: ecb.europa.eu/paym/target/pontes, ecb.pr260921_1,
+        ecb.pmcg260128_adhoceligibility.pdf · 2026-09-22
+      </div>
+    </header>
 
-<div class="grid">
+    <div class="grid">
+      <div class="pillar">
+        <h2><span class="tag">A</span> Konkurencja z EBC</h2>
+        <div class="thesis">
+          Memphis buduje własny DLT stack, konkuruje z Pontes o wholesale settlement.
+        </div>
+        <div class="body">
+          <ul>
+            <li>
+              Własny PoA chain, własna waluta, własna giełda capability tokens (decyzja #215).
+            </li>
+            <li>Własny AML/KYC stack, własna licencja, własny compliance.</li>
+            <li>Rynek: banki, CSDs, licencjonowane instytucje w EU.</li>
+          </ul>
+        </div>
+        <div class="meta">
+          <b>Realia:</b> 1000+ devów EBC, legal cover, MiCA-exempt, 25 lat brandu. <br />
+          <b>Szansa powodzenia:</b> ~0%. <br />
+          <b>Koszt:</b> €5-10M + 2-3 lata.
+        </div>
+      </div>
 
-  <div class="pillar">
-    <h2><span class="tag">A</span> Konkurencja z EBC</h2>
-    <div class="thesis">Memphis buduje własny DLT stack, konkuruje z Pontes o wholesale settlement.</div>
-    <div class="body">
-      <ul>
-        <li>Własny PoA chain, własna waluta, własna giełda capability tokens (decyzja #215).</li>
-        <li>Własny AML/KYC stack, własna licencja, własny compliance.</li>
-        <li>Rynek: banki, CSDs, licencjonowane instytucje w EU.</li>
-      </ul>
+      <div class="pillar">
+        <h2><span class="tag">B</span> Market participant w Pontes</h2>
+        <div class="thesis">
+          Memphis zostaje uprawnionym uczestnikiem Pontes przez krajowy NCB i instytucję z licencją
+          CRD/MiFID II/EMIR.
+        </div>
+        <div class="body">
+          <ul>
+            <li>
+              <strong>Market Participant</strong> = entity z dostępem do T2 (TARGET) wg Art. 4 Annex
+              1 Part I TARGET Guideline.
+            </li>
+            <li>Bezpośrednia ścieżka: licencja KNF + rejestracja w NBP → T2 → Pontes.</li>
+            <li>
+              Pośrednia ścieżka: partner z CSD (KDPW) albo bankiem (PKO BP, mBank) → budujesz
+              warstwę obsługową.
+            </li>
+            <li>
+              Używasz <strong>EII</strong> (Extended Interoperability Interface) +
+              <strong>Hash-Link</strong> dla DvP.
+            </li>
+          </ul>
+        </div>
+        <div class="meta">
+          <b>Realia:</b> wymaga licensed institution (6-12 mies., €50-200k rocznie compliance).
+          <br />
+          <b>Asset class #1:</b> knowledge pack jako tokenized financial instrument (MiFID II Art.
+          4(1)(15)). <br />
+          <b>Model:</b> B2B, white-label dla federated nodes.
+        </div>
+      </div>
+
+      <div class="pillar">
+        <h2><span class="tag">C</span> Wertykalny pivot — retail / SME</h2>
+        <div class="thesis">
+          EBC obsługuje wholesale. My budujemy interfejs dla fractional tokenized assets, retail i
+          SME które nie mają T2.
+        </div>
+        <div class="body">
+          <ul>
+            <li>Pontes = rail. My = lokomotywy dla mniejszych graczy.</li>
+            <li>Tokenizujemy fractional ownership (np. 1/1000 udziału w knowledge packu).</li>
+            <li>KYC lite, escrow, secondary market, UI/UX.</li>
+            <li><strong>Watra.ai</strong> (decyzja #189) jako marketplace discovery layer.</li>
+            <li>Behind the scenes: agregator → jeden market DLT operator (np. KDPW) → Pontes.</li>
+          </ul>
+        </div>
+        <div class="meta">
+          <b>Realia:</b> mniejsza bariera wejścia (nie potrzeba własnej licencji bankowej). <br />
+          <b>Rynek:</b> fractional, retail, EU-wide, większa wolumen niż wholesale. <br />
+          <b>Align:</b> capital markets union + savings/investments union (motywacja EBC).
+        </div>
+      </div>
+
+      <div class="pillar">
+        <h2>
+          <span class="tag">D</span><span class="verdict">★</span> Strategiczny — DLT orchestration
+        </h2>
+        <div class="thesis">
+          EBC buduje rail. My budujemy orchestration: discovery + issuance + compliance +
+          multi-Pontes dla niche asset classes.
+        </div>
+        <div class="body">
+          <ul>
+            <li>
+              Onboarding issuerów (np. twórców knowledge packs, IP, AI model weights) do Pontes.
+            </li>
+            <li>
+              Compliance as a service — KYC, AML, MiCA checks dla fractional tokenized assets.
+            </li>
+            <li>
+              Multi-DLT routing — twój asset może żyć na wielu platformach (Hash-Link między nimi).
+            </li>
+            <li>
+              <strong>Dogfooding:</strong> sami emitujemy knowledge pack przez Pontes jako
+              proof-of-concept (decyzja #215).
+            </li>
+            <li>Appia (2028) = naturalny follow-up, my już wtedy mamy infrastructure.</li>
+          </ul>
+        </div>
+        <div class="meta">
+          <b>Realia:</b> nie konkurujemy z EBC, jesteśmy na ich rails. <br />
+          <b>Asset class #1:</b> intellectual property, AI model weights, behavioral data, knowledge
+          packs. <br />
+          <b>Align z decision #215:</b> tak, zmienia deployment target (z "własny chain" na "EBC
+          rails").
+        </div>
+      </div>
     </div>
-    <div class="meta">
-      <b>Realia:</b> 1000+ devów EBC, legal cover, MiCA-exempt, 25 lat brandu. <br>
-      <b>Szansa powodzenia:</b> ~0%. <br>
-      <b>Koszt:</b> €5-10M + 2-3 lata.
-    </div>
-  </div>
 
-  <div class="pillar">
-    <h2><span class="tag">B</span> Market participant w Pontes</h2>
-    <div class="thesis">Memphis zostaje uprawnionym uczestnikiem Pontes przez krajowy NCB i instytucję z licencją CRD/MiFID II/EMIR.</div>
-    <div class="body">
-      <ul>
-        <li><strong>Market Participant</strong> = entity z dostępem do T2 (TARGET) wg Art. 4 Annex 1 Part I TARGET Guideline.</li>
-        <li>Bezpośrednia ścieżka: licencja KNF + rejestracja w NBP → T2 → Pontes.</li>
-        <li>Pośrednia ścieżka: partner z CSD (KDPW) albo bankiem (PKO BP, mBank) → budujesz warstwę obsługową.</li>
-        <li>Używasz <strong>EII</strong> (Extended Interoperability Interface) + <strong>Hash-Link</strong> dla DvP.</li>
-      </ul>
+    <div class="warn">
+      <strong>Rekomendacja:</strong> D jako docelowy model + ścieżka B (Market Participant przez
+      NBP) jako entry ticket. C rozwijać równolegle jeśli znajdzie się licensed partner. A odrzucić.
     </div>
-    <div class="meta">
-      <b>Realia:</b> wymaga licensed institution (6-12 mies., €50-200k rocznie compliance). <br>
-      <b>Asset class #1:</b> knowledge pack jako tokenized financial instrument (MiFID II Art. 4(1)(15)). <br>
-      <b>Model:</b> B2B, white-label dla federated nodes.
+
+    <div class="footer">
+      <div>Memphis pilot · decision chain #215 → #229 · 22.09.2026</div>
+      <div>Wodzu = operator · Memphis = runtime</div>
     </div>
-  </div>
-
-  <div class="pillar">
-    <h2><span class="tag">C</span> Wertykalny pivot — retail / SME</h2>
-    <div class="thesis">EBC obsługuje wholesale. My budujemy interfejs dla fractional tokenized assets, retail i SME które nie mają T2.</div>
-    <div class="body">
-      <ul>
-        <li>Pontes = rail. My = lokomotywy dla mniejszych graczy.</li>
-        <li>Tokenizujemy fractional ownership (np. 1/1000 udziału w knowledge packu).</li>
-        <li>KYC lite, escrow, secondary market, UI/UX.</li>
-        <li><strong>Watra.ai</strong> (decyzja #189) jako marketplace discovery layer.</li>
-        <li>Behind the scenes: agregator → jeden market DLT operator (np. KDPW) → Pontes.</li>
-      </ul>
-    </div>
-    <div class="meta">
-      <b>Realia:</b> mniejsza bariera wejścia (nie potrzeba własnej licencji bankowej). <br>
-      <b>Rynek:</b> fractional, retail, EU-wide, większa wolumen niż wholesale. <br>
-      <b>Align:</b> capital markets union + savings/investments union (motywacja EBC).
-    </div>
-  </div>
-
-  <div class="pillar">
-    <h2><span class="tag">D</span><span class="verdict">★</span> Strategiczny — DLT orchestration</h2>
-    <div class="thesis">EBC buduje rail. My budujemy orchestration: discovery + issuance + compliance + multi-Pontes dla niche asset classes.</div>
-    <div class="body">
-      <ul>
-        <li>Onboarding issuerów (np. twórców knowledge packs, IP, AI model weights) do Pontes.</li>
-        <li>Compliance as a service — KYC, AML, MiCA checks dla fractional tokenized assets.</li>
-        <li>Multi-DLT routing — twój asset może żyć na wielu platformach (Hash-Link między nimi).</li>
-        <li><strong>Dogfooding:</strong> sami emitujemy knowledge pack przez Pontes jako proof-of-concept (decyzja #215).</li>
-        <li>Appia (2028) = naturalny follow-up, my już wtedy mamy infrastructure.</li>
-      </ul>
-    </div>
-    <div class="meta">
-      <b>Realia:</b> nie konkurujemy z EBC, jesteśmy na ich rails. <br>
-      <b>Asset class #1:</b> intellectual property, AI model weights, behavioral data, knowledge packs. <br>
-      <b>Align z decision #215:</b> tak, zmienia deployment target (z "własny chain" na "EBC rails").
-    </div>
-  </div>
-
-</div>
-
-<div class="warn">
-  <strong>Rekomendacja:</strong> D jako docelowy model + ścieżka B (Market Participant przez NBP) jako entry ticket. C rozwijać równolegle jeśli znajdzie się licensed partner. A odrzucić.
-</div>
-
-<div class="footer">
-  <div>Memphis pilot · decision chain #215 → #229 · 22.09.2026</div>
-  <div>Wodzu = operator · Memphis = runtime</div>
-</div>
-
-</body>
+  </body>
 </html>
