@@ -79,8 +79,8 @@ export interface ScheduledBackupOptions {
 
 export interface ScheduledBackupHandle {
   stop: () => void;
-  /** Run a single tick now (test/manual). */
-  tickNow: () => Promise<ScheduledBackupState>;
+  /** Run a single tick now (test/manual). Pass `{ forceDrill: true }` to bypass every-N gating (cron task path). */
+  tickNow: (opts?: { forceDrill?: boolean }) => Promise<ScheduledBackupState>;
   state: () => ScheduledBackupState;
 }
 
@@ -181,7 +181,7 @@ export function startScheduledBackupLoop(
 
   let inFlight = false;
 
-  const tickNow = async (): Promise<ScheduledBackupState> => {
+  const tickNow = async (opts: { forceDrill?: boolean } = {}): Promise<ScheduledBackupState> => {
     if (inFlight) {
       log.warn(
         { event: 'backup.scheduled.overlap' },
@@ -225,8 +225,8 @@ export function startScheduledBackupLoop(
         details: { file: result.file, sizeBytes: result.size },
       });
 
-      // Restore-drill every Nth success
-      if (successOrdinal % drillEveryN === 0) {
+      // Restore-drill every Nth success, or forced (cron path: force=true)
+      if (opts.forceDrill || successOrdinal % drillEveryN === 0) {
         try {
           await drillFn(result.backupPath);
           state.lastDrillAt = new Date().toISOString();

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run memphis chain integrity sweep hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

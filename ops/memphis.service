@@ -3,6 +3,15 @@ Description=MemphisOS Agent Runtime
 Documentation=https://github.com/memphis-ai/memphis
 After=network-online.target
 Wants=network-online.target
+# Hardened 2026-09-22 — `RestartPreventExitStatus` was observed NOT to stop
+# a boot-loop in user-mode systemd on the Wodzu host (see postmortem
+# docs/postmortems/2026-09-22-chains-halt-invalid-block-shape.md §Open
+# questions Q1 — resolved 2026-09-22 by switching from `Restart=always`
+# to `Restart=on-failure` + adding the StartLimitBurst hard cap below).
+# Keep these in sync with the live user unit at
+# /home/memphis/.config/systemd/user/memphis.service.
+StartLimitBurst=5
+StartLimitIntervalSec=300
 
 [Service]
 Type=simple
@@ -12,9 +21,12 @@ WorkingDirectory=/opt/memphis
 ExecStartPre=-/usr/bin/fuser -k 3000/tcp
 ExecStartPre=/usr/bin/npm run build:rust
 ExecStart=/usr/bin/node dist/index.js
-Restart=always
-RestartSec=3
-RestartPreventExitStatus=103
+# `on-failure` (not `always`) so RestartPreventExitStatus below is honoured.
+# Exit codes 101/102/103 (integrity fail / config error / startup fail) will
+# stop the supervisor from looping on the same crash.
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=101 102 103
 
 # Resource limits — conservative defaults safe for 1-core / 2GB VMs.
 # CPUQuota: 100% = 1 CPU core. On multi-core, raise via override.conf.
