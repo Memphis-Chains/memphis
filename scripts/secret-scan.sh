@@ -56,7 +56,7 @@ SQ="'"  # single quote, injected as variable so the PATTERN string can
 PATTERN='(AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[0-9A-Za-z-]{10,}|ghp_[0-9A-Za-z]{36}|sk-ant-[A-Za-z0-9_-]{20,}|sk-(admin|proj|test|live|None)-[A-Za-z0-9_-]{20,}|(sk|rk)_(test|live)_[A-Za-z0-9]{24,}|whsec_[A-Za-z0-9]{32,}|-----BEGIN (RSA|EC|OPENSSH|PGP) PRIVATE KEY-----|api[_-]?key[[:space:]]*[:=][[:space:]]*["'"$SQ"'][a-z0-9][A-Za-z0-9_-]{15,})'
 
 # Exclude:
-#  - node_modules / .git / data / package-lock.json — uninteresting payloads
+#  - node_modules / .git / data — uninteresting payloads
 #  - tests/unit/secret-scan.test.ts — its fixtures are intentional sample
 #    strings shaped like each credential family so the scan itself is
 #    test-able. The exclusion targets the EXACT path, not just a basename
@@ -90,7 +90,6 @@ matches="$(
   find -L . \
     \( -type d \( -name node_modules -o -name .git -o -name data \) \) -prune -o \
     -type f \
-    ! -name 'package-lock.json' \
     "${find_excludes[@]}" \
     -print0 \
   | xargs -0 grep -InE "$PATTERN" 2>/dev/null \
