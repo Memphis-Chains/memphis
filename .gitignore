@@ -1,5 +1,12 @@
 # ── Dependencies ──────────────────────────────────────────────────────────────
 node_modules/
+# npm-generated package-lock.json. Canonical lockfile is npm-shrinkwrap.json
+# (rename in PR #546 / commit b1dce43, 2026-05-08; publish-time advisory pin
+# for consumers of @memphis-chains/memphis on npm). This artifact would shadow
+# npm-shrinkwrap.json if accidentally staged via `git add .`. Tools that don't
+# honor npm-shrinkwrap (e.g. plain `npm install` in dev environments) generate
+# it; the .gitignore entry stops it from leaking into commits.
+package-lock.json
 dist/
 coverage/
 .tools/
