@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - "package.json"
-      - "package-lock.json"
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/*/Cargo.toml"
