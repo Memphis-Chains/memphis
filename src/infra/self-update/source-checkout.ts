@@ -7,7 +7,7 @@
  *   2. `git fetch --quiet origin`
  *   3. if HEAD == origin/main → "up to date", return
  *   4. `git pull --ff-only`
- *   5. hash compare on package-lock.json → `npm install` only if changed
+ *   5. hash compare on npm-shrinkwrap.json → `npm install` only if changed
  *   6. `npm run build`
  *   7. `restartUserService` if the systemd unit is currently active
  *
@@ -397,7 +397,7 @@ export function installSourceUpdate(
     return { ...baseResult, ok: true, durationMs: Date.now() - started };
   }
 
-  const lockPath = join(runtimeRoot, 'package-lock.json');
+  const lockPath = join(runtimeRoot, 'npm-shrinkwrap.json');
   const preHash = hashFile(lockPath);
 
   const pull = runGit(['pull', '--ff-only', 'origin', check.branch], runner, runtimeRoot);
