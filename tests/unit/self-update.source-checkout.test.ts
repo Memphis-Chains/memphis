@@ -38,7 +38,10 @@ function makeRunner(
 function makeFakeCheckout(): string {
   const root = mkdtempSync(join(tmpdir(), 'memphis-source-update-'));
   mkdirSync(join(root, '.git'));
-  writeFileSync(join(root, 'package-lock.json'), '{"lockfileVersion":3}');
+  writeFileSync(
+    join(root, 'npm-shrinkwrap.json'),
+    '{"lockfileVersion":3,"name":"@memphis-chains/memphis","version":"1.13.3"}',
+  );
   return root;
 }
 
@@ -195,7 +198,7 @@ describe('computePackageLockChanged', () => {
   it('returns true when a lockfile is added (undefined → defined)', () => {
     // Previously `preHash && postHash && preHash !== postHash` was
     // false in this case, so `npm install` was skipped when a pull
-    // introduced package-lock.json. Now it correctly surfaces the
+    // introduced npm-shrinkwrap.json. Now it correctly surfaces the
     // change.
     expect(computePackageLockChanged(undefined, 'aaa')).toBe(true);
   });
@@ -287,5 +290,89 @@ describe('installSourceUpdate', () => {
     expect(result.warnings).toContain('build skipped (--skip-build)');
     expect(result.warnings).toContain('service restart skipped (--skip-restart)');
     expect(calls.find((c) => c.command === 'npm' && c.args[0] === 'run')).toBeUndefined();
+  });
+
+  it('installSourceUpdate triggers npm install when shrinkwrap appears between pre and post pull', () => {
+    // Regression: PR #546 renamed package-lock -> npm-shrinkwrap; before
+    // the path fix in source-checkout.ts, source-checkout.ts:400 hashed
+    // 'package-lock.json' that hashFile() never matched in real runtime.
+    // This test pins the real behavior with a custom runner that mutates
+    // the filesystem when 'git pull --ff-only' is invoked, mimicking a
+    // real pull that introduces npm-shrinkwrap.json.
+    const root = mkdtempSync(join(tmpdir(), 'memphis-shrinkwrap-introduced-'));
+    mkdirSync(join(root, '.git'));
+    // No shrinkwrap at start (real state before PR #546 runtime).
+    const calls: RunnerCall[] = [];
+    const runner: SourceRunner = (command, args, options) => {
+      calls.push({ command, args, cwd: options?.cwd });
+      const key = [command, ...args].join(' ');
+      // Custom behavior: pull writes npm-shrinkwrap.json to the cwd.
+      if (key === 'git pull --ff-only origin main') {
+        writeFileSync(
+          join(options?.cwd ?? root, 'npm-shrinkwrap.json'),
+          '{"lockfileVersion":3,"version":"1.13.3"}',
+        );
+        return { stdout: 'fast-forward\n', stderr: '', status: 0, signal: null, pid: 0, output: [null, null, null] } as unknown as ReturnType<SourceRunner>;
+      }
+      const responses: Record<string, { stdout?: string; stderr?: string; status?: number }> = {
+        'git rev-parse --abbrev-ref HEAD': { stdout: 'main\n' },
+        'git rev-parse HEAD': { stdout: 'aaaa111\n' },
+        'git config --get remote.origin.url': { stdout: 'origin\n' },
+        'git fetch --quiet origin': { stdout: '' },
+        'git rev-parse origin/main': { stdout: 'bbbb222\n' },
+        'git log --pretty=%s aaaa111..bbbb222': { stdout: 'fix: add shrinkwrap\n' },
+        'git status --porcelain': { stdout: '' },
+        'npm install': { stdout: 'added 1 package\n' },
+      };
+      const match = responses[key];
+      const payload = match ?? { status: 0, stdout: '', stderr: '' };
+      return {
+        stdout: payload.stdout ?? '',
+        stderr: payload.stderr ?? '',
+        status: payload.status ?? 0,
+        signal: null,
+        pid: 0,
+        output: [null, null, null],
+      } as unknown as ReturnType<SourceRunner>;
+    };
+    const result = installSourceUpdate(root, {
+      runner,
+      skipBuild: true,
+      skipRestart: true,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.packageLockChanged).toBe(true);
+    expect(result.installed).toBe(true);
+    expect(calls.find((c) => c.command === 'npm' && c.args[0] === 'install')).toBeDefined();
+  });
+
+  it('installSourceUpdate skips npm install when neither pre nor post shrinkwrap exists', () => {
+    // Regression: previously the install path was a no-op when
+    // package-lock.json was absent pre and post pull
+    // (computePackageLockChanged returns false). Preserve that behavior
+    // for the post-rename world (npm-shrinkwrap also absent): nothing
+    // to install from, nothing to do.
+    const root = mkdtempSync(join(tmpdir(), 'memphis-shrinkwrap-absent-'));
+    mkdirSync(join(root, '.git'));
+    // No shrinkwrap at any point.
+    const { runner, calls } = makeRunner({
+      'git rev-parse --abbrev-ref HEAD': { stdout: 'main\n' },
+      'git rev-parse HEAD': { stdout: 'aaaa111\n' },
+      'git config --get remote.origin.url': { stdout: 'origin\n' },
+      'git fetch --quiet origin': { stdout: '' },
+      'git rev-parse origin/main': { stdout: 'bbbb222\n' },
+      'git log --pretty=%s aaaa111..bbbb222': { stdout: 'fix: source only\n' },
+      'git status --porcelain': { stdout: '' },
+      'git pull --ff-only origin main': { stdout: 'fast-forward\n' },
+    });
+    const result = installSourceUpdate(root, {
+      runner,
+      skipBuild: true,
+      skipRestart: true,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.packageLockChanged).toBe(false);
+    expect(result.installed).toBe(false);
+    expect(calls.find((c) => c.command === 'npm' && c.args[0] === 'install')).toBeUndefined();
   });
 });
