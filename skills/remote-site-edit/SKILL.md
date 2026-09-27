@@ -1,207 +1,311 @@
 ---
 name: remote-site-edit
-description: Edit files on a public-facing website's remote webroot (e.g., memphis-v5.pl). Use when operator asks to edit/update a website that is served from a local directory mounted as webroot on a server. Covers the full flow: find deploy target, snapshot current state, write new content, verify, rollback if needed. Includes hard rules for never deleting original without backup.
+description: Deploy, audit, and maintain a static site served from a remote webroot over SSH (e.g. memphis-v5.pl on lh.pl). Covers the full flow: find deploy target, snapshot, write, verify, rollback — plus pre-deploy audit (public leaks, missing standards files, design drift, stale facts), .htaccess maintenance, binary assets, and post-deploy verification. Hard rules: never delete without a backup outside the docroot.
 allowed-tools: Bash, Read, Edit, Write, Grep, Glob
 ---
 
-# Remote site edit — public webroot operations
+# Remote site edit — SSH webroot operations
 
-When operator says "edytuj stronę", "deploy na X", "update the site", "push the file", or any variation of "make a change visible on a hosted site", they mean: write the new file to the public webroot on the server that serves that domain.
+When operator says "edytuj stronę", "deploy na X", "update the site", "rozwiń stronę", "zrób stronę zgodnie z dzisiejszymi standardami", or any variation of "make a change visible on a hosted site" — this is what they mean.
 
-This is NOT a git push. This is NOT a GitHub Pages deploy. This is the operator's home server running nginx/apache that mounts a local directory and serves it as the public website.
+This is **not** a git push. It is SSH/SCP to the webroot of a shared-hosting account.
 
 ## Trigger conditions
 
-- Operator says "edytuj remote" / "edytuj stronę" / "deploy na X" / "publish to Y"
-- Operator references a specific URL or domain ("memphis-v5.pl", "dsmxshop.com", etc.)
-- A previous deployment discussion mentioned a specific public URL
+- Operator says "edytuj remote" / "edytuj stronę" / "deploy na X" / "publish to Y" / "rozwiń stronę"
+- Operator references a domain (`memphis-v5.pl`, `marcin-kukla.pl`, `dsmxshop.com`)
 - Operator asks to make a file change visible to public visitors
+- Operator asks to audit a live site ("co tam mamy na serwerze", "czego brakuje do pełnej funkcjonującej strony")
 
-## Inputs the assistant must collect or infer
+## Infrastructure: how lh.pl is reached
 
-1. **Domain** — what URL is the operator talking about? (e.g., `memphis-v5.pl`, `marcin-kukla.pl`)
-2. **File to edit** — which file(s)? (typically `index.html`, `sitemap.xml`, `llms.txt`)
-3. **Source of truth** — where is the new version? (workspace source, pitch-deck HTML, etc.)
-4. **Deploy target** — which local directory does nginx serve from?
+The site is NOT served from a local path. It lives on a shared-hosting box reached over SSH.
 
-Most of these can be inferred from context. If unclear, **ask before deploying** — public websites are not the place to guess.
+```bash
+SSH_CONFIG=~/.ssh/lhpl-active/config          # NOT ~/.ssh/config
+HOST=lhpl                                     # resolves to serwer437043.lh.pl:40022
 
-## Common deploy target pattern
+# read-only recon
+ssh -F $SSH_CONFIG -o ConnectTimeout=25 $HOST 'ls -la public_html/'
 
-The operator runs a self-hosted server with a `/home/memphis/public/sites-deploy/<domain>/` structure:
-
-```
-/home/memphis/public/sites-deploy/
-├── marcin-kukla.pl/
-├── memphis-v5/                ← webroot for memphis-v5.pl (note: no `.pl`)
-├── dsmxshop.com/
-├── holiskool.pl/
-└── ... other sites
-
-/home/memphis/public/sites-discovery/<domain>/   ← staging/test area
+# write: back up first, then push one file at a time
+scp -F $SSH_CONFIG -q local.html $HOST:public_html/<site>/index.html
 ```
 
-Naming convention is inconsistent (`memphis-v5` vs `memphis-v5.pl`). Always `ls` the parent first to find the exact directory name.
+`~/.ssh/lhpl-active/config` defines host `lhpl` with `HostName serwer437043.lh.pl`, `Port 40022`, and an ed25519 identity. There is no key in the default `~/.ssh/config`.
 
-## Workflow (5 steps)
+**SSH is flaky on this host.** Expect `Timeout, server not responding` roughly every 3rd–4th call. That is not a failure of the change — just retry with `-o ConnectTimeout=30`. Do not conclude "no access" from a single timeout.
+
+**Docroot vs parent.** `public_html/` is the parent. `public_html/<site>/` is the DocumentRoot for that vhost. A file placed in `public_html/privacy/index.html` is NOT served at `/privacy/` — it must be `public_html/<site>/privacy/index.html`. Getting this wrong once cost a whole debugging detour; `ls` both levels before writing anything.
+
+**Home is writable and outside the webroot:** `~` = `/home/platne/serwer437043`. This is where backups belong.
+
+```bash
+ssh -F $SSH_CONFIG $HOST 'mkdir -p ~/site-backups/<site> && echo ok'
+```
+
+## Deploy target pattern
 
 ```
-1. FIND the deploy target
-   ls /home/memphis/public/sites-deploy/
-   ls /home/memphis/public/sites-deploy/<domain>/
-
-2. SNAPSHOT current state (anti-confab: never delete without backup)
-   cp /home/memphis/public/sites-deploy/<domain>/<file>.html \
-      /home/memphis/public/sites-deploy/<domain>/<file>.html.backup-<timestamp>
-
-3. COPY new content from source to target
-   cp /home/memphis/<workspace-path>/<file>.html \
-      /home/memphis/public/sites-deploy/<domain>/<file>.html
-
-4. VERIFY
-   md5sum <source> <target>                       ← files must match
-   ls -la <target>                                ← check size + timestamp
-   grep <expected-token> <target>                 ← check key content present
-   # optionally: head -5 <target>                  ← first lines look right
-
-5. REPORT to operator
-   - source path
-   - target path
-   - backup path
-   - md5 of both
-   - which tokens verified present
+~/site-backups/<site>/                 ← backups, OUTSIDE docroot (public_html)
+public_html/
+├── <site>/                           ← DocumentRoot for that domain
+│   ├── index.html
+│   ├── .htaccess
+│   ├── robots.txt  sitemap.xml  llms.txt  agents.json
+│   ├── 404.html  manifest.webmanifest  favicon.*  .well-known/
+│   └── <subpage>/index.html
+├── <unrelated-site-a>/                ← NOT part of this project
+└── <unrelated-site-b>/
 ```
+
+`public_html/` contains **other people's sites** (client projects, personal pages). Only touch `public_html/<site>/`. A directory listing will show you what exists; do not "fix" what you did not come for.
+
+## Workflow (6 steps)
+
+```
+0. AUDIT (skip if operator named an exact file and change)
+   See "Pre-deploy audit" below. Cheap: curl HEAD on every internal link.
+
+1. FIND the target
+   ssh -F $SSH_CONFIG $HOST 'ls -la public_html/<site>/'
+
+2. SNAPSHOT outside the docroot
+   TS=$(date +%Y%m%d-%H%M)
+   ssh -F $SSH_CONFIG $HOST "cp public_html/<site>/<file> ~/site-backups/<site>/<file>.$TS.bak"
+
+3. COPY — one file at a time
+   scp -F $SSH_CONFIG -q local.html $HOST:public_html/<site>/<file>
+
+4. VERIFY over HTTP, not just on disk
+   curl -s -o /dev/null -w '%{http_code} %{size_download}' https://<domain>/<file>
+   grep -c '<expected-token>' <local copy>
+
+5. REPORT source, target, backup, sizes, verified tokens
+```
+
+## Pre-deploy audit
+
+Run this when the operator asks what is on the server, what is missing, or to bring the site up to standard. Each item below was a real finding, not a hypothetical.
+
+### Public leaks — check every time
+
+Any file matching these is served to the public:
+
+```bash
+ssh -F $SSH_CONFIG $HOST 'ls public_html/<site>/' | grep -E 'backup|\.bak|\.md$|~$|\.orig'
+```
+
+```
+index.html.backup-2026-09-26-pre-v2-deploy   200, 29 KB
+REFACTOR_SPEC.md                              200,  4 KB   ← internal dev note
+```
+
+Five old page versions plus an internal spec were publicly readable. **Move, never delete:**
+
+```bash
+ssh -F $SSH_CONFIG $HOST 'mkdir -p ~/site-backups/<site> && cd public_html/<site> && mv index.html.backup-* ~/site-backups/<site>/'
+```
+
+### Missing standards files
+
+Check each; all are expected on a real site:
+
+| Path | Consequence if 404 |
+|---|---|
+| `favicon.svg`, `favicon.ico` | broken tab icon; subpages may link a file that does not exist |
+| `og:image` (e.g. `memphis-os-social-preview.jpg`) | social previews dead on FB/LinkedIn/X |
+| `404.html` | default server error page — and if `.htaccess` lacks `ErrorDocument`, it is never served even when it exists |
+| `manifest.webmanifest` | no PWA |
+| `.well-known/security.txt` | no channel to report vulnerabilities |
+
+`404.html` is the sneaky one: the file existing is not enough. Apache serves it only via `ErrorDocument`. Verify with `curl -o /dev/null -w '%{http_code}' https://<domain>/definitely-not-a-real-page` and confirm the body is your page.
+
+### Design drift between pages
+
+Compare the colour tokens each page declares:
+
+```bash
+for p in "" start/ docs/ roadmap/ demo/; do
+  echo "--- /$p"
+  curl -s https://<domain>/$p | grep -oE '#[0-9a-fA-F]{6}' | sort | uniq -c | sort -rn | head -5
+done
+```
+
+Four product pages were dark navy `#040509` with a teal accent while the home page was cream `#f4f1ea` with no teal anywhere. Four pages, four palettes, one brand.
+
+To recolour a token-driven page safely: remap the `:root` custom properties, then swap the literals, then flip `rgba(255,255,255,α)` overlays to `rgba(0,0,0,α)`. Verify with a grep for the old dark values — target is zero. Then check contrast, do not eyeball it:
+
+```python
+def lum(h):
+    h = h.lstrip('#')
+    if len(h) == 3: h = ''.join(c*2 for c in h)
+    f = lambda c: c/12.92 if c <= 0.03928 else ((c+0.055)/1.055)**2.4
+    r,g,b = map(f, [int(h[i:i+2],16)/255 for i in (0,2,4)])
+    return 0.2126*r + 0.7152*g + 0.0722*b
+cr = (max(lum(a),lum(b))+.05) / (min(lum(a),lum(b))+.05)
+```
+
+WCAG AA needs 4.5:1 for body text, 3:1 for large text and UI borders.
+
+### Stale facts
+
+Dates and version strings outlive the deploy that set them. A page said "Stan na 22 kwietnia 2026" and "current release v1.11.0" months after the runtime moved on.
+
+```bash
+curl -s https://<domain>/<page> | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+|20[0-9]{2}-[0-9]{2}-[0-9]{2}' | sort -u
+```
+
+Cross-check against the real source of truth — `git describe --tags`, `package.json`, the changelog. Not memory.
+
+A version string inside a **timeline or changelog** is history and stays. Only change it where the page claims to describe the *current* state. Read the sentence around it before editing.
+
+## Binary assets
+
+Generate locally, upload, keep the generator in the repo.
+
+**Images** — Python + Pillow is available. For a favicon, draw flat geometry rather than downscaling a photo (a 256×256 photo is unreadable at 16×16):
+
+```python
+im = Image.new('RGBA', (256,256), (0,0,0,0))
+d = ImageDraw.Draw(im)
+d.rounded_rectangle([0,0,255,255], radius=48, fill=(244,241,234,255))
+im.save('favicon.ico', sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])
+```
+
+Note: `im.save(..., sizes=[...], append_images=None)` raises `TypeError` — omit the kwarg.
+
+**Video** — ffmpeg with `drawtext`, DejaVuSansMono at `/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf`. Keep every command on screen identical to the README, verified by fetching the README over HTTP rather than quoting from memory.
+
+Compare codecs before shipping both. A webm VP9 of flat-colour terminal cards came out **larger** than the h264 mp4 (439 KB vs 350 KB) — VP9 is poor at large uniform areas. Ship mp4 unless testing shows otherwise.
+
+Add `preload="none"` and a poster frame. A page should not pull 350 KB of video before anyone presses play.
+
+Verify a rendered video without a browser by sampling frames and checking the pixel distribution — dominant background ~95% plus expected accents means text drew correctly:
+
+```bash
+ffmpeg -y -ss 8 -i out.mp4 -frames:v 1 f8.png
+python3 -c "
+from PIL import Image; import collections
+c = collections.Counter(Image.open('f8.png').convert('RGB').getdata())
+print(c.most_common(4))"
+```
+
+## .htaccess maintenance
+
+The original was 615 bytes: HTTPS redirect and HSTS, nothing else. A static site in 2026 wants:
+
+```apache
+ErrorDocument 404 /404.html
+
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/css text/xml
+    AddOutputFilterByType DEFLATE application/javascript application/json
+    AddOutputFilterByType DEFLATE image/svg+xml
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=()"
+    <FilesMatch "\.(html|json|txt|xml|webmanifest)$">
+        Header set Cache-Control "public, max-age=0, must-revalidate"
+    </FilesMatch>
+    <FilesMatch "\.(svg|ico|jpg|png|webp|woff2?)$">
+        Header set Cache-Control "public, max-age=2592000, immutable"
+    </FilesMatch>
+</IfModule>
+
+<IfModule mod_mime.c>
+    AddType image/svg+xml .svg
+    AddType image/x-icon .ico
+    AddType application/manifest+json .webmanifest
+</IfModule>
+
+Options -Indexes
+```
+
+Backup first — a syntax error here takes the whole site down:
+
+```bash
+ssh -F $SSH_CONFIG $HOST "cp public_html/<site>/.htaccess ~/site-backups/<site>/.htaccess.$(date +%Y%m%d-%H%M).bak"
+```
+
+Then confirm each piece actually took effect over HTTP:
+
+```bash
+curl -s -o /dev/null -D - -H 'Accept-Encoding: gzip' https://<domain>/ | grep -iE 'content-encoding|content-length|cache-control|x-frame'
+curl -s -o /dev/null -w '%{http_code}' https://<domain>/no-such-page
+```
+
+`content-encoding: gzip` with a content-length well below the raw size proves deflate is live. Do not assume it from the config alone.
 
 ## Anti-confab (hard rules — never break)
 
 | Rule | Reason |
 |---|---|
-| **NEVER delete or overwrite a file in `/home/memphis/public/sites-deploy/` without first creating a `.backup-<timestamp>` copy** | The deploy directory is production. There is no git in there. If we overwrite wrong, the only way back is from backup. |
-| **NEVER delete the backup after success** | Operator may want to roll back later. The backup is small (KB-MB) and lives next to the deploy. Storage cost is negligible. |
-| **NEVER edit multiple files in one step without verifying the first** | If something is wrong, you want to know which change broke it. |
-| **NEVER trust that nginx serves from the directory you wrote to** | The operator may have multiple webroots. `ls` the parent, verify the file, and ask if unclear. |
-| **NEVER modify `.htaccess`, `nginx.conf`, or server config** | Out of scope. If the deploy isn't visible, the issue is server config, not the file. Tell the operator. |
-| **NEVER delete files inside `/home/memphis/public/sites-deploy/<domain>/` even if they look stale** | They may be referenced by the live site. Removing breaks the deploy silently. |
+| **NEVER write into the docroot without a backup in `~/site-backups/` first** | Production. No git on the server. Backup is the only way back. |
+| **NEVER leave backup files inside the docroot** | They are public. Five 30 KB page histories were readable by anyone. Move them out. |
+| **NEVER delete backups after success** | Rollback may be needed weeks later. Cost is kilobytes. |
+| **NEVER touch `public_html/<other-site>/`** | Other projects and personal pages share this account. Out of scope. |
+| **NEVER edit multiple files before verifying the first** | Otherwise you cannot tell which change broke it. |
+| **NEVER assume the directory you wrote to is what is served** | `ls` both `public_html/` and `public_html/<site>/`. |
+| **NEVER modify `nginx.conf`, vhost files, or reload the server** | Operator's infrastructure. Out of scope. |
+| **NEVER claim a link is broken on one failed request** | Re-test. A checker of mine reported `/panel/admin/login` as 404; 20 sequential requests all returned 200. The bug was in my loop. |
 
-## Backup naming convention
-
-```
-<original-filename>.backup-<YYYY-MM-DD>-<reason-slug>
-
-Examples:
-- index.html.backup-2026-09-26-pre-v2-landing
-- index.html.backup-2026-04-19-pre-calendly-rebrand
-- robots.txt.backup-2026-09-26-pre-llms-update
-```
-
-The `<reason-slug>` should describe the upcoming change, not the past state. This makes "what was this backup before" self-documenting.
-
-## Files to NOT touch
-
-Some files in the deploy directory are general-purpose site metadata that should only be updated when the operator explicitly says so:
-
-| File pattern | What it is | When to update |
-|---|---|---|
-| `sitemap.xml` | Lists all pages for SEO | When adding/removing pages, not on every content edit |
-| `robots.txt` | Crawler directives | When changing SEO policy |
-| `llms.txt` | LLM-friendly site map | When site structure changes significantly |
-| `agents.json` | AI agent manifest | When surface area changes |
-| `.htaccess` | Apache rewrite/security | Never without operator explicit instruction |
-| `nginx.conf`, `*.conf` | Server config | Out of scope |
-| `index.html.backup-*` | Previous backup | Never delete |
-
-For this session, **the safe default is: touch ONLY `index.html`** unless the operator names a specific other file.
-
-## Verification checklist (post-deploy)
-
-Run all of these after copying:
+## Verification checklist
 
 ```bash
-# 1. File exists with same size
-ls -la /home/memphis/public/sites-deploy/<domain>/<file>
+# every page and asset
+for p in "" start/ docs/ 404.html favicon.ico manifest.webmanifest llms.txt agents.json; do
+  printf "  %-28s %s\n" "/$p" "$(curl -s -o /dev/null -w '%{http_code} %{size_download}B' https://<domain>/$p)"
+done
 
-# 2. Hashes match
-md5sum <source> <target>
-# expected: two identical hashes
+# every internal link on the page you just changed
+grep -oE '(href|src)="[^"]*"' local.html | sed 's/.*="//;s/"//' \
+  | grep -v '^https\?://\|^#\|^data:\|^mailto:' | sort -u \
+  | while read l; do printf "  %s  %s\n" "$(curl -s -o /dev/null -w '%{http_code}' https://<domain>/$l)" "$l"; done
 
-# 3. Key tokens present (no encoding issues, no truncation)
-grep -c "<expected-token>" <target>
-# expected: count > 0
+# leaks gone
+curl -s -o /dev/null -w '%{http_code}\n' https://<domain>/index.html.backup-whatever   # want 404
 
-# 4. Backup preserved
-ls -la <backup-path>
-# expected: backup file still exists, same size as original
+# HTML not mangled
+python3 -c "
+import re,sys
+s=open('local.html',encoding='utf-8').read()
+for t in ['html','head','body','div','section','script','style']:
+    o,c=len(re.findall(rf'<{t}[\s>]',s)),len(re.findall(rf'</{t}>',s))
+    print(f'  {t}: {o}/{c}', 'OK' if o==c else 'MISMATCH')"
 ```
 
-## Rollback (if something goes wrong)
+## Rollback
 
 ```bash
-# Restore from backup
-cp <backup-path> <target-path>
-
-# Verify rollback
-md5sum <backup-path> <target-path>
-# expected: identical
-
-# Report to operator that rollback succeeded
+ssh -F $SSH_CONFIG $HOST "cp ~/site-backups/<site>/<file>.<TS>.bak public_html/<site>/<file>"
+curl -s -o /dev/null -w '%{http_code}\n' https://<domain>/<file>
 ```
 
-## When this skill does NOT apply
+## Local source of truth
 
-- Pure local file edits that should NOT be public (workspace source code, pitch deck HTML in `/home/memphis/memphis/docs/pitch/`, AGENTS.md, etc.) — those stay in workspace
-- GitHub Pages deploys (handled by `gh` CLI pushing to a `gh-pages` branch)
-- Docker image deploys (`docker push` + remote pull)
-- Kubernetes/Helm deploys
-- Server configuration changes (nginx reload, apache restart) — operator must do
+Keep the whole site in the repo so it is reviewable and reproducible. `docs/site/` mirrors the docroot: pages in subdirs, plus `.htaccess`, `404.html`, the meta files, assets, and any generator script. Deploy from there, not from a scratch directory.
+
+Commit and push the repo after the site is verified live. Site work is invisible in git history otherwise.
 
 ## Related skills
 
-- `memphis-hotfix` — for code bug fixes that cross layers
-- `memphis-rebuild-rust` — for Rust compilation issues
-- `halt-aware-destructive-ops` — pre-flight check for destructive ops (always use this before any `rm` in production deploy area)
+- `halt-aware-destructive-ops` — run before any `rm` or `mv` against production paths
+- `memphis-v5-landing-rebuild` — design tokens and section order for memphis-v5.pl pages
+- `memphis-hotfix` — code fixes that cross layers
 
-## Components
+## Notes
 
-- Skill doc (this file)
-- Backup convention: `<file>.backup-<YYYY-MM-DD>-<reason-slug>`
-- Source of truth for new content: `/home/memphis/memphis/docs/pitch/` or `/home/memphis/memphis/`
-
-## Example: deploying a memphis-v5.pl landing update
-
-```bash
-# 1. Find deploy target
-ls /home/memphis/public/sites-deploy/
-# → see "memphis-v5" (no .pl)
-
-# 2. Backup current index.html
-cp /home/memphis/public/sites-deploy/memphis-v5/index.html \
-   /home/memphis/public/sites-deploy/memphis-v5/index.html.backup-2026-09-26-pre-v2-landing
-
-# 3. Copy new index.html from workspace source
-cp /home/memphis/memphis/docs/pitch/memphis-v5-pl-landing.html \
-   /home/memphis/public/sites-deploy/memphis-v5/index.html
-
-# 4. Verify
-md5sum /home/memphis/memphis/docs/pitch/memphis-v5-pl-landing.html \
-       /home/memphis/public/sites-deploy/memphis-v5/index.html
-# → both should be 6085450ae1fcb4d6a16c11fa093b12fa
-
-ls -la /home/memphis/public/sites-deploy/memphis-v5/index.html
-# → 29501 bytes, modified timestamp = today
-
-grep -c "f4f1ea" /home/memphis/public/sites-deploy/memphis-v5/index.html
-# → 2 (cream token present)
-
-# 5. Report
-# Operator: "memphis-v5.pl deployed. Source: docs/pitch/memphis-v5-pl-landing.html.
-#           Target: sites-deploy/memphis-v5/index.html. Backup: sites-deploy/memphis-v5/index.html.backup-2026-09-26-pre-v2-landing.
-#           MD5: 6085450ae1fcb4d6a16c11fa093b12fa. Cream + deep-red confirmed."
-```
-
-## Notes on this skill
-
-- **Created 2026-09-26** after operator pointed out the gap ("nie masz na to skilla?")
+- **Created 2026-09-26** after operator pointed out the gap
+- **Revised 2026-09-27** after a full site audit. The original version described only
+  "copy a file and check md5". It had no pre-deploy audit, assumed a local deploy
+  directory that does not exist, forbade touching `.htaccess` when that is often
+  the fix, and had no guidance for binary assets or verification over HTTP.
 - **Tier:** 0 — no vault, no passphrase
-- **Idempotent:** running the same workflow twice produces the same result (the second run just rotates the backup)
-- **Reversible:** as long as the backup exists, you can always roll back
-- **Safe by default:** touches ONLY index.html (or operator-specified file), leaves other site metadata untouched
+- **Idempotent:** re-running rotates the backup
+- **Reversible:** while a backup exists in `~/site-backups/`
+- **Safe by default:** touches only the files the operator named
