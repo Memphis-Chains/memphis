@@ -36,7 +36,8 @@ Wymagania: Node 22, Linux / macOS / WSL2. Kod ląduje w `~/memphis`, pamięć w 
 ## Charakterystyka
 
 - 7 łańcuchów: journal, decisions, system, reflections, cases, collective, patterns
-- 20 narzędzi dostępnych przez lokalny serwer MCP
+- 57 narzędzi dostępnych przez lokalny serwer MCP w domyślnej instalacji
+- 3 dodatkowe narzędzia za flagą MEMPHIS_FEATURES=experimental-tools (memphis_chain_query, memphis_providers, memphis_system_info) — łącznie 60
 - Każdy blok łańcucha ma hash poprzedniego; weryfikacja przy starcie
 - Vault szyfrowany AES-256, z pepperem i rotacją klucza głównego
 - HALT-aware guard: destrukcyjne operacje sprawdzane przed wykonaniem
