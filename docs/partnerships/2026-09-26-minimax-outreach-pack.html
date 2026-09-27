@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memphis × MiniMax — Outreach Pack</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1d24;
+    color: #e4e6eb;
+    padding: 24px;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  h1 {
+    font-size: 28px;
+    margin-bottom: 8px;
+    color: #ff8c42;
+  }
+  .subtitle {
+    color: #9aa0a6;
+    margin-bottom: 32px;
+    font-size: 14px;
+  }
+  .step {
+    background: #232830;
+    border-left: 4px solid #ff8c42;
+    padding: 20px 24px;
+    margin-bottom: 24px;
+    border-radius: 4px;
+  }
+  .step h2 {
+    font-size: 18px;
+    margin-bottom: 8px;
+    color: #ff8c42;
+  }
+  .step .meta {
+    color: #9aa0a6;
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+  .step .action {
+    background: #2a1f1a;
+    border-left: 3px solid #ff6b35;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    color: #ffb893;
+  }
+  .template {
+    background: #1a1d24;
+    border: 1px solid #3a3f48;
+    border-radius: 4px;
+    padding: 20px;
+    margin-bottom: 16px;
+    position: relative;
+    white-space: pre-wrap;
+    font-family: "SF Mono", Consolas, "Liberation Mono", monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    color: #c9ccd1;
+  }
+  .copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: #ff8c42;
+    color: #1a1d24;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 12px;
+    font-family: inherit;
+    transition: background 0.15s;
+  }
+  .copy-btn:hover { background: #ffaa66; }
+  .copy-btn.copied { background: #4caf50; color: white; }
+  .label {
+    display: inline-block;
+    background: #3a3f48;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #9aa0a6;
+    margin-right: 8px;
+    letter-spacing: 0.5px;
+  }
+  .label.chinese { background: #5d4037; color: #ffab91; }
+  .label.english { background: #2e4a3e; color: #a5d6a7; }
+  .label.priority { background: #c62828; color: #fff; }
+  .note {
+    background: #2a2f38;
+    border-radius: 3px;
+    padding: 8px 14px;
+    font-size: 13px;
+    color: #9aa0a6;
+    margin-top: 12px;
+  }
+  .checklist {
+    list-style: none;
+    background: #232830;
+    padding: 16px 24px;
+    border-radius: 4px;
+  }
+  .checklist li {
+    padding: 6px 0 6px 28px;
+    position: relative;
+  }
+  .checklist li::before {
+    content: "☐";
+    position: absolute;
+    left: 8px;
+    color: #9aa0a6;
+  }
+  .footer {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid #3a3f48;
+    color: #6c7077;
+    font-size: 12px;
+    text-align: center;
+  }
+</style>
+</head>
+<body><!-- DEPRECATED NOTICE -->
+<div style="background:#c62828;color:white;padding:20px;margin:0;font-family:system-ui;text-align:center;position:sticky;top:0;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.3)">
+<div style="font-size:18px;font-weight:700;margin-bottom:8px;">⚠️ DEPRECATED — use <code>partnerships/2026-09-26-minimax-combined-pack.html</code> instead</div>
+<div style="font-size:13px;opacity:0.9;">This file is from an earlier iteration (before we realized GitHub DM is unavailable).<br>See <code>docs/partnerships/README.md</code> for the canonical flow.</div>
+</div>
+
+<div class="wrap">
+
+<h1>🟠 Memphis × MiniMax — Outreach Pack</h1>
+<p class="subtitle">
+Wszystko do skopiowania w jednym miejscu. Wyślij w kolejności: LETTER 2 → LETTER 1 → email backup.
+</p>
+
+<!-- ============ STEP 1 ============ -->
+<div class="step">
+  <h2>KROK 1: Wyślij LETTER 2 do @hetaoBackend</h2>
+  <div class="meta">
+    <span class="label priority">Priority 1</span>
+    <span class="label chinese">中文 (Chinese)</span>
+    Kanał: GitHub DM<br>
+    Link: <a href="https://github.com/hetaoBackend" style="color:#ff8c42">https://github.com/hetaoBackend</a><br>
+    Kiedy: <strong>Dzisiaj</strong> — to on jest decision maker na collaborator invites
+  </div>
+  <div class="action">
+    → Otwórz github.com/hetaoBackend → "Send message" → wklej poniższe → wyślij
+  </div>
+  <div class="template" id="letter2">
+<button class="copy-btn" onclick="copyTemplate('letter2')">Kopiuj</button>@ hetaoBackend 您好,
+
+我是 Wodzu (Marcin Kukla),来自波兰的小独立开发者。
+
+冒昧发这条消息,只是想告诉您一件事:我决定把 minimax-code 作为我主要的 AI agent runtime 来使用。我机器上还跑着其他几个 runtime,但 mcode 是我每天都打开的那个。
+
+不是"在评估",不是"试用一下"——是正式选定。
+
+(TL;DR: After months of testing, I'm committing to minimax-code as my primary agent runtime. This isn't a sales pitch or a partnership ask. Just a heads-up that someone on the other side of the world is using your software seriously.)
+
+作为这个决定的一个小小纪念,我写了一个小模块 @mavis/memphis-collective——把我们 Memphis runtime 里的 collective chain 接入 mcode 的 system-reminder 体系。MIT 协议,16/16 测试通过,rebased 在您们当前的 main 上:
+
+  https://github.com/Memphis-Chains/minimax-code  (commit c32c23f)
+
+完全没动您们现有的架构,只是多加了一个可选的扩展点。
+
+(I wrote a small bridge module that slots into @mavis/system-reminder without touching your existing architecture. MIT, rebased on your main, 16/16 tests passing.)
+
+我没有其他任何请求——只是想告诉您们,我们这边有一个认真使用 mcode 的人,做出了这个东西,放在那里。如果您们感兴趣,随时可以看一眼;不感兴趣也没关系,代码就在那里,不会消失。
+
+(I have no other ask — just wanted to let you know. The code is there if you're curious, no rush either way.)
+
+一个个人小备注:我女朋友让我用 Duolingo 学中文,所以我现在能分辨咖啡和水这两个字怎么写。😊
+
+(Personal note: my partner made me start learning Mandarin on Duolingo, so right now I can tell the difference between the characters for "coffee" and "water" if you give me enough time.)
+
+祝您工作顺利。
+
+Wodzu (Marcin Kukla)
+github.com/Memphis-Chains
+CET (UTC+1/+2)</div>
+  <div class="note">
+    ⏱ Po wysłaniu: <strong>czekaj 7 dni</strong> bez followupu. Kultura chińska = relationship przed transakcją.
+  </div>
+</div>
+
+<!-- ============ STEP 2 ============ -->
+<div class="step">
+  <h2>KROK 2: Wyślij LETTER 1 do @1anZhang</h2>
+  <div class="meta">
+    <span class="label">Priority 2</span>
+    <span class="label english">English</span>
+    Kanał: GitHub DM<br>
+    Link: <a href="https://github.com/1anZhang" style="color:#ff8c42">https://github.com/1anZhang</a><br>
+    Kiedy: <strong>Tego samego dnia</strong> co KROK 1
+  </div>
+  <div class="action">
+    → Otwórz github.com/1anZhang → "Send message" → wklej poniższe → wyślij
+  </div>
+  <div class="template" id="letter1">
+<button class="copy-btn" onclick="copyTemplate('letter1')">Kopiuj</button>Hi @1anZhang,
+
+A real person writing from Poland, not a sales pitch, I promise.
+
+My name is Wodzu (Marcin Kukla). I've been running minimax-code in production for a few months now — TUI mostly, headless when I need to automate. I'm one of those weird users who actually reads the source code instead of just clicking buttons. So I have to say — your work is genuinely good. The @mavis/system-reminder extension point is the cleanest abstraction I've seen in this space, and the @minimax/oauth-lease-protocol pattern is something I want to learn from (we're doing something similar in our own runtime).
+
+I'm writing because I decided something last week: minimax-code is going to be my primary agent runtime going forward. Not "evaluating", not "trying out" — committing. I have three other runtimes on this machine and mcode is the one I keep coming back to.
+
+To mark the occasion, I built a small extension for it — a bridge to our memphis `collective` chain (a content-addressed audit log we maintain). It's MIT, rebased on your current main, 16/16 tests pass, and it slots into @mavis/system-reminder without any changes to your existing architecture:
+
+  https://github.com/Memphis-Chains/minimax-code (commit c32c23f)
+
+You don't have to do anything with it. I just wanted you to know that someone on the other side of the world is using your software seriously, and built something on top of it because they wanted to, not because anyone asked them to.
+
+Two small human notes:
+- I'm learning Mandarin on Duolingo right now (my partner sent me the link). Currently I can distinguish coffee from water.
+- If you ever want to see what memphis is or how the integration works, just reply here. I'm not in a hurry for anything.
+
+Hope your week's going well.
+
+Wodzu
+CET, Poland</div>
+</div>
+
+<!-- ============ STEP 3 ============ -->
+<div class="step">
+  <h2>KROK 3: Email backup do api@minimax.io</h2>
+  <div class="meta">
+    <span class="label">Backup</span>
+    <span class="label english">English</span>
+    Kanał: Email<br>
+    Adres: <strong style="color:#ff8c42">api@minimax.io</strong><br>
+    Kiedy: <strong>Ten sam dzień</strong>, po GitHub DMs<br>
+    Wyślij z Gmail/Thunderbird (ten host nie ma SMTP)
+  </div>
+  <div class="action">
+    → Subject (do pola Subject): <strong>"Open-source contribution inquiry — @mavis/memphis-collective for minimax-code"</strong>
+  </div>
+  <div class="template" id="email-body">
+<button class="copy-btn" onclick="copyTemplate('email-body')">Kopiuj</button>Dear MiniMax team,
+
+Forgive a cold email from a Polish open-source contributor.
+
+We have been running minimax-code in production for several months and have built a small extension package on top of it that we would like to contribute upstream:
+
+  https://github.com/Memphis-Chains/minimax-code  (commit c32c23f)
+
+What it is:
+- A reader/writer bridge between minimax-code agents and the Memphis `collective` chain (a content-addressed append-only log stored at ~/.memphis/chains/collective/)
+- Renders recent decisions as a <memphis-collective>...</memphis-collective> system-reminder block (drop-in compatible with @mavis/system-reminder)
+- Exposes a memphis_collective_append tool with hash linkage matching your serde_json canonical format
+- MIT-licensed, 16/16 tests passing, rebased on your current main
+
+We noticed in CONTRIBUTING.md that pull requests are currently accepted only from repository collaborators. This message is to ask, respectfully, whether a collaborator invite might be possible so we can submit this through your standard review process. We are not asking to bypass your policy — only to participate in it.
+
+If the timing is not right, or if you would prefer we prepare smaller PRs, additional tests, or different API surface, we are happy to adjust. Please tell us what would help.
+
+No deadline pressure from our side. Thank you for your time and for the work you've put into minimax-code — we use it daily and appreciate it.
+
+With respect,
+Marcin "Wodzu" Kukla
+Memphis-Chains
+github.com/Memphis-Chains
+memphis.kuklow@gmail.com</div>
+</div>
+
+<!-- ============ STEP 4 ============ -->
+<div class="step">
+  <h2>KROK 4: (TYLKO gdyby cisza 7-14 dni) Follow-up</h2>
+  <div class="meta">
+    <span class="label">Only if no response</span>
+    Kanał: GitHub DM<br>
+    Kiedy: <strong>+7 dni po LETTER 2</strong> (jeden, ostatni)
+  </div>
+  <div class="template" id="followup">
+<button class="copy-btn" onclick="copyTemplate('followup')">Kopiuj</button>@ hetaoBackend 您好,
+
+冒昧再问一句——您是否看到了我之前关于 @mavis/memphis-collective 的留言?完全理解您们很忙,如果没有合适的时间窗口也完全没关系。
+
+(Just checking if you saw my previous note about @mavis/memphis-collective. Completely understand you're busy — if the timing isn't right, that's totally fine.)</div>
+</div>
+
+<!-- ============ STEP 5 ============ -->
+<div class="step">
+  <h2>KROK 5: (PO uzyskaniu collaborator access) Issue body</h2>
+  <div class="meta">
+    <span class="label">DO NOT POST EARLIER</span>
+    Post TYLKO gdy MiniMax da collaborator invite<br>
+    Kanał: GitHub Issue (po uzyskaniu write access)<br>
+    Title: <strong>[Question]: memphis-collective integration — collaborator invite request for upstream PR</strong>
+  </div>
+  <div class="template" id="issue-body">
+<button class="copy-btn" onclick="copyTemplate('issue-body')">Kopiuj</button>## Background
+
+We're a small team (Memphis-Chains, Poland) that has been running minimax-code in production since mid-2025. The TUI experience and the @mavis/system-reminder extension point have been essential to our daily work.
+
+## What we built
+
+We extended minimax-code with a small package called `@mavis/memphis-collective` that we would like to contribute upstream. It is already in our public fork:
+
+  https://github.com/Memphis-Chains/minimax-code (commit c32c23f)
+
+The package:
+- Reads ~/.memphis/chains/collective/*.json (strict-shape scan matching the existing chain block format)
+- Watches the directory via fs.watch (100ms debounce + microtask gap) and reloads on change
+- Renders the most recent N blocks as a <memphis-collective>...</memphis-collective> system-reminder block, drop-in compatible with @mavis/system-reminder
+- Exposes a memphis_collective_append tool with proper prev_hash linkage, atomic rename, and .napi-append.lock for race-safety
+- 16/16 vitest tests passing locally
+- TypeScript types fully resolved (tsc -p tsconfig.standalone.json --noEmit exits 0)
+- MIT-licensed
+
+Diff: 22 files, 1,521 insertions, 1 deletion. Rebased on MiniMax-AI/minimax-code@4198174c89963ca7614ae7705bb897814d11b4ee (current main).
+
+## Why we need a collaborator invite
+
+We read CONTRIBUTING.md carefully and understand that pull requests are currently accepted only from repository collaborators. This issue is not a workaround — it is the request itself.
+
+If a collaborator invite for @Memphis-Chains could be granted, we will:
+1. Open a focused PR with the rebased commit above
+2. Split the change into reviewable chunks if that helps review
+3. Add any additional tests you request
+4. Wait patiently for code review and respond to feedback
+5. Not push directly to main
+
+If the timing is wrong, or if you would prefer the contribution to go through a different shape (smaller scope, plugin-format instead of in-tree package, etc.), please tell us what would work and we will adapt.
+
+## What we will NOT do
+- We will not push directly to main without approval
+- We will not bypass your collaborator policy in any way
+- We will not bulk-submit multiple PRs before the first one lands
+
+## Contact
+- GitHub: @Memphis-Chains
+- Email: memphis.kuklow@gmail.com
+- Time zone: CET (UTC+1 / UTC+2)
+
+Thank you for your time and for minimax-code.
+
+— Wodzu / Memphis-Chains</div>
+</div>
+
+<!-- ============ CHECKLIST ============ -->
+<h2 style="margin-top:48px;color:#ff8c42;">📋 Checklist</h2>
+<ul class="checklist">
+  <li>KROK 1: GitHub DM @hetaoBackend — LETTER 2 (Chinese)</li>
+  <li>KROK 2: GitHub DM @1anZhang — LETTER 1 (English)</li>
+  <li>KROK 3: Email api@minimax.io — backup</li>
+  <li>+7 dni: follow-up tylko jeśli cisza</li>
+  <li>+14 dni: eskalacja do Discord (discord.gg/692jE8wsmj) jeśli cisza</li>
+  <li>Po uzyskaniu access: KROK 5 (issue body) + prawdziwy PR</li>
+</ul>
+
+<div class="footer">
+  Wygenerowane 2026-09-26 · Memphis-Chains × MiniMax outreach pack<br>
+  Plik źródłowy: ~/memphis/docs/partnerships/2026-09-26-minimax-relationship-letters.md
+</div>
+
+</div>
+
+<script>
+function copyTemplate(id) {
+  const el = document.getElementById(id);
+  const btn = el.querySelector('.copy-btn');
+  // Get text content but skip the button itself
+  const clone = el.cloneNode(true);
+  const btnInClone = clone.querySelector('.copy-btn');
+  if (btnInClone) btnInClone.remove();
+  const text = clone.textContent.trim();
+  
+  navigator.clipboard.writeText(text).then(() => {
+    const original = btn.textContent;
+    btn.textContent = '✓ Skopiowano';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = original;
+      btn.classList.remove('copied');
+    }, 2000);
+  }).catch(err => {
+    // Fallback for non-HTTPS
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+      const original = btn.textContent;
+      btn.textContent = '✓ Skopiowano';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = original;
+        btn.classList.remove('copied');
+      }, 2000);
+    } catch (e) {
+      btn.textContent = 'Błąd';
+    }
+    document.body.removeChild(textarea);
+  });
+}
+</script>
+
+</body>
+</html>

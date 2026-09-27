@@ -91,3 +91,9 @@ invalid provider stream response: timed out reading response
 - 21 open PR-ów (#478–#498), wave plan w `docs/operator/merge-wave-plan.md`
 - Untracked: `crons/simple-reminder.sh` (operator deferral pattern), `docs/zawoja-2026-przemowienie.md` (speech, archive candidate)
 - Last release: v1.8.0 (2026-05-02)
+
+
+## Related
+
+- [docs/runbooks/SELF-GOVERNANCE-AND-CHANGE-AUDIT.md](../runbooks/SELF-GOVERNANCE-AND-CHANGE-AUDIT.md) — describes the change-audit mechanism that was operating at the time
+- [docs/historical/observability.md](../historical/observability.md) — observability policies in effect at the time

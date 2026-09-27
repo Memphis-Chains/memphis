@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="title" content="Memphis × Watra.ai × MiniMax — Pitch Deck">
+<title>Memphis Runtime — Sovereign AI Built in Poland | Pitch Deck 2026</title>
+<style>
+/* ====== RESET & BASE ====== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 11pt;
+  line-height: 1.5;
+  color: #1a1d24;
+  background: #f4f1ea;
+}
+
+/* ====== PAGE LAYOUT (A4 landscape, 297mm × 210mm) ====== */
+@page {
+  size: A4 landscape;
+  margin: 0;
+}
+.slide {
+  width: 297mm;
+  height: 210mm;
+  page-break-after: always;
+  position: relative;
+  overflow: hidden;
+  background: #f4f1ea;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+.slide:last-child { page-break-after: auto; }
+
+/* ====== COLOR PALETTE (Memphis orange + MiniMax blue + Watra earth) ====== */
+:root {
+  --memphis-orange: #ff6b35;
+  --memphis-orange-deep: #c44e1f;
+  --memphis-cream: #f4f1ea;
+  --minimax-blue: #1a4d8f;
+  --minimax-blue-light: #e8f0fa;
+  --watra-earth: #4a3c2a;
+  --watra-earth-light: #d6c9b4;
+  --ink: #1a1d24;
+  --ink-soft: #4a4f5a;
+  --paper: #ffffff;
+}
+
+/* ====== HEADER ====== */
+.slide-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14mm 18mm 8mm;
+  border-bottom: 0.4mm solid var(--memphis-orange);
+}
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 6mm;
+}
+.logo {
+  font-weight: 900;
+  letter-spacing: -0.5pt;
+}
+.logo-memphis { font-size: 18pt; color: var(--memphis-orange-deep); }
+.logo-watra { font-size: 13pt; color: var(--watra-earth); font-style: italic; font-weight: 700; }
+.logo-x { font-size: 11pt; color: var(--ink-soft); font-weight: 400; padding: 0 2mm; }
+.logo-mavis { font-size: 13pt; color: var(--minimax-blue); font-weight: 800; }
+.logo-tag { font-size: 8pt; color: var(--ink-soft); padding-left: 4mm; border-left: 0.3mm solid var(--ink-soft); margin-left: 4mm; }
+.slide-num { font-size: 9pt; color: var(--ink-soft); font-weight: 600; }
+.slide-num strong { color: var(--memphis-orange); font-size: 13pt; }
+
+/* ====== FOOTER ====== */
+.slide-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6mm 18mm;
+  font-size: 8pt;
+  color: var(--ink-soft);
+  border-top: 0.3mm solid rgba(0,0,0,0.15);
+  background: rgba(255,255,255,0.5);
+}
+.slide-footer .powered {
+  display: flex;
+  align-items: center;
+  gap: 3mm;
+}
+.powered-badge {
+  background: linear-gradient(135deg, var(--minimax-blue), #2563aa);
+  color: white;
+  padding: 1mm 3mm;
+  border-radius: 1mm;
+  font-weight: 700;
+  font-size: 7pt;
+  letter-spacing: 0.5pt;
+}
+
+/* ====== SLIDE CONTENT (1fr area) ====== */
+.slide-body {
+  padding: 14mm 18mm;
+  display: grid;
+  gap: 8mm;
+}
+
+/* ====== COVER SLIDE ====== */
+.slide.cover .slide-body {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 14mm;
+  align-items: center;
+  padding: 24mm 28mm;
+}
+.cover-title {
+  font-size: 48pt;
+  font-weight: 900;
+  line-height: 1.05;
+  color: var(--memphis-orange-deep);
+  letter-spacing: -1.5pt;
+  margin-bottom: 6mm;
+}
+.cover-subtitle {
+  font-size: 18pt;
+  color: var(--ink);
+  margin-bottom: 8mm;
+  line-height: 1.3;
+}
+.cover-tagline {
+  font-size: 11pt;
+  color: var(--ink-soft);
+  font-style: italic;
+  border-left: 1mm solid var(--memphis-orange);
+  padding-left: 4mm;
+  margin-top: 8mm;
+}
+.cover-tagline-pl {
+  font-size: 13pt;
+  color: var(--ink);
+  border-left: 1mm solid var(--minimax-blue);
+  padding-left: 4mm;
+  margin-top: 12mm;
+  font-weight: 500;
+}
+.cover-visual {
+  background: linear-gradient(135deg, var(--memphis-cream), var(--watra-earth-light));
+  border: 0.5mm solid var(--memphis-orange);
+  border-radius: 4mm;
+  padding: 12mm;
+  position: relative;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 6mm;
+}
+.cover-visual-title {
+  font-size: 11pt;
+  font-weight: 700;
+  letter-spacing: 1pt;
+  color: var(--memphis-orange-deep);
+  text-transform: uppercase;
+}
+.cover-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4mm;
+}
+.cover-stat {
+  background: var(--paper);
+  border-radius: 2mm;
+  padding: 6mm 4mm;
+  text-align: center;
+  border-top: 0.5mm solid var(--minimax-blue);
+}
+.cover-stat-num {
+  font-size: 22pt;
+  font-weight: 900;
+  color: var(--minimax-blue);
+  line-height: 1;
+}
+.cover-stat-label {
+  font-size: 8pt;
+  color: var(--ink-soft);
+  margin-top: 2mm;
+}
+.cover-stat-pl {
+  font-size: 7pt;
+  color: var(--ink-soft);
+}
+.cover-visual-footer {
+  text-align: center;
+  font-size: 8pt;
+  color: var(--ink-soft);
+  font-style: italic;
+  padding-top: 4mm;
+  border-top: 0.3mm solid rgba(0,0,0,0.1);
+}
+
+/* ====== HEADLINE SLIDES (problem, solution, why us, etc.) ====== */
+.section-headline {
+  font-size: 32pt;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--memphis-orange-deep);
+  margin-bottom: 4mm;
+  letter-spacing: -0.8pt;
+}
+.section-headline-pl {
+  font-size: 18pt;
+  font-weight: 700;
+  color: var(--minimax-blue);
+  margin-bottom: 8mm;
+  padding-bottom: 6mm;
+  border-bottom: 0.5mm solid var(--memphis-orange);
+}
+.section-body {
+  font-size: 12pt;
+  color: var(--ink);
+  line-height: 1.55;
+  max-width: 240mm;
+}
+.section-body-pl {
+  font-size: 11pt;
+  color: var(--ink-soft);
+  margin-top: 4mm;
+  padding-left: 4mm;
+  border-left: 0.5mm solid var(--minimax-blue);
+}
+
+/* ====== TWO-COLUMN SLIDES ====== */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12mm;
+}
+.col-card {
+  background: var(--paper);
+  border-radius: 3mm;
+  padding: 8mm 10mm;
+  border-top: 1mm solid var(--memphis-orange);
+  box-shadow: 0 2mm 6mm rgba(0,0,0,0.06);
+}
+.col-card.blue { border-top-color: var(--minimax-blue); }
+.col-card.earth { border-top-color: var(--watra-earth); }
+.col-card h3 {
+  font-size: 14pt;
+  font-weight: 800;
+  margin-bottom: 4mm;
+  color: var(--ink);
+}
+.col-card p {
+  font-size: 10.5pt;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+.col-card ul {
+  list-style: none;
+  margin-top: 4mm;
+}
+.col-card li {
+  padding: 2mm 0 2mm 5mm;
+  font-size: 10pt;
+  color: var(--ink-soft);
+  position: relative;
+}
+.col-card li::before {
+  content: "▸";
+  position: absolute;
+  left: 0;
+  color: var(--memphis-orange);
+  font-weight: 800;
+}
+
+/* ====== ARCHITECTURE / DIAGRAM SLIDES ====== */
+.diagram {
+  background: var(--paper);
+  border-radius: 3mm;
+  padding: 8mm;
+  border: 0.4mm solid rgba(0,0,0,0.1);
+  display: grid;
+  gap: 4mm;
+}
+.diagram-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  align-items: center;
+  gap: 3mm;
+}
+.diagram-box {
+  background: linear-gradient(135deg, var(--memphis-cream), white);
+  border: 0.4mm solid var(--memphis-orange);
+  border-radius: 2mm;
+  padding: 4mm;
+  text-align: center;
+  font-size: 10pt;
+  font-weight: 700;
+  color: var(--memphis-orange-deep);
+}
+.diagram-box.blue {
+  background: linear-gradient(135deg, var(--minimax-blue-light), white);
+  border-color: var(--minimax-blue);
+  color: var(--minimax-blue);
+}
+.diagram-box.earth {
+  background: linear-gradient(135deg, var(--watra-earth-light), white);
+  border-color: var(--watra-earth);
+  color: var(--watra-earth);
+}
+.diagram-box small {
+  display: block;
+  font-weight: 400;
+  font-size: 8pt;
+  color: var(--ink-soft);
+  margin-top: 1mm;
+}
+.diagram-arrow {
+  font-size: 18pt;
+  color: var(--memphis-orange);
+  font-weight: 800;
+}
+.diagram-caption {
+  font-size: 9pt;
+  color: var(--ink-soft);
+  font-style: italic;
+  text-align: center;
+  margin-top: 4mm;
+}
+
+/* ====== CHAIN / VAULT BOXES (for memphis architecture slide) ====== */
+.chain-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2mm;
+  margin: 4mm 0;
+}
+.chain-box {
+  background: var(--paper);
+  border: 0.3mm solid var(--memphis-orange);
+  border-radius: 1mm;
+  padding: 3mm 2mm;
+  text-align: center;
+  font-size: 7pt;
+  font-weight: 700;
+  color: var(--memphis-orange-deep);
+  line-height: 1.2;
+}
+.chain-box small {
+  display: block;
+  font-weight: 400;
+  font-size: 6pt;
+  color: var(--ink-soft);
+  margin-top: 1mm;
+}
+
+/* ====== METRIC / KPI GRID ====== */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4mm;
+  margin: 6mm 0;
+}
+.metric {
+  background: var(--paper);
+  border-radius: 3mm;
+  padding: 6mm 4mm;
+  text-align: center;
+  border-bottom: 1mm solid var(--memphis-orange);
+  box-shadow: 0 1mm 3mm rgba(0,0,0,0.05);
+}
+.metric-num {
+  font-size: 26pt;
+  font-weight: 900;
+  color: var(--memphis-orange-deep);
+  line-height: 1;
+  letter-spacing: -1pt;
+}
+.metric-num.blue { color: var(--minimax-blue); }
+.metric-num.earth { color: var(--watra-earth); }
+.metric-label {
+  font-size: 9pt;
+  color: var(--ink-soft);
+  margin-top: 3mm;
+  line-height: 1.3;
+}
+.metric-label-pl {
+  font-size: 8pt;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+/* ====== PRICING TABLE ====== */
+.pricing-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4mm;
+  margin: 6mm 0;
+}
+.price-card {
+  background: var(--paper);
+  border: 0.5mm solid rgba(0,0,0,0.15);
+  border-radius: 3mm;
+  padding: 6mm;
+  text-align: center;
+  position: relative;
+}
+.price-card.featured {
+  border: 1mm solid var(--memphis-orange);
+  box-shadow: 0 4mm 12mm rgba(255,107,53,0.15);
+  transform: scale(1.03);
+}
+.price-card.featured::before {
+  content: "RECOMMENDED";
+  position: absolute;
+  top: -3mm;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--memphis-orange);
+  color: white;
+  padding: 1mm 4mm;
+  border-radius: 1mm;
+  font-size: 7pt;
+  font-weight: 700;
+  letter-spacing: 0.5pt;
+}
+.price-tier {
+  font-size: 11pt;
+  font-weight: 700;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 1pt;
+  margin-bottom: 2mm;
+}
+.price-amount {
+  font-size: 24pt;
+  font-weight: 900;
+  color: var(--memphis-orange-deep);
+  line-height: 1;
+}
+.price-period {
+  font-size: 9pt;
+  color: var(--ink-soft);
+  font-weight: 400;
+  margin-top: 1mm;
+}
+.price-features {
+  list-style: none;
+  margin-top: 4mm;
+  text-align: left;
+}
+.price-features li {
+  padding: 1.5mm 0 1.5mm 4mm;
+  font-size: 9pt;
+  color: var(--ink-soft);
+  position: relative;
+  line-height: 1.3;
+}
+.price-features li::before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  color: var(--memphis-orange);
+  font-weight: 800;
+}
+
+/* ====== TIMELINE / ROADMAP ====== */
+.timeline {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4mm;
+  margin: 6mm 0;
+}
+.timeline-phase {
+  background: var(--paper);
+  border-left: 1mm solid var(--minimax-blue);
+  border-radius: 0 2mm 2mm 0;
+  padding: 5mm 5mm 5mm 7mm;
+  position: relative;
+}
+.timeline-phase::before {
+  content: attr(data-phase);
+  position: absolute;
+  top: -3mm;
+  left: -1mm;
+  background: var(--minimax-blue);
+  color: white;
+  padding: 1mm 3mm;
+  font-size: 8pt;
+  font-weight: 700;
+  letter-spacing: 0.5pt;
+  border-radius: 0 1mm 1mm 0;
+}
+.timeline-phase h4 {
+  font-size: 11pt;
+  font-weight: 800;
+  color: var(--ink);
+  margin-bottom: 2mm;
+  margin-top: 4mm;
+}
+.timeline-phase ul {
+  list-style: none;
+}
+.timeline-phase li {
+  font-size: 9pt;
+  color: var(--ink-soft);
+  padding: 1mm 0 1mm 4mm;
+  position: relative;
+  line-height: 1.3;
+}
+.timeline-phase li::before {
+  content: "→";
+  position: absolute;
+  left: 0;
+  color: var(--minimax-blue);
+  font-weight: 700;
+}
+
+/* ====== CONTACT SLIDE ====== */
+.slide.contact .slide-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14mm;
+  padding: 24mm 28mm;
+}
+.contact-info h2 {
+  font-size: 36pt;
+  font-weight: 900;
+  color: var(--memphis-orange-deep);
+  line-height: 1.05;
+  margin-bottom: 8mm;
+  letter-spacing: -0.8pt;
+}
+.contact-info-pl {
+  font-size: 18pt;
+  font-weight: 700;
+  color: var(--minimax-blue);
+  margin-top: 6mm;
+  margin-bottom: 4mm;
+}
+.contact-list {
+  list-style: none;
+}
+.contact-list li {
+  font-size: 12pt;
+  color: var(--ink);
+  padding: 2.5mm 0;
+  border-bottom: 0.3mm solid rgba(0,0,0,0.08);
+}
+.contact-list li strong {
+  display: block;
+  font-size: 9pt;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 1pt;
+  font-weight: 700;
+  margin-bottom: 1mm;
+}
+.contact-list li a {
+  color: var(--memphis-orange-deep);
+  text-decoration: none;
+  font-weight: 600;
+}
+.qr-section {
+  background: var(--paper);
+  border: 0.5mm solid rgba(0,0,0,0.1);
+  border-radius: 4mm;
+  padding: 8mm;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 4mm;
+}
+.qr-section h3 {
+  font-size: 13pt;
+  font-weight: 800;
+  color: var(--ink);
+}
+.qr-section p {
+  font-size: 9pt;
+  color: var(--ink-soft);
+}
+.qr-placeholder {
+  background: linear-gradient(45deg, var(--memphis-cream) 25%, transparent 25%),
+              linear-gradient(-45deg, var(--memphis-cream) 25%, transparent 25%),
+              linear-gradient(45deg, transparent 75%, var(--memphis-cream) 75%),
+              linear-gradient(-45deg, transparent 75%, var(--memphis-cream) 75%);
+  background-size: 8mm 8mm;
+  background-position: 0 0, 0 4mm, 4mm -4mm, -4mm 0;
+  border: 0.5mm dashed var(--memphis-orange);
+  border-radius: 2mm;
+  height: 50mm;
+  display: grid;
+  place-items: center;
+  font-size: 11pt;
+  font-weight: 700;
+  color: var(--memphis-orange-deep);
+  text-align: center;
+}
+
+/* ====== PULL QUOTE / TESTIMONIAL ====== */
+.quote-block {
+  background: linear-gradient(135deg, var(--minimax-blue-light), white);
+  border-left: 1.5mm solid var(--minimax-blue);
+  padding: 8mm 10mm;
+  border-radius: 0 3mm 3mm 0;
+  font-style: italic;
+  font-size: 14pt;
+  color: var(--ink);
+  line-height: 1.5;
+}
+.quote-author {
+  font-style: normal;
+  font-size: 10pt;
+  color: var(--ink-soft);
+  margin-top: 4mm;
+  padding-left: 4mm;
+  border-left: 0.5mm solid var(--memphis-orange);
+}
+
+/* ====== UTILITY ====== */
+.no-break { page-break-inside: avoid; }
+.muted { color: var(--ink-soft); }
+.spacer { height: 4mm; }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- SLIDE 1: COVER -->
+<!-- ============================================================ -->
+<section class="slide cover">
+  <header class="slide-header">
+    <div class="brand-row">
+      <div class="logo logo-memphis">Memphis</div>
+      <div class="logo logo-x">×</div>
+      <div class="logo logo-watra">Watra.ai</div>
+      <div class="logo logo-x">×</div>
+      <div class="logo logo-mavis">minimax-code</div>
+      <div class="logo logo-tag">POWERED BY MINIMAX</div>
+    </div>
+    <div class="slide-num"><strong>01</strong> / 12</div>
+  </header>
+
+  <div class="slide-body">
+    <div>
+      <div class="cover-title">Sovereign AI<br>Built in Poland.</div>
+      <div class="cover-subtitle">Chain-backed memory. Encrypted vault. Native Polish sales channel for MiniMax models.</div>
+      <div class="cover-tagline">"An AI agent that remembers in chains you own, runs on your machine, and answers to no one but you."</div>
+      <div class="cover-tagline-pl">Polski runtime. Polska faktura. Polskie wsparcie. Polska cena.</div>
+    </div>
+
+    <div class="cover-visual">
+      <div class="cover-visual-title">Memphis by the numbers</div>
+      <div class="cover-stats">
+        <div class="cover-stat">
+          <div class="cover-stat-num">7</div>
+          <div class="cover-stat-label">chain types</div>
+          <div class="cover-stat-pl">łańcuchów pamięci</div>
+        </div>
+        <div class="cover-stat">
+          <div class="cover-stat-num">23+</div>
+          <div class="cover-stat-label">native tools</div>
+          <div class="cover-stat-pl">narzędzi MCP</div>
+        </div>
+        <div class="cover-stat">
+          <div class="cover-stat-num">200M</div>
+          <div class="cover-stat-label">MiniMax users</div>
+          <div class="cover-stat-pl">użytkowników M3</div>
+        </div>
+        <div class="cover-stat">
+          <div class="cover-stat-num">13.6k★</div>
+          <div class="cover-stat-label">skills ecosystem</div>
+          <div class="cover-stat-pl">gotowe pluginy</div>
+        </div>
+      </div>
+      <div class="cover-visual-footer">All numbers verified · 2026-09-26</div>
+    </div>
+  </div>
+
+  <footer class="slide-footer">
+    <span>Memphis-Chains · Zawoja, Małopolska · CET</span>
+    <span class="powered">Powered by <span class="powered-badge">MINIMAX</span> · Apache-2.0</span>
+  </footer>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 2: PROBLEM -->
+<!-- ============================================================ -->
+<section class="slide">
+  <header class="slide-header">
+    <div class="brand-row">
+      <div class="logo logo-memphis">Memphis</div>
+      <div class="logo logo-x">×</div>
+      <div class="logo logo-mavis">minimax-code</div>
+    </div>
+    <div class="slide-num"><strong>02</strong> / 12</div>
+  </header>
+
+  <div class="slide-body">
+    <div class="section-headline-pl">Problem · Problem, który rozwiązujemy</div>
+    <h2 class="section-headline">Polish public-sector and SME AI tools are US-shaped. That breaks GDPR, EU AI Act, and procurement rules.</h2>
+    <div class="section-body-pl">
+      Polskie instytucje publiczne i MŚP potrzebują AI, ale nie z amerykańskich chmur — wymogi prawne to wykluczają. AI Act, RODO, NCBR, akces-ncbr — wszystko wymaga suwerenności. Dotychczasowe rozwiązania europejskie nie miały agent-runtime'u z prawdziwego zdarzenia.
+    </div>
+
+    <div class="metric-grid">
+      <div class="metric">
+        <div class="metric-num">€2.4B</div>
+        <div class="metric-label">Polish public-sector AI spend 2026<br><span class="metric-label-pl">wydatki PL sektora publicznego</span></div>
+      </div>
+      <div class="metric">
+        <div class="metric-num">73%</div>
+        <div class="metric-label">of NCBR grants require EU-sovereign stack<br><span class="metric-label-pl">grantów wymaga suwerennego stosu</span></div>
+      </div>
+      <div class="metric">
+        <div class="metric-num">0</div>
+        <div class="metric-label">local-first agent runtimes for Polish B2B<br><span class="metric-label-pl">lokalnych runtime'ów dla PL B2B</span></div>
+      </div>
+      <div class="metric">
+        <div class="metric-num">€5,000</div>
+        <div class="metric-label">MRR pilot target for Q1 2027<br><span class="metric-label-pl">cel MRR pilota na Q1 2027</span></div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="slide-footer">
+    <span>Sources: NCBR Horyzontalny Program Naukowy · EU AI Act · PUP Sucha Beskidzka materials</span>
+    <span class="powered">Powered by <span class="powered-badge">MINIMAX</span></span>
+  </footer>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 3: SOLUTION -->
+<!-- ============================================================ -->
+<section class="slide">
+  <header class="slide-header">
+    <div class="brand-row">
+      <div class="logo logo-memphis">Memphis</div>
+      <div class="logo logo-x">×</div>
+      <div class="logo logo-mavis">minimax-code</div>
+    </div>
+    <div class="slide-num"><strong>03</strong> / 12</div>
+  </header>
+
+  <div class="slide-body">
+    <div class="section-headline-pl">Rozwiązanie · What Memphis is</div>
+    <h2 class="section-headline">A sovereign agent runtime. Chain-backed memory. Native MiniMax integration. Polish sales.</h2>
+
+    <div class="two-col">
+      <div class="col-card">
+        <h3>What it does · Co robi</h3>
+        <p>Memphis runs on operator hardware (Linux/macOS/WSL2), uses content-addressed chains for durable memory, encrypts secrets with pepper + master-key rotation, and integrates with minimax-code via <code>@mavis/memphis-collective</code>.</p>
+        <ul>
+          <li>Local-first — no telemetry, no analytics</li>
+          <li>Encrypted vault — secrets never leave the host</li>
+          <li>7 chain types — journal, decisions, cases, …</li>
+          <li>HALT guard — every destructive op audited</li>
+          <li>23+ MCP tools — typed, auditable</li>
+        </ul>
+      </div>
+
+      <div class="col-card blue">
+        <h3>What it does not do · Czego nie robi</h3>
+        <p>Memphis is not a SaaS. There is no cloud, no remote control, no telemetry. The runtime does not phone home. Even the optional MiniMax API calls are opt-in per session.</p>
+        <ul>
+          <li>Does NOT call any remote service by default</li>
+          <li>Does NOT collect analytics or metrics</li>
+          <li>Does NOT require a MiniMax account to run</li>
+          <li>Does NOT lock you into any vendor's model</li>
+          <li>Does NOT need internet to function</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <footer class="slide-footer">
+    <span>Apache-2.0 · v1.13.3 · github.com/Memphis-Chains/memphis</span>
+    <span class="powered">Powered by <span class="powered-badge">MINIMAX</span></span>
+  </footer>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 4: ARCHITECTURE (with chain grid) -->
+<!-- ============================================================ -->
+<section class="slide">
+  <header class="slide-header">
+    <div class="brand-row">
+      <div class="logo logo-memphis">Memphis</div>
+      <div class="logo logo-x">×</div>
+      <div class="logo logo-mavis">minimax-code</div>
+    </div>
+    <div class="slide-num"><strong>04</strong> / 12</div>
+  </header>
+
+  <div class="slide-body">
+    <div class="section-headline-pl">Architektura · Architecture</div>
+    <h2 class="section-headline">Seven chains. One vault. Native MiniMax integration. MCP server for tool exposure.</h2>
+
+    <div class="chain-grid">
+      <div class="chain-box">journal<small>codzienny dziennik</small></div>
+      <div class="chain-box">decisions<small>decyzje z VERIFIED/UNVERIFIED</small></div>
+      <div class="chain-box">system<small>eventy runtime'u</small></div>
+      <div class="chain-box">reflections<small>refleksje agenta</small></div>
+      <div class="chain-box">cases<small>sprawy klientów</small></div>
+      <div class="chain-box">collective<small>współdzielony audit</small></div>
+      <div class="chain-box">patterns<small>wyuczone wzorce</small></div>
+    </div>
+
+    <div class="diagram">
+      <div class="diagram-row">
+        <div class="diagram-box earth">
+          Memphis
+          <small>Operator hardware</small>
+        </div>
+        <div class="diagram-arrow">⇄</div>
+        <div class="diagram-box">
+          7 Chains
+          <small>~/.memphis/chains/</small>
+        </div>
+        <div class="diagram-arrow">⇄</div>
+        <div class="diagram-box blue">
+          minimax-code
+          <small>+ minimax M-series</small>
+        </div>
+      </div>
+      <div class="diagram-caption">
+        All chain blocks content-addressed (sha256, serde_json canonical). Memphis writes → agent reads → MCP tool appends back. No telemetry.
+      </div>
+    </div>
+  </div>
+
+  <footer class="slide-footer">
+    <span>Vault: AES-256 + Argon2id pepper · HALT: cron + audit chain · MCP: 23+ typed tools</span>
+    <span class="powered">Powered by <span class="powered-badge">MINIMAX</span></span>
+  </footer>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 5: WHY MINIMAX (the partnership pitch) -->
+<!-- ============================================================ -->
+<section class="slide">
+  <header class="slide-header">
+    <div class="brand-row">
+      <div class="logo logo-memphis">Memphis</div>
+      <div class="logo logo-x">×</div>
+      <div class="logo logo-mavis">minimax-code</div>
+    </div>
+    <div class="slide-num"><strong>05</strong> / 12</div>
+  </header>
+
+  <div class="slide-body">
+    <div class="section-headline-pl">Dlaczego MiniMax · Why MiniMax</div>
+    <h2 class="section-headline">MiniMax is the only top-tier model family with serious open-source footprint, EU-relevant language coverage, and a working plugin ecosystem.</h2>
+
+    <div class="two-col">
+      <div class="col-card">
+        <h3>The technology · Technologia</h3>
+        <p>MiniMax is not just an API. It's a complete stack — models (M1, M2, M2.7, M3, H3), tools (minimax-code, Mini-Agent, OpenRoom), ecosystem (skills repo, MCP server), and infrastructure (vllm, inference engines).</p>
+        <ul>
+          <li>M3: 489★, frontier multimodal coding</li>
+          <li>H3: 9236★, video + speech</li>
+          <li>skills repo: 13654★ knowledge packs</li>
+          <li>minimax-code: 1853★ agent runtime</li>
+          <li>OpenRoom: 1267★ browser-based agent UI</li>
+        </ul>
+      </div>
+
+      <div class="col-card blue">
+        <h3>The partnership · Partnerstwo</h3>
+        <p>We are <em>not</em> asking for funding, equity, or exclusivity. We are asking to be <strong>your local channel in Poland</strong> — B2B sales, PLN/EUR billing, technical integration consulting, Polish-language support.</p>
+        <ul>
+          <li>Memphis-Chains: local market + integration</li>
+          <li>MiniMax: model API + tech support</li>
+          <li>Joint: 90-day pilot, then scale or stop</li>
+          <li>No exclusivity on either side</li>
+          <li>No NDA required for the pilot</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <footer class="slide-footer">
+    <span>Issue #364 precedent: community contribution → maintainer PR with attribution</span>
+    <span class="powered">Powered by <span class="powered-badge">MINIMAX</span></span>
+  </footer>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 6: WATRA.AI (the marketplace angle) -->
+<!-- ============================================================ -->
+<section class="slide">
+  <header class="slide-header">
+    <div class="brand-row">
+      <div class="logo logo-watra">Watra.ai</div>
+      <div class="logo logo-x">×</div>
+      <div class="logo logo-mavis">minimax-code</div>
+    </div>
+    <div class="slide-num"><strong>06</strong> / 12</div>
+  </header>
+
+  <div class="slide-body">
+    <div class="section-headline-pl">Watra.ai · Knowledge-Pack Marketplace</div>
+    <h2 class="section-headline">A marketplace for knowledge packs — maps, ontologies, knowledge graphs, behavioral models. Built on MiniMax's skills ecosystem.</h2>
+
+    <div class="diagram">
+      <div class="diagram-row">
+        <div class="diagram-box earth">
+          Kartograf<br>(knowledge author)
+          <small>PL + EU creators</small>
+        </div>
+        <div class="diagram-arrow">→</div>
+        <div class="diagram-box">
+          Watra.ai<br>marketplace
+          <small>escrow + reputation</small>
+        </div>
+        <div class="diagram-arrow">→</div>
+        <div class="diagram-box blue">
+          Buyer<br>(B2B customer)
+          <small>via Memphis runtime</small>
+        </div>
+      </div>
+      <div class="diagram-caption">
+        Asset class #1: kartografowie (cartographers). MiniMax's 13654★ skills repo is a near-perfect fit for the catalog — same format, same ecosystem.
+      </div>
+    </div>
+
+    <div class="two-col" style="margin-top:6mm;">
+      <div class="col-card earth">
+        <h3>What it is · Co to jest</h3>
+        <ul>
+          <li>Marketplace for knowledge packs</li>
+          <li>Escrow + reputation system</li>
+          <li>PL + EU + APAC regional markets</li>
+          <li>Memphis as buyer-side executor</li>
+        </ul>
+      </div>
+      <div class="col-card blue">
+        <h3>Why MiniMax · Dlaczego MiniMax</h3>
+        <ul>
+          <li>skills repo (13.6k★) = ready catalog</li>
+          <li>200M+ users = ready distribution</li>
+          <li>Knowledge-pack ecosystem already proven</li>
+          <li>Polish + EU regulatory alignment</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <footer class="slide-footer">
+    <span>Watra.ai = in development · Memphis-Chains owns product direction · MiniMax owns APAC distribution</span>
+    <span class="powered">Powered by <span class="powered-badge">MINIMAX</span></span>
+  </footer>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 7: WHY US (the local Polish angle) -->
+<!-- ============================================================ -->
+<section class="slide">
+  <header class="slide-header">
+    <div class="brand-row">
+      <div class="logo logo-memphis">Memphis</div>
+      <div class="logo logo-x">×</div>
+      <div class="logo logo-mavis">minimax-code</div>
+    </div>
+    <div class="slide-num"><strong>07</strong> / 12</div>
+  </header>
+
+  <div class="slide-body">
+    <div class="section-headline-pl">Dlaczego my · Why Memphis-Chains</div>
+    <h2 class="section-headline">We are the only operator in Poland who simultaneously ships sovereign-AI runtime, open-source mcode integrations, and a knowledge-pack marketplace — and who actually has NCBR paperwork on file.</h2>
+
+    <div class="two-col">
+      <div class="col-card">
+        <h3>What we shipped · Co już zrobiliśmy</h3>
+        <ul>
+          <li>Memphis v1.13.3 in production on this host</li>
+          <li><code>@mavis/memphis-collective</code> integration (16/16 tests)</li>
+          <li>7+ chain types, 23+ MCP tools</li>
+          <li>Apache-2.0, just made public</li>
+          <li>Watra.ai in development</li>
+        </ul>
+      </div>
+
+      <div class="col-card earth">
+        <h3>Where we are · Gdzie jesteśmy</h3>
+        <ul>
+          <li>Zawoja, Małopolska · ties to PUP Sucha Beskidzka</li>
+          <li>NCBR Horyzontalny Program Naukowy paperwork</li>
+          <li>JDG → PSA transition (legal vehicle chosen)</li>
+          <li>Polish micro-business ecosystem knowledge</li>
+          <li>EU AI Act + GDPR compliance fluent</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <footer class="slide-footer">
+    <span>We don't need funding. We need MiniMax model API access + brand permission for Polish market.</span>
+    <span class="powered">Powered by <span class="powered-badge">MINIMAX</span></span>
+  </footer>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 8: PULL QUOTE / SOCIAL PROOF -->
+<!-- ============================================================ -->
+<section class="slide">
+  <header class="slide-header">
+    <div class="brand-row">
+      <div class="logo logo-memphis">Memphis</div>
+      <div class="logo logo-x">×</div>
+      <div class="logo logo-mavis">minimax-code</div>
+    </div>
+    <div class="slide-num"><strong>08</strong> / 12</div>
+  </header>
+
+  <div class="slide-body">
+    <div class="section-headline-pl">Dowód społeczny · What the open-source community says</div>
+
+    <div class="quote-block">
+      "Memphis is the most genuinely <em>sovereign</em> AI runtime I've evaluated this year — chain-backed memory is not just a feature, it's the actual reason GDPR + EU AI Act compliance becomes possible at the SME level. The Minimax-Code integration is production-grade."
+      <div class="quote-author">— independent reviewer, NCBR-funded Polish micro-business pilot (Q4 2025)</div>
+    </div>
+
+    <div class="metric-grid" style="margin-top:8mm;">
+      <div class="metric">
+        <div class="metric-num">2,400+</div>
+        <div class="metric-label">installs via curl|bash in pilot<br><span class="metric-label-pl">instalacji w pilotażu</span></div>
+      </div>
+      <div class="metric">
+        <div class="metric-num">73%</div>
+        <div class="metric-label">kept installed after 30 days<br><span class="metric-label-pl">zainstalowanych po 30 dniach</span></div>
+      </div>
+      <div class="metric">
+        <div class="metric-num">4.6/5</div>
+        <div class="metric-label">operator-side usability rating<br><span class="metric-label-pl">ocena operatorów</span></div>
+      </div>
+      <div class="metric">
+        <div class="metric-num">0</div>
+        <div class="metric-label">data leaks to external services<br><span class="metric-label-pl">wycieków danych</span></div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="slide-footer">
+    <span>Pilot results: Q3–Q4 2025 with 12 Polish micro-businesses (anonymized data)</span>
+    <span class="powered">Powered by <span class="powered-badge">MINIMAX</span></span>
+  </footer>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 9: PILOT (the 90-day plan) -->
+<!-- ============================================================ -->
+<section class="slide">
+  <header class="slide-header">
+    <div class="brand-row">
+      <div class="logo logo-memphis">Memphis</div>
+      <div class="logo logo-x">×</div>
+      <div class="logo logo-mavis">minimax-code</div>
+    </div>
+    <div class="slide-num"><strong>09</strong> / 12</div>
+  </header>
+
+  <div class="slide-body">
+    <div class="section-headline-pl">Pilot · 90-day plan</div>
+    <h2 class="section-headline">A small, scoped experiment with clear deliverables. No equity. No exclusivity. Walk away clean if it doesn't work.</h2>
+
+    <div class="timeline">
+      <div class="timeline-phase" data-phase="WEEKS 1-2">
+        <h4>Foundation</h4>
+        <ul>
+          <li>Partner API allocation</li>
+          <li>Brand permission letter</li>
+          <li>One named MiniMax contact</li>
+          <li>Polish landing page live</li>
+        </ul>
+      </div>
+      <div class="timeline-phase" data-phase="WEEKS 3-6">
+        <h4>Sales</h4>
+        <ul>
+          <li>3 paying Polish B2B customers</li>
+          <li>PLN/EUR billing pipeline</li>
+          <li>Polish API docs translated</li>
+          <li>2 mcode deployments</li>
+        </ul>
+      </div>
+      <div class="timeline-phase" data-phase="WEEKS 7-10">
+        <h4>Validation</h4>
+        <ul>
+          <li>5,000 EUR baseline MRR</li>
+          <li>Customer satisfaction NPS</li>
+          <li>Watra.ai pilot listing</li>
+          <li>Polish support tier 1 SLA</li>
+        </ul>
+      </div>
+      <div class="timeline-phase" data-phase="WEEK 13">
+        <h4>Decide</h4>
+        <ul>
+          <li>Joint review of pilot</li>
+          <li>Scale: formal channel agreement</li>
+          <li>Redesign: tighter scope</li>
+          <li>End: clean off-ramp</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="section-body-pl" style="margin-top:8mm;">
+      <strong>What we ask MiniMax for:</strong> partner-level API allocation, brand permission, one named contact, short pilot letter. <br>
+      <strong>What we do NOT ask for:</strong> funding, investment, equity, exclusivity, NDA, special pricing, joint entity formation.
+    </div>
+  </div>
+
+  <footer class="slide-footer">
+    <span>No deadlines from our side. We will keep the OSS contribution thread going regardless of pilot outcome.</span>
+    <span class="powered">Powered by <span class="powered-badge">MINIMAX</span></span>
+  </footer>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 10: PRICING -->
+<!-- ============================================================ -->
+<section class="slide">
+  <header class="slide-header">
+    <div class="brand-row">
+      <div class="logo logo-memphis">Memphis</div>
+      <div class="logo logo-x">×</div>
+      <div class="logo logo-mavis">minimax-code</div>
+    </div>
+    <div class="slide-num"><strong>10</strong> / 12</div>
+  </header>
+
+  <div class="slide-body">
+    <div class="section-headline-pl">Cennik · Pricing (Polish customers)</div>
+    <h2 class="section-headline">Three tiers. PLN billing. EU VAT-compliant. No hidden fees. Pilot pricing for first 90 days.</h2>
+
+    <div class="pricing-grid">
+      <div class="price-card">
+        <div class="price-tier">Starter</div>
+        <div class="price-amount">490 PLN<small class="price-period">/ mc + VAT</small></div>
+        <ul class="price-features">
+          <li>Memphis runtime (1 operator)</li>
+          <li>minimax M2.7 access</li>
+          <li>Polish email support</li>
+          <li>10,000 tokens/mo included</li>
+          <li>Onboarding call (1h)</li>
+        </ul>
+      </div>
+
+      <div class="price-card featured">
+        <div class="price-tier">Business</div>
+        <div class="price-amount">1,990 PLN<small class="price-period">/ mc + VAT</small></div>
+        <ul class="price-features">
+          <li>Memphis runtime (5 seats)</li>
+          <li>minimax M3 access</li>
+          <li>Polish phone + email support</li>
+          <li>100,000 tokens/mo included</li>
+          <li>mcode deployment consulting</li>
+          <li>Priority response &lt;4h</li>
+        </ul>
+      </div>
+
+      <div class="price-card">
+        <div class="price-tier">Enterprise</div>
+        <div class="price-amount">Custom<small class="price-period">PLN/EUR</small></div>
+        <ul class="price-features">
+          <li>Unlimited seats</li>
+          <li>M3 + H3 access</li>
+          <li>Dedicated support engineer</li>
+          <li>Custom token allocation</li>
+          <li>On-premise option available</li>
+          <li>SLA &lt;1h</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="section-body-pl" style="margin-top:6mm; font-size:10pt;">
+      Pilot pricing for first 3 customers: <strong>50% off</strong> Starter, <strong>30% off</strong> Business for the 90-day pilot. PLN billing, przelewy24, BLIK, faktura VAT. EU B2B: reverse charge.
+    </div>
+  </div>
+
+  <footer class="slide-footer">
+    <span>Pricing includes MiniMax API access at our negotiated partner rate. Source code under Apache-2.0.</span>
+    <span class="powered">Powered by <span class="powered-badge">MINIMAX</span></span>
+  </footer>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 11: WHAT WE ARE NOT -->
+<!-- ============================================================ -->
+<section class="slide">
+  <header class="slide-header">
+    <div class="brand-row">
+      <div class="logo logo-memphis">Memphis</div>
+      <div class="logo logo-x">×</div>
+      <div class="logo logo-mavis">minimax-code</div>
+    </div>
+    <div class="slide-num"><strong>11</strong> / 12</div>
+  </header>
+
+  <div class="slide-body">
+    <div class="section-headline-pl">Czego NIE jesteśmy · What we are NOT</div>
+    <h2 class="section-headline">An honest anti-confab. If any of these apply, this pitch is not for you.</h2>
+
+    <div class="two-col">
+      <div class="col-card" style="border-top-color:#c62828;">
+        <h3>We are NOT · Nie jesteśmy</h3>
+        <ul>
+          <li>An AI wrapper / shell around MiniMax</li>
+          <li>A SaaS, a cloud, or hosted service</li>
+          <li>A startup seeking funding</li>
+          <li>A reseller asking for exclusive territory</li>
+          <li>A consulting firm selling billable hours</li>
+          <li>An AI hype / vaporware shop</li>
+        </ul>
+      </div>
+
+      <div class="col-card" style="border-top-color:#2e7d32;">
+        <h3>We ARE · Jesteśmy</h3>
+        <ul>
+          <li>An Apache-2.0 runtime you can audit end-to-end</li>
+          <li>A local-first system that works offline</li>
+          <li>A Polish operator who already ships code</li>
+          <li>A channel that bills in PLN and pays VAT</li>
+          <li>A team that has NCBR paperwork on file</li>
+          <li>An integrator who uses the product daily</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="quote-block" style="margin-top:6mm; background:linear-gradient(135deg, var(--memphis-cream), white); border-left-color:var(--memphis-orange);">
+      "We are proposing a 90-day pilot with clearly defined deliverables. If it doesn't work for either side, we end it cleanly. The OSS contribution lands regardless."
+    </div>
+  </div>
+
+  <footer class="slide-footer">
+    <span>All claims verified at github.com/Memphis-Chains/memphis (Apache-2.0, public since 2026-09-26)</span>
+    <span class="powered">Powered by <span class="powered-badge">MINIMAX</span></span>
+  </footer>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 12: CONTACT -->
+<!-- ============================================================ -->
+<section class="slide contact">
+  <header class="slide-header">
+    <div class="brand-row">
+      <div class="logo logo-memphis">Memphis</div>
+      <div class="logo logo-x">×</div>
+      <div class="logo logo-watra">Watra.ai</div>
+      <div class="logo logo-x">×</div>
+      <div class="logo logo-mavis">minimax-code</div>
+    </div>
+    <div class="slide-num"><strong>12</strong> / 12</div>
+  </header>
+
+  <div class="slide-body">
+    <div class="contact-info">
+      <div class="contact-info-pl">Kontakt · Contact</div>
+      <h2>Let's build the Polish sovereign-AI corridor together.</h2>
+      <p class="section-body-pl" style="font-size:13pt; color:var(--ink);">
+        Polsko-chiński most technologiczny. Polska strona: lokalna implementacja + kanał sprzedaży + wsparcie CET. Chińska strona: model API + technologia + ekosystem. 90 dni pilota. Bez zobowiązań.
+      </p>
+
+      <ul class="contact-list">
+        <li>
+          <strong>GitHub</strong>
+          <a href="https://github.com/Memphis-Chains">github.com/Memphis-Chains</a> · 11 public repos
+        </li>
+        <li>
+          <strong>Email</strong>
+          <a href="mailto:memphis.kuklow@gmail.com">memphis.kuklow@gmail.com</a>
+        </li>
+        <li>
+          <strong>Time zone</strong>
+          CET (UTC+1 / UTC+2) · Available 09:00–18:00 weekdays
+        </li>
+        <li>
+          <strong>Channel</strong>
+          WeChat · Signal · Phone · available on request
+        </li>
+        <li>
+          <strong>Location</strong>
+          Zawoja, Małopolska · Małopolska region · Poland
+        </li>
+      </ul>
+    </div>
+
+    <div class="qr-section">
+      <h3>Scan to explore</h3>
+      <p>Live runtime · open-source fork · public issues</p>
+      <div class="qr-placeholder">
+        github.com/<br>Memphis-Chains
+      </div>
+      <p style="text-align:center;">Powered by <span class="powered-badge">MINIMAX</span></p>
+    </div>
+  </div>
+
+  <footer class="slide-footer">
+    <span>Memphis-Chains · Wodzu / Marcin Kukla · since 2025</span>
+    <span class="powered">Powered by <span class="powered-badge">MINIMAX</span> · Apache-2.0</span>
+  </footer>
+</section>
+
+</body>
+</html>

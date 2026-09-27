@@ -496,3 +496,10 @@ Documentation drift — should be updated in a follow-up commit.
 - Pre-flight check in Rust (issue #04 layer 3) — separate workstream.
 - Replay of the 22 archived halt events into the new
   `~/.memphis/audit/halt/` location — operator choice after A1 lands.
+
+
+## Related
+
+- [docs/issues/04-chain-write-race-condition-class.md](../issues/04-chain-write-race-condition-class.md) — same class of bug, same code path, written as GitHub issue
+- [docs/runbooks/SAFE_MODE.md](../runbooks/SAFE_MODE.md) — recovery procedure used to break the boot loop
+- ADR-005 (live camera stream) — adjacent chain-handling surface
