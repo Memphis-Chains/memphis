@@ -365,6 +365,106 @@
       text-transform: uppercase;
     }
 
+
+    /* ── QUICKSTART ── */
+    .qs-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 3mm;
+      margin: 6mm 0 8mm;
+    }
+    @media (max-width: 1000px) { .qs-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 560px) { .qs-grid { grid-template-columns: 1fr; } }
+    .qs-step {
+      background: var(--paper);
+      border-radius: 2mm;
+      border-top: 1mm solid var(--memphis-orange);
+      box-shadow: 0 2mm 6mm rgba(0,0,0,0.06);
+      padding: 5mm 4mm;
+      position: relative;
+    }
+    .qs-step:nth-child(odd) { border-top-color: var(--minimax-blue); }
+    .qs-num {
+      font-family: var(--mono);
+      font-size: 26pt;
+      font-weight: 900;
+      color: var(--memphis-orange-deep);
+      line-height: 1;
+      opacity: 0.28;
+    }
+    .qs-step:nth-child(odd) .qs-num { color: var(--minimax-blue); }
+    .qs-title { font-size: 10.5pt; font-weight: 800; color: var(--ink); margin: 2mm 0 1.5mm; }
+    .qs-desc { font-size: 8.5pt; color: var(--ink-soft); line-height: 1.55; }
+    .qs-cmd {
+      display: block;
+      font-family: var(--mono);
+      font-size: 7.8pt;
+      background: var(--ink);
+      color: #f0e6d6;
+      padding: 2mm 2.5mm;
+      border-radius: 1.5mm;
+      margin-top: 2.5mm;
+      word-break: break-all;
+      line-height: 1.45;
+    }
+    .qs-cmd .prompt { color: var(--memphis-orange); }
+    .qs-cmd .flag { color: var(--minimax-blue-light); }
+
+    /* ── VIDEO ── */
+    .video-wrap {
+      position: relative;
+      border-radius: 3mm;
+      overflow: hidden;
+      border: 1px solid var(--line-2);
+      box-shadow: 0 8mm 26mm rgba(196,78,31,0.16);
+      background: var(--ink);
+      max-width: 1000px;
+      margin: 8mm auto 4mm;
+    }
+    .video-wrap video { display: block; width: 100%; height: auto; }
+    .video-meta {
+      display: flex; justify-content: space-between; align-items: center;
+      flex-wrap: wrap; gap: 12px; margin-top: 4mm;
+      font-size: 9pt; color: var(--ink-soft);
+    }
+    .video-meta .label { font-family: var(--mono); color: var(--memphis-orange-deep); font-weight: 700; }
+
+    /* ── NEWSLETTER ── */
+    .nl-strip {
+      background: linear-gradient(135deg, var(--minimax-blue-light), var(--memphis-cream));
+      border: 0.5mm solid var(--minimax-blue);
+      border-radius: 4mm;
+      padding: 10mm 12mm;
+      margin: 50px 0;
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 10mm;
+      align-items: center;
+    }
+    @media (max-width: 860px) { .nl-strip { grid-template-columns: 1fr; } }
+    .nl-strip h3 { font-size: 15pt; font-weight: 800; color: var(--minimax-blue); margin-bottom: 3mm; }
+    .nl-strip p { font-size: 10.5pt; color: var(--ink); margin-bottom: 2mm; }
+    .nl-form { display: flex; flex-direction: column; gap: 10px; }
+    .nl-form input[type=email] {
+      padding: 13px 16px; border: 1px solid var(--line-2); border-radius: 3mm;
+      font-size: 12pt; font-family: inherit; background: var(--paper); width: 100%;
+    }
+    .nl-form input[type=email]:focus {
+      outline: 2px solid var(--minimax-blue); outline-offset: 1px; border-color: var(--minimax-blue);
+    }
+    .nl-form button {
+      padding: 14px; border: none; background: var(--minimax-blue); color: #fff;
+      font-weight: 700; border-radius: 3mm; cursor: pointer; font-size: 11pt;
+      font-family: inherit; text-transform: uppercase; letter-spacing: 0.4pt;
+    }
+    .nl-form button:hover { opacity: 0.88; }
+    .nl-form button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .nl-msg { font-size: 9.5pt; padding: 10px 12px; border-radius: 2mm; display: none; }
+    .nl-msg.ok { background: #d1fae5; color: #065f46; display: block; }
+    .nl-msg.err { background: #fee2e2; color: #991b1b; display: block; }
+    .nl-privacy { font-size: 8pt; color: var(--ink-soft); }
+    .nl-privacy a { color: var(--minimax-blue); }
+
     .cta-strip {
       background: linear-gradient(135deg, var(--paper), var(--memphis-cream-dark));
       border: 1px solid var(--line-2);
@@ -557,75 +657,6 @@
     }
     .consent-banner button:hover { opacity: 0.85; }
 
-    .newsletter-popup {
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      width: 360px;
-      max-width: calc(100vw - 48px);
-      background: var(--paper);
-      border: 1mm solid var(--minimax-blue);
-      border-radius: 6mm;
-      padding: 24px;
-      box-shadow: 0 8mm 24mm rgba(0,0,0,0.12);
-      z-index: 90;
-      display: none;
-    }
-    .newsletter-popup.visible { display: block; }
-    .newsletter-popup h4 {
-      margin: 0 0 8px 0;
-      color: var(--memphis-orange-deep);
-      font-size: 14pt;
-    }
-    .newsletter-popup p {
-      margin: 0 0 12px 0;
-      font-size: 10.5pt;
-      color: var(--ink-soft);
-    }
-    .newsletter-popup form {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .newsletter-popup input[type=email] {
-      padding: 8px 12px;
-      border: 1px solid var(--line-2);
-      border-radius: 3mm;
-      font-size: 11pt;
-      font-family: inherit;
-    }
-    .newsletter-popup button {
-      padding: 10px;
-      border: none;
-      background: var(--memphis-orange-deep);
-      color: #fff;
-      font-weight: 700;
-      border-radius: 3mm;
-      cursor: pointer;
-      font-size: 11pt;
-    }
-    .newsletter-popup button:hover { opacity: 0.85; }
-    .newsletter-popup .close-btn {
-      position: absolute;
-      top: 8px;
-      right: 12px;
-      background: transparent;
-      border: none;
-      font-size: 18pt;
-      color: var(--ink-soft);
-      cursor: pointer;
-      padding: 0;
-      width: auto;
-    }
-    .newsletter-popup .message {
-      margin-top: 12px;
-      padding: 8px;
-      border-radius: 3mm;
-      font-size: 10pt;
-      display: none;
-    }
-    .newsletter-popup .message.success { background: #d1fae5; color: #065f46; display: block; }
-    .newsletter-popup .message.error { background: #fee2e2; color: #991b1b; display: block; }
 
     footer {
       border-top: 1px solid var(--line);
@@ -684,6 +715,7 @@
 
 <div class="subnav-wrapper">
   <nav class="subnav">
+    <a href="#quickstart">Quick start</a>
     <a href="#proof">Proof</a>
     <a href="#install">Install</a>
     <a href="/start/">Start</a>
@@ -961,6 +993,75 @@
 </div>
 
 <div class="container">
+  <section id="quickstart">
+    <div class="section-pl">Zainstaluj u siebie · Quick start</div>
+    <h2>Pięć kroków. Pięć minut. U siebie na dysku.</h2>
+    <p>Zero konta, zero chmury, zero telemetrii. Wymagany Node 22 (instalator sprawdza i podpowiada), Linux / macOS / WSL2. Cały runtime ląduje w <code>~/memphis</code>, pamięć w <code>~/.memphis</code>.</p>
+
+    <div class="qs-grid">
+      <div class="qs-step">
+        <div class="qs-num">01</div>
+        <div class="qs-title">Zainstaluj</div>
+        <div class="qs-desc">Node 22, Rust, skille. Do <code>~/memphis</code>.</div>
+        <code class="qs-cmd"><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash</code>
+      </div>
+      <div class="qs-step">
+        <div class="qs-num">02</div>
+        <div class="qs-title">Pierwszy raz</div>
+        <div class="qs-desc">Passphrase operatora, hasło sejfu, tożsamość, pierwsze zapisy do łańcuchów.</div>
+        <code class="qs-cmd"><span class="prompt">$</span> memphis init</code>
+      </div>
+      <div class="qs-step">
+        <div class="qs-num">03</div>
+        <div class="qs-title">Podepnij MiniMax</div>
+        <div class="qs-desc">Klucz API ląduje w zaszyfrowanym vault, nie w <code>.env</code>. Klucz zdobierz na platform.minimax.io.</div>
+        <code class="qs-cmd"><span class="prompt">$</span> memphis provider add minimax <span class="flag">--api-key</span> &lt;twoj-klucz&gt;</code>
+      </div>
+      <div class="qs-step">
+        <div class="qs-num">04</div>
+        <div class="qs-title">Uruchom</div>
+        <div class="qs-desc">Usługa w tle (Linux/WSL) i natywny kokpit Rust TUI. Na macOS: <code>npm run dev</code> w terminalu.</div>
+        <code class="qs-cmd"><span class="prompt">$</span> memphis service install<br><span class="prompt">$</span> memphis service restart<br><span class="prompt">$</span> memphis tui</code>
+      </div>
+      <div class="qs-step">
+        <div class="qs-num">05</div>
+        <div class="qs-title">Sprawdź</div>
+        <div class="qs-desc">Ile bloków w łańcuchach, ile sekretów w sejfie, jaki provider odpowiada. To jest <code>memphis health</code>.</div>
+        <code class="qs-cmd"><span class="prompt">$</span> memphis health</code>
+      </div>
+    </div>
+
+    <div class="video-wrap">
+      <video controls preload="none" playsinline poster="memphis-install-poster.jpg" width="1920" height="1080" aria-label="30-sekundowy przewodnik instalacji Memphis">
+        <source src="memphis-install-30s.mp4" type="video/mp4" />
+        Twoja przeglądarka nie odtwarza wideo. <a href="memphis-install-30s.mp4">Pobierz plik MP4</a>.
+      </video>
+    </div>
+    <div class="video-meta">
+      <span class="label">memphis-install-30s.mp4</span>
+      <span class="meta">1920×1080 · 30 s · 350 KB · 6 kroków na ekranie · <a href="memphis-install-30s.mp4">bezpośredni link</a></span>
+    </div>
+
+    <p style="margin-top:8mm; font-size:10.5pt;">Cascade providerów działa automatycznie: <code>ollama → anthropic → minimax → local-fallback</code>. Jeśli MiniMax padnie, Memphis nie przestaje — idzie dalej po liście. Pełny opis: <a href="/docs/instalacja/quickstart/">docs/instalacja/quickstart</a>.</p>
+  </section>
+</div>
+
+<div class="container">
+  <div class="nl-strip" id="newsletter">
+    <div>
+      <h3>Co miesiąc, nie częściej.</h3>
+      <p>Wersje, postmortemy i zmiany, które realnie coś zmieniają. Bez webinarów, bez pitchy, bez kodów rabatowych.</p>
+      <p class="nl-privacy">Double opt-in — potwierdzasz mailem. Wypisanie jednym klikiem. Dane w <a href="/privacy/">polityce prywatności</a>.</p>
+    </div>
+    <form class="nl-form" id="nl-form" novalidate>
+      <input type="email" id="nl-email" name="email" placeholder="twoj@email.com" required maxlength="200" autocomplete="email" aria-label="Adres email" />
+      <button type="submit" id="nl-submit">Zapisz się</button>
+      <div class="nl-msg" id="nl-msg" role="status" aria-live="polite"></div>
+    </form>
+  </div>
+</div>
+
+<div class="container">
   <section>
     <div class="section-pl">Mapa strony · Site index</div>
     <h2>Wszystkie strony, jedno miejsce.</h2>
@@ -1043,95 +1144,71 @@
   <button type="button" id="consent-accept" class="primary">Akceptuję</button>
 </div>
 
-<!-- Newsletter popup (double opt-in via /api/v1/subscribers) -->
-<div id="newsletter-popup" class="newsletter-popup" role="dialog" aria-label="Newsletter signup">
-  <button type="button" class="close-btn" id="newsletter-close" aria-label="Zamknij">&times;</button>
-  <h4>Dołącz do newslettera</h4>
-  <p>Jeden mail miesięcznie z aktualizacjami Memphis runtime. Double opt-in (potwierdzenie email). Wypisanie jednym klikiem.</p>
-  <form id="newsletter-form">
-    <input type="email" name="email" placeholder="twoj@email.com" required maxlength="200">
-    <button type="submit">Zapisz się</button>
-  </form>
-  <div id="newsletter-message" class="message"></div>
-</div>
+<!-- newsletter popup replaced by inline #newsletter strip -->
 
+
+<!-- Newsletter — double opt-in via /panel/api/v1/subscribers -->
 <script>
-(function() {
-  var CONSENT_VERSION = '2026-09-27-v1';
-  var COOKIE_NAME = 'memphis_consent_' + CONSENT_VERSION;
-  var banner = document.getElementById('consent-banner');
-  var acceptBtn = document.getElementById('consent-accept');
-  var declineBtn = document.getElementById('consent-decline');
-  function show() { banner.classList.remove('hidden'); }
-  function hide() { banner.classList.add('hidden'); }
-  function hasValidConsent() {
-    var n = COOKIE_NAME + '=';
-    var ca = document.cookie.split(';');
-    for (var i = 0; i < ca.length; i++) {
-      var c = ca[i].trim();
-      if (c.indexOf(n) === 0) return c.substring(n.length, c.length);
-    }
-    return null;
-  }
-  function setConsent() {
-    var exp = new Date();
-    exp.setTime(exp.getTime() + 365 * 24 * 60 * 60 * 1000);
-    document.cookie = COOKIE_NAME + '=' + CONSENT_VERSION + '; expires=' + exp.toUTCString() + '; path=/; SameSite=Lax';
-  }
-  if (!hasValidConsent()) show();
-  acceptBtn.addEventListener('click', function() {
-    setConsent(); hide();
-    fetch('/panel/api/v1/cookie-consents', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-      body: JSON.stringify({categories: {essential: true, accepted_at: new Date().toISOString()}})
-    }).catch(function(e) { console.warn('Consent audit failed:', e); });
-  });
-  declineBtn.addEventListener('click', function() { hide(); });
-})();
+(function () {
+  var form = document.getElementById('nl-form');
+  if (!form) return;
+  var email = document.getElementById('nl-email');
+  var submit = document.getElementById('nl-submit');
+  var msg = document.getElementById('nl-msg');
 
-(function() {
-  var FREQ_CAP_DAYS = 7;
-  var TRIGGER_DELAY_MS = 30000;
-  var LS_KEY = 'memphis_newsletter_dismissed_at';
-  var popup = document.getElementById('newsletter-popup');
-  var closeBtn = document.getElementById('newsletter-close');
-  var form = document.getElementById('newsletter-form');
-  var msg = document.getElementById('newsletter-message');
-  function dismissed() {
-    var raw = localStorage.getItem(LS_KEY);
-    if (!raw) return false;
-    var ts = parseInt(raw, 10);
-    return !isNaN(ts) && (Date.now() - ts) < FREQ_CAP_DAYS * 86400000;
+  function say(text, kind) {
+    msg.textContent = text;
+    msg.className = 'nl-msg ' + kind;
   }
-  function markDismissed() { localStorage.setItem(LS_KEY, String(Date.now())); }
-  setTimeout(function() { if (!dismissed()) popup.classList.add('visible'); }, TRIGGER_DELAY_MS);
-  closeBtn.addEventListener('click', function() { popup.classList.remove('visible'); markDismissed(); });
-  form.addEventListener('submit', function(e) {
+
+  function valid(v) {
+    return /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(v.trim());
+  }
+
+  form.addEventListener('submit', function (e) {
     e.preventDefault();
-    var email = new FormData(form).get('email');
-    msg.className = 'message';
+    var v = email.value.trim();
+
+    if (!v) { say('Wpisz adres email.', 'err'); email.focus(); return; }
+    if (!valid(v)) { say('To nie wygląda na poprawny adres email.', 'err'); email.focus(); return; }
+
+    submit.disabled = true;
+    submit.textContent = 'Wysyłam…';
+    say('Rejestruję…', '');
+
     fetch('/panel/api/v1/subscribers', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-      body: JSON.stringify({email: email, source: 'popup-30s'})
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ email: v, source: 'homepage' })
     })
-    .then(function(r) { return r.json().then(function(d) { return {status: r.status, body: d}; }); })
-    .then(function(out) {
-      if (out.status >= 200 && out.status < 300) {
-        msg.className = 'message success';
-        msg.textContent = '✓ Zapisano! Sprawdź email (potwierdzenie wymagane).';
-        markDismissed();
-        setTimeout(function() { popup.classList.remove('visible'); }, 3000);
-      } else {
-        msg.className = 'message error';
-        msg.textContent = 'Błąd: ' + (out.body.message || out.status);
-      }
-    })
-    .catch(function(e) { msg.className = 'message error'; msg.textContent = 'Błąd sieci: ' + e.message; });
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (b) {
+          return { status: r.status, body: b };
+        });
+      })
+      .then(function (res) {
+        if (res.status === 202 || res.body.ok) {
+          say('Gotowe — jeśli ten adres jest nowy, dostałeś maila z potwierdzeniem. Double opt-in.', 'ok');
+          form.reset();
+          submit.textContent = 'Zapisano';
+          setTimeout(function () { submit.disabled = false; submit.textContent = 'Zapisz się'; }, 4000);
+        } else if (res.status === 429) {
+          say('Za dużo prób. Odczekaj chwilę i spróbuj ponownie.', 'err');
+          submit.disabled = false; submit.textContent = 'Zapisz się';
+        } else if (res.status === 422 || res.body.errors) {
+          say('Ten adres jest już zapisany albo niepoprawny.', 'err');
+          submit.disabled = false; submit.textContent = 'Zapisz się';
+        } else {
+          say('Coś poszło nie tak (' + res.status + '). Spróbuj ponownie.', 'err');
+          submit.disabled = false; submit.textContent = 'Zapisz się';
+        }
+      })
+      .catch(function () {
+        say('Brak połączenia z serwerem. Sprawdź sieć i spróbuj ponownie.', 'err');
+        submit.disabled = false; submit.textContent = 'Zapisz się';
+      });
   });
 })();
 </script>
-
 </body>
 </html>
