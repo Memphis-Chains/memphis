@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Memphis — start (dla każdego)</title>
+  <meta name="description" content="Memphis wytłumaczony w 10 minut. Bez magii, bez żargonu. Jeśli skończyłeś technikum albo liceum — to jest dla Ciebie." />
+  <meta property="og:title" content="Memphis — start w 10 minut" />
+  <meta property="og:description" content="Czym to jest, po co, jak działa, gdzie jesteśmy." />
+  <meta name="theme-color" content="#f4f1ea" />
+  <link rel="icon" type="image/png" href="../logo_oswobodzeni_icon.png" />
+  <style>
+    :root {
+      --bg:#f4f1ea;
+      --bg-2:#ffffff;
+      --bg-3:#ebe6d6;
+      --fg:#1a1d24;
+      --muted:#4a4f5a;
+      --line:rgba(0,0,0,0.12);
+      --line-2:rgba(0,0,0,0.07);
+      --accent:#c44e1f;
+      --accent-2:#1a4d8f;
+      --accent-3:#1a4d8f;
+      --green: #15803d;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+    }
+    *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    ::selection { background: rgba(26,77,143,0.25); color: var(--accent-3); }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--accent-2); border-radius: 3px; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--fg);
+      min-height: 100vh;
+      overflow-x: hidden;
+      line-height: 1.65;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,0,0,0.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.018) 1px, transparent 1px);
+      background-size: 40px 40px;
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,0.20), rgba(0,0,0,0.1));
+      pointer-events: none;
+      z-index: 0;
+    }
+    .container {
+      width: min(900px, calc(100% - 2rem));
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ── HERO ── */
+    .hero {
+      min-height: 56vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 7rem 0 3rem;
+      position: relative;
+      background:
+        linear-gradient(to right, rgba(244,241,234,0.96) 0%, rgba(244,241,234,0.80) 45%, rgba(244,241,234,0.15) 100%),
+        url(hero_cosmic.png) center/cover no-repeat;
+    }
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.7rem;
+      color: var(--accent-2);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      margin-bottom: 1.2rem;
+    }
+    .hero-eyebrow::before {
+      content: "";
+      width: 2rem; height: 1px;
+      background: currentColor;
+    }
+    .hero-title {
+      font-family: var(--mono);
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+      margin-bottom: 1rem;
+    }
+    .hero-lead {
+      color: var(--muted);
+      font-size: 1.05rem;
+      max-width: 54ch;
+      line-height: 1.75;
+      margin-bottom: 0.8rem;
+    }
+    .hero-note {
+      margin-top: 1rem;
+      padding-left: 1rem;
+      border-left: 2px solid var(--accent);
+      color: var(--muted);
+      font-size: 0.95rem;
+      max-width: 52ch;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1.5rem;
+    }
+    .chip {
+      padding: 0.35rem 0.75rem;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(0,0,0,0.03);
+      font-family: var(--mono);
+      font-size: 0.73rem;
+      color: var(--muted);
+    }
+    .chip-accent {
+      border-color: rgba(196,78,31,0.35);
+      color: var(--accent);
+      background: rgba(196,78,31,0.06);
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      padding: 1rem 0;
+      transition: background 300ms, backdrop-filter 300ms;
+    }
+    nav.scrolled {
+      background: rgba(244,241,234,0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--line);
+    }
+    nav .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      text-decoration: none;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .nav-brand img {
+      width: 20px; height: 20px;
+      border-radius: 5px;
+      border: 1px solid var(--line-2);
+      background: rgba(0,0,0,0.03);
+      padding: 2px;
+    }
+    .nav-links {
+      display: flex;
+      gap: 0.9rem;
+      flex-wrap: wrap;
+    }
+    .nav-links a {
+      color: var(--muted);
+      text-decoration: none;
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 0.2rem 0;
+      border-bottom: 1px solid transparent;
+      transition: color 200ms, border-color 200ms;
+    }
+    .nav-links a:hover { color: var(--fg); border-color: var(--accent-2); }
+
+    /* ── SECTIONS ── */
+    section { padding: 3.5rem 0; }
+    .section-head { margin-bottom: 2rem; }
+    .section-head h2 {
+      font-family: var(--mono);
+      font-size: clamp(1.5rem, 4vw, 2.2rem);
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+      margin-bottom: 0.5rem;
+    }
+    .section-head h2 .num {
+      color: var(--accent);
+      font-weight: 400;
+      font-size: 0.85em;
+      margin-right: 0.5rem;
+    }
+    .section-head p { color: var(--muted); line-height: 1.7; }
+    .section-head p.dim { color: var(--muted); font-size: 0.9rem; margin-top: 0.3rem; }
+
+    /* ── TL;DR ── */
+    .tldr {
+      margin: 2rem 0 3rem;
+      padding: 1.4rem 1.6rem;
+      background: linear-gradient(135deg, rgba(196,78,31,0.08), rgba(196,78,31,0.02));
+      border: 1px solid rgba(196,78,31,0.25);
+      border-left: 3px solid var(--accent);
+      border-radius: 12px;
+    }
+    .tldr .box-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: .6rem;
+    }
+    .tldr p { margin-bottom: 0.8rem; color: var(--fg); }
+    .tldr p:last-child { margin-bottom: 0; }
+    .tldr p.dim { color: var(--muted); }
+    .tldr p.dim strong { color: var(--fg); }
+
+    /* ── TEXT ── */
+    p { margin-bottom: 1rem; color: var(--fg); }
+    p.dim { color: var(--muted); }
+    a { color: var(--accent); text-decoration: none; border-bottom: 1px dashed rgba(196,78,31,0.4); }
+    a:hover { border-bottom-style: solid; }
+
+    code {
+      font-family: var(--mono);
+      font-size: .9em;
+      background: rgba(0,0,0,0.06);
+      padding: 1px 6px;
+      border-radius: 3px;
+    }
+    blockquote {
+      border-left: 3px solid var(--accent);
+      padding: .4rem 1rem;
+      background: rgba(196,78,31,0.04);
+      color: var(--muted);
+      margin: 1.2rem 0;
+      font-style: italic;
+    }
+    blockquote p { margin: 0; color: var(--muted); }
+
+    ul, ol { padding-left: 1.5rem; margin-bottom: 1rem; }
+    li { margin-bottom: .4rem; color: var(--fg); }
+    li strong { color: var(--fg); }
+
+    /* ── BOX ── */
+    .box {
+      background: var(--bg-2);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      border-radius: 10px;
+      padding: 1.2rem 1.4rem;
+      margin: 1.5rem 0;
+    }
+    .box .box-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: .5rem;
+    }
+    .box p:last-child { margin-bottom: 0; }
+
+    /* ── STATE GRID ── */
+    .state-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+      gap: .7rem;
+      margin: 1.5rem 0;
+    }
+    .state-card {
+      padding: 1rem 1.2rem;
+      background: var(--bg-2);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    .state-card .k {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: .3rem;
+    }
+    .state-card .v {
+      font-size: 14px;
+      color: var(--fg);
+      line-height: 1.5;
+    }
+    .state-card .v .tag-green {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: rgba(74,222,128,0.15);
+      color: var(--green);
+      margin-right: .4rem;
+    }
+    .state-card .v a { color: var(--accent-2); border-bottom-color: rgba(26,77,143,0.4); }
+
+    /* ── GUARDS ── */
+    .guards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
+      gap: .75rem;
+      margin: 1.5rem 0;
+    }
+    .guard {
+      padding: 1.1rem 1.3rem;
+      background: var(--bg-2);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    .guard h4 {
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: .5rem;
+    }
+    .guard p {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.55;
+      margin: 0;
+    }
+
+    /* ── PHASES ── */
+    .phases {
+      counter-reset: phase;
+      margin: 1.5rem 0;
+    }
+    .phase {
+      counter-increment: phase;
+      padding: 1.1rem 1.3rem 1.1rem 3.2rem;
+      background: var(--bg-2);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      margin-bottom: .7rem;
+      position: relative;
+    }
+    .phase::before {
+      content: counter(phase);
+      position: absolute;
+      left: 1rem;
+      top: 1rem;
+      font-family: var(--mono);
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--accent);
+      opacity: 0.5;
+    }
+    .phase h4 { margin-bottom: .3rem; font-family: var(--mono); }
+    .phase p {
+      margin: 0;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    /* ── FOR WHOM GRID ── */
+    .audience-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+      gap: .75rem;
+      margin: 1.5rem 0;
+    }
+    .audience-card {
+      padding: 1rem 1.2rem;
+      background: var(--bg-2);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    .audience-card h4 {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--accent-2);
+      margin-bottom: .4rem;
+    }
+    .audience-card p {
+      font-size: 14px;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* ── NEXT STEPS ── */
+    .next-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+    .next-card {
+      padding: 1.2rem 1.4rem;
+      background: var(--bg-3);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      text-decoration: none;
+      color: inherit;
+      transition: border-color 200ms, transform 160ms, box-shadow 200ms;
+      display: block;
+    }
+    .next-card:hover {
+      border-color: rgba(196,78,31,0.5);
+      transform: translateY(-3px);
+      box-shadow: 0 10px 30px rgba(196,78,31,0.1);
+    }
+    .next-card strong {
+      display: block;
+      font-family: var(--mono);
+      font-size: 14px;
+      color: var(--accent);
+      margin-bottom: .4rem;
+    }
+    .next-card p {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* ── FOOTER ── */
+    footer.page-foot {
+      margin-top: 5rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      justify-content: space-between;
+      font-family: var(--mono);
+    }
+    footer.page-foot a { color: var(--accent-2); border-bottom: none; text-decoration: none; }
+    footer.page-foot a:hover { text-decoration: underline; }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 768px) {
+      .guards { grid-template-columns: 1fr; }
+      .audience-grid { grid-template-columns: 1fr; }
+      .state-grid { grid-template-columns: repeat(2, 1fr); }
+      .next-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 480px) {
+      .state-grid { grid-template-columns: 1fr; }
+      .hero { min-height: 45vh; }
+    }
+
+    /* Animations */
+    @keyframes fade-up {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .hero-eyebrow, .hero-title, .hero-lead, .hero-note, .chips {
+      animation: fade-up 0.5s ease-out both;
+    }
+    .hero-eyebrow { animation-delay: 0.1s; }
+    .hero-title { animation-delay: 0.15s; }
+    .hero-lead { animation-delay: 0.2s; }
+    .hero-note { animation-delay: 0.25s; }
+    .chips { animation-delay: 0.3s; }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav id="nav">
+  <div class="container">
+    <a href="/" class="nav-brand">
+      <img src="../logo_oswobodzeni_icon.png" alt="Oswobodzeni" />
+      <span>memphis-v5.pl</span>
+    </a>
+    <div class="nav-links">
+      <a href="/">home</a>
+      <a href="/roadmap/">roadmap</a>
+      <a href="/docs/">docs</a>
+      <a href="https://github.com/Memphis-Chains/memphis">github</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-eyebrow">Memphis · start</div>
+    <h1 class="hero-title">Co to jest Memphis — bez żargonu</h1>
+    <p class="hero-lead">Ta strona jest dla kogoś, kto nie chce zaczynać od żargonu. Jeśli słyszałeś „AI", trochę ogarniasz komputery, ale nie siedzisz zawodowo w architekturze runtime'ów, to jesteś we właściwym miejscu. Po 10 minutach będziesz wiedział dokładnie, czym jest Memphis, dlaczego w ogóle istnieje i co się teraz z nim dzieje.</p>
+    <p class="hero-note">
+      <strong style="color:var(--fg);">To jest wejście dla curious newcomer.</strong> Po przeczytaniu wiesz, czy Memphis to coś, co chcesz kiedyś odpalić u siebie, umiesz to wytłumaczyć znajomym zwykłymi słowami i wiesz, gdzie iść dalej — do <a href="/">strony głównej</a> (pełny obraz), <a href="/roadmap/">roadmapy</a> (kierunek) albo <a href="/docs/">docs</a> (konkretne komendy).
+    </p>
+    <div class="chips">
+      <span class="chip chip-accent">dla każdego</span>
+      <span class="chip">~10 minut</span>
+      <span class="chip">bez żargonu</span>
+    </div>
+  </div>
+</section>
+
+<!-- CONTENT -->
+<main>
+<div class="container">
+
+  <!-- TL;DR -->
+  <div class="tldr">
+    <div class="box-label">TL;DR — w jednym zdaniu</div>
+    <p><strong>Memphis to silnik AI-agenta, który działa na Twoim komputerze, pod Twoją kontrolą — zamiast w cudzej chmurze.</strong> Tak jak Photoshop to silnik do obrabiania zdjęć, a Excel to silnik do arkuszy, tak Memphis jest silnikiem do uruchamiania asystentów AI, którzy potrafią coś dla Ciebie zrobić: wyszukać, napisać kod, odpalić skrypt, zapamiętać.</p>
+    <p class="dim"><strong style="color:var(--fg);">Czym to nie jest:</strong> nie chatbot SaaS, nie cienki wrapper na jedno API, nie magiczna skrzynka bez granic. To runtime, który da się ocenić, zainstalować i prowadzić świadomie.</p>
+  </div>
+
+  <!-- 01 -->
+  <section class="section-head">
+    <h2><span class="num">01</span>Po co to w ogóle istnieje</h2>
+    <p>Dziś kiedy rozmawiasz z ChatGPT, Gemini albo Claude — wszystko idzie przez cudze serwery. Twoje pytania, Twoje pliki, Twoje sekrety. To działa, ale:</p>
+  </section>
+  <ul>
+    <li><strong>Zależysz od jednego dostawcy.</strong> OpenAI wyłączy konto → tracisz narzędzie.</li>
+    <li><strong>Dane wyciekają.</strong> Wszystko co wpiszesz — jest przetwarzane gdzie indziej.</li>
+    <li><strong>Bez internetu = nic nie działa.</strong> Offline? Głucho.</li>
+    <li><strong>Nie jest Twoje.</strong> To narzędzie wynajmujesz, nie posiadasz.</li>
+  </ul>
+  <p>Memphis odwraca to. Cały silnik działa <strong>lokalnie</strong> — na Twoim laptopie. Modele AI mogą być lokalne (np. Ollama) albo zewnętrzne (Anthropic/MiniMax) — ale <em>Ty</em> decydujesz które, <em>Ty</em> trzymasz klucze, <em>Ty</em> widzisz co się dzieje.</p>
+
+  <blockquote>
+    <p>Analogia: ChatGPT to taksówka. Wezwiesz — jedzie. Nie ma — nie jedzie. Memphis to własny samochód. Trzeba ogarnąć, ale jedzie, kiedy chcesz.</p>
+  </blockquote>
+
+  <!-- 02 -->
+  <section class="section-head">
+    <h2><span class="num">02</span>Jak to działa w 30 sekund</h2>
+    <p>Memphis składa się z czterech rzeczy, które grają razem:</p>
+  </section>
+  <ol>
+    <li><strong>Model</strong> — to jest "mózg". Program w stylu GPT albo Claude'a. Może być Twój lokalny (Ollama/LLaMA) albo wywołany przez internet.</li>
+    <li><strong>Runtime</strong> — to kod w TypeScript + Rust, który orkiestruje rozmowę, dba o błędy, przerzuca narzędzia, zarządza pamięcią.</li>
+    <li><strong>Narzędzia (tools)</strong> — rzeczy, które model może <em>wywołać</em>: czytać plik, odpalić skrypt, wejść w internet, zapisać coś do pamięci.</li>
+    <li><strong>Pamięć</strong> — <em>chains</em>, czyli łańcuchy zapisów, w których Memphis trzyma wszystko co zapamiętuje. Jak pamiętnik, którego nie można oszukać (o tym niżej).</li>
+  </ol>
+
+  <div class="box">
+    <div class="box-label">Przykład rozmowy</div>
+    <p>Ty: „Sprawdź ostatnie commits w moim repo i napisz co się tam dzieje."</p>
+    <p>Memphis → woła narzędzie <code>memphis_exec git log</code> → patrzy na wynik → wraca do Ciebie z podsumowaniem po polsku. W tle zapisuje do swojego pamiętnika (chain), że wykonał to zadanie.</p>
+  </div>
+
+  <!-- 03 -->
+  <section class="section-head">
+    <h2><span class="num">03</span>Gdzie jesteśmy dzisiaj</h2>
+    <p class="dim">Stan na 28 września 2026.</p>
+  </section>
+
+  <div class="state-grid">
+    <div class="state-card">
+      <div class="k">Ostatnie wydanie</div>
+      <div class="v"><span class="tag-green">shipped</span>v1.13.3<br><span style="color:var(--muted);font-size:12px;">Latest public release on GitHub, 2026-09</span></div>
+    </div>
+    <div class="state-card">
+      <div class="k">Aktywny sprint / fokus</div>
+      <div class="v">Kartograf training sprint<br><span style="color:var(--muted);font-size:12px;">po v1.13.3: real trainer, corpus v2, eval i ONNX</span></div>
+    </div>
+    <div class="state-card">
+      <div class="k">Plan na rok</div>
+      <div class="v">maj 2026 → maj 2027<br><span style="color:var(--muted);font-size:12px;">Kartograf + Honesty + federation primitives</span></div>
+    </div>
+    <div class="state-card">
+      <div class="k">Gdzie żyje kod</div>
+      <div class="v"><a href="https://github.com/Memphis-Chains/memphis" rel="noopener">Memphis-Chains/memphis</a><br><span style="color:var(--muted);font-size:12px;">Apache 2.0, publiczny</span></div>
+    </div>
+  </div>
+
+  <p>To, że dziś na GitHubie jest już <strong id="gh-version">v1.13.3</strong>, nie znaczy że Memphis jest "skończony". Znaczy raczej, że first install i operator loop przeszły kolejny próg: public-readiness closeout (PR #617, Node 22 baseline, macOS Intel runner migrate, README align) i foundation scope są już częścią publicznego release.</p>
+
+  <!-- 04 -->
+  <section class="section-head">
+    <h2><span class="num">04</span>Co chroni Cię przed "AI zrobiło coś głupiego"</h2>
+    <p>Największy strach przy agentach AI: że im dasz dostęp do plików/komendy, a oni z głupoty coś skasują. Memphis ma 7 twardych zabezpieczeń <strong>w kodzie</strong> — nie jako „regułki w dokumencie", tylko jako mechanizmy, które <em>odmówią</em> jeśli agent spróbuje złamać zasadę.</p>
+  </section>
+
+  <div class="guards">
+    <div class="guard">
+      <h4>Pamiętnik, którego nie da się oszukać</h4>
+      <p>Każdy zapis do pamięci jest podpisany kluczem i ma „odcisk" poprzedniego. Jeśli ktoś podmieni środek — łańcuch się rozjedzie, Memphis to wykryje i zatrzyma.</p>
+    </div>
+    <div class="guard">
+      <h4>Lock na zapis</h4>
+      <p>Dwa procesy nie mogą pisać naraz do tej samej pamięci. Blokada na pliku serializuje zapisy — bez wyścigów, bez gubienia danych.</p>
+    </div>
+    <div class="guard">
+      <h4>Tryb offline na serio</h4>
+      <p>Włączysz <code>SAFE_MODE</code> — runtime <em>odmawia</em> wyjścia do internetu. Narzędzia, które by to zrobiły, rzucają błąd. CI testuje, że Memphis boot-uje bez sieci.</p>
+    </div>
+    <div class="guard">
+      <h4>Tryb paranoik</h4>
+      <p>W trybie <code>paranoid</code> agent nie może sam wykonać <em>żadnego</em> narzędzia — nawet czytania pliku — bez Twojego ack. LLM proponuje, Ty akceptujesz.</p>
+    </div>
+    <div class="guard">
+      <h4>Bezpiecznik na providera</h4>
+      <p>Jeśli Anthropic/MiniMax/Ollama się wywalają, Memphis po paru błędach zamyka tego providera (state <code>OPEN</code>) i cichutko przechodzi na następnego w kolejce. Sam próbuje wrócić po cooldownie.</p>
+    </div>
+    <div class="guard">
+      <h4>Sejf na sekrety</h4>
+      <p>Hasła, tokeny, klucze — nie w plain text, tylko zaszyfrowane AES-256 z kluczem wyprowadzonym przez Argon2id. Każde odczytanie/zapisanie zostawia ślad audytowy.</p>
+    </div>
+    <div class="guard">
+      <h4>Undo na "sam się zmodyfikuj"</h4>
+      <p>Gdy agent ma się sam edytować — najpierw robi snapshot + nowy branch, dopiero wtedy edytuje. Trzy nieudane boot-y z rzędu → auto-cofa się do poprzedniej wersji. Bez mostów spalonych.</p>
+    </div>
+  </div>
+
+  <p class="dim">Techniczny opis (z system-promptu agenta) — zobacz <a href="/roadmap/#safety-invariants">Safety brief operatora</a> na stronie roadmap.</p>
+
+  <!-- 05 -->
+  <section class="section-head">
+    <h2><span class="num">05</span>Dokąd to zmierza</h2>
+    <p>Memphis nie jest "gotowy". Jest w połowie drogi. Droga wygląda tak:</p>
+  </section>
+
+  <div class="phases">
+    <div class="phase">
+      <h4>Private tier — agent dla jednej osoby</h4>
+      <p>To co jest dzisiaj. Memphis na Twoim komputerze, bez połączenia z kimkolwiek. Uszczelnienia (mutual auth, rate limits, QR bootstrap) dojeżdżają teraz.</p>
+    </div>
+    <div class="phase">
+      <h4>GUI — okienko zamiast terminala</h4>
+      <p>Aplikacja desktop (Tauri) z trzema widokami: czat, pamięć, agenci. Bez tego trzeba umieć CLI. Z tym — babcia też odpali.</p>
+    </div>
+    <div class="phase">
+      <h4>Agora — agenty potrafią się dogadać</h4>
+      <p>Kilku użytkowników z Memphisem; ich agenty mogą siebie weryfikować (atestacje), zostawiać sobie recenzje, wymieniać się usługami. Jak mały „rynek zaufania" między AI-ami, ale bez krypto-hype'u — na prawdziwej reputacji.</p>
+    </div>
+  </div>
+
+  <p>Wszystko w kolejności: najpierw to co masz u siebie musi być pewne, dopiero potem otwieramy na drugich.</p>
+
+  <!-- 06 -->
+  <section class="section-head">
+    <h2><span class="num">06</span>Dla kogo to jest</h2>
+  </section>
+  <div class="audience-grid">
+    <div class="audience-card">
+      <h4>Programista</h4>
+      <p>chce mieć „Cursor/Copilot, ale bez wysyłania kodu w świat".</p>
+    </div>
+    <div class="audience-card">
+      <h4>Admin/DevOps</h4>
+      <p>chce scriptować operacje głosem/czatem, bez wklejania kredów w prompt.</p>
+    </div>
+    <div class="audience-card">
+      <h4>Osoba prywatna</h4>
+      <p>nie chce, żeby jej dane treningowały modele konkurencji.</p>
+    </div>
+    <div class="audience-card">
+      <h4>Firma</h4>
+      <p>musi trzymać dane u siebie (prawo, compliance, suwerenność).</p>
+    </div>
+  </div>
+
+  <!-- 07 -->
+  <section class="section-head">
+    <h2><span class="num">07</span>Co dalej</h2>
+    <p>Jeśli coś Cię tu zahaczyło, wybierz ścieżkę zależnie od tego, czego potrzebujesz:</p>
+  </section>
+  <div class="next-grid">
+    <a href="/" class="next-card">
+      <strong>Pełniejszy obraz produktu</strong>
+      <p>→ wróć na stronę główną</p>
+    </a>
+    <a href="/roadmap/" class="next-card">
+      <strong>Zobaczyć co żyje teraz</strong>
+      <p>→ wejdź do roadmapy</p>
+    </a>
+    <a href="/docs/" class="next-card">
+      <strong>Konkretne komendy i technikalia</strong>
+      <p>→ idź do docs</p>
+    </a>
+    <a href="https://github.com/Memphis-Chains/memphis" class="next-card" rel="noopener">
+      <strong>Kod źródłowy</strong>
+      <p>→ github.com/Memphis-Chains/memphis</p>
+    </a>
+  </div>
+
+  <footer class="page-foot">
+    <span>© 2026 Memphis-Chains · Apache 2.0</span>
+    <span>
+      <a href="/">memphis-v5.pl</a> ·
+      <a href="/roadmap/">roadmap</a> ·
+      <a href="/docs/">docs</a> ·
+      <a href="https://github.com/Memphis-Chains/memphis">github</a>
+    </span>
+  </footer>
+
+</div>
+</main>
+
+<!-- NAV BLUR ON SCROLL -->
+<script>
+(function() {
+  var nav = document.getElementById('nav');
+  window.addEventListener('scroll', function() {
+    if (window.scrollY > 60) nav.classList.add('scrolled');
+    else nav.classList.remove('scrolled');
+  });
+  // Live version from GitHub
+  (function() {
+    var vEl = document.getElementById('gh-version');
+    fetch('https://api.github.com/repos/Memphis-Chains/memphis/releases/latest')
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) {
+        if (data && data.tag_name && vEl) vEl.textContent = data.tag_name;
+      })
+      .catch(function() {});
+  })();
+})();
+</script>
+
+</body>
+</html>
