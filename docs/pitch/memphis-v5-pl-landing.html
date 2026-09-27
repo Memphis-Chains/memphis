@@ -12,6 +12,20 @@
   <link rel="alternate" type="text/plain" title="LLM guide" href="/llms.txt" />
   <link rel="agent-manifest" type="application/json" href="/agents.json" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><polygon points='16,2 30,28 2,28' fill='%23ff6b35'/></svg>" />
+  <link rel="canonical" href="https://memphis-v5.pl/" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="alternate icon" href="/favicon.ico" sizes="48x48 64x64 128x128 256x256" />
+  <link rel="apple-touch-icon" href="/favicon.ico" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#f4f1ea" />
+  <meta property="og:url" content="https://memphis-v5.pl/" />
+  <meta property="og:locale" content="pl_PL" />
+  <meta property="og:site_name" content="memphis-v5.pl" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Memphis v5 — lokalny AI runtime, który pamięta w łańcuchach" />
+  <meta name="twitter:description" content="Open-source runtime z łańcuchową pamięcią, encrypted vault, HALT-aware destructive ops. Apache-2.0, zero telemetrii." />
+  <meta name="twitter:image" content="https://memphis-v5.pl/memphis-os-social-preview.jpg" />
+  <link rel="preload" as="image" href="/memphis-wsl2-demo.jpg" />
   <style>
     :root {
       --memphis-orange: #ff6b35;
@@ -49,6 +63,7 @@
 
     .hero { padding: 100px 0 60px; text-align: center; }
     .cover-title {
+      font-family: inherit;
       font-size: clamp(38px, 6.5vw, 78px);
       font-weight: 900;
       line-height: 1.05;
@@ -180,6 +195,9 @@
       color: var(--ink-soft);
       position: relative;
     }
+    .col li a { color: var(--memphis-orange-deep); font-weight: 600; }
+    .col li a:hover { color: var(--memphis-orange); }
+    .col.blue li a { color: var(--minimax-blue); }
     .col li::before {
       content: "▸";
       position: absolute;
@@ -631,7 +649,7 @@
 
 <div class="container">
   <section class="hero">
-    <div class="cover-title">Lokalny AI runtime,<br>który pamięta w łańcuchach.</div>
+    <h1 class="cover-title">Lokalny AI runtime,<br>który pamięta w łańcuchach.</h1>
     <p class="cover-subtitle">Memphis to open-source środowisko uruchomieniowe dla agentów AI. Pamięć w content-addressed łańcuchach, encrypted vault, HALT-aware destructive ops, integracja z agent-plugins-spec. Apache-2.0. Zero telemetrii.</p>
     <p class="cover-tagline-pl">Open-source. Made in Zawoja, Małopolska. Dla jednego operatora — nie dla korporacji. Pliki są Twoje, klucze są Twoje, decyzje są Twoje.</p>
     <div style="margin-top:32px;">
@@ -668,6 +686,8 @@
   <nav class="subnav">
     <a href="#proof">Proof</a>
     <a href="#install">Install</a>
+    <a href="/start/">Start</a>
+    <a href="/chat/">Chat</a>
     <a href="/docs/">Docs</a>
     <a href="https://calendly.com/marcingrzegorzkukla" class="primary">Strategy call</a>
     <a href="/privacy/" title="Polityka prywatności">Privacy</a>
@@ -934,6 +954,39 @@
           <li>3 publiczne postmortems (honest)</li>
           <li>Integration z MiniMax/Mavis w public fork</li>
           <li>HALT guard dla destrukcyjnych ops</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="container">
+  <section>
+    <div class="section-pl">Mapa strony · Site index</div>
+    <h2>Wszystkie strony, jedno miejsce.</h2>
+    <p>Zero ukrytych zakamarków. Każda podstrona, która istnieje na tym serwerze i jest publiczna:</p>
+
+    <div class="cols-2">
+      <div class="col">
+        <h3>Dla ludzi</h3>
+        <ul>
+          <li><a href="/start/">Start</a> — czym jest Memphis, bez żargonu</li>
+          <li><a href="/chat/">Chat</a> — zapytaj runtime (działa, prawdziwy model)</li>
+          <li><a href="/demo/">Demo</a> — co potrafi, na konkretach</li>
+          <li><a href="/docs/">Docs</a> — indeks dokumentacji</li>
+          <li><a href="/roadmap/">Roadmap</a> — kierunek 2026–2028</li>
+          <li><a href="/privacy/">Prywatność</a> — polityka RODO</li>
+        </ul>
+      </div>
+      <div class="col blue">
+        <h3>Dla agentów i maszyn</h3>
+        <ul>
+          <li><a href="/llms.txt">/llms.txt</a> — mapa strony dla LLM</li>
+          <li><a href="/agents.json">/agents.json</a> — manifest maszynowy</li>
+          <li><a href="/sitemap.xml">/sitemap.xml</a> — mapa witryny</li>
+          <li><a href="/robots.txt">/robots.txt</a> — reguły crawlowania</li>
+          <li><a href="/.well-known/security.txt">/.well-known/security.txt</a> — zgłaszanie podatności</li>
+          <li><a href="/manifest.webmanifest">/manifest.webmanifest</a> — PWA manifest</li>
         </ul>
       </div>
     </div>
