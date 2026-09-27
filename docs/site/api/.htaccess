@@ -1,0 +1,24 @@
+# Never serve PHP source, never list the directory, never expose .db files.
+Options -Indexes -ExecCGI
+
+<FilesMatch "\.(db|sqlite|log|md|json|lock|bak|old|orig|save|swp)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Deny dotfiles.
+<FilesMatch "^\.">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+</FilesMatch>
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Robots-Tag "noindex, nofollow"
+</IfModule>

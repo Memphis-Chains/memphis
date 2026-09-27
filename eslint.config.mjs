@@ -127,6 +127,27 @@ export default [
     },
   },
   {
+    // Browser assets for the public site (memphis-v5.pl). These run in a
+    // page, not in Node, so they need DOM globals rather than nodeGlobals.
+    // They are served as static files and never bundled into the runtime.
+    files: ['docs/site/**/*.js'],
+    languageOptions: {
+      globals: {
+        ...nodeGlobals,
+        Blob: 'readonly',
+        document: 'readonly',
+        IntersectionObserver: 'readonly',
+        localStorage: 'readonly',
+        location: 'readonly',
+        matchMedia: 'readonly',
+        navigator: 'readonly',
+        performance: 'readonly',
+        requestAnimationFrame: 'readonly',
+        window: 'readonly',
+      },
+    },
+  },
+  {
     ignores: [
       'dist/**',
       '**/dist/**',
