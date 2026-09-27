@@ -223,3 +223,10 @@ The only code that writes to soul is internal: `appendBlock('soul', ...)` in `sr
 - Hard kill -9 on memphis.service (would lose unflushed WAL).
 - Re-enabling `memphis-grabber-feed.service` (operator action when video device available).
 - Hardening #10 from `/tmp/memphis-chain-draft-audit.md` (clippy `-D warnings` on the memphis-chain draft) — separate task.
+
+
+## Related
+
+- [docs/dev/SHUTDOWN-LIFECYCLE.md](../dev/SHUTDOWN-LIFECYCLE.md) — describes the lifecycle that triggered this restart
+- [docs/dev/RUNTIME-STATE-MODEL.md](../dev/RUNTIME-STATE-MODEL.md) — state model that the manual chain append touched
+- ADR-008 (offline chain invariant) — adjacent invariant work

@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memphis × MiniMax — Combined Issue (FINAL)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1d24;
+    color: #e4e6eb;
+    padding: 24px;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  h1 { font-size: 28px; margin-bottom: 8px; color: #ff8c42; }
+  .subtitle { color: #9aa0a6; margin-bottom: 32px; font-size: 14px; }
+  .step {
+    background: #232830;
+    border-left: 4px solid #ff8c42;
+    padding: 20px 24px;
+    margin-bottom: 24px;
+    border-radius: 4px;
+  }
+  .step h2 { font-size: 18px; margin-bottom: 8px; color: #ff8c42; }
+  .step .meta { color: #9aa0a6; font-size: 13px; margin-bottom: 16px; }
+  .step .action {
+    background: #2a1f1a;
+    border-left: 3px solid #ff6b35;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    color: #ffb893;
+  }
+  .template {
+    background: #1a1d24;
+    border: 1px solid #3a3f48;
+    border-radius: 4px;
+    padding: 20px;
+    margin-bottom: 16px;
+    position: relative;
+    white-space: pre-wrap;
+    font-family: "SF Mono", Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: #c9ccd1;
+    max-height: 600px;
+    overflow-y: auto;
+  }
+  .copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: #ff8c42;
+    color: #1a1d24;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 12px;
+    font-family: inherit;
+    transition: background 0.15s;
+    z-index: 10;
+  }
+  .copy-btn:hover { background: #ffaa66; }
+  .copy-btn.copied { background: #4caf50; color: white; }
+  .label {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-right: 8px;
+    letter-spacing: 0.5px;
+  }
+  .label.chinese { background: #5d4037; color: #ffab91; }
+  .label.english { background: #2e4a3e; color: #a5d6a7; }
+  .label.priority { background: #c62828; color: #fff; }
+  .label.optional { background: #3a3f48; color: #9aa0a6; }
+  .label.tier { background: #2e4a3e; color: #a5d6a7; }
+  .pivot-alert {
+    background: #2a3a1f;
+    border: 1px solid #6b8e23;
+    padding: 16px;
+    border-radius: 4px;
+    margin-bottom: 24px;
+    font-size: 13.5px;
+  }
+  .pivot-alert strong { color: #a5d6a7; }
+  .pivot-alert code {
+    background: #1a1d24;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: "SF Mono", monospace;
+    font-size: 12px;
+    color: #ffb893;
+  }
+  .note {
+    background: #2a2f38;
+    border-radius: 3px;
+    padding: 8px 14px;
+    font-size: 12.5px;
+    color: #9aa0a6;
+    margin: 12px 0;
+  }
+  .note strong { color: #ffb893; }
+  .checklist {
+    list-style: none;
+    background: #232830;
+    padding: 16px 24px;
+    border-radius: 4px;
+  }
+  .checklist li {
+    padding: 6px 0 6px 28px;
+    position: relative;
+  }
+  .checklist li::before {
+    content: "☐";
+    position: absolute;
+    left: 8px;
+    color: #9aa0a6;
+  }
+  .footer {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid #3a3f48;
+    color: #6c7077;
+    font-size: 12px;
+    text-align: center;
+  }
+  a { color: #ff8c42; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>🟠 Memphis × MiniMax — Combined Issue (FINAL)</h1>
+<p class="subtitle">
+Jedno issue, dwie propozycje: (A) dostawca kodu + (B) promotor/handlowiec w Polsce. 5 minut.
+</p>
+
+<div class="pivot-alert">
+  <strong>📌 Zaktualizowany plan (operator decyzja 2026-09-26):</strong> issue ma teraz <strong>dwie propozycje w jednym</strong>:
+  <ul style="margin:8px 0 0 16px; padding:0;">
+    <li><strong>Part A — OSS contribution</strong> (dostawca kodu): <code>@mavis/memphis-collective</code>, integration kodu → MiniMax zrobi maintainer PR z attribution (precedens: PR #364 z ASHURA1800)</li>
+    <li><strong>Part B — Polish channel partnership</strong> (promotor/handlowiec): 90-day pilot w Polsce jako lokalny dystrybutor MiniMax API + mcode deployments + Watra.ai knowledge-pack marketplace</li>
+  </ul>
+  <br>
+  <strong>Dlaczego razem?</strong> Anti-confab section explicite mówi że są separable. OSS contribution ląduje niezależnie od Part B outcome. Dwie propozycje w jednym → mniej touch-points → szybsza odpowiedź od 4-osobowego zespołu MiniMax.
+  <br><br>
+  <strong>Co NIE prosimy:</strong> funding, investment, equity dilution, exclusivity, NDA, special pricing, joint entity formation. <em>(anti-confab na końcu issue body explicite neguje każdą z tych rzeczy).</em>
+</div>
+
+<!-- ============ KROK 1 ============ -->
+<div class="step">
+  <h2>KROK 1: Otwórz issue na MiniMax-AI/minimax-code</h2>
+  <div class="meta">
+    <span class="label priority">Priority 1</span>
+    <span class="label english">English</span>
+    Kanał: GitHub web (logged in as @Memphis-Chains)<br>
+    Link: <a href="https://github.com/MiniMax-AI/minimax-code/issues/new">github.com/MiniMax-AI/minimax-code/issues/new</a><br>
+    Czas: <strong>10 minut</strong> (wklejanie tytułu + 11723 bytes body)
+  </div>
+  <div class="action">
+    → Otwórz link w przeglądarce, logged in jako @Memphis-Chains<br>
+    → Wybierz szablon <strong>"[Question]: ..."</strong> (lub plain text, plain działa równie dobrze)<br>
+    → Title: kliknij "Kopiuj" poniżej<br>
+    → Body: kliknij "Kopiuj" poniżej (duży blok, scrolluj)<br>
+    → Submit
+  </div>
+
+  <p><strong>Title (kliknij "Kopiuj" i wklej):</strong></p>
+  <div class="template"><button class="copy-btn" onclick="copyText(this, 'memphis-collective integration + Polish channel partnership — for technical review + commercial discussion')">Kopiuj</button>memphis-collective integration + Polish channel partnership — for technical review + commercial discussion</div>
+
+  <p><strong>Body (kliknij "Kopiuj", scrolluj do dołu, wklej w pole "Comment"):</strong></p>
+  <div class="template" id="body"><button class="copy-btn" onclick="copyTemplate('body')">Kopiuj całość</button># memphis-collective integration + Polish channel partnership — for technical review + commercial discussion
+
+> **Author:** @Memphis-Chains (Wodzu / Marcin Kukla, Zawoja, Małopolska, Poland)
+> **Repo of proposed work:** https://github.com/Memphis-Chains/minimax-code
+> **Branch / commit:** `c32c23f` (rebased on your current `main`)
+> **Memphis runtime:** https://github.com/Memphis-Chains/memphis (Apache-2.0, just made public)
+> **Category:** open-source contribution proposal + parallel channel/distribution partnership inquiry
+
+## TL;DR (two things, related but separable)
+
+**(A) OSS contribution** — same pattern as #362 / #364:
+
+We've written `@mavis/memphis-collective`, an MIT-licensed extension that bridges the memphis `collective` chain into `@mavis/system-reminder` without changes to existing files outside the new package directory. 22 files, 1,521 insertions, 1 deletion. Rebased on your current main. 16/16 tests pass. `tsc -p tsconfig.standalone.json --noEmit` clean. We're following the exact workflow you described in #362 — opening the issue, leaving technical review to you, and letting you prepare a maintainer PR with attribution if you accept.
+
+**(B) Channel / distribution partnership** — new ask:
+
+Independently of (A), we would like to discuss becoming a **local channel for MiniMax in Poland**, focused on three service lines:
+
+1. **MiniMax model API distribution** to Polish + EU customers (B2B sales, integration support, locally-billed contracts) — we already operate in the Polish micro-business ecosystem with established relationships with NCBR-affiliated founders and Powiatowy Urząd Pracy Sucha Beskidzka.
+2. **mcode deployment and integration consulting** — Memphis runtime + mcode as a combined local-first AI stack for Polish public-sector and EU-regulated workloads (where GDPR + EU AI Act + sovereign-cloud requirements push customers away from US hyperscalers).
+3. **Kartograf / knowledge-pack marketplace operator** — we are building Watra.ai (a marketplace for knowledge packs: maps, ontologies, knowledge graphs, behavioral models). We see MiniMax's `skills` repo (13.6k★) as a near-perfect fit — happy to discuss distribution or technical alignment there too.
+
+We are NOT asking for funding, investment, equity dilution, or special API pricing in this first message. We are asking whether MiniMax has a process for evaluating regional channel / distribution partners, and whether the right person to talk to is you or someone we should be writing to instead.
+
+## PART A — OSS contribution (technical detail)
+
+### What `@mavis/memphis-collective` does
+
+- Reads `~/.memphis/chains/collective/*.json` at service start (strict-shape scan matching your existing chain-block format)
+- Watches the chain directory via `fs.watch` (100 ms debounce + microtask gap) and reloads on change
+- Renders the most recent N blocks (default 20) as a `<memphis-collective>...</memphis-collective>` system-reminder block — drop-in compatible with `@mavis/system-reminder`
+- Exposes a `memphis_collective_append` tool that lets the agent write back to the same chain with proper `prev_hash` linkage matching your `serde_json` canonical format
+- Uses atomic rename + a `.napi-append.lock` for race-safety with the source-of-truth runtime
+
+### Diff summary
+
+```
+22 files changed, 1521 insertions(+), 1 deletion(-)
+
+packages/agent-modules/memphis-collective/   (NEW PACKAGE)
+  src/         10 source files (canonical, hasher, loader, watcher, writer,
+                                  provider, service, settings, types, index)
+  test/         1 test file (16/16 vitest passing)
+  README.md    162 lines
+  package.json MIT
+
+packages/agent-extension/src/memphis-collective.ts   (NEW — 161 LOC SPI wiring)
+packages/config/src/memphis-collective-config.ts    (NEW — zod schema + parser)
+packages/config/src/config.ts                        (+12 LOC passthrough)
+packages/agent-runtime/src/service/turn-system/production-composition.ts  (+18 LOC)
+
+pnpm-workspace.yaml                +1 LOC
+tsconfig.standalone.json           +3 LOC
+release/extraction.json            +1 LOC
+package.json                       +2/-1 LOC
+```
+
+Zero changes to: `packages/agent-core`, `packages/protocol`, `packages/agent-runtime/src/service/*` existing files, `packages/tui`, `packages/cli`, wire-format code.
+
+### Validation
+
+- `git diff --check`: clean
+- `pnpm vitest run packages/agent-modules/memphis-collective/test/`: 16/16 passing in 39 ms
+- `tsc -p tsconfig.standalone.json --noEmit`: exit 0
+- Rebased cleanly onto `MiniMax-AI/minimax-code@4198174c89963ca7614ae7705bb897814d11b4ee` (current `main`)
+- **NOT RUN locally:** full `pnpm verify`, Windows + Linux native acceptance, performance CI. This follows your public-source convention — we'd appreciate you confirming the criteria you want for our integration to pass before the maintainer PR is drafted.
+
+### What we will NOT do (OSS scope)
+
+- We will not push directly to `main`
+- We will not bypass your collaborator policy
+- We will not bulk-submit multiple PRs before the first one lands
+- We will not rename existing APIs, rename `serde_json` references, or change your chain-block format
+
+### What we ARE happy to adjust (OSS scope)
+
+- Split the diff into reviewable chunks
+- Rename the extension ID (`memphis-collective`) if you prefer a different namespace
+- Add or restructure tests per your guidelines
+- Move the package to a different location (`packages/agent-modules/external/`, `packages/agent-modules/plugins/memphis/`, etc.)
+- Convert the live-watch to a polling alternative if you prefer
+- Wait. There is no deadline from our side.
+
+### OSS attribution model
+
+As you described in #362, we are happy for you to prepare a maintainer PR with attribution to our commit `c32c23f` in `Memphis-Chains/minimax-code`. The commit is signed off under "Wodzu (Marcin Kukla) <wodzu@memphis.local>". We will keep that fork alive for our own deployments regardless of upstream status, so we are not asking for any post-merge privileges.
+
+---
+
+## PART B — Channel / distribution partnership (this is the new ask)
+
+### Why now (and why OSS contribution was first)
+
+You told us in #362: *"Opening this issue was the correct entry point: external PRs are currently restricted to repository collaborators. There is no need to work around that restriction; we can coordinate the proposal here and prepare a maintainer PR with attribution to your original commit."*
+
+That gave us the technical workflow. We think the same logic applies to a **commercial** workflow: we propose a small, scoped experiment below, and if it works for both sides, we grow. If it doesn't, we walk away clean — the OSS contribution lands either way.
+
+### What we observed about MiniMax + Poland
+
+- MiniMax is on the **Polish EU digital-sovereignty radar**: we have read the Polish government + NCBR documents that describe a need for non-US AI providers for public-sector workloads (PUP Sucha Beskidzka materials, NCBR Horyzontalny Program Naukowy materials).
+- Polish developers tell us they want M-series models (M3, M2.7, H3) for local-first workloads but report no clean distribution path through EU GDPR-compliant channels.
+- Your `skills` ecosystem (13.6k★) is a natural fit for the Watra.ai knowledge-pack marketplace we are building.
+
+### What we propose (small, scoped, 90-day pilot)
+
+**Pilot structure** — we run this for 90 days and report:
+
+| Component | Owner | Deliverable |
+|---|---|---|
+| **Polish-language sales** of MiniMax API access for B2B customers | Memphis-Chains | at least 3 paying Polish B2B customers by day 90, baseline MRR at least 5,000 EUR |
+| **Local billing + PLN/EUR invoicing** for Polish + EU customers | Memphis-Chains | Polished billing pipeline, VAT-compliant |
+| **mcode deployment + integration consulting** for Polish customers | Memphis-Chains | at least 2 deployments in production at Polish customer sites |
+| **Polish-language API documentation + onboarding materials** | Memphis-Chains | Translated and reviewed docs, sample integrations |
+| **Formal distribution partner agreement** (if pilot succeeds) | MiniMax | Standard reseller / channel agreement with defined margins |
+| **Polish-language support tier 1** (during business hours CET) | Memphis-Chains | SLA-defined support window with escalation path to MiniMax L2/L3 |
+
+**What MiniMax would need to provide during the pilot** (low commitment, low risk):
+
+- Direct API access for B2B distribution (not the public token-plan — a partner-level allocation)
+- Permission to use the MiniMax brand + minimax-code logos for Polish market
+- One named contact on the MiniMax side for partner questions
+- A short, written "partner during pilot, no commitment past 90 days" letter we can show prospective Polish customers
+
+**What we are NOT asking for at the pilot stage**: special token pricing, exclusive territory rights, equity participation, exclusivity on any vertical, joint entity formation, NDA before pilot (we can sign one if you require, but we don't need to read your source code to run a sales pilot).
+
+### Why us (briefly, in case context is useful)
+
+We are a small operator, but we are local and we ship. Concrete things we have done:
+
+- **Memphis runtime** — chain-backed memory with vault + soul manifest + HALT-aware destructive ops. Apache-2.0, v1.13.3 in production on this host. Source just made public at https://github.com/Memphis-Chains/memphis.
+- **`@mavis/memphis-collective`** — the OSS contribution in Part A above.
+- **Watra.ai** — knowledge-pack marketplace (in development), leverages Memphis as buyer-side executor.
+- **Concrete Polish footprint** — Małopolska + Podhale, ties to Powiatowy Urząd Pracy Sucha Beskidzka + NCBR Horyzontalny Program Naukowy; we know the Polish micro-business + JDG to PSA transition market.
+
+### Anti-confab for this proposal
+
+- We are NOT asking for funding, investment, equity dilution, or guaranteed API pricing.
+- We are NOT asking you to commit to anything beyond the 90-day pilot scope.
+- We are NOT asking for exclusivity on Poland or any other territory.
+- We are NOT asking for your source code or any NDA-protected material.
+- The OSS contribution in Part A is independent and stands on its own merits.
+- If the pilot does not work for either side, we end it cleanly.
+
+### How we suggest proceeding
+
+If a regional channel / distribution conversation is even the kind of thing MiniMax considers, we suggest:
+
+1. **Week 1** — you read Part A + skim Memphis runtime; if #362-style maintainer PR is in scope, we are happy to wait for that to land first. We do not need an answer on Part B for Part A to proceed.
+2. **Week 2** — if MiniMax does have a partnership intake path, you redirect this Part B to the right person (or reply with "here's who to talk to").
+3. **Week 4** — if redirected, one short call (30 min) to align on the 90-day pilot shape.
+4. **Week 13** (day 90) — joint review of pilot results. Either scale, redesign, or end.
+
+There is no deadline from our side. We will keep the OSS contribution thread going regardless of Part B timing.
+
+---
+
+## Contact
+
+- **GitHub:** @Memphis-Chains
+- **Email:** memphis.kuklow@gmail.com
+- **Time zone:** CET (UTC+1 / UTC+2)
+- **Phone / Signal / WeChat:** available on request
+- **Memphis runtime:** https://github.com/Memphis-Chains/memphis
+- **Public fork with integration:** https://github.com/Memphis-Chains/minimax-code @ c32c23f
+
+Thank you for minimax-code — both for the technical surface and for the prompt, honest collaboration style your maintainers demonstrate in issue threads. We are writing this because we genuinely want to work with you, not because we need your approval.
+
+— Wodzu / Memphis-Chains</div>
+  <div class="note">
+    ⏱ Po Submit: <strong>czekaj 1-7 dni</strong> na odpowiedź. @hetaoBackend zazwyczaj odpowiada w 12-24h (precedens: #362 → #364 cykl minął w 24h).
+  </div>
+</div>
+
+<!-- ============ KROK 2 - równoległy ============ -->
+<div class="step">
+  <h2>KROK 2 (równoległy): Backup BD przez oficjalny formularz</h2>
+  <div class="meta">
+    <span class="label optional">Optional</span>
+    <span class="label english">English</span>
+    Kanał: <a href="https://platform.minimax.io/contact-us">platform.minimax.io/contact-us</a><br>
+    Kiedy: równolegle z Krokiem 1 — zabezpieczenie gdyby GitHub issue zignorowane
+  </div>
+  <div class="action">
+    → Otwórz link w przeglądarce<br>
+    → Wybierz <strong>Sales</strong> track (to jest kanał partnership, nie Developer Programme)<br>
+    → Wypełnij pola + wklej poniższy message
+  </div>
+  <p><strong>Form values:</strong></p>
+  <div class="template"><button class="copy-btn" onclick="copyText(this, 'First Name: Marcin\nLast Name: Kukla\nEmail: memphis.kuklow@gmail.com\nCompany: Memphis-Chains\nWebsite: https://Memphis-Chains.github.io/memphis/\nIndustry: Software\nJob Title: Founder\nModels: MiniMax-M3, MiniMax-M2.7')">Kopiuj</button>First Name: Marcin
+Last Name: Kukla
+Email: memphis.kuklow@gmail.com
+Company: Memphis-Chains
+Website: https://Memphis-Chains.github.io/memphis/
+Industry: Software
+Job Title: Founder
+Models: MiniMax-M3, MiniMax-M2.7</div>
+
+  <p><strong>"How can we help?" message:</strong></p>
+  <div class="template" id="form-message"><button class="copy-btn" onclick="copyTemplate('form-message')">Kopiuj</button>Hi —
+
+I'm reaching out from Memphis-Chains, a small Polish operator. We've been running minimax-code in production for several months and would like to discuss becoming your local channel partner in Poland.
+
+We're proposing a 90-day pilot: Polish-language sales of MiniMax model API access to B2B customers in the EU (especially public-sector-adjacent and GDPR-sensitive verticals), local billing in PLN/EUR, mcode deployment consulting, and technical alignment with our knowledge-pack marketplace project (Watra.ai).
+
+We have:
+- A working OSS integration for minimax-code: @mavis/memphis-collective (public fork at github.com/Memphis-Chains/minimax-code, MIT, 16/16 tests passing)
+- Direct experience with the Polish micro-business + JDG→PSA transition ecosystem
+- A recently made-public Apache-2.0 runtime (memphis) that uses chain-backed memory and integrates with your agent core
+
+We are NOT asking for funding, equity, or special pricing for the pilot. Just: a partner-level API allocation, permission to use the MiniMax brand in Poland, one named contact on your side, and a short pilot-letter so we can show prospective customers.
+
+Detailed proposal (90-day deliverable table + anti-confab + weekly timeline) is in this open issue we just opened on the OSS side:
+https://github.com/MiniMax-AI/minimax-code/issues/ [will be filled after issue is posted]
+
+A 30-min call would be the fastest way to align. CET timezone. I can fly to Shanghai if useful.
+
+Best,
+Marcin "Wodzu" Kukla
+Memphis-Chains | github.com/Memphis-Chains</div>
+</div>
+
+<h2 style="margin-top:48px;color:#ff8c42;">📋 Checklist</h2>
+<ul class="checklist">
+  <li>Otwórz <a href="https://github.com/MiniMax-AI/minimax-code/issues/new">github.com/MiniMax-AI/minimax-code/issues/new</a></li>
+  <li>Wklej title + body (11.7 KB)</li>
+  <li>(Równolegle) Wypełnij formularz Sales na platform.minimax.io/contact-us</li>
+  <li>Submit wszystko</li>
+  <li>PIN issue w watch → notyfikacje na każdy response</li>
+  <li>Czekaj 1-7 dni na odpowiedź @hetaoBackend lub BD team</li>
+</ul>
+
+<div class="pivot-alert" style="margin-top:32px;">
+  <strong>📌 Po wysłaniu — czego się spodziewać (optymistyczny vs realistyczny scenariusz):</strong><br>
+  <br><strong>Optymistyczny (5-15% szans):</strong> @hetaoBackend: "Thanks for the proposal — let me redirect Part B to our partnerships team, please email api@minimax.io with the same content for tracking." → masz contact, lecisz dalej.<br>
+  <br><strong>Realistyczny (60-70%):</strong> @hetaoBackend czyta część A (OSS), odpowiada w stylu #362 — review code, prepare maintainer PR Part B odrzuca lub milczy. Musisz pushować Part B przez inne kanały (formularz Sales).<br>
+  <br><strong>Brak odpowiedzi (15-20%):</strong> Po 14 dniach ciszy — eskalacja przez Discord (agent-plugins spec) lub inny kontakt.
+</div>
+
+<div class="footer">
+  Wygenerowane 2026-09-26 · Memphis × MiniMax combined-issue pack<br>
+  Plik źródłowy: ~/memphis/docs/issues/2026-09-26-memphis-collective-plus-partnership.md<br>
+  Backup EN-only: ~/memphis/docs/issues/2026-09-26-memphis-collective-integration.md<br>
+  Backup ZH: ~/memphis/docs/issues/2026-09-26-memphis-collective-integration-zh.md
+</div>
+
+</div>
+
+<script>
+function copyTemplate(id) {
+  const el = document.getElementById(id);
+  const btn = el.querySelector('.copy-btn');
+  const clone = el.cloneNode(true);
+  const btnInClone = clone.querySelector('.copy-btn');
+  if (btnInClone) btnInClone.remove();
+  const text = clone.textContent.trim();
+
+  navigator.clipboard.writeText(text).then(function() {
+    if (btn) {
+      const original = btn.textContent;
+      btn.textContent = '✓ Skopiowano';
+      btn.classList.add('copied');
+      setTimeout(function() {
+        btn.textContent = original;
+        btn.classList.remove('copied');
+      }, 2000);
+    }
+  }).catch(function(err) {
+    fallbackCopy(text, btn);
+  });
+}
+
+function copyText(btn, text) {
+  navigator.clipboard.writeText(text).then(function() {
+    const original = btn.textContent;
+    btn.textContent = '✓ Skopiowano';
+    btn.classList.add('copied');
+    setTimeout(function() {
+      btn.textContent = original;
+      btn.classList.remove('copied');
+    }, 2000);
+  }).catch(function() {
+    fallbackCopy(text, btn);
+  });
+}
+
+function fallbackCopy(text, btn) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    document.execCommand('copy');
+    if (btn) {
+      const original = btn.textContent;
+      btn.textContent = '✓ Skopiowano';
+      btn.classList.add('copied');
+      setTimeout(function() {
+        btn.textContent = original;
+        btn.classList.remove('copied');
+      }, 2000);
+    }
+  } catch (e) {
+    if (btn) btn.textContent = 'Błąd';
+  }
+  document.body.removeChild(textarea);
+}
+</script>
+
+</body>
+</html>
