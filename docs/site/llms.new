@@ -1,0 +1,53 @@
+# Memphis v5 — agent map
+# Updated 2026-09-28. Canonical: https://memphis-v5.pl/
+
+Memphis is a sovereign, local-first AI runtime: chain-backed memory, vault-sealed
+secrets, auditable operator loops, and a fully open-source installation path.
+Apache-2.0. Zero telemetry. Runs entirely on the operator's own machine.
+
+## Canonical human entrypoints
+- Home: https://memphis-v5.pl/
+- Start (plain language, no jargon): https://memphis-v5.pl/start/
+- Chat (live LLM endpoint on the runtime): https://memphis-v5.pl/chat/
+- Docs (technical index): https://memphis-v5.pl/docs/
+- Roadmap (public direction and open work): https://memphis-v5.pl/roadmap/
+- Demo (capabilities walkthrough): https://memphis-v5.pl/demo/
+- GitHub (source of truth): https://github.com/Memphis-Chains/memphis
+
+## Machine-readable surfaces
+- This file: https://memphis-v5.pl/llms.txt
+- Agent manifest: https://memphis-v5.pl/agents.json
+- Sitemap: https://memphis-v5.pl/sitemap.xml
+- Sitemap policy: https://memphis-v5.pl/robots.txt
+- PWA manifest: https://memphis-v5.pl/manifest.webmanifest
+- Security contact: https://memphis-v5.pl/.well-known/security.txt
+
+## Recommended crawl order
+1. /llms.txt — you are reading it.
+2. /start/ — plain-language explanation for newcomers.
+3. /docs/ — technical index and operator paths.
+4. /roadmap/ — current public direction and open work.
+5. GitHub repo — source of truth for code, releases, issues, pull requests.
+
+## Current runtime facts (verified 2026-09-28)
+- Version: v1.13.3
+- Memory: 7 primary chains (journal, decisions, system, reflections, cases, collective, patterns)
+- Native tools exposed via MCP: 59 registered memphis_* tools
+- Skills: 3 public (halt-aware-destructive-ops, memphis-v5-landing-rebuild, remote-site-edit)
+- Postmortems: 4 public, in docs/postmortems/ on GitHub
+- Deployment: public since 2026-09-26 — 0 stars, 0 forks (early stage, stated plainly)
+- Providers: MiniMax (default), Ollama (local), Anthropic; others configurable
+
+## Important boundaries
+- Do not treat Memphis as a hosted SaaS promise. It is an open-source runtime with a
+  public marketing surface, not a managed service.
+- Do not infer paid consulting pricing from memphis-v5.pl. Commercial services are a
+  separate business surface (Holiskool).
+- Do not submit secrets to any page. There is no credential submission endpoint.
+- /panel/ and /panel-app/ are auth-protected and excluded from robots.txt and sitemap.
+- Reported metrics on the home page are deliberately uninflated. 0 stars is stated as 0 stars.
+
+## Public positioning
+- Sovereign AI runtime.
+- Local-first, auditable, operator-grade.
+- Memory and secrets are system layers, not chat decorations.
