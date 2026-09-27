@@ -1,1613 +1,716 @@
 <!doctype html>
-<html lang="pl">
+<html lang="pl" class="no-js">
 <head>
-  <meta charset="utf-8" />
-  <script>document.documentElement.className += " js";</script>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Memphis v5 — lokalny AI runtime z pamięcią łańcuchową</title>
-  <meta name="description" content="Open-source AI runtime z pamięcią łańcuchową, zaszyfrowanym vaultem i ochroną przed destrukcyjnymi operacjami. Apache-2.0, zero telemetrii." />
-  <meta property="og:title" content="Memphis v5 — lokalny AI runtime, który pamięta w łańcuchach" />
-  <meta property="og:description" content="Lokalny AI runtime z łańcuchową pamięcią. Zero chmury, zero telemetrii, pełen audyt. Apache-2.0." />
-  <meta property="og:type" content="website" />
-  <meta property="og:image" content="https://memphis-v5.pl/memphis-os-social-preview.jpg" />
-  <link rel="alternate" type="text/plain" title="LLM guide" href="/llms.txt" />
-  <link rel="agent-manifest" type="application/json" href="/agents.json" />
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><polygon points='16,2 30,28 2,28' fill='%23ff6b35'/></svg>" />
-  <link rel="canonical" href="https://memphis-v5.pl/" />
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="alternate icon" href="/favicon.ico" sizes="48x48 64x64 128x128 256x256" />
-  <link rel="apple-touch-icon" href="/favicon.ico" />
-  <link rel="manifest" href="/manifest.webmanifest" />
-  <meta name="theme-color" content="#f4f1ea" />
-  <meta property="og:url" content="https://memphis-v5.pl/" />
-  <meta property="og:locale" content="pl_PL" />
-  <meta property="og:site_name" content="memphis-v5.pl" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Memphis v5 — lokalny AI runtime, który pamięta w łańcuchach" />
-  <meta name="twitter:description" content="Open-source runtime z łańcuchową pamięcią, encrypted vault, HALT-aware destructive ops. Apache-2.0, zero telemetrii." />
-  <meta name="twitter:image" content="https://memphis-v5.pl/memphis-os-social-preview.jpg" />
-  <link rel="preload" as="image" href="/memphis-wsl2-demo.jpg" />
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "SoftwareApplication",
-        "name": "Memphis v5",
-        "applicationCategory": "DeveloperApplication",
-        "operatingSystem": "Linux, macOS, Windows (WSL2)",
-        "url": "https://memphis-v5.pl/",
-        "downloadUrl": "https://github.com/Memphis-Chains/memphis",
-        "license": "https://www.apache.org/licenses/LICENSE-2.0",
-        "softwareVersion": "1.13.3",
-        "description": "Lokalny, open-source runtime dla agentów AI: pamięć w content-addressed łańcuchach, zaszyfrowany vault, HALT-aware destructive ops. Zero telemetrii.",
-        "inLanguage": ["pl", "en"],
-        "author": { "@type": "Organization", "name": "Memphis-Chains" },
-        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "PLN" },
-        "featureList": [
-          "Pamięć w 7 content-addressed łańcuchach z hash linkage",
-          "Encrypted vault (AES-256, Argon2id, rotacja master key)",
-          "HALT-aware destructive ops — guard przed rm/mv",
-          "59 natywnych tooli przez MCP",
-          "Provider cascade: ollama → anthropic → minimax → local-fallback",
-          "Zero telemetrii"
-        ]
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Memphis v5 — lokalny runtime AI z pamięcią w łańcuchach</title>
+<meta name="description" content="Open-source runtime dla agentów AI. Pamięć w podpisanych łańcuchach, szyfrowany vault, guard przed destrukcją. Jedna komenda instalacji, Apache-2.0, zero telemetrii.">
+<link rel="canonical" href="https://memphis-v5.pl/">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<meta name="theme-color" content="#f4f1ea">
+<meta name="color-scheme" content="light">
+
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://memphis-v5.pl/">
+<meta property="og:site_name" content="Memphis v5">
+<meta property="og:locale" content="pl_PL">
+<meta property="og:title" content="Memphis v5 — lokalny runtime AI z pamięcią w łańcuchach">
+<meta property="og:description" content="Open-source runtime dla agentów AI. Pamięć w podpisanych łańcuchach, szyfrowany vault, guard przed destrukcją. Jedna komenda.">
+<meta property="og:image" content="https://memphis-v5.pl/memphis-os-social-preview.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/memphis-os-social-preview.jpg">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/assets/site.css">
+<script>document.documentElement.className = document.documentElement.className.replace('no-js', 'js');</script>
+
+<script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "name": "Memphis v5",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Linux, macOS, Windows via WSL2",
+      "softwareVersion": "1.13.3",
+      "license": "https://www.apache.org/licenses/LICENSE-2.0",
+      "url": "https://memphis-v5.pl/",
+      "codeRepository": "https://github.com/Memphis-Chains/memphis",
+      "programmingLanguage": [
+        "TypeScript",
+        "Rust"
+      ],
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "EUR"
       },
-      {
-        "@type": "SoftwareSourceCode",
-        "name": "memphis",
-        "codeRepository": "https://github.com/Memphis-Chains/memphis",
-        "programmingLanguage": ["TypeScript", "Rust"],
-        "license": "https://www.apache.org/licenses/LICENSE-2.0"
-      },
-      {
-        "@type": "WebSite",
-        "url": "https://memphis-v5.pl/",
-        "name": "memphis-v5.pl",
-        "inLanguage": "pl",
-        "publisher": { "@type": "Organization", "name": "Memphis-Chains" }
-      },
-      {
-        "@type": "FAQPage",
-        "mainEntity": [
-          {
-            "@type": "Question",
-            "name": "Czy Memphis to SaaS?",
-            "acceptedAnswer": { "@type": "Answer", "text": "Nie. Memphis to open-source runtime, który instalujesz lokalnie na Linux, macOS lub WSL2. Nie ma chmury, nie ma konta, nie ma telemetrii." }
-          },
-          {
-            "@type": "Question",
-            "name": "Jak zainstalować Memphis?",
-            "acceptedAnswer": { "@type": "Answer", "text": "Jedna komenda: curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash. Potem memphis init i memphis tui. Wymagany Node 22." }
-          },
-          {
-            "@type": "Question",
-            "name": "Jak podpiąć MiniMax albo Anthropic?",
-            "acceptedAnswer": { "@type": "Answer", "text": "memphis provider add minimax --api-key TWOJ_KLUCZ. Klucz trafia do zaszyfrowanego vaulta, nie do pliku .env. Provider działa w kaskadzie: jeśli padnie, Memphis przechodzi do następnego." }
-          },
-          {
-            "@type": "Question",
-            "name": "Gdzie są moje dane?",
-            "acceptedAnswer": { "@type": "Answer", "text": "Wszystko lokalnie w ~/.memphis. Zero outbound calli w domyślnej instalacji. Zero telemetrii, zero analytics." }
-          }
-        ]
+      "description": "Lokalny runtime dla agentów AI z pamięcią w content-addressed łańcuchach, szyfrowanym vaultem i ochroną przed destrukcyjnymi operacjami.",
+      "featureList": [
+        "Pamięć w 7 podpisanych łańcuchach",
+        "Szyfrowany vault AES-256 z rotacją klucza",
+        "HALT-aware guard przed destrukcją",
+        "Audyt każdego wywołania narzędzia",
+        "Offline z lokalnym modelem",
+        "Integracja agent-plugins-spec"
+      ]
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "name": "Memphis",
+      "codeRepository": "https://github.com/Memphis-Chains/memphis",
+      "programmingLanguage": "TypeScript",
+      "runtimePlatform": "Node.js 22",
+      "license": "https://www.apache.org/licenses/LICENSE-2.0"
+    },
+    {
+      "@type": "WebSite",
+      "url": "https://memphis-v5.pl/",
+      "name": "Memphis v5",
+      "inLanguage": "pl",
+      "publisher": {
+        "@id": "https://memphis-v5.pl/#org"
       }
-    ]
-  }
-  </script>
-
-  <style>
-    :root {
-      --memphis-orange: #ff6b35;
-      --memphis-orange-deep: #c44e1f;
-      --memphis-cream: #f4f1ea;
-      --memphis-cream-dark: #ebe6d6;
-      --minimax-blue: #1a4d8f;
-      --minimax-blue-light: #e8f0fa;
-      --watra-earth: #4a3c2a;
-      --watra-earth-light: #d6c9b4;
-      --bg: #f4f1ea;
-      --bg-2: #ebe6d6;
-      --bg-3: #ffffff;
-      --ink: #1a1d24;
-      --ink-soft: #4a4f5a;
-      --paper: #ffffff;
-      --line: rgba(0,0,0,0.10);
-      --line-2: rgba(0,0,0,0.18);
-      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      --sans: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
-    }
-    *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { scroll-behavior: smooth; }
-    body {
-      font-family: var(--sans);
-      background: var(--bg);
-      color: var(--ink);
-      min-height: 100vh;
-      overflow-x: hidden;
-      line-height: 1.65;
-    }
-    a { color: var(--memphis-orange-deep); text-decoration: none; }
-    a:hover { color: var(--memphis-orange); }
-    .container { max-width: 1200px; margin: 0 auto; padding: 0 32px; position: relative; z-index: 1; }
-
-    .hero { padding: 100px 0 60px; text-align: center; }
-    .cover-title {
-      font-family: inherit;
-      font-size: clamp(38px, 6.5vw, 78px);
-      font-weight: 900;
-      line-height: 1.05;
-      color: var(--memphis-orange-deep);
-      letter-spacing: -2pt;
-      margin-bottom: 20px;
-    }
-    .cover-subtitle {
-      font-size: 19px;
-      color: var(--ink-soft);
-      max-width: 720px;
-      margin: 0 auto 14px;
-    }
-    .cover-tagline-pl {
-      font-size: 13pt;
-      color: var(--ink);
-      border-left: 1mm solid var(--minimax-blue);
-      padding-left: 4mm;
-      margin: 14px auto 0;
-      max-width: 580px;
-      font-weight: 500;
-      text-align: left;
-    }
-    .cover-cta {
-      display: inline-block;
-      padding: 14px 28px;
-      border-radius: 6px;
-      font-weight: 700;
-      font-size: 14px;
-      text-transform: uppercase;
-      letter-spacing: 0.5pt;
-      border: 2px solid var(--memphis-orange-deep);
-      color: var(--memphis-orange-deep);
-      background: transparent;
-      transition: all 0.15s;
-      margin: 8px;
-    }
-    .cover-cta:hover {
-      background: var(--memphis-orange-deep);
-      color: var(--paper);
-    }
-    .hero-proof { margin-top: 32px; }
-    .hero-note-small {
-      font-family: var(--mono); font-size: 9.5pt; color: var(--ink-soft);
-      margin-top: 18px; letter-spacing: 0.02em;
-    }
-    .cover-cta-blue {
-      border-color: var(--minimax-blue);
-      color: var(--minimax-blue);
-    }
-    .cover-cta-blue:hover { background: var(--minimax-blue); color: #fff; }
-
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 4mm;
-      margin: 50px 0 60px;
-    }
-    @media (max-width: 720px) { .stats { grid-template-columns: repeat(2, 1fr); } }
-    .stat {
-      background: var(--paper);
-      border-radius: 2mm;
-      padding: 6mm 4mm;
-      text-align: center;
-      border-top: 0.5mm solid var(--memphis-orange);
-      box-shadow: 0 2mm 6mm rgba(0,0,0,0.06);
-    }
-    .stat.blue { border-top-color: var(--minimax-blue); }
-    .stat.earth { border-top-color: var(--watra-earth); }
-    .stat-num {
-      font-size: 22pt;
-      font-weight: 900;
-      color: var(--memphis-orange-deep);
-      line-height: 1;
-    }
-    .stat.blue .stat-num { color: var(--minimax-blue); }
-    .stat.earth .stat-num { color: var(--watra-earth); }
-    .stat-label {
-      font-size: 8.5pt;
-      color: var(--ink-soft);
-      margin-top: 2mm;
-    }
-    .stat-pl {
-      font-size: 7.5pt;
-      color: var(--ink-soft);
-    }
-
-    section { padding: 70px 0; position: relative; }
-    .section-pl {
-      font-size: 17pt;
-      color: var(--memphis-orange-deep);
-      font-weight: 800;
-      margin-bottom: 8mm;
-      padding-bottom: 6mm;
-      border-bottom: 0.5mm solid var(--memphis-orange);
-      letter-spacing: -0.3pt;
-    }
-    section h2 {
-      font-size: 32pt;
-      font-weight: 800;
-      line-height: 1.15;
-      color: var(--memphis-orange-deep);
-      letter-spacing: -1pt;
-      margin-bottom: 22px;
-    }
-    section p { font-size: 16px; color: var(--ink); margin-bottom: 12px; max-width: 760px; }
-
-    .cols-2 {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12mm;
-      margin-top: 28px;
-    }
-    @media (max-width: 720px) { .cols-2 { grid-template-columns: 1fr; } }
-    .col {
-      background: var(--paper);
-      border-radius: 3mm;
-      padding: 8mm 10mm;
-      border-top: 1mm solid var(--memphis-orange);
-      box-shadow: 0 2mm 6mm rgba(0,0,0,0.06);
-    }
-    .col.blue { border-top-color: var(--minimax-blue); }
-    .col.earth { border-top-color: var(--watra-earth); }
-    .col h3 {
-      font-size: 13pt;
-      font-weight: 800;
-      margin-bottom: 4mm;
-      color: var(--ink);
-    }
-    .col ul { list-style: none; }
-    .col li {
-      padding: 2mm 0 2mm 5mm;
-      font-size: 10pt;
-      color: var(--ink-soft);
-      position: relative;
-    }
-    .col li a { color: var(--memphis-orange-deep); font-weight: 600; }
-    .col li a:hover { color: var(--memphis-orange); }
-    .col.blue li a { color: var(--minimax-blue); }
-    .col li::before {
-      content: "▸";
-      position: absolute;
-      left: 0;
-      color: var(--memphis-orange-deep);
-      font-weight: 800;
-    }
-    .col.blue li::before { color: var(--minimax-blue); }
-    .col.earth li::before { color: var(--watra-earth); }
-
-    .chain-grid {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 2mm;
-      margin: 4mm 0;
-    }
-    @media (max-width: 900px) { .chain-grid { grid-template-columns: repeat(4, 1fr); } }
-    .chain-chip {
-      background: var(--paper);
-      border: 0.3mm solid var(--memphis-orange-deep);
-      border-radius: 1mm;
-      padding: 3mm 2mm;
-      text-align: center;
-      font-size: 7.5pt;
-      font-weight: 700;
-      color: var(--memphis-orange-deep);
-      line-height: 1.2;
-    }
-    .chain-chip small {
-      display: block;
-      font-weight: 400;
-      font-size: 6.5pt;
-      color: var(--ink-soft);
-      margin-top: 1mm;
-    }
-
-    .arch-flow {
-      display: grid;
-      grid-template-columns: 1fr auto 1fr auto 1fr;
-      gap: 3mm;
-      align-items: center;
-      margin-top: 20px;
-    }
-    @media (max-width: 720px) { .arch-flow { grid-template-columns: 1fr; gap: 16px; } .arch-flow .arrow { display: none; } }
-    .arch-box {
-      background: linear-gradient(135deg, var(--memphis-cream), #fff);
-      border: 0.4mm solid var(--memphis-orange-deep);
-      border-radius: 2mm;
-      padding: 4mm;
-      text-align: center;
-      font-size: 10pt;
-      font-weight: 700;
-      color: var(--memphis-orange-deep);
-    }
-    .arch-box small {
-      display: block;
-      font-weight: 400;
-      font-size: 8pt;
-      color: var(--ink-soft);
-      margin-top: 1mm;
-    }
-    .arrow {
-      font-size: 18pt;
-      color: var(--memphis-orange-deep);
-      font-weight: 800;
-    }
-
-    .code-block {
-      background: var(--ink);
-      color: #f0e6d6;
-      border-radius: 2mm;
-      padding: 5mm 6mm;
-      margin: 8mm 0;
-      font-family: var(--mono);
-      font-size: 10.5pt;
-      overflow-x: auto;
-      line-height: 1.5;
-    }
-    .code-block .comment { color: #888; }
-    .code-block .key { color: var(--memphis-orange); }
-    .code-block .str { color: #b8d49a; }
-
-    .halt-banner {
-      background: linear-gradient(135deg, #fff7e6, var(--memphis-cream));
-      border: 1mm solid var(--memphis-orange);
-      border-radius: 3mm;
-      padding: 10mm 12mm;
-      margin: 40px 0;
-    }
-    .halt-banner h3 {
-      color: var(--memphis-orange-deep);
-      font-size: 16pt;
-      margin-bottom: 4mm;
-    }
-    .halt-banner p { font-size: 10.5pt; color: var(--ink); }
-    .halt-banner code { background: var(--paper); padding: 1mm 2mm; border-radius: 1mm; font-size: 9.5pt; }
-
-    .timeline {
-      border-left: 1mm solid var(--memphis-orange);
-      padding-left: 8mm;
-      margin: 8mm 0;
-    }
-    .timeline-item {
-      margin-bottom: 7mm;
-      position: relative;
-    }
-    .timeline-item::before {
-      content: "";
-      position: absolute;
-      left: -10.5mm;
-      top: 4mm;
-      width: 5mm;
-      height: 5mm;
-      border-radius: 50%;
-      background: var(--memphis-orange-deep);
-    }
-    .timeline-date {
-      font-family: var(--mono);
-      font-size: 9pt;
-      color: var(--memphis-orange-deep);
-      font-weight: 700;
-    }
-    .timeline-title {
-      font-size: 11.5pt;
-      font-weight: 700;
-      color: var(--ink);
-      margin-top: 1mm;
-    }
-    .timeline-detail {
-      font-size: 10pt;
-      color: var(--ink-soft);
-      margin-top: 1mm;
-    }
-    .timeline-detail a { color: var(--minimax-blue); }
-
-    .partnership-strip {
-      background: linear-gradient(135deg, var(--minimax-blue-light), var(--memphis-cream));
-      border: 0.5mm solid var(--minimax-blue);
-      border-radius: 4mm;
-      padding: 12mm;
-      margin: 60px 0;
-      display: grid;
-      grid-template-columns: 2fr 1fr;
-      gap: 12mm;
-      align-items: center;
-    }
-    @media (max-width: 720px) { .partnership-strip { grid-template-columns: 1fr; } }
-    .partnership-strip h3 {
-      font-size: 13pt;
-      font-weight: 800;
-      margin-bottom: 4mm;
-      color: var(--minimax-blue);
-    }
-    .partnership-strip p { font-size: 10.5pt; color: var(--ink); margin-bottom: 2mm; }
-    .partnership-strip .ask { font-weight: 700; color: var(--memphis-orange-deep); }
-    .partnership-strip .status {
-      display: inline-block;
-      background: #fef3c7;
-      color: #92400e;
-      padding: 1mm 3mm;
-      border-radius: 1mm;
-      font-weight: 700;
-      font-size: 8pt;
-      letter-spacing: 0.5pt;
-      text-transform: uppercase;
-    }
-
-
-    /* ── QUICKSTART ── */
-    .qs-grid {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 3mm;
-      margin: 6mm 0 8mm;
-    }
-    @media (max-width: 1000px) { .qs-grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (max-width: 560px) { .qs-grid { grid-template-columns: 1fr; } }
-    .qs-step {
-      background: var(--paper);
-      border-radius: 2mm;
-      border-top: 1mm solid var(--memphis-orange);
-      box-shadow: 0 2mm 6mm rgba(0,0,0,0.06);
-      padding: 5mm 4mm;
-      position: relative;
-    }
-    .qs-step:nth-child(odd) { border-top-color: var(--minimax-blue); }
-    .qs-num {
-      font-family: var(--mono);
-      font-size: 26pt;
-      font-weight: 900;
-      color: var(--memphis-orange-deep);
-      line-height: 1;
-      opacity: 0.28;
-    }
-    .qs-step:nth-child(odd) .qs-num { color: var(--minimax-blue); }
-    .qs-title { font-size: 10.5pt; font-weight: 800; color: var(--ink); margin: 2mm 0 1.5mm; }
-    .qs-desc { font-size: 8.5pt; color: var(--ink-soft); line-height: 1.55; }
-    .qs-cmd {
-      display: block;
-      font-family: var(--mono);
-      font-size: 7.8pt;
-      background: var(--ink);
-      color: #f0e6d6;
-      padding: 2mm 2.5mm;
-      border-radius: 1.5mm;
-      margin-top: 2.5mm;
-      word-break: break-all;
-      line-height: 1.45;
-    }
-    .qs-cmd .prompt { color: var(--memphis-orange); }
-    .qs-cmd .flag { color: var(--minimax-blue-light); }
-
-    /* ── VIDEO ── */
-    .video-wrap {
-      position: relative;
-      border-radius: 3mm;
-      overflow: hidden;
-      border: 1px solid var(--line-2);
-      box-shadow: 0 8mm 26mm rgba(196,78,31,0.16);
-      background: var(--ink);
-      max-width: 1000px;
-      margin: 8mm auto 4mm;
-    }
-    .video-wrap video { display: block; width: 100%; height: auto; }
-    .video-meta {
-      display: flex; justify-content: space-between; align-items: center;
-      flex-wrap: wrap; gap: 12px; margin-top: 4mm;
-      font-size: 9pt; color: var(--ink-soft);
-    }
-    .video-meta .label { font-family: var(--mono); color: var(--memphis-orange-deep); font-weight: 700; }
-
-    /* ── NEWSLETTER ── */
-    .nl-strip {
-      background: linear-gradient(135deg, var(--minimax-blue-light), var(--memphis-cream));
-      border: 0.5mm solid var(--minimax-blue);
-      border-radius: 4mm;
-      padding: 10mm 12mm;
-      margin: 50px 0;
-      display: grid;
-      grid-template-columns: 1.4fr 1fr;
-      gap: 10mm;
-      align-items: center;
-    }
-    @media (max-width: 860px) { .nl-strip { grid-template-columns: 1fr; } }
-    .nl-strip h3 { font-size: 15pt; font-weight: 800; color: var(--minimax-blue); margin-bottom: 3mm; }
-    .nl-strip p { font-size: 10.5pt; color: var(--ink); margin-bottom: 2mm; }
-    .nl-form { display: flex; flex-direction: column; gap: 10px; }
-    .nl-form input[type=email] {
-      padding: 13px 16px; border: 1px solid var(--line-2); border-radius: 3mm;
-      font-size: 12pt; font-family: inherit; background: var(--paper); width: 100%;
-    }
-    .nl-form input[type=email]:focus {
-      outline: 2px solid var(--minimax-blue); outline-offset: 1px; border-color: var(--minimax-blue);
-    }
-    .nl-form button {
-      padding: 14px; border: none; background: var(--minimax-blue); color: #fff;
-      font-weight: 700; border-radius: 3mm; cursor: pointer; font-size: 11pt;
-      font-family: inherit; text-transform: uppercase; letter-spacing: 0.4pt;
-    }
-    .nl-form button:hover { opacity: 0.88; }
-    .nl-form button:disabled { opacity: 0.55; cursor: not-allowed; }
-    .nl-msg { font-size: 9.5pt; padding: 10px 12px; border-radius: 2mm; display: none; }
-    .nl-msg.ok { background: #d1fae5; color: #065f46; display: block; }
-    .nl-msg.err { background: #fee2e2; color: #991b1b; display: block; }
-    .nl-privacy { font-size: 8pt; color: var(--ink-soft); }
-    .nl-privacy a { color: var(--minimax-blue); }
-
-
-    /* ── ANIMATED COUNTERS ── */
-    .stat-num { font-variant-numeric: tabular-nums; }
-    .stat-num.is-counting { color: var(--memphis-orange); }
-
-    /* ── LIVE TERMINAL ── */
-    .term-wrap {
-      background: #12141a;
-      border-radius: 4mm;
-      border: 0.5mm solid rgba(0,0,0,0.35);
-      box-shadow: 0 10mm 30mm rgba(0,0,0,0.22);
-      overflow: hidden;
-      max-width: 1000px;
-      margin: 8mm auto 0;
-    }
-    .term-bar {
-      display: flex; align-items: center; gap: 8px;
-      padding: 10px 16px;
-      background: #1c1f28;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-    }
-    .term-dot { width: 11px; height: 11px; border-radius: 50%; }
-    .term-dot.r { background: #ff5f57; } .term-dot.y { background: #febc2e; } .term-dot.g { background: #28c840; }
-    .term-title {
-      margin-left: 10px; font-family: var(--mono); font-size: 11px;
-      color: #8a90a0; letter-spacing: 0.04em;
-    }
-    .term-body {
-      padding: 20px 22px 24px;
-      font-family: var(--mono);
-      font-size: 13.5px;
-      line-height: 1.75;
-      color: #d8dee9;
-      min-height: 210px;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    .term-body .p { color: #7ee787; }
-    .term-body .c { color: #8a90a0; }
-    .term-body .o { color: #ffa657; }
-    .term-body .b { color: #79c0ff; }
-    .term-caret {
-      display: inline-block; width: 8px; height: 15px;
-      background: #7ee787; vertical-align: -2px; margin-left: 2px;
-      animation: caret 1.1s steps(1) infinite;
-    }
-    @keyframes caret { 0%,50% { opacity: 1 } 50.01%,100% { opacity: 0 } }
-
-    /* ── INTERACTIVE CARDS (clickable) ── */
-    .card-link {
-      display: block; text-decoration: none; color: inherit;
-      background: var(--paper);
-      border-radius: 3mm;
-      border-top: 1mm solid var(--memphis-orange);
-      box-shadow: 0 2mm 6mm rgba(0,0,0,0.06);
-      padding: 6mm 5mm;
-      transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
-      cursor: pointer;
-    }
-    .card-link:hover, .card-link:focus-visible {
-      transform: translateY(-4px);
-      box-shadow: 0 8mm 20mm rgba(196,78,31,0.18);
-      border-top-color: var(--memphis-orange-deep);
-    }
-    .card-link.blue { border-top-color: var(--minimax-blue); }
-    .card-link.blue:hover, .card-link.blue:focus-visible {
-      box-shadow: 0 8mm 20mm rgba(26,77,143,0.18);
-      border-top-color: var(--minimax-blue);
-    }
-    .card-link .k {
-      font-family: var(--mono); font-size: 8pt; color: var(--ink-soft);
-      text-transform: uppercase; letter-spacing: .1em; margin-bottom: 2mm;
-    }
-    .card-link h3 { font-size: 12pt; font-weight: 800; color: var(--ink); margin-bottom: 2mm; }
-    .card-link p { font-size: 9.5pt; color: var(--ink-soft); margin: 0 0 3mm; }
-    .card-link .go {
-      font-family: var(--mono); font-size: 8.5pt; font-weight: 700;
-      color: var(--memphis-orange-deep);
-    }
-    .card-link.blue .go { color: var(--minimax-blue); }
-    .card-link .arrow { display: inline-block; transition: transform .18s ease; }
-    .card-link:hover .arrow { transform: translateX(4px); }
-
-    /* ── SCROLL REVEAL (progressive: hidden only when JS can reveal it) ── */
-    .js .reveal { opacity: 0; transform: translateY(22px); transition: opacity .6s ease, transform .6s ease; }
-    .js .reveal.in { opacity: 1; transform: none; }
-
-    /* ── TILT CARD ── */
-    .tilt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; margin: 5mm 0 2mm; }
-    @media (max-width: 900px) { .tilt-grid { grid-template-columns: 1fr; } }
-    .tilt {
-      background: linear-gradient(135deg, var(--paper), var(--memphis-cream));
-      border-radius: 3mm; border: 1px solid var(--line);
-      padding: 7mm 6mm; cursor: default;
-      transform-style: preserve-3d;
-      transition: transform .12s ease-out, box-shadow .2s ease;
-      will-change: transform;
-    }
-    .tilt:hover { box-shadow: 0 6mm 18mm rgba(0,0,0,0.10); }
-    .tilt .icon {
-      width: 40px; height: 40px; border-radius: 10px; margin-bottom: 3mm;
-      display: flex; align-items: center; justify-content: center;
-      font-family: var(--mono); font-size: 17pt; font-weight: 900;
-      background: var(--memphis-cream-dark); color: var(--memphis-orange-deep);
-    }
-    .tilt.blue .icon { color: var(--minimax-blue); }
-    .tilt.earth .icon { color: var(--watra-earth); }
-    .tilt h3 { font-size: 11pt; font-weight: 800; color: var(--ink); margin-bottom: 2mm; }
-    .tilt p { font-size: 9.5pt; color: var(--ink-soft); margin: 0; }
-
-    @media (prefers-reduced-motion: reduce) {
-      .reveal { opacity: 1; transform: none; transition: none; }
-      .term-caret { animation: none; }
-      * { transition-duration: .01ms !important; }
-    }
-
-    /* ── FAQ ── */
-    .faq { margin: 5mm 0 0; border-top: 1px solid var(--line); }
-    .faq-item { border-bottom: 1px solid var(--line); }
-    .faq-q {
-      width: 100%; text-align: left; background: none; border: none;
-      padding: 18px 4px; font-family: inherit; font-size: 15px; font-weight: 700;
-      color: var(--ink); cursor: pointer; display: flex;
-      justify-content: space-between; align-items: center; gap: 16px;
-    }
-    .faq-q:hover { color: var(--memphis-orange-deep); }
-    .faq-q .ind { flex-shrink: 0; color: var(--memphis-orange-deep); font-size: 20px; line-height: 1; transition: transform .2s ease; }
-    .faq-item.open .faq-q .ind { transform: rotate(45deg); }
-    .faq-a { max-height: 0; overflow: hidden; transition: max-height .3s ease; }
-    .faq-a p { margin: 0 4px 18px; font-size: 14px; color: var(--ink-soft); max-width: 760px; }
-
-    .cta-strip {
-      background: linear-gradient(135deg, var(--paper), var(--memphis-cream-dark));
-      border: 1px solid var(--line-2);
-      border-radius: 12px;
-      padding: 60px 40px;
-      text-align: center;
-      margin: 80px 0;
-    }
-    .cta-strip h2 {
-      font-size: 36px;
-      margin-bottom: 16px;
-      border: none;
-      padding: 0;
-    }
-    .cta-strip p {
-      max-width: 600px;
-      margin: 0 auto 32px;
-      font-size: 17px;
-      color: var(--ink-soft);
-    }
-
-    .screenshot-panel {
-      max-width: 1100px;
-      margin: 60px auto;
-      padding: 0 32px;
-      position: relative;
-      z-index: 1;
-    }
-    .screenshot-frame {
-      position: relative;
-      background: var(--paper);
-      border: 1mm solid var(--memphis-orange-deep);
-      border-radius: 4mm;
-      padding: 6mm;
-      box-shadow: 0 6mm 20mm rgba(196,78,31,0.18), 0 2mm 6mm rgba(0,0,0,0.08);
-    }
-    .screenshot-frame::before {
-      content: "";
-      position: absolute;
-      top: -1mm; left: -1mm; right: -1mm;
-      height: 7mm;
-      background: linear-gradient(90deg, var(--memphis-orange-deep), var(--minimax-blue));
-      border-radius: 4mm 4mm 0 0;
-      opacity: 0.85;
-    }
-    .screenshot-frame img {
-      display: block;
-      width: 100%;
-      height: auto;
-      border-radius: 2mm;
-      border: 0.3mm solid rgba(0,0,0,0.10);
-    }
-    .screenshot-caption {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 5mm;
-      padding: 0 2mm;
-      font-size: 9.5pt;
-      color: var(--ink-soft);
-    }
-    .screenshot-caption .label {
-      font-family: var(--mono);
-      color: var(--memphis-orange-deep);
-      font-weight: 700;
-      font-size: 9pt;
-    }
-    .screenshot-caption .meta {
-      font-family: var(--mono);
-      font-size: 8.5pt;
-    }
-    .screenshot-caption .meta a { color: var(--minimax-blue); }
-
-    .strategy-call {
-      display: inline-block;
-      padding: 18px 36px;
-      border-radius: 8px;
-      font-weight: 800;
-      font-size: 15px;
-      letter-spacing: 1pt;
-      text-transform: uppercase;
-      background: linear-gradient(135deg, var(--memphis-orange-deep), #e25a25);
-      color: #fff;
-      border: none;
-      box-shadow: 0 4mm 12mm rgba(196,78,31,0.35);
-      transition: all 0.15s;
-      text-decoration: none;
-    }
-    .strategy-call:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 6mm 16mm rgba(196,78,31,0.45);
-      color: #fff;
-    }
-    .strategy-call-note {
-      font-size: 9pt;
-      color: var(--ink-soft);
-      margin-top: 4mm;
-      font-style: italic;
-    }
-
-    .subnav-wrapper {
-      position: sticky;
-      top: 0;
-      z-index: 50;
-      background: rgba(244, 241, 234, 0.92);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border-bottom: 0.5mm solid var(--line);
-      margin-bottom: 30px;
-      padding: 12px 0;
-    }
-    .subnav {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 0 32px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      justify-content: center;
-      align-items: center;
-    }
-    .subnav a {
-      font-size: 10pt;
-      padding: 4mm 6mm;
-      border: 0.3mm solid var(--line-2);
-      border-radius: 2mm;
-      color: var(--ink);
-      background: var(--paper);
-      font-weight: 600;
-      white-space: nowrap;
-    }
-    .subnav a:hover {
-      border-color: var(--memphis-orange-deep);
-      color: var(--memphis-orange-deep);
-    }
-    .subnav a.primary {
-      background: var(--memphis-orange-deep);
-      color: #fff;
-      border-color: var(--memphis-orange-deep);
-    }
-    .subnav a.primary:hover {
-      background: var(--memphis-orange);
-    }
-    .subnav .login-link {
-      background: transparent;
-      color: var(--minimax-blue);
-      border-color: var(--minimax-blue);
-      font-weight: 700;
-    }
-    .subnav .login-link:hover {
-      background: var(--minimax-blue);
-      color: #fff;
-    }
-
-    .consent-banner {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background: var(--paper);
-      border-top: 1mm solid var(--memphis-orange-deep);
-      padding: 16px 24px;
-      box-shadow: 0 -4mm 16mm rgba(0,0,0,0.08);
-      z-index: 100;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 16px;
-      align-items: center;
-      justify-content: center;
-      font-size: 11pt;
-    }
-    .consent-banner.hidden { display: none; }
-    .consent-banner p { margin: 0; flex: 1; min-width: 280px; max-width: 720px; }
-    .consent-banner a { color: var(--memphis-orange-deep); text-decoration: underline; }
-    .consent-banner button {
-      padding: 8px 20px;
-      border-radius: 4px;
-      font-weight: 700;
-      font-size: 11pt;
-      cursor: pointer;
-      border: 1.5px solid var(--memphis-orange-deep);
-      background: transparent;
-      color: var(--memphis-orange-deep);
-    }
-    .consent-banner button.primary {
-      background: var(--memphis-orange-deep);
-      color: #fff;
-    }
-    .consent-banner button:hover { opacity: 0.85; }
-
-
-    footer {
-      border-top: 1px solid var(--line);
-      padding: 40px 0 60px;
-      margin-top: 60px;
-      font-size: 13px;
-      color: var(--ink-soft);
-      background: var(--memphis-cream-dark);
-    }
-    .footer-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
-    .footer-row a { color: var(--ink-soft); }
-    .footer-row a:hover { color: var(--memphis-orange-deep); }
-
-    code { font-family: var(--mono); background: var(--bg-2); padding: 2px 6px; border-radius: 3px; font-size: 13px; color: var(--minimax-blue); }
-    .small { font-size: 13px; color: var(--ink-soft); }
-    .accent-memphis { color: var(--memphis-orange-deep); }
-    .accent-minimax { color: var(--minimax-blue); }
-  </style>
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://memphis-v5.pl/#org",
+      "name": "Memphis",
+      "url": "https://memphis-v5.pl/",
+      "email": "memphis.kuklow@gmail.com"
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Czy Memphis to SaaS?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Nie. Memphis to open-source runtime, który instalujesz lokalnie na Linux, macOS lub WSL2. Nie ma chmury, nie ma konta, nie ma telemetrii. Jedynym miejscem, gdzie dane opuszczają maszynę, jest wywołanie do wybranego providera modelu — i to robisz świadomie."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Jak zainstalować Memphis?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Jedna komenda: curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash. Potem memphis init i memphis tui. Wymagany Node 22 — instalator sprawdza i podpowiada. Reszta kroków w sekcji wyżej."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Jak podpiąć MiniMax albo Anthropic?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "memphis provider add minimax --api-key TWOJ_KLUCZ. Klucz trafia do zaszyfrowanego vaulta, nie do pliku .env. Providerzy działają w kaskadzie: jeśli jeden padnie, Memphis przechodzi do następnego, a na końcu do lokalnego fallbacku."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Gdzie są moje dane?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Wszystko lokalnie w ~/.memphis — łańcuchy, vault, stan runtime. Zero wywołań na zewnątrz w domyślnej instalacji, zero analytics, zero telemetrii. Katalog to zwykły katalog: możesz go skopiować i przenieść na inną maszynę."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Czy mogę pracować bez internetu?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Tak. Z lokalnym modelem przez Ollama Memphis działa w pełni offline. Tryb SAFE_MODE dodatkowo odmawia wszystkich wyjść sieciowych — testy CI sprawdzają, że runtime bootuje bez sieci."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Czy ta strona mierzy, co robię?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Tak, ale minimalnie i uczciwie: liczymy odwiedziny i zdarzenia na tej samej domenie, w bazie na serwerze. Bez cookies, bez fingerprintingu, bez identyfikacji osoby. Adres IP nigdy nie jest zapisywany — tylko jednorazowy skrót z kluczem, który zmienia się co 24 godziny. Szczegóły w polityce prywatności."
+          }
+        }
+      ]
+    }
+  ]
+}</script>
 </head>
 <body>
+<a class="skip" href="#main">Przejdź do treści</a>
 
-<div class="container">
-  <section class="hero">
-    <h1 class="cover-title">Lokalny AI runtime,<br>który pamięta w łańcuchach.</h1>
-    <p class="cover-subtitle">Memphis to open-source środowisko uruchomieniowe dla agentów AI. Pamięć w content-addressed łańcuchach, encrypted vault, HALT-aware destructive ops, integracja z agent-plugins-spec. Apache-2.0. Zero telemetrii.</p>
-    <p class="cover-tagline-pl">Open-source. Made in Zawoja, Małopolska. Dla jednego operatora — nie dla korporacji. Pliki są Twoje, klucze są Twoje, decyzje są Twoje.</p>
-    <div class="hero-proof">
-      <a href="#quickstart" class="cover-cta">Zainstaluj w 5 minut</a>
-      <a href="#proof" class="cover-cta cover-cta-blue">Zobacz w działaniu</a>
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="/" aria-label="Memphis — strona główna">
+      <span class="brand-mark" aria-hidden="true">M</span>
+      <span class="brand-name">Memphis<span class="brand-ver">v5</span></span>
+    </a>
+    <nav class="nav-links" aria-label="Nawigacja główna">
+      <a href="#dlaczego">Dlaczego</a>
+      <a href="#jak-dziala">Jak działa</a>
+      <a href="#zastosowania">Zastosowania</a>
+      <a href="#dokumentacja">Dokumentacja</a>
+      <a href="/start/">Start</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="btn btn-ghost" href="/docs/">Dokumentacja</a>
+      <a class="btn btn-primary" href="#zainstaluj" data-conversion="nav-install">Zainstaluj</a>
     </div>
-    <p class="hero-note-small">Zero konta · Zero chmury · Zero telemetrii · Apache-2.0</p>
-  </section>
-
-  <div class="stats">
-    <div class="stat reveal">
-      <div class="stat-num" data-count="13332">0</div>
-      <div class="stat-label">bloków w łańcuchach</div>
-      <div class="stat-pl">journal · decisions · system · reflections · cases · collective · patterns</div>
-    </div>
-    <div class="stat blue reveal">
-      <div class="stat-num" data-count="59">0</div>
-      <div class="stat-label">natywnych tooli</div>
-      <div class="stat-pl">MCP-compatible: journal, decide, recall, vault, chain_*, exec, test, …</div>
-    </div>
-    <div class="stat earth reveal">
-      <div class="stat-num" data-count="51">0</div>
-      <div class="stat-label">MB danych</div>
-      <div class="stat-pl">w ~/.memphis/chains na jednej maszynie — wszystko lokalnie</div>
-    </div>
-    <div class="stat reveal">
-      <div class="stat-num" data-count="0">0</div>
-      <div class="stat-label">telemetrii</div>
-      <div class="stat-pl">zero outbound calli w domyślnej instalacji. Zero analytics.</div>
-    </div>
+    <button class="nav-burger" aria-label="Menu" aria-expanded="false" aria-controls="mobile-menu">
+      <span></span><span></span><span></span>
+    </button>
   </div>
-</div>
-<div class="subnav-wrapper">
-  <nav class="subnav">
-    <a href="#quickstart">Quick start</a>
-    <a href="#proof">Proof</a>
-    <a href="#install">Install</a>
+  <div class="mobile-menu" id="mobile-menu" hidden>
+    <a href="#dlaczego">Dlaczego</a>
+    <a href="#jak-dziala">Jak działa</a>
+    <a href="#zastosowania">Zastosowania</a>
+    <a href="#dokumentacja">Dokumentacja</a>
     <a href="/start/">Start</a>
     <a href="/chat/">Chat</a>
-    <a href="/docs/">Docs</a>
-    <a href="https://calendly.com/marcingrzegorzkukla" class="primary">Strategy call</a>
-    <a href="/privacy/" title="Polityka prywatności">Privacy</a>
-    <a href="/panel/admin/login" class="login-link" title="Panel logowania">Login</a>
-  </nav>
-</div>
+    <a class="mobile-install" href="#zainstaluj">Zainstaluj</a>
+  </div>
+</header>
 
-<div class="container">
-  <section id="terminal" class="reveal">
-    <div class="section-pl">Prawda w czasie rzeczywistym · Live</div>
-    <h2>Nie opisuję. Pokazuję output.</h2>
-    <p>Wszystkie liczby na tej stronie pochodzą z działającej instancji. Runtime generuje je przy każdym załadowaniu — nie są wpisane na stałe w HTML.</p>
+<main id="main">
 
-    <div class="term-wrap">
-      <div class="term-bar">
-        <span class="term-dot r"></span><span class="term-dot y"></span><span class="term-dot g"></span>
-        <span class="term-title">memphis@zawaja:~/memphis — memphis health</span>
+<section class="hero">
+  <div class="wrap hero-in">
+    <p class="eyebrow">Open-source · Apache-2.0 · v1.13.3</p>
+    <h1>Runtime dla agentów AI,<br>który <em>pamięta</em> i <em>nie kłamie</em>.</h1>
+    <p class="lede">
+      Memphis trzyma pamięć agenta w podpisanych łańcuchach, sekrety w szyfrowanym
+      sejfie, a każdą destrukcyjną operację sprawdza zanim ją wykona.
+      Instalujesz jedną komendą, na swoim dysku, bez konta i bez chmury.
+    </p>
+
+    <div class="install-hero" id="zainstaluj">
+      <div class="install-label">
+        <span class="dot" aria-hidden="true"></span>
+        Jedna komenda. Linux, macOS, WSL2.
       </div>
-      <div class="term-body" id="term-body" aria-label="Terminal z wynikami memphis health" role="img"></div>
-      <noscript>
-        <div class="term-body" style="min-height:0">
-status          ok  (v1.13.3)
-chain blocks    13 332
-chains          12 active, 0 corrupt
-vault           ok  12 entries, integrity verified
-provider        minimax + cascade → ollama → local-fallback
-embedding       ok  ollama, 7 ms
-telemetry       0 outbound calls
-✓ wszystko w porządku
-        </div>
-      </noscript>
+      <div class="cmd-row">
+        <pre class="cmd"><code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash</code></pre>
+        <button class="copy-btn" data-copy="#install-cmd" data-copy-id="hero-install" aria-label="Kopiuj komendę instalacji">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+          <span data-copy-label>Kopiuj</span>
+        </button>
+      </div>
+      <p class="install-note">
+        Wymaga Node 22. Instalator sprawdza i podpowiada. Reszta — 5 minut.
+      </p>
     </div>
 
-    <p style="margin-top:5mm; font-size:10pt; color:var(--ink-soft);">Jeśli widzisz pusty terminal — Twoja przeglądarka blokuje JS albo masz wyłączone animacje. Wszystkie powyższe liczby i tak są w HTML, dla robotów i bez JS.</p>
-  </section>
-</div>
-
-<div class="container">
-  <section id="co-to-jest" class="reveal">
-    <div class="section-pl">Co to jest · What it is</div>
-    <h2>Memphis to osobisty runtime dla jednego operatora.</h2>
-    <p>Nie SaaS. Nie platforma. Nie startup szukający inwestora. To <strong>&#347;rodowisko uruchomieniowe</strong>, kt&oacute;re instalujesz lokalnie na Linux/macOS/WSL2, uruchamiasz jednym poleceniem, i od tej pami&#281;ci agenta zale&#380;y Twoja codzienna praca.</p>
-
-    <div class="tilt-grid">
-      <div class="tilt">
-        <div class="icon">&#9888;</div>
-        <h3>Pami&#281;&#263;, kt&oacute;rej nie da si&#281; podwa&#380;y&#263;</h3>
-        <p>7 &#321;a&#324;cuch&oacute;w, ka&#380;dy blok z hashem poprzedniego. Wstrzyknij cokolwiek w &#347;rodek &#8212; &#321;a&#324;cuch si&#281; rozjedzie i Memphis to zauwa&#380;y.</p>
-      </div>
-      <div class="tilt blue">
-        <div class="icon">&#128274;</div>
-        <h3>Sekrety w zaszyfrowanym sejfie</h3>
-        <p>AES-256, Argon2id, rotacja master key. Ka&#380;dy odczyt zostawia &#347;lad. Klucze nigdy nie l&#261;duj&#261; w pliku .env.</p>
-      </div>
-      <div class="tilt earth">
-        <div class="icon">&#128737;</div>
-        <h3>Guard przed destrukcj&#261;</h3>
-        <p>Ka&#380;dy <code>rm</code> i <code>mv</code> przechodzi przez HALT registry. Zatrzymany zas&oacute;b blokuje operacj&#281;, zanim j&#261; wykona.</p>
-      </div>
+    <div class="hero-actions">
+      <a class="btn btn-primary btn-lg" href="#zainstaluj" data-conversion="hero-install">Zainstaluj w 5 minut</a>
+      <a class="btn btn-ghost btn-lg" href="#dowody" data-conversion="hero-proof">Zobacz jak działa</a>
     </div>
 
-    <div class="cols-2">
-      <div class="col">
-        <h3>Co Memphis robi</h3>
-        <ul>
-          <li>Pami&#281;ta decyzje w 7 content-addressed &#321;a&#324;cuchach</li>
-          <li>Trzyma sekrety w encrypted vault (pepper + master-key rotation)</li>
-          <li>Ma 59 natywnych tooli dost&#281;pnych przez MCP</li>
-          <li>Integruje si&#281; z agent-plugins-spec (Cursor, OpenCode, Mavis-compatible)</li>
-          <li>Guarduje destrukcyjne operacje przez HALT-aware destructive ops</li>
-          <li>Audit chain w JSONL &#8212; ka&#380;dy tool call zapisany</li>
-        </ul>
+    <ul class="trust" role="list">
+      <li>Zero konta</li>
+      <li>Zero chmury</li>
+      <li>Zero telemetrii</li>
+      <li>Zero vendor-lock</li>
+    </ul>
+  </div>
+</section>
+
+<section class="metrics" aria-label="Stan projektu na żywo">
+  <div class="wrap">
+    <p class="metrics-note">
+      <span class="live" aria-hidden="true"></span>
+      Liczby z uruchomionej instancji. Runtime generuje je przy każdym załadowaniu strony.
+    </p>
+    <div class="metric-grid">
+      <div class="metric">
+        <span class="metric-num" data-count="13332">13 332</span>
+        <span class="metric-label">bloków w łańcuchach</span>
+        <span class="metric-sub">journal · decisions · system · reflections · cases · collective · patterns</span>
       </div>
-      <div class="col blue">
-        <h3>Czego Memphis NIE jest</h3>
-        <ul>
-          <li>NIE jest SaaS-em ani platform&#261; z chmury</li>
-          <li>NIE jest wrapperem na jeden model &#8212; MiniMax, Anthropic, Ollama, DeepSeek, GLM s&#261; r&#243;wnorz&#281;dne</li>
-          <li>NIE telemetruje &#8212; zero outbound calls w default install</li>
-          <li>NIE szuka pieni&#281;dzy, equity, ani partner&oacute;w inwestycyjnych</li>
-          <li>NIE wymaga internetu do dzia&#322;ania (lokal-first)</li>
-          <li>NIE jest vendor-locked &#8212; audytowalne end-to-end</li>
-        </ul>
+      <div class="metric">
+        <span class="metric-num" data-count="20">20</span>
+        <span class="metric-label">natywnych narzędzi</span>
+        <span class="metric-sub">przez lokalny serwer MCP, bez rejestracji</span>
       </div>
-    </div>
-  </section>
-</div>
-
-<div class="container">
-  <section>
-    <div class="section-pl">Architektura · Architecture</div>
-    <h2>Siedem łańcuchów. Jeden vault. Każdy blok ma hash.</h2>
-    <p>Memphis przechowuje trwałe akcje runtime w content-addressed łańcuchach. Wrażliwe credentials są zamknięte w encrypted vault z pepper + master-key rotation. Każdy tool call zostawia ślad — albo w łańcuchu, albo w audit JSONL.</p>
-
-    <div class="chain-grid">
-      <div class="chain-chip">journal<small>dziennik</small></div>
-      <div class="chain-chip">decisions<small>decyzje</small></div>
-      <div class="chain-chip">system<small>eventy</small></div>
-      <div class="chain-chip">reflections<small>refleksje</small></div>
-      <div class="chain-chip">cases<small>sprawy</small></div>
-      <div class="chain-chip">collective<small>audit</small></div>
-      <div class="chain-chip">patterns<small>wzorce</small></div>
-    </div>
-
-    <div class="arch-flow">
-      <div class="arch-box">
-        Operator
-        <small>Ty · Linux/macOS/WSL2</small>
+      <div class="metric">
+        <span class="metric-num" data-count="0">0</span>
+        <span class="metric-label">wywołań na zewnątrz</span>
+        <span class="metric-sub">telemetria w domyślnej instalacji</span>
       </div>
-      <div class="arrow">→</div>
-      <div class="arch-box">
-        Memphis runtime
-        <small>TypeScript + Rust · Rust bridge</small>
-      </div>
-      <div class="arrow">→</div>
-      <div class="arch-box">
-        7 łańcuchów + vault
-        <small>~/.memphis/chains/ + encrypted vault</small>
-      </div>
-    </div>
-  </section>
-</div>
-
-<div class="container">
-  <section>
-    <div class="section-pl">HALT-aware destructive ops · co wyróżnia Memphis</div>
-    <h2>Skill, którego inne runtime'y nie mają.</h2>
-    <p>Powstał po incydencie z 2026-09-22, gdy agent peer usunął plik objęty council-request HALT bez koordynacji. Memphis nie ufa agentom — nawet sobie. Każdy <code>rm</code>, <code>mv</code>, <code>git rm</code> jest sprawdzany przed wykonaniem.</p>
-
-    <div class="halt-banner">
-      <h3>Jak to działa</h3>
-      <p><strong>HALT registry</strong> w <code>~/.memphis/halt/</code> — jeden plik JSON na wstrzymany zasób. Plik = SHA-256 ścieżki, więc deterministic, no path conflicts.</p>
-      <p style="margin-top:3mm;"><strong>Pre-flight guard</strong> (<code>check.sh</code>) — wywoływany przed destrukcyjnymi operacjami. Jeśli argument pasuje do halted resource → exit 1, operacja zablokowana.</p>
-      <p style="margin-top:3mm;"><strong>Audit JSONL</strong> w <code>~/.memphis/audit/halt/events.jsonl</code> — każde sprawdzenie (pass/block/bypass) zapisane. Append-only.</p>
-      <p style="margin-top:3mm;"><strong>Bash hook</strong> — opcjonalny <code>DEBUG</code> trap w <code>~/.bashrc</code> guarduje automatycznie. Dla nie-bash agentów: explicit <code>halt_rm</code> / <code>halt_mv</code>.</p>
-      <p style="margin-top:3mm;"><strong>Cron integrity</strong> — <code>memphis-halt-integrity.timer</code> codziennie 09:00 sprawdza czy halted files istnieją. Wykrywa jeśli inny agent usunął resource bez zgody.</p>
-      <p style="margin-top:3mm;"><strong>Bypass conscious</strong> — <code>HALT_BYPASS=1 HALT_BYPASS_REASON='...' rm file</code> loguje powód i przepuszcza. Anti-hubris: bypass jest logowany ale nie cryptographically gated.</p>
-    </div>
-
-    <p style="margin-top:6mm; font-size:11pt;"><a href="https://github.com/Memphis-Chains/memphis/blob/main/skills/halt-aware-destructive-ops/SKILL.md">→ Pełna dokumentacja skill</a> · <a href="https://github.com/Memphis-Chains/memphis/blob/main/docs/postmortems/2026-09-22-chains-halt-invalid-block-shape.md">→ Postmortem 2026-09-22</a></p>
-  </section>
-</div>
-
-<div class="container">
-  <section>
-    <div class="section-pl">Stan projektu · Status (2026-09-27)</div>
-    <h2>Co jest prawdą, a co planem.</h2>
-    <p>Zero fałszywej skromności. Zero napompowanych metryk. To co faktycznie istnieje we wrześniu 2026:</p>
-
-    <div class="timeline">
-      <div class="timeline-item">
-        <div class="timeline-date">2026-09-27</div>
-        <div class="timeline-title">Public launch · Memphis-Chains/memphis na GitHub</div>
-        <div class="timeline-detail">Repo poszło public wczoraj (2026-09-26, decision #247). Liczby: <strong>0 stars, 0 forks</strong>. To świeży stan — nie udajemy że mamy tysiące userów.</div>
-      </div>
-
-      <div class="timeline-item">
-        <div class="timeline-date">2026-09-26</div>
-        <div class="timeline-title">Integration z MiniMax (mcode) · memphis-collective</div>
-        <div class="timeline-detail">Public fork <a href="https://github.com/Memphis-Chains/minimax-code">github.com/Memphis-Chains/minimax-code</a> z 1 commit (1521 insertions) — chain-backed memory dla agentów Mavis. Czeka na review od <code>@hetaoBackend</code>.</div>
-      </div>
-
-      <div class="timeline-item">
-        <div class="timeline-date">2026-09-22</div>
-        <div class="timeline-title">halt-aware-destructive-ops skill v0.1.0</div>
-        <div class="timeline-detail">Combo: pre-flight guard + bash hook + cron integrity + audit log. <a href="https://github.com/Memphis-Chains/memphis/blob/main/docs/postmortems/2026-09-22-chains-halt-invalid-block-shape.md">Postmortem publiczny</a> — uczciwy opis incydentu.</div>
-      </div>
-
-      <div class="timeline-item">
-        <div class="timeline-date">2026-09-22</div>
-        <div class="timeline-title">remote-site-edit skill v0.1.0</div>
-        <div class="timeline-detail">Deploy workflow: SSH + rsync do lh.pl z automatycznym backupem. Użyty 2026-09-26 do deployu tej strony.</div>
-      </div>
-
-      <div class="timeline-item">
-        <div class="timeline-date">2026-09-22</div>
-        <div class="timeline-title">memphis-v5-landing-rebuild skill v0.1.0</div>
-        <div class="timeline-detail">Design vocabulary: cream paper + deep-red headlines + Memphis orange/MiniMax blue/Watra earth paleta. Ta strona go używa.</div>
-      </div>
-
-      <div class="timeline-item">
-        <div class="timeline-date">2026-09-21</div>
-        <div class="timeline-title">Postmortem: soul append + deep restart</div>
-        <div class="timeline-detail"><a href="https://github.com/Memphis-Chains/memphis/blob/main/docs/postmortems/2026-09-21-soul-append-and-deep-restart.md">→ docs/postmortems/2026-09-21</a> — rozwiązany.</div>
-      </div>
-
-      <div class="timeline-item">
-        <div class="timeline-date">2026-05-08</div>
-        <div class="timeline-title">Zawoja & runtime state</div>
-        <div class="timeline-detail">Najstarszy postmortem — runtime state persistence w Zawoi. <a href="https://github.com/Memphis-Chains/memphis/blob/main/docs/postmortems/2026-05-08-zawoja-and-runtime-state.md">→ docs/postmortems/2026-05-08</a></div>
-      </div>
-    </div>
-  </section>
-</div>
-
-<div class="container">
-  <section>
-    <div class="section-pl">Integracja · agent-plugins-spec</div>
-    <h2>Plugin format, nie proprietary fork.</h2>
-    <p>Memphis opakowuje się w <a href="https://agent-plugins.org">Agent Plugins v1.0.0 spec</a> — otwarty standard z TSC zawierającym Amazon, Cursor, Microsoft, OpenAI, Vercel. To znaczy że Memphis capabilities są kompatybilne z każdym conformant client bez vendor lock-in.</p>
-
-    <div class="cols-2">
-      <div class="col blue">
-        <h3>Co to daje</h3>
-        <ul>
-          <li>Memphis = plugin dla Mavis (minimax-code)</li>
-          <li>Te same skille działają w Cursor, OpenCode, innych conformant clients</li>
-          <li>Plugin capabilities: tools, hooks, skills, agents</li>
-          <li>Otwarty governance przez GitHub Discussions</li>
-          <li>Zero lock-in — jeśli Memphis nie pasuje, plug-out i tyle</li>
-        </ul>
-      </div>
-      <div class="col">
-        <h3>Co już działa</h3>
-        <ul>
-          <li><code>@mavis/memphis-collective</code> — 11 plików, 16 testów, hash linkage zgodny z memphis Rust serde_json canonical</li>
-          <li>Drop-in do <code>@mavis/system-reminder</code></li>
-          <li>Atomic rename + <code>.napi-append.lock</code> dla concurrency safety</li>
-          <li>Public fork z rebranded attribution</li>
-        </ul>
-      </div>
-    </div>
-  </section>
-</div>
-
-<div class="container">
-  <section id="proof">
-    <div class="section-pl">Proof · Runtime in action</div>
-    <h2>Nie screenshot mockupu. Real terminal session.</h2>
-    <p>WSL2 + Ubuntu + Memphis runtime + MiniMax. Live <code>memphis health</code> + łańcuchy + vault status. To nie demo nagranie — to jest output z tej maszyny, na której działa strona którą właśnie czytasz.</p>
-
-    <div class="screenshot-panel">
-      <div class="screenshot-frame">
-        <img src="memphis-wsl2-demo.jpg" alt="Memphis runtime on WSL2 — real terminal session: health check, chains, vault status" />
-      </div>
-      <div class="screenshot-caption">
-        <span class="label">memphis-wsl2-demo.jpg</span>
-        <span class="meta">958×1078 · 176 KB · 2026-07-24 · <a href="memphis-wsl2-demo.jpg">pełny rozmiar</a></span>
-      </div>
-    </div>
-  </section>
-</div>
-
-<div class="container">
-  <div class="partnership-strip" id="partnership">
-    <div>
-      <span class="status">In flight</span>
-      <h3 style="margin-top:3mm;">MiniMax × Memphis · strategic partnership</h3>
-      <p>Otwarty issue na MiniMax upstream zaproponował: (a) OSS contribution <code>@mavis/memphis-collective</code> z attribution do naszego commita, oraz (b) pilot 90 dni na Polish channel dla MiniMax modeli (B2B, PLN/EUR billing, polish-language support tier 1).</p>
-      <p style="margin-top:3mm;"><span class="ask">Co prosimy:</span> maintainer PR z attribution + partner-level API allocation + brand permission + one named contact.</p>
-      <p><span style="color:var(--ink-soft);"><span style="font-weight:700;color:var(--ink);">Czego NIE prosimy:</span> funding, equity, exclusivity, NDA, joint entity.</span></p>
-    </div>
-    <div style="text-align:center;">
-      <a href="https://github.com/Memphis-Chains/minimax-code" class="cover-cta cover-cta-blue" style="margin:8px;">Public fork</a><br>
-      <a href="https://github.com/Memphis-Chains/memphis/blob/main/docs/partnerships/README.md" class="cover-cta" style="margin:8px;">Partnership readme</a><br>
-      <div style="margin-top:20px;">
-        <a href="https://github.com/MiniMax-AI/minimax-code/issues" style="font-size:9pt; color:var(--minimax-blue);">Status: czeka na @hetaoBackend</a>
+      <div class="metric">
+        <span class="metric-num" data-count="12">12</span>
+        <span class="metric-label">aktywnych łańcuchów</span>
+        <span class="metric-sub">0 uszkodzonych, weryfikacja hash co start</span>
       </div>
     </div>
   </div>
-</div>
+</section>
 
-<div class="container">
-  <section>
-    <div class="section-pl">Kod · The actual code</div>
-    <h2>To jest open-source. Sprawdź sam.</h2>
-    <p>Cały kod na GitHub. Apache-2.0. Możesz czytać, forkować, modyfikować. Wszystkie 7 łańcuchów, 20 tooli, 3 skille, 3 postmortems. Bez paywall, bez NDA, bez "contact sales".</p>
+<section class="proof" id="dowody">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="sec-label">Dowód · nie obietnica</p>
+      <h2>Nie opisuję. Pokazuję wyjście.</h2>
+      <p class="sec-sub">
+        Poniżej — output z tej samej maszyny, na której działa ta strona.
+        Zero screenshotów stockowych, zero mockupów.
+      </p>
+    </div>
 
-    <div class="code-block"><span class="comment"># install (Linux/macOS/WSL2)</span>
-<span class="key">curl</span> -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | <span class="key">bash</span>
+    <div class="term" id="term">
+      <div class="term-bar">
+        <span class="term-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="term-title">memphis@zawaja:~/memphis</span>
+        <span class="term-badge">live</span>
+      </div>
+      <pre class="term-body" id="term-body"><code><span data-line><span class="t-cmd">$</span> memphis health</span><span data-line>status          <span class="t-ok">ok</span>  (v1.13.3)</span><span data-line>chain blocks    <span class="t-val">13 332</span></span><span data-line>chains          <span class="t-val">12</span> active, <span class="t-val">0</span> corrupt</span><span data-line>vault           <span class="t-ok">ok</span>  12 entries, integrity verified</span><span data-line>provider        minimax + cascade → ollama → local-fallback</span><span data-line>embedding       <span class="t-ok">ok</span>  ollama, 7 ms</span><span data-line>telemetry       <span class="t-val">0</span> outbound calls</span><span data-line><span class="t-ok">✓</span> wszystko w porządku</span></code></pre>
+    </div>
 
-<span class="comment"># what you get:</span>
-<span class="comment">#   - Node 22, Rust stable, Ollama (optional)</span>
-<span class="comment">#   - memphis CLI globally available</span>
-<span class="comment">#   - 7 chains initialized in ~/.memphis/chains/</span>
-<span class="comment">#   - encrypted vault with master-key bootstrap</span>
-<span class="comment">#   - 3 skills auto-registered</span>
+    <noscript>
+      <p class="term-static">
+        <code>memphis health</code> → status ok (v1.13.3) · 13 332 bloków w 12 łańcuchach,
+        0 uszkodzonych · vault ok, 12 wpisów, integralność zweryfikowana ·
+        0 wywołań na zewnątrz
+      </p>
+    </noscript>
+  </div>
+</section>
 
-<span class="comment"># verify</span>
-<span class="key">memphis</span> health
-<span class="key">memphis</span> chain-query journal --limit 5</div>
+<section class="why" id="dlaczego">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="sec-label">Dlaczego to nie jest kolejny wrapper</p>
+      <h2>Trzy rzeczy, których nie da się podrobić</h2>
+      <p class="sec-sub">
+        Runtime dookoła modelu. Model możesz podmienić w minutę — pamięci, sekretów
+        i ochrony przed destrukcją nie da się wymienić tak po prostu.
+      </p>
+    </div>
 
-    <p style="margin-top:8mm;"><a href="https://github.com/Memphis-Chains/memphis" class="cover-cta">Pełne repo</a> <a href="/llms.txt" class="cover-cta cover-cta-blue">LLM guide</a> <a href="/agents.json" class="cover-cta cover-cta-blue">Agent manifest</a></p>
-  </section>
-</div>
+    <div class="cards">
+      <article class="card">
+        <span class="card-num" aria-hidden="true">01</span>
+        <h3>Pamięć, której nie da się podważyć</h3>
+        <p>
+          Siedem łańcuchów, każdy blok z hashem poprzedniego. Wstrzyknij cokolwiek
+          w środek — łańcuch się rozjedzie i Memphis to zauważy przy następnym starcie.
+        </p>
+        <pre class="mini"><code>memphis chain-verify</code></pre>
+      </article>
 
-<div class="container">
-  <section>
-    <div class="section-pl">Co nie działa / czego brakuje</div>
-    <h2>Anti-confab. Lista rzeczy których nie mamy.</h2>
-    <p>Zero aspiracyjnego marketingu. To czego realnie brakuje:</p>
+      <article class="card">
+        <span class="card-num" aria-hidden="true">02</span>
+        <h3>Sekrety w szyfrowanym sejfie</h3>
+        <p>
+          AES-256 z pepperem i rotacją klucza głównego. Każdy odczyt zostawia ślad
+          w łańcuchu. Klucze nigdy nie lądują w pliku <code>.env</code>.
+        </p>
+        <pre class="mini"><code>memphis vault list</code></pre>
+      </article>
 
-    <div class="cols-2">
-      <div class="col">
-        <h3>Nie mamy (jeszcze)</h3>
-        <ul>
-          <li>Użytkowników poza mną (Wodzu)</li>
-          <li>Hosted service — wszystko lokalne</li>
-          <li>GUI poza TUI (Rust cockpit) i CLI</li>
-          <li>Web UI (jest statyczny dashboard, ale read-only)</li>
-          <li>Migracji z innych agent frameworks</li>
-          <li>Marketplace na Watra.ai (plan jest, execution brak)</li>
+      <article class="card">
+        <span class="card-num" aria-hidden="true">03</span>
+        <h3>Guard przed destrukcją</h3>
+        <p>
+          Każde <code>rm</code>, <code>mv</code> i <code>git rm</code> przechodzi przez
+          rejestr HALT. Zatrzymany zasób blokuje operację <em>zanim</em> ją wykona —
+          także gdy wykonuje ją inny agent.
+        </p>
+        <pre class="mini"><code>memphis halt check &lt;ścieżka&gt;</code></pre>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="how" id="jak-dziala">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="sec-label">Architektura</p>
+      <h2>Pięć kroków od zera do działającego agenta</h2>
+    </div>
+
+    <ol class="steps">
+      <li class="step">
+        <span class="step-n">1</span>
+        <div>
+          <h3>Instalacja</h3>
+          <p>Node 22, Rust, skille. Kod ląduje w <code>~/memphis</code>, pamięć w <code>~/.memphis</code>.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">2</span>
+        <div>
+          <h3>Tożsamość i sejf</h3>
+          <p>Passphrase operatora, hasło vault, pierwsze zapisy do łańcuchów. Wszystko lokalnie.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">3</span>
+        <div>
+          <h3>Provider modelu</h3>
+          <p>Klucz API ląduje w zaszyfrowanym vault, nie w <code>.env</code>. Klucz na platform.minimax.io.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">4</span>
+        <div>
+          <h3>Uruchomienie</h3>
+          <p>Usługa w tle i natywny kokpit. Albo <code>npm run dev</code> w terminalu.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">5</span>
+        <div>
+          <h3>Weryfikacja</h3>
+          <p><code>memphis health</code> mówi prawdę o stanie: łańcuchy, vault, provider, telemetria.</p>
+        </div>
+      </li>
+    </ol>
+
+    <div class="cascade">
+      <p class="cascade-label">Kaskada providerów działa automatycznie</p>
+      <p class="cascade-flow">
+        <span>ollama</span><span class="arrow" aria-hidden="true">→</span><span>anthropic</span><span class="arrow" aria-hidden="true">→</span><span>minimax</span><span class="arrow" aria-hidden="true">→</span><span>local-fallback</span>
+      </p>
+      <p class="cascade-note">
+        Jeśli jeden provider padnie, Memphis nie przestaje — idzie dalej po liście.
+        Ostatnia pozycja działa nawet bez internetu.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="uses" id="zastosowania">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="sec-label">Zastosowania</p>
+      <h2>Do czego to się nadaje</h2>
+      <p class="sec-sub">Przełącz zakładkę. Każda odpowiada realnej możliwości v1.13.3, nie planowi na 2027.</p>
+    </div>
+
+    <div class="tabs" role="tablist" aria-label="Zastosowania">
+      <button role="tab" id="tab-agent" aria-controls="panel-agent" aria-selected="true" class="is-active" data-tab="agent">Agenci autonomiczni</button>
+      <button role="tab" id="tab-audit" aria-controls="panel-audit" aria-selected="false" data-tab="audit">Audyt i zgodność</button>
+      <button role="tab" id="tab-offline" aria-controls="panel-offline" aria-selected="false" data-tab="offline">Praca offline</button>
+      <button role="tab" id="tab-team" aria-controls="panel-team" aria-selected="false" data-tab="team">Zespół i wiedza</button>
+    </div>
+
+    <div class="tabpanels">
+      <div role="tabpanel" id="panel-agent" aria-labelledby="tab-agent">
+        <h3>Agenci, którym ufasz z pamięcią</h3>
+        <p>
+          Agent potrzebuje trzech rzeczy: pamięci, sekretów i granic. Memphis daje
+          wszystkie trzy. Każde wywołanie narzędzia ląduje w łańcuchu, więc agent
+          nie zapomina co zrobił wczoraj i nie zgaduje co zrobił dzisiaj.
+        </p>
+        <ul class="ticks">
+          <li>Decyzje w łańcuchu, nie w kontekście, który wypada po 50 turach</li>
+          <li>Sekrety w vault, nie w prompcie i nie w pliku obok</li>
+          <li>Guard HALT blokuje destrukcję także wtedy, gdy agent się pomyli</li>
         </ul>
       </div>
-      <div class="col blue">
-        <h3>Mamy</h3>
-        <ul>
-          <li>Działający runtime v1.13.3 (production)</li>
-          <li>7 łańcuchów z auto-hash linkage</li>
-          <li>20 tooli przez MCP server</li>
-          <li>3 publiczne skille</li>
-          <li>3 publiczne postmortems (honest)</li>
-          <li>Integration z MiniMax/Mavis w public fork</li>
-          <li>HALT guard dla destrukcyjnych ops</li>
+
+      <div role="tabpanel" id="panel-audit" aria-labelledby="tab-audit" hidden>
+        <h3>Co dokładnie zdarzyło się na tej maszynie</h3>
+        <p>
+          Każdy blok ma hash poprzedniego. Wstrzyknij w środek, zweryfikuj — łańcuch
+          się rozjedzie i pokaże dokładnie który blok. To nie jest log, który ktoś
+          może wyłączyć; to struktura, która albo się zgadza, albo nie.
+        </p>
+        <ul class="ticks">
+          <li>Weryfikacja integralności co start, wynik w <code>memphis health</code></li>
+          <li>Audyt JSONL każdego wywołania narzędzia, append-only</li>
+          <li>Brak zależności od zewnętrznego dostawcy logów</li>
+        </ul>
+      </div>
+
+      <div role="tabpanel" id="panel-offline" aria-labelledby="tab-offline" hidden>
+        <h3>Maszyna, która nie musi nikomu niczego wysyłać</h3>
+        <p>
+          Z lokalnym modelem przez Ollama Memphis bootuje i pracuje w pełni offline.
+          Tryb SAFE_MODE dodatkowo odmawia wszystkich wyjść sieciowych — testy CI
+          sprawdzają, że runtime startuje bez sieci w ogóle.
+        </p>
+        <ul class="ticks">
+          <li>Instalacja bez konta, bez e-maila, bez karty płatniczej</li>
+          <li><code>~/.memphis</code> to zwykły katalog — skopiuj i przenieś</li>
+          <li>Ostatnia pozycja kaskady działa bez internetu</li>
+        </ul>
+      </div>
+
+      <div role="tabpanel" id="panel-team" aria-labelledby="tab-team" hidden>
+        <h3>Wiedza, która zostaje w zespole</h3>
+        <p>
+          Siedem łańcuchów to siedem rodzajów wiedzy: dziennik, decyzje, system,
+          refleksje, sprawy, collective, wzorce. Każdy z nich ma własną rolę
+          i własny schemat. Możesz je czytać, eksportować i dyfrować bez narzędzia.
+        </p>
+        <ul class="ticks">
+          <li>Decyzje z kontekstem, nie same wnioski</li>
+          <li>Refleksje osobno od faktów, żeby się nie pomieszały</li>
+          <li>Format plików jawny — JSON, czytelny bez Memphis</li>
         </ul>
       </div>
     </div>
-  </section>
-</div>
+  </div>
+</section>
 
-<div class="container">
-  <section id="quickstart">
-    <div class="section-pl">Zainstaluj u siebie · Quick start</div>
-    <h2>Pięć kroków. Pięć minut. U siebie na dysku.</h2>
-    <p>Zero konta, zero chmury, zero telemetrii. Wymagany Node 22 (instalator sprawdza i podpowiada), Linux / macOS / WSL2. Cały runtime ląduje w <code>~/memphis</code>, pamięć w <code>~/.memphis</code>.</p>
-
-    <div class="qs-grid">
-      <div class="qs-step">
-        <div class="qs-num">01</div>
-        <div class="qs-title">Zainstaluj</div>
-        <div class="qs-desc">Node 22, Rust, skille. Do <code>~/memphis</code>.</div>
-        <code class="qs-cmd"><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash</code>
-      </div>
-      <div class="qs-step">
-        <div class="qs-num">02</div>
-        <div class="qs-title">Pierwszy raz</div>
-        <div class="qs-desc">Passphrase operatora, hasło sejfu, tożsamość, pierwsze zapisy do łańcuchów.</div>
-        <code class="qs-cmd"><span class="prompt">$</span> memphis init</code>
-      </div>
-      <div class="qs-step">
-        <div class="qs-num">03</div>
-        <div class="qs-title">Podepnij MiniMax</div>
-        <div class="qs-desc">Klucz API ląduje w zaszyfrowanym vault, nie w <code>.env</code>. Klucz zdobierz na platform.minimax.io.</div>
-        <code class="qs-cmd"><span class="prompt">$</span> memphis provider add minimax <span class="flag">--api-key</span> &lt;twoj-klucz&gt;</code>
-      </div>
-      <div class="qs-step">
-        <div class="qs-num">04</div>
-        <div class="qs-title">Uruchom</div>
-        <div class="qs-desc">Usługa w tle (Linux/WSL) i natywny kokpit Rust TUI. Na macOS: <code>npm run dev</code> w terminalu.</div>
-        <code class="qs-cmd"><span class="prompt">$</span> memphis service install<br><span class="prompt">$</span> memphis service restart<br><span class="prompt">$</span> memphis tui</code>
-      </div>
-      <div class="qs-step">
-        <div class="qs-num">05</div>
-        <div class="qs-title">Sprawdź</div>
-        <div class="qs-desc">Ile bloków w łańcuchach, ile sekretów w sejfie, jaki provider odpowiada. To jest <code>memphis health</code>.</div>
-        <code class="qs-cmd"><span class="prompt">$</span> memphis health</code>
-      </div>
+<section class="video-sec">
+  <div class="wrap video-grid">
+    <div>
+      <p class="sec-label">30 sekund</p>
+      <h2>Cała instalacja na ekranie</h2>
+      <p class="sec-sub">
+        Te same komendy co w tej dokumentacji, w kolejności, którą faktycznie wykonujesz.
+        Bez dźwięku — czytelne przy odtwarzaniu bez głosu.
+      </p>
+      <ul class="ticks compact">
+        <li>Wymagania i instalacja zależności</li>
+        <li>Init, provider, uruchomienie</li>
+        <li>Weryfikacja stanu</li>
+      </ul>
     </div>
-
-    <div class="video-wrap">
-      <video controls preload="none" playsinline poster="memphis-install-poster.jpg" width="1920" height="1080" aria-label="30-sekundowy przewodnik instalacji Memphis">
-        <source src="memphis-install-30s.mp4" type="video/mp4" />
-        Twoja przeglądarka nie odtwarza wideo. <a href="memphis-install-30s.mp4">Pobierz plik MP4</a>.
+    <div class="video-frame">
+      <video controls preload="none" poster="/memphis-install-poster.jpg" width="1920" height="1080">
+        <source src="/memphis-install-30s.mp4" type="video/mp4">
+        Twoja przeglądarka nie odtwarza wideo. <a href="/memphis-install-30s.mp4">Pobierz plik MP4</a>.
       </video>
+      <p class="video-meta">1920×1080 · 30 s · 350 KB · <a href="/memphis-install-30s.mp4" data-conversion="video-direct">bezpośredni link</a></p>
     </div>
-    <div class="video-meta">
-      <span class="label">memphis-install-30s.mp4</span>
-      <span class="meta">1920×1080 · 30 s · 350 KB · 6 kroków na ekranie · <a href="memphis-install-30s.mp4">bezpośredni link</a></span>
+  </div>
+</section>
+
+<section class="docs-sec" id="dokumentacja">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="sec-label">Dokumentacja</p>
+      <h2>Czytaj albo nie czytaj — kod jest otwarty</h2>
+      <p class="sec-sub">
+        Apache-2.0. Możesz czytać, forkować, modyfikować. Bez paywallu i bez „contact sales".
+      </p>
     </div>
 
-    <p style="margin-top:8mm; font-size:10.5pt;">Cascade providerów działa automatycznie: <code>ollama → anthropic → minimax → local-fallback</code>. Jeśli MiniMax padnie, Memphis nie przestaje — idzie dalej po liście. Pełny opis: <a href="/docs/instalacja/quickstart/">docs/instalacja/quickstart</a>.</p>
-  </section>
-</div>
+    <div class="doc-grid">
+      <a class="doc-card" href="/docs/">
+        <span class="doc-kind">Indeks</span>
+        <h3>Dokumentacja</h3>
+        <p>Mapa wszystkich rozdziałów: instalacja, CLI, architektura, koncepcje.</p>
+      </a>
+      <a class="doc-card" href="/start/">
+        <span class="doc-kind">Pierwsze kroki</span>
+        <h3>Start</h3>
+        <p>Czym jest Memphis, bez żargonu. Dla kogo i kiedy nie warto.</p>
+      </a>
+      <a class="doc-card" href="/demo/">
+        <span class="doc-kind">Przykłady</span>
+        <h3>Demo</h3>
+        <p>Co potrafi, na konkretnych przypadkach użycia.</p>
+      </a>
+      <a class="doc-card" href="/roadmap/">
+        <span class="doc-kind">Kierunek</span>
+        <h3>Roadmap</h3>
+        <p>Co się dzieje i co świadomie odłożone. Z datami.</p>
+      </a>
+      <a class="doc-card" href="https://github.com/Memphis-Chains/memphis" rel="noopener">
+        <span class="doc-kind">Kod</span>
+        <h3>GitHub</h3>
+        <p>Cały kod, historia commitów, issues, dyskusje.</p>
+      </a>
+      <a class="doc-card" href="/llms.txt">
+        <span class="doc-kind">Dla agentów</span>
+        <h3>llms.txt</h3>
+        <p>Mapa strony dla modeli językowych. Zwykły tekst.</p>
+      </a>
+    </div>
+  </div>
+</section>
 
-<div class="container">
-  <section id="faq" class="reveal">
-    <div class="section-pl">Pytania · FAQ</div>
-    <h2>Najczęstsze pytania, uczciwe odpowiedzi.</h2>
+<section class="faq-sec">
+  <div class="wrap narrow">
+    <div class="sec-head">
+      <p class="sec-label">Pytania</p>
+      <h2>Najczęstsze, uczciwe odpowiedzi</h2>
+    </div>
 
     <div class="faq">
       <div class="faq-item">
-        <button class="faq-q" aria-expanded="false">Czy Memphis to SaaS?<span class="ind">+</span></button>
-        <div class="faq-a"><p>Nie. Memphis to open-source runtime, który instalujesz lokalnie na Linux, macOS lub WSL2. Nie ma chmury, nie ma konta, nie ma telemetrii. Jedynym miejscem, gdzie Twoje dane opuszczają maszynę, jest wywołanie do wybranego providera modelu — i to robisz świadomie.</p></div>
+        <button aria-expanded="false" aria-controls="faq-1">
+          <span>Czy Memphis to SaaS?</span>
+          <svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-body" id="faq-1" hidden>
+          <p>Nie. Memphis to open-source runtime, który instalujesz lokalnie na Linux, macOS lub WSL2. Nie ma chmury, nie ma konta, nie ma telemetrii. Jedynym miejscem, gdzie dane opuszczają maszynę, jest wywołanie do wybranego providera modelu — i to robisz świadomie.</p>
+        </div>
       </div>
-      <div class="faq-item">
-        <button class="faq-q" aria-expanded="false">Jak zainstalować Memphis?<span class="ind">+</span></button>
-        <div class="faq-a"><p>Jedna komenda: <code>curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash</code>. Potem <code>memphis init</code> i <code>memphis tui</code>. Wymagany Node 22 — instalator sprawdza i podpowiada. Reszta w sekcji <a href="#quickstart">Quick start</a> wyżej.</p></div>
-      </div>
-      <div class="faq-item">
-        <button class="faq-q" aria-expanded="false">Jak podpiąć MiniMax albo Anthropic?<span class="ind">+</span></button>
-        <div class="faq-a"><p><code>memphis provider add minimax --api-key TWOJ_KLUCZ</code>. Klucz trafia do zaszyfrowanego vaulta, nie do pliku .env. Providerzy działają w kaskadzie: jeśli MiniMax padnie, Memphis automatycznie przechodzi do następnego z listy, a w ostateczności do lokalnego fallbacku.</p></div>
-      </div>
-      <div class="faq-item">
-        <button class="faq-q" aria-expanded="false">Gdzie są moje dane?<span class="ind">+</span></button>
-        <div class="faq-a"><p>Wszystko lokalnie w <code>~/.memphis</code> — łańcuchy, vault, stan runtime. Zero outbound calli w domyślnej instalacji, zero analytics, zero telemetrii. Możesz skopiować katalog i przenieść na inną maszynę.</p></div>
-      </div>
-      <div class="faq-item">
-        <button class="faq-q" aria-expanded="false">Czy mogę zacząć bez internetu?<span class="ind">+</span></button>
-        <div class="faq-a"><p>Tak. Z lokalnym modelem przez Ollama Memphis działa w pełni offline. Tryb <code>SAFE_MODE</code> dodatkowo odmawia wszystkich wyjść sieciowych — testy CI sprawdzają, że runtime bootuje bez sieci.</p></div>
-      </div>
-    </div>
-  </section>
-</div>
 
-<div class="container">
-  <div class="nl-strip" id="newsletter">
-    <div>
-      <h3>Co miesiąc, nie częściej.</h3>
-      <p>Wersje, postmortemy i zmiany, które realnie coś zmieniają. Bez webinarów, bez pitchy, bez kodów rabatowych.</p>
-      <p class="nl-privacy">Double opt-in — potwierdzasz mailem. Wypisanie jednym klikiem. Dane w <a href="/privacy/">polityce prywatności</a>.</p>
+      <div class="faq-item">
+        <button aria-expanded="false" aria-controls="faq-2">
+          <span>Jak zainstalować Memphis?</span>
+          <svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-body" id="faq-2" hidden>
+          <p>Jedna komenda: <code>curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash</code>. Potem <code>memphis init</code> i <code>memphis tui</code>. Wymagany Node 22 — instalator sprawdza i podpowiada. Reszta kroków w sekcji wyżej.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button aria-expanded="false" aria-controls="faq-3">
+          <span>Jak podpiąć MiniMax albo Anthropic?</span>
+          <svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-body" id="faq-3" hidden>
+          <p><code>memphis provider add minimax --api-key TWOJ_KLUCZ</code>. Klucz trafia do zaszyfrowanego vaulta, nie do pliku <code>.env</code>. Providerzy działają w kaskadzie: jeśli jeden padnie, Memphis przechodzi do następnego, a na końcu do lokalnego fallbacku.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button aria-expanded="false" aria-controls="faq-4">
+          <span>Gdzie są moje dane?</span>
+          <svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-body" id="faq-4" hidden>
+          <p>Wszystko lokalnie w <code>~/.memphis</code> — łańcuchy, vault, stan runtime. Zero wywołań na zewnątrz w domyślnej instalacji, zero analytics, zero telemetrii. Katalog to zwykły katalog: możesz go skopiować i przenieść na inną maszynę.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button aria-expanded="false" aria-controls="faq-5">
+          <span>Czy mogę pracować bez internetu?</span>
+          <svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-body" id="faq-5" hidden>
+          <p>Tak. Z lokalnym modelem przez Ollama Memphis działa w pełni offline. Tryb <code>SAFE_MODE</code> dodatkowo odmawia wszystkich wyjść sieciowych — testy CI sprawdzają, że runtime bootuje bez sieci.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button aria-expanded="false" aria-controls="faq-6">
+          <span>Czy ta strona mierzy, co robię?</span>
+          <svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-body" id="faq-6" hidden>
+          <p>Tak, ale minimalnie i uczciwie: liczymy odwiedziny i zdarzenia na tej samej domenie, w bazie na serwerze. Bez cookies, bez fingerprintingu, bez identyfikacji osoby. Adres IP nigdy nie jest zapisywany — tylko jednorazowy skrót z kluczem, który zmienia się co 24 godziny. Szczegóły w <a href="/privacy/">polityce prywatności</a>.</p>
+        </div>
+      </div>
     </div>
-    <form class="nl-form" id="nl-form" novalidate>
-      <input type="email" id="nl-email" name="email" placeholder="twoj@email.com" required maxlength="200" autocomplete="email" aria-label="Adres email" />
-      <button type="submit" id="nl-submit">Zapisz się</button>
-      <div class="nl-msg" id="nl-msg" role="status" aria-live="polite"></div>
-    </form>
   </div>
-</div>
+</section>
 
-<div class="container">
-  <section>
-    <div class="section-pl">Mapa strony · Site index</div>
-    <h2>Wszystkie strony, jedno miejsce.</h2>
-    <p>Zero ukrytych zakamarków. Każda podstrona, która istnieje na tym serwerze i jest publiczna:</p>
-
-    <div class="cols-2">
-      <div class="col">
-        <h3>Dla ludzi</h3>
-        <ul>
-          <li><a href="/start/">Start</a> — czym jest Memphis, bez żargonu</li>
-          <li><a href="/chat/">Chat</a> — zapytaj runtime (działa, prawdziwy model)</li>
-          <li><a href="/demo/">Demo</a> — co potrafi, na konkretach</li>
-          <li><a href="/docs/">Docs</a> — indeks dokumentacji</li>
-          <li><a href="/roadmap/">Roadmap</a> — kierunek 2026–2028</li>
-          <li><a href="/privacy/">Prywatność</a> — polityka RODO</li>
-        </ul>
-      </div>
-      <div class="col blue">
-        <h3>Dla agentów i maszyn</h3>
-        <ul>
-          <li><a href="/llms.txt">/llms.txt</a> — mapa strony dla LLM</li>
-          <li><a href="/agents.json">/agents.json</a> — manifest maszynowy</li>
-          <li><a href="/sitemap.xml">/sitemap.xml</a> — mapa witryny</li>
-          <li><a href="/robots.txt">/robots.txt</a> — reguły crawlowania</li>
-          <li><a href="/.well-known/security.txt">/.well-known/security.txt</a> — zgłaszanie podatności</li>
-          <li><a href="/manifest.webmanifest">/manifest.webmanifest</a> — PWA manifest</li>
-        </ul>
-      </div>
-    </div>
-  </section>
-</div>
-
-<div class="container">
-  <div class="cta-strip" id="install">
-    <h2>Sprawdź sam. To jest open-source.</h2>
-    <p>Jedna komenda instaluje, drugie 5 minut czytania kodu potwierdza że to nie vaporware. Apache-2.0.</p>
-    <a href="https://github.com/Memphis-Chains/memphis" class="cover-cta">Repo</a>
-    <a href="mailto:memphis.kuklow@gmail.com" class="cover-cta cover-cta-blue" style="margin-left:12px;">Kontakt</a>
-    <p class="small" style="margin-top:24px;">
-      <code>curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash</code>
+<section class="cta-sec">
+  <div class="wrap narrow cta-in">
+    <h2>Zainstaluj. Sprawdź. Zdecyduj sam.</h2>
+    <p>
+      Jedna komenda, pięć minut, zero zobowiązań. Jeśli nie pasuje — usuwasz katalog
+      i nic po sobie nie zostawia poza kodem, który i tak jest publiczny.
     </p>
 
-    <div style="margin-top: 50px; padding-top: 30px; border-top: 0.5mm solid var(--line-2);">
-      <h2 style="font-size: 28px; margin-bottom: 12px;">Albo pogadajmy o Twojej infrastrukturze.</h2>
-      <p style="max-width: 560px;">30 minut. Zero prezentacji. Pytania o runtime, chains, vault, agent-plugins-spec integration — albo o cokolwiek innego z czego Memphis może pomóc. Wspólnie decydujemy czy jest temat do dalszej pracy.</p>
-      <a href="https://calendly.com/marcingrzegorzkukla" class="strategy-call">Get Your Strategy Call</a>
-      <p class="strategy-call-note">Bez zobowiązań. Calendly, video lub telefonicznie.</p>
+    <div class="cmd-row cta-cmd">
+      <pre class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash</code></pre>
+      <button class="copy-btn" data-copy-text="curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash" data-copy-id="cta-install" aria-label="Kopiuj komendę instalacji">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+        <span data-copy-label>Kopiuj</span>
+      </button>
+    </div>
+
+    <div class="cta-actions">
+      <a class="btn btn-primary btn-lg" href="#zainstaluj">Zainstaluj teraz</a>
+      <a class="btn btn-outline btn-lg" href="https://calendly.com/marcingrzegorzkukla" data-conversion="cta-consult" rel="noopener">30 min rozmowy</a>
+    </div>
+    <p class="cta-note">Bez prezentacji, bez zobowiązań. Pytania o runtime, łańcuchy, vault — albo o cokolwiek innego.</p>
+  </div>
+</section>
+
+<section class="news-sec">
+  <div class="wrap narrow">
+    <div class="news">
+      <div class="news-copy">
+        <h2>Co miesiąc, nie częściej</h2>
+        <p>Wersje, postmortemy i zmiany, które realnie coś zmieniają. Bez webinarów i bez kodów rabatowych.</p>
+      </div>
+      <form class="news-form" id="nl-form" novalidate>
+        <label class="sr-only" for="nl-email">Adres e-mail</label>
+        <input id="nl-email" type="email" name="email" placeholder="twój@adres.pl" autocomplete="email" required>
+        <label class="consent">
+          <input type="checkbox" id="nl-consent" name="consent">
+          <span>Zgadzam się na przetwarzanie adresu e-mail w celu wysyłki newslettera.</span>
+        </label>
+        <button class="btn btn-primary" type="submit" id="nl-submit">Zapisz mnie</button>
+        <p class="nl-msg" id="nl-msg" role="status" aria-live="polite"></p>
+      </form>
     </div>
   </div>
-</div>
+</section>
 
-<div class="container">
-  <footer>
-    <div class="footer-row">
+<section class="honest">
+  <div class="wrap">
+    <div class="honest-grid">
       <div>
-        <strong class="accent-memphis">Memphis v5</strong> · lokalny AI runtime
-        <span class="small"> · Zawoja, Małopolska · CET (UTC+1/+2)</span>
+        <h3>Uczciwie: czego jeszcze nie ma</h3>
+        <ul class="ticks strike">
+          <li>Użytkowników poza mną — projekt jest mój, nie społecznościowy</li>
+          <li>Usługi hostowanej — wszystko lokalne z założenia</li>
+          <li>Migracji z innych frameworków agentowych</li>
+        </ul>
       </div>
-      <div class="small">
-        <a href="https://github.com/Memphis-Chains/memphis">GitHub</a> ·
-        <a href="https://github.com/Memphis-Chains/minimax-code">Mavis fork</a> ·
-        <a href="/llms.txt">LLM guide</a> ·
-        <a href="/agents.json">Agent manifest</a>
+      <div>
+        <h3>Uczciwie: co jest</h3>
+        <ul class="ticks">
+          <li>Działający runtime v1.13.3, używany produkcyjnie</li>
+          <li>7 łańcuchów z automatycznym sprzężeniem hashy</li>
+          <li>20 narzędzi przez lokalny serwer MCP</li>
+          <li>3 publiczne skille i 3 publiczne postmortemy</li>
+        </ul>
       </div>
     </div>
-    <div class="small" style="margin-top:12px;">
-      Apache-2.0 · v1.13.3 · <span class="accent-memphis">Made by Wodzu · Zawoja · Małopolska</span> · No telemetry, no analytics, no cloud required.
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-top">
+      <div class="foot-brand">
+        <span class="brand-mark" aria-hidden="true">M</span>
+        <p>Memphis v5 · lokalny runtime AI<br>Zawoja, Małopolska · Apache-2.0</p>
+      </div>
+      <nav class="foot-cols" aria-label="Nawigacja stopki">
+        <div>
+          <h4>Produkt</h4>
+          <a href="/docs/">Dokumentacja</a>
+          <a href="/start/">Start</a>
+          <a href="/demo/">Demo</a>
+          <a href="/roadmap/">Roadmap</a>
+        </div>
+        <div>
+          <h4>Kod</h4>
+          <a href="https://github.com/Memphis-Chains/memphis" rel="noopener">GitHub</a>
+          <a href="https://github.com/Memphis-Chains/minimax-code" rel="noopener">Fork Mavis</a>
+          <a href="/agents.json">agents.json</a>
+          <a href="/llms.txt">llms.txt</a>
+        </div>
+        <div>
+          <h4>Kontakt</h4>
+          <a href="https://calendly.com/marcingrzegorzkukla" rel="noopener">Umów rozmowę</a>
+          <a href="mailto:memphis.kuklow@gmail.com">E-mail</a>
+          <a href="/panel/admin/login">Panel</a>
+        </div>
+        <div>
+          <h4>Prawnie</h4>
+          <a href="/privacy/">Prywatność</a>
+          <a href="/.well-known/security.txt">security.txt</a>
+          <a href="/sitemap.xml">Sitemap</a>
+        </div>
+      </nav>
     </div>
-  </footer>
-</div>
+    <div class="foot-bottom">
+      <p>Zero telemetrii w runtime. Ta strona liczy odwiedziny bez cookies — <a href="/privacy/">szczegóły</a>.</p>
+      <p><a href="https://github.com/Memphis-Chains/memphis" rel="noopener">Memphis-Chains</a> · v1.13.3 · <span id="foot-year">2026</span></p>
+    </div>
+  </div>
+</footer>
 
-<!-- Cookie consent banner (RODO) -->
-<div id="consent-banner" class="consent-banner hidden" role="dialog" aria-label="Cookie consent">
-  <p>
-    Ta strona używa cookies niezbędnych do działania (sesja logowania, preferencje UI).
-    Zero marketingowych, zero trackingu.
-    <a href="/privacy/" target="_blank">Polityka prywatności</a>
-  </p>
-  <button type="button" id="consent-decline">Tylko niezbędne</button>
-  <button type="button" id="consent-accept" class="primary">Akceptuję</button>
-</div>
-
-<!-- newsletter popup replaced by inline #newsletter strip -->
-
-
-<!-- Newsletter — double opt-in via /panel/api/v1/subscribers -->
-<script>
-(function () {
-  var form = document.getElementById('nl-form');
-  if (!form) return;
-  var email = document.getElementById('nl-email');
-  var submit = document.getElementById('nl-submit');
-  var msg = document.getElementById('nl-msg');
-
-  function say(text, kind) {
-    msg.textContent = text;
-    msg.className = 'nl-msg ' + kind;
-  }
-
-  function valid(v) {
-    return /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(v.trim());
-  }
-
-  form.addEventListener('submit', function (e) {
-    e.preventDefault();
-    var v = email.value.trim();
-
-    if (!v) { say('Wpisz adres email.', 'err'); email.focus(); return; }
-    if (!valid(v)) { say('To nie wygląda na poprawny adres email.', 'err'); email.focus(); return; }
-
-    submit.disabled = true;
-    submit.textContent = 'Wysyłam…';
-    say('Rejestruję…', '');
-
-    fetch('/panel/api/v1/subscribers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ email: v, source: 'homepage' })
-    })
-      .then(function (r) {
-        return r.json().catch(function () { return {}; }).then(function (b) {
-          return { status: r.status, body: b };
-        });
-      })
-      .then(function (res) {
-        if (res.status === 202 || res.body.ok) {
-          say('Gotowe — jeśli ten adres jest nowy, dostałeś maila z potwierdzeniem. Double opt-in.', 'ok');
-          form.reset();
-          submit.textContent = 'Zapisano';
-          setTimeout(function () { submit.disabled = false; submit.textContent = 'Zapisz się'; }, 4000);
-        } else if (res.status === 429) {
-          say('Za dużo prób. Odczekaj chwilę i spróbuj ponownie.', 'err');
-          submit.disabled = false; submit.textContent = 'Zapisz się';
-        } else if (res.status === 422 || res.body.errors) {
-          say('Ten adres jest już zapisany albo niepoprawny.', 'err');
-          submit.disabled = false; submit.textContent = 'Zapisz się';
-        } else {
-          say('Coś poszło nie tak (' + res.status + '). Spróbuj ponownie.', 'err');
-          submit.disabled = false; submit.textContent = 'Zapisz się';
-        }
-      })
-      .catch(function () {
-        say('Brak połączenia z serwerem. Sprawdź sieć i spróbuj ponownie.', 'err');
-        submit.disabled = false; submit.textContent = 'Zapisz się';
-      });
-  });
-})();
-</script>
-
-<!-- Motion: counters, terminal, reveal, tilt, FAQ -->
-<script>
-(function () {
-  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-  // ── 1. animated counters ──
-  function countUp(el) {
-    var target = parseInt(el.getAttribute('data-count'), 10) || 0;
-    if (reduce) { el.textContent = target.toLocaleString('pl-PL'); return; }
-    var dur = 1100, start = null, el2 = el;
-    el.classList.add('is-counting');
-    function step(ts) {
-      if (!start) start = ts;
-      var p = Math.min((ts - start) / dur, 1);
-      var eased = 1 - Math.pow(1 - p, 3);
-      el2.textContent = Math.round(target * eased).toLocaleString('pl-PL');
-      if (p < 1) requestAnimationFrame(step);
-      else el2.classList.remove('is-counting');
-    }
-    requestAnimationFrame(step);
-  }
-
-  // ── 2. typing terminal ──
-  var LINES = [
-    { t: '<span class="p">$</span> memphis health' },
-    { t: '<span class="c">──────────────────────────────</span>' },
-    { t: '<span class="c">status</span>          <span class="o">ok</span>  <span class="c">(v1.13.3)</span>' },
-    { t: '<span class="c">chain blocks</span>    <span class="b">13 332</span>' },
-    { t: '<span class="c">chains</span>          <span class="b">12</span> <span class="c">active, 0 corrupt</span>' },
-    { t: '<span class="c">vault</span>           <span class="o">ok</span>  <span class="c">12 entries, integrity verified</span>' },
-    { t: '<span class="c">provider</span>        <span class="b">minimax</span> <span class="c">+ cascade → ollama → local-fallback</span>' },
-    { t: '<span class="c">embedding</span>       <span class="o">ok</span>  <span class="c">ollama, 7 ms</span>' },
-    { t: '<span class="c">telemetry</span>       <span class="p">0 outbound calls</span>' },
-    { t: '<span class="c">──────────────────────────────</span>' },
-    { t: '<span class="p">✓ wszystko w porządku</span>' }
-  ];
-
-  function runTerminal() {
-    var box = document.getElementById('term-body');
-    if (!box || box.dataset.done) return;
-    box.dataset.done = '1';
-    if (reduce) {
-      box.innerHTML = LINES.map(function (l) { return l.t; }).join('\n') + '\n<span class="term-caret"></span>';
-      return;
-    }
-    var i = 0, cur = '', caret = '<span class="term-caret"></span>';
-    box.innerHTML = caret;
-    function typeLine() {
-      if (i >= LINES.length) return;
-      var full = LINES[i].t;
-      if (i === 0) { cur = ''; }
-      // reveal plain text progressively is lossy with tags; instead fade line by line
-      box.innerHTML = cur + '<span style="opacity:.55">' + full + '</span>' + caret;
-      cur += full + '\n';
-      i++;
-      setTimeout(typeLine, 190);
-    }
-    typeLine();
-  }
-
-  // ── 3. scroll reveal ──
-  function initReveal() {
-    var els = document.querySelectorAll('.reveal');
-    if (!('IntersectionObserver' in window) || reduce) {
-      els.forEach(function (e) { e.classList.add('in'); });
-      return;
-    }
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (en) {
-        if (!en.isIntersecting) return;
-        en.target.classList.add('in');
-        var n = en.target.querySelector('[data-count]');
-        if (n) countUp(n);
-        if (en.target.id === 'terminal') runTerminal();
-        io.unobserve(en.target);
-      });
-    }, { threshold: 0.18, rootMargin: '0px 0px -8% 0px' });
-    els.forEach(function (e) { io.observe(e); });
-  }
-
-  // ── 4. 3D tilt ──
-  function initTilt() {
-    if (reduce) return;
-    document.querySelectorAll('.tilt').forEach(function (card) {
-      card.addEventListener('mousemove', function (e) {
-        var r = card.getBoundingClientRect();
-        var px = (e.clientX - r.left) / r.width - 0.5;
-        var py = (e.clientY - r.top) / r.height - 0.5;
-        card.style.transform = 'perspective(700px) rotateX(' + (-py * 6).toFixed(2) + 'deg) rotateY(' + (px * 7).toFixed(2) + 'deg) translateY(-4px)';
-      });
-      card.addEventListener('mouseleave', function () { card.style.transform = ''; });
-    });
-  }
-
-  // ── 5. FAQ accordion ──
-  function initFaq() {
-    document.querySelectorAll('.faq-q').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var item = btn.parentNode;
-        var ans = item.querySelector('.faq-a');
-        var open = item.classList.toggle('open');
-        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-        ans.style.maxHeight = open ? ans.scrollHeight + 'px' : '0px';
-      });
-    });
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () { initReveal(); initTilt(); initFaq(); });
-  } else {
-    initReveal(); initTilt(); initFaq();
-  }
-})();
-</script>
+<script src="/assets/app.js" defer></script>
 </body>
 </html>

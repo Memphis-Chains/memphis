@@ -229,3 +229,7 @@ docs/issues/
 # Re-introduce explicitly if a stable test fixture becomes committed.
 .test-tmp/
 
+
+# site backend runtime data (analytics db + salt) - never commit
+docs/site/data/*
+!docs/site/data/.htaccess
