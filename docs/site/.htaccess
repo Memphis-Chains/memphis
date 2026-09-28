@@ -52,3 +52,25 @@ ErrorDocument 404 /404.html
 # ── Directory listing off ────────────────────────────────────
 Options -Indexes
 DirectoryIndex index.html
+
+# ── Block backup / editor / dev artifacts ─────────────────────
+# Backups must live in ~/site-backups/, never in the docroot.
+# Without this, every deploy that snapshots in place leaks a full
+# copy of the site to anyone who guesses the filename.
+<FilesMatch "\.(bak|backup|old|orig|save|swp|swo|tmp|temp|log|sql|sqlite|sqlite3|ini|env)$">
+    Require all denied
+</FilesMatch>
+
+<FilesMatch "^(README|readme|CHANGELOG|LICENSE|CONTRIBUTING|Makefile|Dockerfile|composer\.(json|lock)|package(-lock)?\.json|ya?ml)$">
+    Require all denied
+</FilesMatch>
+
+# Two or more dots in a name = editor temp or double extension trick
+<FilesMatch "\..+\.">
+    Require all denied
+</FilesMatch>
+
+# Any file containing "backup" or "bak" in the name, any extension
+<FilesMatch ".*(backup|bak).*">
+    Require all denied
+</FilesMatch>
