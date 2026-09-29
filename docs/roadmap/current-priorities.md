@@ -21,23 +21,23 @@ Brak — albo wszystko zrobione, albo fixy nie mają `#NNN` w commicie.
 
 ## C. PR do review
 
-- [ ] **#644** [UNKNOWN] feat(tui): Phase G-minimal Tauri desktop scaffold (apps/memphis-
-- [ ] **#643** [UNKNOWN] test(adr-009): cross-process writeBlockAtomic race regression (i
-- [ ] **#641** [UNKNOWN] release: v1.13.4 — CI portability + weekly-runtime-kpi PAT fix +
+- [ ] **#644** [CONFLICTING] feat(tui): Phase G-minimal Tauri desktop scaffold (apps/memphis-
+- [ ] **#643** [CONFLICTING] test(adr-009): cross-process writeBlockAtomic race regression (i
+- [ ] **#641** [CONFLICTING] release: v1.13.4 — CI portability + weekly-runtime-kpi PAT fix +
 
 ## D. Gałęzie poza main
 
-| gałąź | commity | ostatni | merge |
+| gałąź | commity | ostatni | stan |
 |---|---|---|---|
-| `chore/sync-ci-bot-token-script` | +2 | 2026-09-21 | CONFLICT |
-| `feat/can-self-modify-computed` | +39 | 2026-09-19 | CONFLICT |
-| `feat/phase-G-tauri-minimal-scaffold` | +3 | 2026-09-21 | CONFLICT |
-| `fix/adr-009-writeblock-process-race` | +2 | 2026-09-21 | CONFLICT |
+| `chore/sync-ci-bot-token-script` | +2 | 2026-09-21 | CONFLICT x1 → .gitignore |
+| `feat/can-self-modify-computed` | +39 | 2026-09-19 | CONFLICT x8 → .gitignore, README.md, docs/releases/v1.13-final.md |
+| `feat/phase-G-tauri-minimal-scaffold` | +3 | 2026-09-21 | CONFLICT x4 → .github/workflows/chain-invariant.yml, .gitignore |
+| `fix/adr-009-writeblock-process-race` | +2 | 2026-09-21 | CONFLICT x4 → .github/workflows/chain-invariant.yml, .gitignore |
 
 ## E. CI — czerwone
 
-- **9×** `ci`
-- **2×** `nightly-crystal`
+- **11×** `ci`
+- **1×** `nightly-crystal`
 
 ## F. DO WERYFIKACJI PRZEZ OPERATORA
 
