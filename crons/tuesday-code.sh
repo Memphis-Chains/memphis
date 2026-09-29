@@ -5,6 +5,10 @@
 # Dostarcza: Telegram digest z checklistą weryfikacji dla operatora.
 set -uo pipefail
 
+# systemd user units NIE dziedzicza PATH z shella — musimy ustawic recznie.
+export PATH="/home/memphis/.local/share/npm-global/bin:/home/memphis/.cargo/bin:/home/memphis/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+MEMPHIS="memphis"
+
 REPO="$HOME/memphis"
 LOG="$HOME/.memphis/logs/cron-tuesday-code.log"
 PRIO="$REPO/docs/roadmap/current-priorities.md"
@@ -146,7 +150,7 @@ if [ "$BYTES" -gt 3900 ]; then
 else
   MSG="$(cat "$TMP")"
 fi
-timeout 60 memphis telegram send --value "$MSG" >>"$LOG" 2>&1
+timeout 60 "$MEMPHIS" telegram send --value "$MSG" >>"$LOG" 2>&1
 rc=$?
 echo "=== $(date -Is) rc=$rc bytes=$BYTES ===" >> "$LOG"
 cp "$TMP" "$HOME/.memphis/logs/last-tuesday-code.md"; rm -f "$TMP"
