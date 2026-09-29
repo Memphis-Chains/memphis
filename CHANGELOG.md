@@ -1,3 +1,26 @@
+## v1.13.4 - 2026-09-21
+
+### CI portability + scheduled workflow PAT fix
+
+- **CI portability.** Workflow runners and local toolchains diverged on shell/locale assumptions; release and CI paths normalized so `npm run ci` behaves identically on ubuntu-latest and on the operator's WSL2 host. Release commit `e6db168`.
+- **weekly-runtime-kpi PAT.** The scheduled workflow could not write to `issues.create` — the repo-level cap on the scheduled token overrides any per-workflow `permissions:` block. Fixed by syncing the CI bot token used by the weekly job (`chore/sync-ci-bot-token-script`, PR #641). GitHub issue #638.
+- **README version parity.** README claimed `v1.13.4` while CHANGELOG still stopped at v1.13.2. `daa6aa8` aligned README; this entry closes the CHANGELOG side. Contract covered by `tests/ops/public-status-docs-contract.test.ts` and `tests/ops/release-draft-version-parity-contract.test.ts`.
+
+### Merged after v1.13.3
+
+- **ADR-009 + cross-process write race regression** (PR #643, `4b12631`). Concurrent `writeBlockAtomic` race test, 450 lines, plus the ADR. Regression test is the point: the corruption class is a race, so it needs a test that actually races two writers.
+- **Tauri Phase G-minimal desktop scaffold** (PR #644, `b55c94f`). Two real bugs fixed in the process: `src-tauri/Cargo.toml` used `path = "../../crates/..."` but sits two levels below `apps/memphis-gui`, so the manifest never loaded; adding Tauri to the workspace `members` list broke `cargo build --workspace` on `glib-sys`, so it was moved to `exclude` with a documented build command instead.
+- **`canSelfModify` computed + MiniMax H3 integration** (PR #649, `738b50c`). Branch reduced from 39 to 7 commits before merge — `git cherry` showed 35 were already in main under different merge commits. Adds the `play-customer-promo-video` skill and `.gitignore` hardening.
+
+### Repository hygiene (2026-09-29)
+
+- **Post-reset memory restoration.** `memphis reset --runtime` cleared chains, soul memory, and several working directories. Restored 14,077 blocks from `pre-reset-2026-09-29` (SHA256-verified, custom linkage check 14,077/14,077 clean), soul selectively (10 preferences, 4 strengths, 9 of 35 learnings after dropping activity-clock noise), plus `halt/`, `audit/`, `scripts/`, `skills/`. Both search indexes rebuilt: FTS 2 → 5,435 entries, semantic 2,084 → 10,046 docs.
+- **Embedding throughput characterized, not guessed.** nomic-embed-text costs ~418 ms/chunk on this host regardless of batch size (batch=8 → 381 ms, batch=64 → 410 ms) or concurrency (1/2/4/6 → 418/420/426/424 ms) — Ollama serializes internally. Token-limit edge case found and worked around: dense Polish text at 4,000 bytes exceeds the 2,048-token context window, so chunk 107-c0 needed byte-safe truncation to 3,800.
+- **Offsite backup silently broken for 2+ days.** `scripts/backup-to-usb.sh` hardcoded `/media/memphis/usb-backup` (pre-XDG), but this host automounts at `/run/media/$USER/memphis-usb-back`. Every run logged "not a mountpoint", exited 2, and `SuccessExitStatus=0 1 2` reported it as success. Replaced with `resolve_usb_dir()` probe + `MEMPHIS_USB_DIR` override.
+- **HALT registry: two dead entries removed.** `477256d46949788d` guarded a linter script that was never committed (verified via `git log --all`), and its premise was disproved — all 10 workflows using `actions/setup-node` already have an explicit `npm ci`. `a3e22cf68b5da623` said "staged but not committed" about a file committed 8 days earlier in `49d301c`, and carried a stale `memphis/` path prefix. Both deregistered with backups and audit entries; `bbb6dcf315560236` kept — `memphis-chain-draft/` is 1,287 LOC outside the repo and the roadmap marks it deferred.
+- **Client and account data scrubbed from the public repo.** `notes/szczepan-briefing-2026-04-26.md` (a named third party) removed, copy at `~/private-work/`. Telegram chat id replaced with `${TELEGRAM_CHAT_ID}` across 11 files, and with the neutral `99999999` in 5 test fixtures — 62/62 unit tests still pass. Author name, contact, and host/port deliberately kept: attribution, not leakage.
+- **`.gitignore` hardened.** Added `.test-tmp/` (25 stale vitest sandboxes, 804 KB), `work/` (96 MB of private client video renders and conversation dumps), `private-work/`, and `notes/szczepan-*.md`.
+
 ## v1.13.2 - 2026-09-12
 
 ### Monitoring, self-recovery, and chain-corruption defense
