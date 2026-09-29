@@ -56,8 +56,13 @@ for b in branches:
     n=sh(f"git rev-list --count origin/main..{b} 2>/dev/null") or '?'
     if n in ('0',''): continue
     d=sh(f"git log -1 --format=%cs {b} 2>/dev/null")
-    ok=sh(f"git merge-tree --write-tree origin/main {b} >/dev/null 2>&1 && echo MERGEABLE || echo CONFLICT")
-    ahead.append((b,n,d,ok))
+    # UWAGA: merge-tree --write-tree wypisuje SHA drzewa NAWET przy konfliktach.
+    # `&& echo MERGEABLE` dal falszywe "MERGEABLE" dla wszystkich galezi.
+    # Konflikty sa w komunikatach 'CONFLICT (content): ...' na stderr/stdout.
+    mt=sh(f"git merge-tree --write-tree origin/main {b} 2>&1")
+    nconf=mt.count('CONFLICT')
+    ok=f"MERGEABLE" if nconf==0 else f"CONFLICT x{nconf}"
+    ahead.append((b,n,d,ok,nconf))
 
 fails={}
 for r in runs:
@@ -105,9 +110,18 @@ else: L.append("Brak otwartych PR.")
 L.append("")
 L.append("## D. Gałęzie poza main")
 L.append("")
-L.append("| gałąź | commity | ostatni | merge |")
+L.append("| gałąź | commity | ostatni | stan |")
 L.append("|---|---|---|---|")
-for b,n,d,ok in ahead: L.append(f"| `{b.replace('origin/','')}` | +{n} | {d} | {ok} |")
+for b,n,d,ok,nc in ahead:
+    files=""
+    if nc:
+        mts=sh(f"git merge-tree --write-tree origin/main {b} 2>&1 | grep -A0 'CONFLICT' | head -{min(nc,6)}")
+        names=set()
+        for line in mts.splitlines():
+            if 'Merge conflict in' in line:
+                names.add(line.split('Merge conflict in')[-1].strip())
+        files=" → " + ", ".join(sorted(names)[:4])
+    L.append(f"| `{b.replace('origin/','')}` | +{n} | {d} | {ok}{files} |")
 L.append("")
 L.append("## E. CI — czerwone")
 L.append("")
