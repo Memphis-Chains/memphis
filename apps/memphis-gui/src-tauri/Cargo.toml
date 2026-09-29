@@ -1,0 +1,24 @@
+[package]
+name = "memphis-gui"
+version = "0.1.0-mvp"
+edition = "2021"
+description = "Memphis Desktop (Tauri shell) — Phase G-minimal MVP (ADR-aligned)"
+authors = ["Memphis coder <coder@memphis.local>"]
+publish = false
+
+# Co-located with the memphis monorepo; the binary is intentionally
+# never published to crates.io. We depend on memphis-operator and
+# memphis-core by path so the contract is enforced at monorepo build
+# time (one `cargo build --workspace` step).
+[dependencies]
+memphis-operator = { path = "../../../crates/memphis-operator" }
+memphis-core = { path = "../../../crates/memphis-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tauri = { version = "2", features = [] }
+log = "0.4"
+env_logger = "0.11"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

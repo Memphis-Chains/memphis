@@ -48,7 +48,7 @@
  * Time budget: <10 seconds (two child-process forks + one sweep run).
  */
 
-import { execFileSync, type SpawnSyncReturns } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import {
   cpSync,
   existsSync,

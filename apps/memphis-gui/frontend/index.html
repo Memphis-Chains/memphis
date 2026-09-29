@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Memphis (Tauri shell · Phase G-minimal MVP)</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <span class="brand">Memphis</span>
+      <span id="phase" class="phase">phase: …</span>
+      <span id="renderer" class="renderer">renderer: …</span>
+    </header>
+    <main>
+      <section id="status" class="panel">
+        <h2>Snapshot</h2>
+        <pre id="snapshot">loading…</pre>
+      </section>
+      <section id="actions" class="panel">
+        <h2>Actions</h2>
+        <button id="refresh">Refresh snapshot</button>
+      </section>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
