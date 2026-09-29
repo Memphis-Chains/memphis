@@ -26,7 +26,7 @@ Key findings:
 ### BUG-002: Cron Scripts — Telegram Not Sending (✅ Fixed 2026-05-14)
 
 **Root causes found:**
-1. `$CHAT_ID="1316033647"` invalid syntax in `deep-dive.sh` + `code-evolution.sh`
+1. `$CHAT_ID="${TELEGRAM_CHAT_ID}"` invalid syntax in `deep-dive.sh` + `code-evolution.sh`
 2. `system.jsonl` wrong path in `deep-dive.sh` (chain uses `.json` files)
 3. `telegram-insights-push.sh` never added to Memphis scheduler
 

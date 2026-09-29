@@ -105,16 +105,16 @@ describe('runMemphisSelfDescribe', () => {
   });
 
   it('reports active tier-3 session for the resolved (surface, actorId) pair', () => {
-    __seedTier3SessionForTests('telegram', '1316033647');
+    __seedTier3SessionForTests('telegram', '99999999');
     const out = runMemphisSelfDescribe(
-      { surface: 'telegram', actorId: '1316033647' },
+      { surface: 'telegram', actorId: '99999999' },
       { MEMPHIS_DATA_DIR: '/tmp/memphis-test' } as NodeJS.ProcessEnv,
     );
 
     expect(out.effectiveTier).toBe(3);
     expect(out.tier3Session).not.toBeNull();
     expect(out.tier3Session!.surface).toBe('telegram');
-    expect(out.tier3Session!.actorId).toBe('1316033647');
+    expect(out.tier3Session!.actorId).toBe('99999999');
     expect(out.tier3Session!.remainingMs).toBeGreaterThan(0);
   });
 

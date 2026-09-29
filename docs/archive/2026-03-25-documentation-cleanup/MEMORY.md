@@ -276,7 +276,7 @@ Memphis (10.0.0.80) ←→ Watra 🔥 (10.0.0.22)
 
 **Ops Hardening Checkpoint (2026-03-07):**
 
-- RM-078 (Session hygiene cleanup) completed: legacy session key canonicalized (`telegram:slash:1316033647` → `agent:main:telegram:slash:1316033647`).
+- RM-078 (Session hygiene cleanup) completed: legacy session key canonicalized (`telegram:slash:${TELEGRAM_CHAT_ID}` → `agent:main:telegram:slash:${TELEGRAM_CHAT_ID}`).
 - `openclaw doctor` no longer reports session legacy-state warning; orphan transcript files verified at 0.
 - RM-079 (Auto-Health Daily) completed: daily job (`memphis-daily-ops.timer`) runs health checks (`gateway status`, `memory status`, `memphis update status`) and writes one OK/WARN/FAIL snapshot/day to `memory/YYYY-MM-DD.md` with anti-spam guard.
 - RM-080 (Runbook post-incident) completed: `docs/OPS-RUNBOOK-LITE.md` now contains operator-grade recovery checklists (service restart safety, memory smoke, bot verification) and codified post-incident learnings.

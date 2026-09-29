@@ -430,7 +430,7 @@ describe('listActiveTier3Sessions', () => {
   });
 
   it('returns one entry per seeded session across surfaces', () => {
-    __seedTier3SessionForTests('telegram', '1316033647');
+    __seedTier3SessionForTests('telegram', '99999999');
     __seedTier3SessionForTests('tui', 'local');
     const result = listActiveTier3Sessions(testEnv);
     expect(result).toHaveLength(2);

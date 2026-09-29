@@ -93,7 +93,7 @@ describe('memphis tier status', () => {
       sessions: [
         {
           surface: 'telegram',
-          actorId: '1316033647',
+          actorId: '99999999',
           grantedAt: '2026-04-26T11:30:00.000Z',
           expiresAt: '2026-04-26T14:30:00.000Z',
           remainingMs: 6420000,
@@ -106,7 +106,7 @@ describe('memphis tier status', () => {
 
     const output = consoleSpy.log.mock.calls.map((c) => c[0]).join('\n');
     expect(output).toContain('Tier-3 sessions: 1 active');
-    expect(output).toContain('[telegram:1316033647]');
+    expect(output).toContain('[telegram:99999999]');
     expect(output).toContain('granted:');
     expect(output).toContain('expires:');
     expect(output).toContain('1h47m'); // 6420000ms ≈ 1h47m

@@ -50,13 +50,13 @@
   },
   "sessions_train": [
     "primary::operator:local",
-    "primary::telegram:1316033647",
+    "primary::telegram:${TELEGRAM_CHAT_ID}",
     "tui-6a010202",
     "tui-6a010c82"
   ],
   "sessions_eval": [
     "primary::operator:local",
-    "primary::telegram:1316033647",
+    "primary::telegram:${TELEGRAM_CHAT_ID}",
     "tui-6a010202",
     "tui-6a010c82"
   ],

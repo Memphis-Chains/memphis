@@ -177,7 +177,7 @@ Vault jest **excluded z backup** (kultura). To znaczy, że po restore vault jest
 | Secret                              | Skąd odtworzyć                                | Jak przywrócić                                           |
 | ----------------------------------- | --------------------------------------------- | -------------------------------------------------------- |
 | `MEMPHIS_TELEGRAM_BOT_TOKEN`        | 1Password / BotFather                         | `memphis vault set telegram_bot_token <value>`           |
-| `MEMPHIS_TELEGRAM_ALLOWED_USER_IDS` | ten sam co było                               | `memphis vault set telegram_allowed_user_ids 1316033647` |
+| `MEMPHIS_TELEGRAM_ALLOWED_USER_IDS` | ten sam co było                               | `memphis vault set telegram_allowed_user_ids ${TELEGRAM_CHAT_ID}` |
 | `MEMPHIS_API_TOKEN`                 | wygenerować na nowo: `memphis token generate` | `memphis vault set api_token <value>`                    |
 | Tier-2 passphrase                   | **musisz pamiętać**                           | `memphis vault unlock --passphrase <value>`              |
 | GitHub PAT                          | `gh auth login` albo z 1Password              | `vault set github_pat <pat>`                             |

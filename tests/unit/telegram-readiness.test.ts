@@ -34,9 +34,9 @@ describe('telegram readiness', () => {
 
   it('drops VAULT: literals while keeping legitimate ids in mixed input', () => {
     const ids = parseTelegramAllowedUserIds({
-      MEMPHIS_TELEGRAM_ALLOWED_USER_IDS: 'VAULT:foo, 1316033647 , VAULT:bar, 42',
+      MEMPHIS_TELEGRAM_ALLOWED_USER_IDS: 'VAULT:foo, 99999999 , VAULT:bar, 42',
     } as NodeJS.ProcessEnv);
-    expect(ids).toEqual(['1316033647', '42']);
+    expect(ids).toEqual(['99999999', '42']);
   });
 
   it('drops VAULT: literals case-insensitively (matches isUnresolvedVaultRef)', () => {

@@ -66,7 +66,7 @@ anthropic-window-2026-05-10/
 Sesje w window:
 - `tui-6a010c82` — 210 msgs, 117 tool calls (2026-05-10 22:54→23:24)
 - `tui-6a010202` — 115 msgs, 63 tool calls (2026-05-10 22:09→22:50)
-- `primary::telegram:1316033647` — 58 msgs, 0 tools (Telegram, raw text)
+- `primary::telegram:${TELEGRAM_CHAT_ID}` — 58 msgs, 0 tools (Telegram, raw text)
 - `primary::operator:local` — 10 msgs, 0 tools (CLI ping tests + 3 Claude calls)
 
 ### 2. `tool-calls.jsonl` (911 KB) — training-ready trajectory turns

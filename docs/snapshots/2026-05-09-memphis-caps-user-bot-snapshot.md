@@ -10,7 +10,7 @@
 > aktualnych capabilities szukaj w `memphis self_describe` / `memphis tui`
 > rather than tutaj.
 
-**User:** Marcin "Wodzu" (telegram:1316033647)
+**User:** Marcin "Wodzu" (telegram:${TELEGRAM_CHAT_ID})
 **Data:** sesja 2026-05-09 via MiniMax-M2.7 (nagłówek-original mówił 2025-01-27 — zhalucynowane)
 **Kontekst:** Zawoja / 10 strumieni / Holiskool
 

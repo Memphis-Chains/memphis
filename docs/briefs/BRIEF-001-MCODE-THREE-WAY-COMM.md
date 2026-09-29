@@ -11,7 +11,7 @@
 
 ### Co już działa
 
-- **Wodzu (operator)** ↔ **ja (Memphis)**: telegram (gate ready, chat_id 1316033647), TUI, CLI tu. 20 sesji w `memphis.db`, ostatnia `primary::operator:local` 202 turny / 139 KB.
+- **Wodzu (operator)** ↔ **ja (Memphis)**: telegram (gate ready, chat_id ${TELEGRAM_CHAT_ID}), TUI, CLI tu. 20 sesji w `memphis.db`, ostatnia `primary::operator:local` 202 turny / 139 KB.
 - **mcode** działa na `/home/memphis/.minimax-code/` jako osobny runtime (PID 98769, 7h uptime).
 - **ja → mcode**: shell-out przez `mcode exec` / `mcode acp` jest możliwy, ale nie mam MCP tool. Piszę pattern: `mcode exec --output-format stream-json --prompt-mode coding --permission smart --cwd /home/memphis/memphis`.
 - **mcode → ja**: zero. mcode nie ma moich MCP tools (`memphis_recall`, `memphis_decide`, `memphis_journal`, `memphis_chain_query`). Czyta pliki, nie woła chain.
@@ -119,7 +119,7 @@ Wodzu (operator)
 
 - ✅ Memory chains (10 łańcuchów, 12 348 bloków, verified 2026-09-22)
 - ✅ Vault (12 entries, integrity OK, vault-state v2)
-- ✅ Telegram gateway (allowlist 1, chat_id 1316033647)
+- ✅ Telegram gateway (allowlist 1, chat_id ${TELEGRAM_CHAT_ID})
 - ✅ `commit-culture.ts` skeleton (Twój design draft)
 - ✅ `commit-culture-interface.md` (Twój design draft)
 - ✅ `halt-aware-destructive-ops` skill (4 halt entries zarejestrowane)

@@ -17,21 +17,21 @@ Cron scripts scheduled in Memphis scheduler were NOT sending messages to Telegra
 
 ## Root Causes Found
 
-### Bug A: `$CHAT_ID="1316033647"` — invalid variable declaration (2 scripts)
+### Bug A: `$CHAT_ID="${TELEGRAM_CHAT_ID}"` — invalid variable declaration (2 scripts)
 
 **Affected:** `deep-dive.sh`, `code-evolution.sh`
 
 ```bash
 # BEFORE (ERROR)
-$CHAT_ID="1316033647"   # bash: try to execute $CHAT_ID as command
+$CHAT_ID="${TELEGRAM_CHAT_ID}"   # bash: try to execute $CHAT_ID as command
 
 # AFTER (FIXED)
-CHAT_ID="1316033647"    # correct variable declaration
+CHAT_ID="${TELEGRAM_CHAT_ID}"    # correct variable declaration
 ```
 
 **Error in logs:**
 ```
-STDERR: =1316033647: command not found
+STDERR: =${TELEGRAM_CHAT_ID}: command not found
 ```
 
 ### Bug B: Wrong chain file path — `system.jsonl` (1 script)
@@ -79,7 +79,7 @@ Manual test of `ranny-raport.sh` → Telegram message #2104 ✅
 ```
 ok: true
 messageId: 2104
-chatId: 1316033647
+chatId: ${TELEGRAM_CHAT_ID}
 ```
 
 Scheduler run after fix:

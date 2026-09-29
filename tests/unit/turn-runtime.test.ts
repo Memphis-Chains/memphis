@@ -284,7 +284,7 @@ describe('turn runtime', () => {
         providerLabel: 'minimax',
         model: 'MiniMax-M2.7',
         memory,
-        memoryUserId: 'tg:1316033647',
+        memoryUserId: 'tg:99999999',
         surface: 'telegram',
         sendReply,
       });
