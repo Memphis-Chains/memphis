@@ -211,3 +211,12 @@ wp-json*.json
 # github PAT file (created by scripts/set-github-pat.mjs)
 .github-pat
 *.github-pat
+
+# vitest sandbox dirs from tests/integration/chain-invariant.test.ts
+# (afterAll cleans up, but interrupted runs leave 25+ stale dirs behind)
+.test-tmp/
+
+# operator work artifacts: private video renders + evidence pack
+# (work/lumix-import = 90MB mp4 for client promos, work/minimax-evidence-pack
+#  = conversation dumps. Local only, never public repo.)
+work/
