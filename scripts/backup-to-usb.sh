@@ -13,15 +13,46 @@
 set -euo pipefail
 
 LOCAL_BACKUP_DIR="$HOME/.memphis/backups"
-USB_DIR="/media/memphis/usb-backup"
 USB_KEEP=3
 MIN_FREE_MB=200  # refuse copy if less than 200 MB free on USB
 
-# 1. Verify USB mounted
-if ! mountpoint -q "$USB_DIR" 2>/dev/null; then
-    echo "[backup-to-usb] ERROR: $USB_DIR is not a mountpoint" >&2
+# 1. Locate USB mount.
+#
+#    Was hardcoded to /media/memphis/usb-backup, but that is the
+#    pre-XDG automount location. This host mounts the drive through
+#    systemd automount under /run/media/$USER/<label>, so the
+#    hardcoded path pointed at an empty leftover directory and every
+#    4h run logged "ERROR: ... is not a mountpoint" and exited 2 —
+#    silently leaving the drive 2+ days behind (observed 2026-09-29;
+#    newest archive on USB was from 2026-09-27).
+#
+#    Probe candidates in order, use the first real mountpoint.
+#    MEMPHIS_USB_DIR override wins, so a re-labelled drive or a
+#    different mount layout is handled without a code change.
+resolve_usb_dir() {
+    local candidates=()
+    [ -n "${MEMPHIS_USB_DIR:-}" ] && candidates+=("$MEMPHIS_USB_DIR")
+    candidates+=(
+        "/run/media/$USER/memphis-usb-back"
+        "/media/$USER/usb-backup"
+        "/media/memphis/usb-backup"
+    )
+    local d
+    for d in "${candidates[@]}"; do
+        if [ -d "$d" ] && mountpoint -q "$d" 2>/dev/null; then
+            printf '%s\n' "$d"
+            return 0
+        fi
+    done
+    return 1
+}
+
+if ! USB_DIR=$(resolve_usb_dir); then
+    echo "[backup-to-usb] ERROR: no USB mount found (tried MEMPHIS_USB_DIR, /run/media/$USER/memphis-usb-back, /media/$USER/usb-backup, /media/memphis/usb-backup)" >&2
     exit 2
 fi
+
+echo "[backup-to-usb] using USB mount: $USB_DIR"
 
 # 2. Verify write access
 if ! touch "$USB_DIR/.write-test" 2>/dev/null; then
