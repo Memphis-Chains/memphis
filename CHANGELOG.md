@@ -27,6 +27,26 @@
 - **AUTHORS.md corrected.** Cognitive subpersonas are now listed by their actual runtime identifiers (Model A — Conscious Capture, Model B — Inferred Decisions, Model C — Pattern Recognition, Model D — Collective Coordination, Model E — Meta-Cognitive Reflection). Drafted placeholders that had no implementation (`Iskra`, `Codex Snapshot`, `Cline`, `Claude Code`, `OpenClaw`, `Hermes`) are removed.
 - **LICENSE updated.** Copyright holder line now lists only Marcin Kukla; a third-party attribution footer points at `AUTHORS.md` and `NOTICE` for full contributor and dependency license info. Aligns with the corrected `AUTHORS.md`.
 
+## v1.13.4 - 2026-09-21
+
+### Patch release: CI portability + scheduled workflow reliability
+
+Two weeks of CI flake remediation and one ops hardening, all per-operator-machine fixes — no `src/` behaviour change.
+
+- **#635 — writeBlockAtomic regression coverage + .gitignore leak fix.** Eight new tests in `tests/unit/chain-file-io.test.ts` pin the `read-after-write + rollback` contract from commit `d4dacc6` (issue #626 monitoring). Four follow-up commits relaxed pre-existing env-coupled assertions (`cli.health`, `cli.worker`, `self-modify-passphrase`, `provider-policy`) that had been red-since-v1.13.3 across five merged PRs, plus a `tests/unit/cli.health.test.ts` scheduler block tightening and an `import/order` ESLint fix. README version badge bumped from `v1.13.2` → `v1.13.3` (was lagging since release commit `4650f16`). `work/` (operator scratch, 86 MB of operator-local mp4) added to `.gitignore`.
+- **#636 — weekly-runtime-kpi scheduled workflow can now write issues.** `MEMPHIS_BOT_TOKEN` repo secret holds the operator's local `gh`-CLI PAT. `actions/github-script@v7` was rejected by the org's integration-app boundary ("Resource not accessible by integration" with `x-accepted-github-permissions: issues=write` confirmed). The workflow was rewritten to two bash steps that use the standard `gh` CLI authenticated via `GH_TOKEN: ${{ secrets.MEMPHIS_BOT_TOKEN }}` — the same shell pattern that locally succeeded in creating issue #640 during diagnosis. `permissions: issues: write` kept as defence-in-depth against future secret-rotation gaps.
+- **scripts/sync-ci-bot-token.sh.** Operator-side tool to re-sync `MEMPHIS_BOT_TOKEN` after a `gh auth login --with-token` rotation. Pipes `gh auth token` straight into `gh secret set` so the value never touches argv, process list, or shell history. Two flags: `--verify-only` (CI smoke-check), `--repo OWNER/REPONAME` (cross-repo use).
+
+### Operators notes
+
+- **PAT rotation coupling.** When the operator rotates the local `gh`-CLI PAT, run `./scripts/sync-ci-bot-token.sh` (or `gh auth token | gh secret set MEMPHIS_BOT_TOKEN --repo Memphis-Chains/memphis`) before the next Monday 03:30 UTC scheduled run, or it fails with 401.
+- **CI will fail-loud on next PAT drift.** The `permissions: issues: write` block means silent scope downgrade is impossible; failure surfaces as a clear error within minutes.
+
+### Decisions
+
+- **#151** weekly-runtime-kpi PAT fix — issues API integration-app boundary, requires personal PAT in repo secret
+- **#152** chain-file-io regression surface — `d4dacc6` had no test pinning the rollback contract; now locked in
+
 ## Unreleased
 
 ## v1.13.0 - 2026-09-05
