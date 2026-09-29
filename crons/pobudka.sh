@@ -42,7 +42,7 @@ EOF
 # Wyslij do Telegram (token z vault, chat_id z config)
 TOKEN=$(jq -r '.entries[] | select(.key=="telegram_bot_token") | .id' /home/memphis/.memphis/vault-entries.json 2>/dev/null)
 # Fallback: uzyj znany chat ID (z allowlist)
-CHAT_ID="99999999"
+CHAT_ID="${TELEGRAM_CHAT_ID}"
 
 if [ -n "$TOKEN" ]; then
   curl -s -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
