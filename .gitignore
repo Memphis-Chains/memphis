@@ -220,3 +220,7 @@ wp-json*.json
 # (work/lumix-import = 90MB mp4 for client promos, work/minimax-evidence-pack
 #  = conversation dumps. Local only, never public repo.)
 work/
+
+# client briefs + personal work: never in repo (scrubbed 2026-09-29)
+private-work/
+notes/szczepan-*.md

@@ -42,7 +42,7 @@ fn derive_context_pressure_summary() // ← Formula is correct, check input valu
 ### Locations & Fixes
 
 #### Fix 1: `$CHAT_ID=` → `CHAT_ID=` (2 files)
-**Bug:** Variable declared as `$CHAT_ID="99999999"` — bash tries to execute `$CHAT_ID` as a command.
+**Bug:** Variable declared as `$CHAT_ID="${TELEGRAM_CHAT_ID}"` — bash tries to execute `$CHAT_ID` as a command.
 
 **Files:**
 - `~/.memphis/scripts/code-evolution.sh` line 8
@@ -51,10 +51,10 @@ fn derive_context_pressure_summary() // ← Formula is correct, check input valu
 **Fix:**
 ```bash
 # BEFORE
-$CHAT_ID="99999999"   # WRONG
+$CHAT_ID="${TELEGRAM_CHAT_ID}"   # WRONG
 
 # AFTER  
-CHAT_ID="99999999"    # CORRECT
+CHAT_ID="${TELEGRAM_CHAT_ID}"    # CORRECT
 ```
 
 #### Fix 2: Wrong chain file path (1 file)

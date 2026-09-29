@@ -116,7 +116,7 @@ Przeczytane dziś, **nie naprawiane**:
 - `telegram-presence.ts` — jedyny `bot.use()` middleware. Loguje aktywność, **ale nie blokuje** — brak `return` przed `next()` dla nieallowlistowanych.
 - Guardy są per-handler, nie centralne: `basic-commands` (3), `text-turns` (2), `media-handlers` (2), `voice-handlers` (1), `config-command` (1 własna kopia).
 - **Brak guardu:** `telegram-cognitive-commands.ts` (`/mode` — zmienia globalny stan!), `telegram-operational-commands.ts` (`/chains`, `/search`, `/evolve`).
-- Praktycznie: `MEMPHIS_TELEGRAM_ALLOWED_USER_IDS=99999999` jest ustawione i `telegram-security.ts` ma guard w start-up. Więc **przy obecnym configu to nie wykorzystanie**, ale to obrona w głębokim kodzie bez centralnego muru.
+- Praktycznie: `MEMPHIS_TELEGRAM_ALLOWED_USER_IDS=${TELEGRAM_CHAT_ID}` jest ustawione i `telegram-security.ts` ma guard w start-up. Więc **przy obecnym configu to nie wykorzystanie**, ale to obrona w głębokim kodzie bez centralnego muru.
 - **Fix (tier-2):** jeden guard w middleware — `if (!fromAllowed) return;` przed `next()`. ~5 LOC, ale zmienia zachowanie wszystkich handlerów → wymaga testów.
 - **Effort** | 1h + testy
 
