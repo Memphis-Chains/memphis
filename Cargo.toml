@@ -1,5 +1,32 @@
 [workspace]
-members = ["crates/*"]
+# The pure Rust crates live under crates/ and build with a plain
+# `cargo build --workspace` — no system GUI dependencies.
+#
+# apps/ holds executable targets that need their own dependency setup
+# (Tauri, CLI bundles, ad-hoc tooling). They are excluded from this
+# workspace on purpose: see the `exclude` list below for why Tauri in
+# particular cannot be a member.
+members = [
+  "crates/*",
+]
+exclude = [
+  # Phase G Tauri shell. Deliberately OUT of the main workspace: it
+  # needs glib-2.0/gtk/webkit2gtk, which are not present on CI
+  # runners or on the operator host. Adding it here broke
+  # `cargo build --workspace` for every pure-Rust crate (quality-gate,
+  # nightly-crystal, cross-arch) — the failure was glib-sys, which has
+  # nothing to do with the crates that were being tested.
+  #
+  # To build it: install the system deps first, then
+  #   cargo check --manifest-path apps/memphis-gui/src-tauri/Cargo.toml
+  # See docs/adr/010-tauri-build-status.md.
+  "apps/memphis-gui/src-tauri",
+  # apps/memphis-chain-draft is the operator-local Phase 1 chain MVP
+  # workspace. Excluded so `cargo check --workspace` from the host
+  # repo doesn't pick it up. After passphrase-gate commit + ADR-010
+  # adoption, this exclusion is removed.
+  "apps/memphis-chain-draft",
+]
 resolver = "2"
 
 [workspace.dependencies]
