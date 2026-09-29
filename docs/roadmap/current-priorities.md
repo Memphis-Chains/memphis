@@ -21,9 +21,9 @@ Brak — albo wszystko zrobione, albo fixy nie mają `#NNN` w commicie.
 
 ## C. PR do review
 
-- [ ] **#644** [CONFLICTING] feat(tui): Phase G-minimal Tauri desktop scaffold (apps/memphis-
-- [ ] **#643** [CONFLICTING] test(adr-009): cross-process writeBlockAtomic race regression (i
-- [ ] **#641** [CONFLICTING] release: v1.13.4 — CI portability + weekly-runtime-kpi PAT fix +
+- [ ] **#644** [UNKNOWN] feat(tui): Phase G-minimal Tauri desktop scaffold (apps/memphis-
+- [ ] **#643** [UNKNOWN] test(adr-009): cross-process writeBlockAtomic race regression (i
+- [ ] **#641** [UNKNOWN] release: v1.13.4 — CI portability + weekly-runtime-kpi PAT fix +
 
 ## D. Gałęzie poza main
 
@@ -36,7 +36,7 @@ Brak — albo wszystko zrobione, albo fixy nie mają `#NNN` w commicie.
 
 ## E. CI — czerwone
 
-- **10×** `ci`
+- **9×** `ci`
 - **2×** `nightly-crystal`
 
 ## F. DO WERYFIKACJI PRZEZ OPERATORA
