@@ -3,7 +3,13 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     silent: 'passed-only',
-    testTimeout: 15000,
+    // 15s was below what the I/O-bound suites actually need. doctor-v2
+    // runs 12 full scans at ~6.5s each; cli.ask-session takes 11s alone.
+    // On a 4-core host a 544-file run pushes both past 15s and they fail
+    // on the clock, not on logic — they pass every time in isolation.
+    // 30s keeps a genuine hang visible (it would still time out) while
+    // leaving room for slower GitHub Actions runners (2 vCPU).
+    testTimeout: 30000,
     include: ['tests/**/*.test.ts'],
     exclude: ['.memphis-intake/**', 'reference/**', 'node_modules/**', 'dist/**'],
     coverage: {
@@ -25,6 +31,19 @@ export default defineConfig({
       // of what the operator's local .env contains.
       MEMPHIS_RATE_LIMIT_SENSITIVE_MAX: '10',
       MEMPHIS_RATE_LIMIT_GLOBAL_MAX: '100',
+      // Operator .env must never reach the test suite. SLO_evaluator's
+      // default threshold is 3000ms; a local `MEMPHIS_SLO_TURN_P99_MS=90000`
+      // made evaluateSlos() read the operator's tuning and report 'pass'
+      // for a span the test asserts must be 'fail'. Pin the values the
+      // code defaults to, so a test asserts production defaults rather
+      // than whatever this machine happens to be configured for.
+      MEMPHIS_SLO_TURN_P99_MS: '3000',
+      MEMPHIS_SLO_ERROR_RATE_MAX: '0.05',
+      // Same class: durable-memory reads the surface consent default.
+      // An operator-level `..._DEFAULT_CONSENT=exportable` overrode the
+      // per-surface hint the test exercises (chat class → local-only).
+      MEMPHIS_SURFACE_TELEGRAM_DEFAULT_CONSENT: 'local-only',
+      MEMPHIS_DEFAULT_CONSENT: 'local-only',
       // NB: do NOT set MEMPHIS_NAPI_HARD_EXIT=1 here. Vitest worker
       // forks are long-lived (one process runs many test files in
       // sequence). If the auto-shutdown guard hard-exits the worker

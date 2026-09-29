@@ -273,6 +273,25 @@ function print(summary: ValidationSummary, jsonMode: boolean): void {
 }
 
 const tempDirs: string[] = [];
+
+/**
+ * Remove every temp dir this run created, then clear the list.
+ *
+ * Idempotent on purpose: both exit paths call this before `process.exit()`
+ * (which does not unwind `finally`), and the `finally` block calls it again.
+ * A second pass over an empty list is a no-op, and `force: true` means a dir
+ * already gone does not throw.
+ */
+function cleanupTempDirs(): void {
+  for (const tempDir of tempDirs.splice(0)) {
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // A temp dir we cannot remove must not mask the validator's own
+      // exit code. The real failure is reported by the caller.
+    }
+  }
+}
 let summary: ValidationSummary = {
   schemaVersion: 3,
   ok: false,
@@ -312,6 +331,9 @@ try {
     cliProbes,
   };
   print(summary, options.json);
+  // process.exit() does not unwind `finally` — Node tears the process down
+  // before the cleanup block runs. Cleanup explicitly, then exit.
+  cleanupTempDirs();
   process.exit(0);
 } catch (error) {
   summary = {
@@ -321,13 +343,13 @@ try {
     error: error instanceof Error ? error.message : String(error),
   };
   print(summary, options.json);
+  // Same reason as the success path: exit skips the finally block.
+  cleanupTempDirs();
   process.exit(
     summary.error?.startsWith('Unknown option:') || summary.error?.includes('requires a value')
       ? 2
       : 1,
   );
 } finally {
-  for (const tempDir of tempDirs) {
-    rmSync(tempDir, { recursive: true, force: true });
-  }
+  cleanupTempDirs();
 }
