@@ -36,7 +36,7 @@ Brak — albo wszystko zrobione, albo fixy nie mają `#NNN` w commicie.
 
 ## E. CI — czerwone
 
-- **6×** `ci`
+- **10×** `ci`
 - **2×** `nightly-crystal`
 
 ## F. DO WERYFIKACJI PRZEZ OPERATORA
