@@ -235,3 +235,7 @@ docs/issues/
 .test-tmp/
 
 
+# ADR-009 race regression work lives on fix/adr-009-writeblock-process-race (PR #643)
+tests/helpers/concurrent-writer.mjs
+tests/integration/writeblock-process-race.test.ts
+docs/adr/009-writeblock-process-race.md
