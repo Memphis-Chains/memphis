@@ -65,6 +65,7 @@ commits `11639a2`/`8808055`/`f6bbb81` na origin/main, oba timery enabled
 3. „#628 pokrywa #626" — NIE, inne pliki (`crates/memphis-embed/src/pipeline.rs` vs chain-file-io)
 
 **4. „#626 nie ruszyło się"** — ma PR #643 od 21.09, w toku. Board wyglądał na martwy, bo issue nie rusza, nie gałąź.
+**5. Auto-detekcja „fix w main" (tuesday-code.sh)** — pierwsza wersja łapała `#628` wewnątrz `#631` i `#50` wewnątrz `#507` → **7 fałszywych alarmów**. Poprawione na regex `issue #NNN(?![0-9])` + `^fix|^feat|...`. Po poprawce `stale=0` (kontrola sensowności: #628 nadal w logu, ale zamknięty).
 
 **UNVERIFIED:** czy f6bbb81 faktycznie zamyka 11 testów z #629 (grep commit ≠ wynik testu),
 ile konkretnie plików koliduje w `feat/can-self-modify-computed` (merge-tree sam nie mówi ile).
