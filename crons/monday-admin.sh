@@ -4,6 +4,10 @@
 # Dostarcza: Telegram digest (operator trigger).
 set -uo pipefail
 
+# systemd user units NIE dziedzicza PATH z shella — musimy ustawic recznie.
+export PATH="/home/memphis/.local/share/npm-global/bin:/home/memphis/.cargo/bin:/home/memphis/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+MEMPHIS="memphis"
+
 REPO="$HOME/memphis"
 LOG="$HOME/.memphis/logs/cron-monday-admin.log"
 mkdir -p "$(dirname "$LOG")"
@@ -65,7 +69,7 @@ else
   MSG="$(cat "$OUT")"
 fi
 
-timeout 60 memphis telegram send --value "$MSG" >>"$LOG" 2>&1
+timeout 60 "$MEMPHIS" telegram send --value "$MSG" >>"$LOG" 2>&1
 rc=$?
 echo "=== $(date -Is) rc=$rc bytes=$BYTES ===" >> "$LOG"
 cp "$OUT" "$HOME/.memphis/logs/last-monday-admin.md"
