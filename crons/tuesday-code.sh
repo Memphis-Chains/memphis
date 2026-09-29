@@ -1,75 +1,154 @@
 #!/usr/bin/env bash
-# Tuesday 13:00 CEST — KOD MEMPHIS (continuous self-work)
-# Zbiera: CI/nightly, merge queue, testy, chain integrity, tech debt z planu.
-# Dostarcza: Telegram digest z KOLEJNOŚCIĄ (priorytetami), nie listą.
+# Tuesday 13:00 — KOD MEMPHIS
+# Generuje PRIORYTETY Z REALNEGO STANU (nie hardcoded) -> docs/roadmap/current-priorities.md
+# Ten sam plik jest source of truth dla sesji kodowania.
+# Dostarcza: Telegram digest z checklistą weryfikacji dla operatora.
 set -uo pipefail
 
 REPO="$HOME/memphis"
 LOG="$HOME/.memphis/logs/cron-tuesday-code.log"
-mkdir -p "$(dirname "$LOG")"
-OUT=$(mktemp /tmp/tuesday-code-XXXXXX.md)
-run() { echo "$1" >> "$OUT"; echo >> "$OUT"; }
+PRIO="$REPO/docs/roadmap/current-priorities.md"
+mkdir -p "$(dirname "$LOG")" "$REPO/docs/roadmap"
+TMP=$(mktemp /tmp/tuesday-XXXXXX.md)
+GHP="gh -R Memphis-Chains/memphis"
 
-{
-  echo "WTOREK — KOD MEMPHIS"
-  echo "$(date '+%Y-%m-%d %H:%M %Z')"
-  echo
-} > "$OUT"
+# --- surowe dane: JEDEN gh run list + JEDEN issue list + JEDEN git log ---
+echo "zbieram stan..."
+$($GHP issue list --state open --limit 100 --json number,title > /tmp/tui-issues.json 2>/dev/null)
+$GHP pr list --state open --limit 30 --json number,title,mergeable,headRefName,updatedAt > /tmp/tui-prs.json 2>/dev/null
+$GHP run list --limit 20 --json name,conclusion,workflowName > /tmp/tui-runs.json 2>/dev/null
+(cd "$REPO" && git log origin/main --format='%s' -400 > /tmp/tui-log.txt 2>/dev/null)
+(cd "$REPO" && git branch -r --format='%(refname:short)' 2>/dev/null | grep -v HEAD | grep -v 'origin/main$' > /tmp/tui-branches.txt)
 
-run "── CI (ostatnie przebiegi) ──"
-(cd "$REPO" && timeout 60 gh run list --repo Memphis-Chains/memphis --limit 12 \
-  --json name,status,conclusion,createdAt,displayTitle \
-  --template '{{range .}}{{.status}}\t{{.conclusion}}\t{{.name}}\t{{.displayTitle}}{{"\n"}}{{end}}' 2>&1 | head -14) >> "$OUT"
+python3 - "$REPO" "$PRIO" "$TMP" <<'PY'
+import json,sys,subprocess,os,datetime
+repo,prio,tmp=sys.argv[1],sys.argv[2],sys.argv[3]
+def load(p,d):
+    try: return json.load(open(p))
+    except Exception: return d
+issues=load('/tmp/tui-issues.json',[]); prs=load('/tmp/tui-prs.json',[])
+runs=load('/tmp/tui-runs.json',[]); branches=[l.strip() for l in open('/tmp/tui-branches.txt') if l.strip()]
+try: log=open('/tmp/tui-log.txt',errors='ignore').read()
+except Exception: log=''
 
-run "── NIGHTLY / WORKFLOWS Z RED FLAG ──"
-(cd "$REPO" && timeout 45 gh run list --repo Memphis-Chains/memphis --limit 20 \
-  --json name,conclusion --jq '[.[]|select(.conclusion=="failure")]|group_by(.name)|map({n:.[0].name,c:length})|sort_by(-.c)[]|"\(.c)x  \(.n)"' 2>&1 | head -10) >> "$OUT"
+def sh(c):
+    try: return subprocess.run(c,shell=True,capture_output=True,text=True,timeout=90,cwd=repo).stdout.strip()
+    except Exception: return ''
 
-run "── MERGE QUEUE (nieScalone gałęzie) ──"
-(cd "$REPO" && for b in $(git branch -r --format='%(refname:short)' 2>/dev/null | grep -v HEAD | grep -v 'origin/main$'); do
-  n=$(git rev-list --count origin/main.."$b" 2>/dev/null || echo '?')
-  d=$(git log -1 --format='%cs' "$b" 2>/dev/null || echo '?')
-  printf '%-45s +%-4s %s\n' "$b" "$n" "$d"
-done 2>&1 | head -14) >> "$OUT"
+# STALE: issue otwarte, a w main jest commit fixujacy DOKLADNIE ten numer.
+# Regex z granica (?<![0-9]) i (?![0-9]) — inaczej #50 lapie sie w #507.
+# Wymagamy slowa 'issue #NNN' (nie '#NNN' jako PR) + slowa fixujacego.
+import re as _re
+fixwords=_re.compile(r'^(fix|feat|harden|atomic|guard|regression|implement|refactor|perf)',_re.I)
+stale=[]
+for i in issues:
+    n=i['number']
+    pat=_re.compile(r'issue #%d(?![0-9])'%n,_re.I)
+    hits=[s for s in log.splitlines() if pat.search(s) and fixwords.match(s.strip())]
+    if hits: stale.append((n,i['title'],hits[0][:70]))
 
-run "── PR (otwarte) ──"
-(cd "$REPO" && timeout 45 gh pr list --repo Memphis-Chains/memphis --state open \
-  --json number,title,mergeable,reviewDecision \
-  --template '{{range .}}#{{.number}} {{.mergeable}} {{.reviewDecision}}  {{.title}}{{"\n"}}{{end}}' 2>&1 | head -12) >> "$OUT"
+ahead=[]
+for b in branches:
+    n=sh(f"git rev-list --count origin/main..{b} 2>/dev/null") or '?'
+    if n in ('0',''): continue
+    d=sh(f"git log -1 --format=%cs {b} 2>/dev/null")
+    ok=sh(f"git merge-tree --write-tree origin/main {b} >/dev/null 2>&1 && echo MERGEABLE || echo CONFLICT")
+    ahead.append((b,n,d,ok))
 
-run "── CHAIN INTEGRITY ──"
-(cd "$REPO" && timeout 90 npm run -s cli -- chain verify 2>&1 | tail -8) >> "$OUT"
+fails={}
+for r in runs:
+    if r.get('conclusion')=='failure':
+        k=r.get('workflowName') or r.get('name')
+        fails[k]=fails.get(k,0)+1
 
-run "── REPO ──"
-(cd "$REPO" && echo "gałąź: $(git branch --show-current)") >> "$OUT"
-(cd "$REPO" && echo "ahead origin/main: $(git rev-list --count origin/main..HEAD 2>/dev/null)") >> "$OUT"
-(cd "$REPO" && echo "dirty: $(git status --porcelain 2>/dev/null | wc -l) plik(ów)") >> "$OUT"
+today=datetime.date.today().isoformat()
+L=[]
+L.append(f"# Priorytety — tydzień {today} (auto, generowane z realnego stanu)")
+L.append("")
+L.append(f"Źródło: `cron tuesday-code.sh` · issue {len(issues)} otwartych · PR {len(prs)} · gałęzię {len(ahead)}")
+L.append("")
+L.append("> **Ten plik jest źródłem prawdy dla sesji kodowania.** Generowany wtorek 13:00")
+L.append("> z realnego stanu (issue, PR, gałęzie, CI). Nie edytuj ręcznie.")
+L.append(">")
+L.append("> **ZASADA SESJI KODOWANIA:** pierwszy krok = przeczytaj `docs/roadmap/current-priorities.md`.")
+L.append("> Zrób pozycje z A i B. Zatrzymaj się na F — decyzje operatora, nie zgaduj.")
+L.append("> Po zrobieniu: odznacz checkbox, dopisz co zrobiłeś pod daną pozycją.")
+L.append("")
+L.append("## A. Do zrobienia TERAZ (bez pytania, odwracalne)")
+L.append("")
+L.append("- [ ] Zamknąć issue z fixem już w main (patrz sekcja B)")
+L.append("- [ ] Przejrzeć PR-y czekające na review (sekcja C)")
+L.append("- [ ] Podjąć decyzję o gałęziach z konfliktami (sekcja D)")
+L.append("")
+if stale:
+    L.append("## B. Issue OTWARTE, ale fix JUŻ JEST w main — do zamknięcia")
+    L.append("")
+    for n,t,c in stale: L.append(f"- [ ] **#{n}** {t[:72]}")
+    L.append("")
+    L.append("  *Dowód (commit na origin/main):*")
+    for n,t,c in stale: L.append(f"  - #{n}: `{c}`")
+    L.append("")
+else:
+    L.append("## B. Issue otwarte, ale fix już w main")
+    L.append("")
+    L.append("Brak — albo wszystko zrobione, albo fixy nie mają `#NNN` w commicie.")
+    L.append("")
+L.append("## C. PR do review")
+L.append("")
+if prs:
+    for p in prs: L.append(f"- [ ] **#{p['number']}** [{p.get('mergeable','?')}] {p['title'][:64]}")
+else: L.append("Brak otwartych PR.")
+L.append("")
+L.append("## D. Gałęzie poza main")
+L.append("")
+L.append("| gałąź | commity | ostatni | merge |")
+L.append("|---|---|---|---|")
+for b,n,d,ok in ahead: L.append(f"| `{b.replace('origin/','')}` | +{n} | {d} | {ok} |")
+L.append("")
+L.append("## E. CI — czerwone")
+L.append("")
+if fails:
+    for k,v in sorted(fails.items(),key=lambda x:-x[1]): L.append(f"- **{v}×** `{k}`")
+else: L.append("Wszystko zielone w ostatnich 20 przebiegach.")
+L.append("")
+L.append("## F. DO WERYFIKACJI PRZEZ OPERATORA")
+L.append("")
+L.append("Też nie umiem rozstrzygnąć sam — potrzebuję Twojej decyzji:")
+L.append("")
+L.append("- [ ] Pepper vaulta (rotacja unieważnia 12 wpisów) — robić czy nie")
+L.append("- [ ] `sudo journalctl --vacuum-time=7d` (brak TTY u mnie)")
+L.append("- [ ] Rozwiązywać konflikty w gałęziach z sekcji D czy zamknąć")
+L.append("- [ ] Rotacja tajnych (`master-key-rotate`)")
+L.append("")
+L.append("## G. Plan długoterminowy")
+L.append("")
+L.append("- [ ] `docs/plans/*-repair-plan.md` — fazy 1–4")
+L.append("- [ ] `docs/roadmap/2026-09-29-priorities.md` — rozbudowana wersja z kontekstem")
+L.append("")
+open(prio,'w').write("\n".join(L)+"\n")
+open(tmp,'w').write("\n".join(L)+"\n")
+print(f"stale={len(stale)} prs={len(prs)} ahead={len(ahead)} fails={len(fails)}")
+PY
 
-run "── PLAN NAPRAWCZY (otwarte fazy) ──"
-(cd "$REPO" && grep -E '^#{2,3} ' docs/plans/*-repair-plan.md 2>/dev/null | tail -22) >> "$OUT"
+# --- commit priorytetów ---
+cd "$REPO" && git add -A docs/roadmap/current-priorities.md 2>/dev/null
+if ! git diff --cached --quiet 2>/dev/null; then
+  git commit -q -m "chore(priorities): auto-generowana lista na wtorek $(date -I)" 2>/dev/null
+  git push -q origin HEAD:refs/heads/main 2>&1 | tail -1
+fi
 
-run "── TEST GATE (szybki) ──"
-(cd "$REPO" && timeout 120 npm run -s cli -- tui --check-only 2>&1 | tail -5) >> "$OUT"
-
-# Priorytet na górze — reszta szczegóły
-PRIO="$HOME/.memphis/logs/prio-tuesday.md"
-{ echo "PRIORYTET NA TEN TYDZIEŃ:"; echo " 1. PR do review: $(cd "$REPO" && gh pr list --repo Memphis-Chains/memphis --state open --json number --jq 'length' 2>/dev/null || echo '?') szt.";
-  echo " 2. Issue z fixem już w main (zamknąć): #628 #629";
-  echo " 3. Gałąź +39 z konfliktami: feat/can-self-modify-computed";
-  echo " 4. CI: $(cd "$REPO" && gh run list --repo Memphis-Chains/memphis --limit 20 --json conclusion --jq '[.[]|select(.conclusion=="failure")]|length' 2>/dev/null || echo '?') fail z 20";
-  echo " 5. Plan: docs/roadmap/*-priorities.md"; } > "$PRIO" 2>&1
-
-BYTES=$(wc -c < "$OUT")
+# --- delivery ---
+BYTES=$(wc -c < "$TMP")
 if [ "$BYTES" -gt 3900 ]; then
-  MSG="$(head -c 3800 "$OUT")
+  MSG="$(cat "$PRIO" | head -c 3400)
 
-[[pełny digest: $HOME/.memphis/logs/last-tuesday-code.md]"
+[pełna wersja: docs/roadmap/current-priorities.md]"
 else
-  MSG="$(cat "$OUT")"
+  MSG="$(cat "$TMP")"
 fi
 timeout 60 memphis telegram send --value "$MSG" >>"$LOG" 2>&1
 rc=$?
 echo "=== $(date -Is) rc=$rc bytes=$BYTES ===" >> "$LOG"
-cp "$OUT" "$HOME/.memphis/logs/last-tuesday-code.md"
-rm -f "$OUT"
+cp "$TMP" "$HOME/.memphis/logs/last-tuesday-code.md"; rm -f "$TMP"
+rm -f /tmp/tui-*.json /tmp/tui-log.txt /tmp/tui-branches.txt
 exit $rc
