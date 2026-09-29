@@ -2,8 +2,12 @@
 
 Źródło: `cron tuesday-code.sh` · issue 36 otwartych · PR 3 · gałęzię 4
 
-> Ten plik jest źródłem prawdy dla sesji kodowania. Każdy poniedziałek jest
-> nadpisywany. Nie edytuj ręcznie — zmieni się przy następnym uruchomieniu.
+> **Ten plik jest źródłem prawdy dla sesji kodowania.** Generowany wtorek 13:00
+> z realnego stanu (issue, PR, gałęzie, CI). Nie edytuj ręcznie.
+>
+> **ZASADA SESJI KODOWANIA:** pierwszy krok = przeczytaj `docs/roadmap/current-priorities.md`.
+> Zrób pozycje z A i B. Zatrzymaj się na F — decyzje operatora, nie zgaduj.
+> Po zrobieniu: odznacz checkbox, dopisz co zrobiłeś pod daną pozycją.
 
 ## A. Do zrobienia TERAZ (bez pytania, odwracalne)
 
