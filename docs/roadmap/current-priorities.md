@@ -11,6 +11,10 @@
 
 ## A. Do zrobienia TERAZ (bez pytania, odwracalne)
 
+- [x] ~~Zamknąć issue z fixem już w main~~ — #628 #629 #646 zamknięte 2026-09-29
+- [x] ~~Przejrzeć PR-y czekające na review~~ — #641 #643 #644 #649 scalone, repo czyste
+- [ ] **Reset runtime** (`memphis reset --runtime`) — następny krok po zielonym CI na main
+
 - [ ] Zamknąć issue z fixem już w main (patrz sekcja B)
 - [ ] Przejrzeć PR-y czekające na review (sekcja C)
 - [ ] Podjąć decyzję o gałęziach z konfliktami (sekcja D)
