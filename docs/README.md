@@ -40,6 +40,27 @@ These docs govern the docs themselves (cross-cutting concerns):
 
 ---
 
+## Project Status
+
+The canonical record of what the runtime is and is not, kept with the historical
+docs so the claims stay auditable:
+
+- **[historical/PROJECT-STATUS.md](historical/PROJECT-STATUS.md)** — operator-facing status statement
+- **[historical/PUBLISH-STATUS.md](historical/PUBLISH-STATUS.md)** — what is published vs unreleased
+- **[historical/EXECUTION-PLAN.md](historical/EXECUTION-PLAN.md)** — how the current state of `main` was reached
+
+## Current roadmap
+
+- **[ROADMAP-CURRENT.md](ROADMAP-CURRENT.md)** — the live roadmap
+- **[../docs/roadmap/current-priorities.md](roadmap/current-priorities.md)** — this week's auto-generated priorities, regenerated every Tuesday from the real state of issues, PRs, branches and CI
+
+## Clean Install
+
+- **[operator/CLEAN-INSTALL.md](operator/CLEAN-INSTALL.md)** — from a clean machine to a running runtime
+- **[../CHANGELOG.md](../CHANGELOG.md)** — release history
+
+---
+
 ## README
 
 This is the main entry point. For per-directory README files, see the directory itself.
