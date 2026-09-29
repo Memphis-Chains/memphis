@@ -13,7 +13,12 @@
     "scripts/runtime-warmup.mjs",
     "scripts/scheduled-backup-runner.mjs",
     "scripts/set-github-pat.mjs",
-    "scripts/wal-checkpoint.mjs"
+    "scripts/wal-checkpoint.mjs",
+    "scripts/public-chat-gateway.mjs"
   ],
-  "ignore": ["benchmark-search.ts", "benchmarks/performance-suite.ts"]
+  "ignore": [
+    "benchmark-search.ts",
+    "benchmarks/performance-suite.ts",
+    "docs/site/assets/app.js"
+  ]
 }
