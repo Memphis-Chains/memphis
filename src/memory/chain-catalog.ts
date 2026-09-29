@@ -104,6 +104,16 @@ export const CHAIN_CATALOG = {
     consentDefault: 'exportable',
     searchable: true,
   },
+  autonom_archive: {
+    name: 'autonom_archive',
+    purpose:
+      'Operator-imported archive — autonom.edu.pl/publications (Mazur, Kossecki, Wegrzyn et al. Polska Szkola Cybernetyczna).',
+    blockTypes: ['autonom_publication'],
+    writeFrequency: 'low',
+    consentDefault: 'exportable',
+    searchable: true,
+  },
+
   system: {
     name: 'system',
     purpose:
