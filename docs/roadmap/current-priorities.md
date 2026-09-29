@@ -11,24 +11,9 @@
 - [ ] Przejrzeć PR-y czekające na review (sekcja C)
 - [ ] Podjąć decyzję o gałęziach z konfliktami (sekcja D)
 
-## B. Issue OTWARTE, ale fix JUŻ JEST w main — do zamknięcia
+## B. Issue otwarte, ale fix już w main
 
-- [ ] **#62** [MED] CLI has no centralized command registry with lazy loading
-- [ ] **#57** [MED] No automatic learning extraction or self-reflection loop
-- [ ] **#56** [MED] Skills system underutilized — no skill marketplace or creator
-- [ ] **#50** Phase 5: Skill Engine — skill DSL, AI composer, self-modification, workf
-- [ ] **#48** Phase 3: Network + Security — nmap, tcpdump, Vault, Prometheus, DNS, pro
-- [ ] **#47** Phase 2: Cloud + IaC — AWS SDK, GCP, Azure, Terraform, Ansible, Kubernet
-- [ ] **#44** MAXIMUM-TOOLKIT: Research — 500+ tools across 12 categories for self-evo
-
-  *Dowód (commit na origin/main):*
-  - #62: `fix(embed): atomic reindex write — issue #628 (#631)`
-  - #57: `fix(codex-round): both P2 findings from #579 + #580 — bundled (#583)`
-  - #56: `feat(kartograf): v4 training stack — env-driven DeBERTa-v3-large alter`
-  - #50: `feat(cli): Phase 3.1 — memphis demo arm/status/disarm (#507)`
-  - #48: `feat(anti-confab): runtime audit — log forbidden claims with tool-call`
-  - #47: `feat(anti-confab): search-claim guard — bot must call read tool before`
-  - #44: `feat(tools): fill helpText + cliFlags for 5 more tier-2 tools (Sprint `
+Brak — albo wszystko zrobione, albo fixy nie mają `#NNN` w commicie.
 
 ## C. PR do review
 
