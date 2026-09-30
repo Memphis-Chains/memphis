@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import { getChainPath, getDataDir, normalizeChainName } from '../config/paths.js';
@@ -179,7 +179,100 @@ function isArchivedChainDirectory(name: string): boolean {
   return /(?:^|[.-])(?:backup|bak|repair-backup|repair-backups)(?:[.-]|$)/iu.test(name);
 }
 
-export function scanLegacyChainState(rawEnv: NodeJS.ProcessEnv = process.env): LegacyScanResult {
+/**
+ * Cache for `scanLegacyChainState`.
+ *
+ * 2026-09-30: the scan reads and JSON.parses EVERY block in EVERY chain
+ * to answer one question - "is any block shaped badly enough to need a
+ * repair?". On this operator's runtime that is 80 MB across 14408 files,
+ * measured at 5355 ms per call.
+ *
+ * It is not a test-only cost. `requireFirstRun` runs it on the path of
+ * every `memphis ask`, `memphis chat` and `memphis tui` (the commands in
+ * `COMMANDS_REQUIRING_INIT`), so every turn paid 5 s of CPU before the
+ * model was even asked anything. Measured on the same machine: 5355 ms
+ * against the real data dir, 12 ms against an empty one.
+ *
+ * The scan is pure - it depends only on the bytes of the chain files - so
+ * the result can be memoised against a signature of what it read. The
+ * signature is (per chain directory) the JSON file count plus the
+ * directory's own mtime and size, which change on the next append. A
+ * chain that is modified in place without changing either value is not a
+ * case this runtime produces: blocks are append-only files, and
+ * `appendBlock` creates a new one.
+ *
+ * Correctness caveat, stated plainly: this trades a theoretical
+ * in-place-mutation race for a 400x speedup on the hot path. If that
+ * trade is ever wrong, the failure mode is a stale `legacy-*` state on a
+ * runtime whose blocks were rewritten in place - which requires a tool
+ * that does `writeFileSync` on an existing block. `MEMPHIS_FIRST_RUN_SCAN`
+ * = `full` forces the uncached path, and the cache is bypassed entirely
+ * when it is set.
+ */
+let legacyFullScanCount = 0;
+
+type LegacyScanCacheEntry = {
+  signature: string;
+  result: LegacyScanResult;
+};
+
+let legacyScanCache: LegacyScanCacheEntry | null = null;
+
+function legacyScanForcesFullScan(rawEnv: NodeJS.ProcessEnv): boolean {
+  const override = rawEnv.MEMPHIS_FIRST_RUN_SCAN?.trim().toLowerCase();
+  return override === 'full' || override === '1' || override === 'true';
+}
+
+export function clearLegacyScanCache(): void {
+  legacyScanCache = null;
+}
+
+/**
+ * Cheap fingerprint of the chain tree: one readdir per chain directory
+ * (already needed to know the file names) plus its stat. Never reads
+ * file contents, so it is orders of magnitude cheaper than the scan it
+ * guards.
+ *
+ * On redundancy: `jsonCount` is not the only signal that a block was
+ * added - the directory's mtime and size both change on append (measured
+ * on ext4: size 60 -> 80 bytes for the first two entries). Dropping the
+ * count from the signature still passes every test, so it is not
+ * load-bearing on this filesystem. It stays because it is the one
+ * component that is guaranteed by the filesystem's own contract
+ * (POSIX readdir returns the current entries) rather than by a
+ * filesystem-specific metadata side effect. Cost is one integer per
+ * chain; the redundancy is deliberate.
+ */
+function computeChainTreeSignature(rawEnv: NodeJS.ProcessEnv, chainDirs: string[]): string {
+  const chainsRoot = getChainPath(undefined, rawEnv);
+  const parts: string[] = [];
+  for (const chainDir of chainDirs) {
+    const absoluteDir = join(chainsRoot, chainDir);
+    let jsonCount = 0;
+    try {
+      for (const entry of readdirSync(absoluteDir)) {
+        if (entry.endsWith('.json')) jsonCount += 1;
+      }
+    } catch {
+      parts.push(`${chainDir}:unreadable`);
+      continue;
+    }
+    let mtimeMs = 0;
+    let size = 0;
+    try {
+      const stats = statSync(absoluteDir);
+      mtimeMs = Math.trunc(stats.mtimeMs);
+      size = stats.size;
+    } catch {
+      // Directory vanished between readdir and stat; the count alone
+      // will differ next call and force a rescan.
+    }
+    parts.push(`${chainDir}:${jsonCount}:${mtimeMs}:${size}`);
+  }
+  return parts.join('|');
+}
+
+function scanLegacyChainStateFull(rawEnv: NodeJS.ProcessEnv = process.env): LegacyScanResult {
   const chainsRoot = getChainPath(undefined, rawEnv);
   if (!existsSync(chainsRoot)) {
     return { state: null, chains: [], files: 0, reasons: [] };
@@ -262,6 +355,48 @@ export function scanLegacyChainState(rawEnv: NodeJS.ProcessEnv = process.env): L
     files,
     reasons: [...reasons].sort((left, right) => left.localeCompare(right)),
   };
+}
+
+export function scanLegacyChainState(rawEnv: NodeJS.ProcessEnv = process.env): LegacyScanResult {
+  if (legacyScanForcesFullScan(rawEnv)) {
+    legacyFullScanCount += 1;
+    return scanLegacyChainStateFull(rawEnv);
+  }
+
+  const chainsRoot = getChainPath(undefined, rawEnv);
+  if (!existsSync(chainsRoot)) {
+    legacyScanCache = null;
+    return { state: null, chains: [], files: 0, reasons: [] };
+  }
+
+  const signature = computeChainTreeSignature(rawEnv, listChainDirectories(rawEnv));
+  if (legacyScanCache && legacyScanCache.signature === signature) {
+    return legacyScanCache.result;
+  }
+
+  const result = scanLegacyChainStateFull(rawEnv);
+  legacyScanCache = { signature, result };
+  legacyFullScanCount += 1;
+  return result;
+}
+
+/**
+ * How many times the uncached scan has actually run. Exported for tests
+ * only.
+ *
+ * Correctness assertions cannot see the difference between "the cache
+ * answered this" and "the cache was ignored and the full scan ran
+ * again" - both return the same correct result. Deleting the cache write
+ * passes every correctness test and reintroduces the 5-second scan on
+ * the hot path, silently. Counting the scans is the only way to make
+ * the performance contract a test rather than a claim.
+ */
+export function getLegacyFullScanCount(): number {
+  return legacyFullScanCount;
+}
+
+export function resetLegacyFullScanCount(): void {
+  legacyFullScanCount = 0;
 }
 
 function hasMeaningfulExistingState(rawEnv: NodeJS.ProcessEnv = process.env): boolean {

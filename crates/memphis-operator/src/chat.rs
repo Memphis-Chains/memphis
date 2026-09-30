@@ -4636,6 +4636,78 @@ mod tests {
         }
     }
 
+    /// The guard needs its own test. `tool_schemas_declare_no_array_without_items`
+    /// passes today because every schema in `native_tool_definitions()` is
+    /// correct — not because the walk can detect anything. A filter that
+    /// matches nothing makes every mutant "survive", and a guard that
+    /// matches nothing makes every schema "pass": the same defect seen from
+    /// the test side, and the same way to stay hidden.
+    ///
+    /// This test feeds the walk hand-built schemas that carry the exact
+    /// defects the contract exists to prevent, so a neutered guard fails
+    /// here instead of silently approving the real schemas.
+    #[test]
+    fn undescribed_shape_walk_detects_the_defects_it_claims_to() {
+        // A tool input schema always roots at a properties bag, which is
+        // why the guard keys on `path.contains(".properties")`: the top-level
+        // object of the tool itself legitimately has no `properties` of its
+        // own name, but every named tool argument does.
+        let wrapper_under_properties = json!({
+            "type": "object",
+            "properties": { "updates": { "type": "object" } }
+        });
+        let array_without_items = json!({
+            "type": "object",
+            "properties": { "tags": { "type": "array" } }
+        });
+        let array_with_items = json!({
+            "type": "object",
+            "properties": { "tags": { "type": "array", "items": { "type": "string" } } }
+        });
+        let closed_empty_object = json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {}
+                }
+            }
+        });
+
+        let mut found = Vec::new();
+        undescribed_shape_nodes(&wrapper_under_properties, "t", &mut found);
+        assert!(
+            found.iter().any(|f| f.contains("t.properties.updates")),
+            "a bare \"type\": \"object\" under .properties must be reported, got {found:?} \
+             — this is the pre-ec74b8d shape that produced {{\"item\": [...]}} 18 times"
+        );
+
+        found.clear();
+        undescribed_shape_nodes(&array_without_items, "t", &mut found);
+        assert!(
+            found.iter().any(|f| f.contains("array without items")),
+            "an array with no items must be reported, got {found:?}"
+        );
+
+        // Negative controls. These two MUST produce nothing, or the guard is
+        // crying wolf and the real schemas will be ignored.
+        found.clear();
+        undescribed_shape_nodes(&array_with_items, "t", &mut found);
+        assert!(
+            found.is_empty(),
+            "a correctly described array must not be reported, got {found:?}"
+        );
+
+        found.clear();
+        undescribed_shape_nodes(&closed_empty_object, "t", &mut found);
+        assert!(
+            found.is_empty(),
+            "an object closed with additionalProperties:false is a deliberate \
+             shape, not an undescribed one, got {found:?}"
+        );
+    }
+
     #[test]
     fn soul_write_schema_mirrors_the_runtime_validator_field_tables() {
         let binding = tool_schema("memphis_soul_write");
