@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { createAppContainer } from '../../src/app/container.js';
+import { parseBool } from '../../src/core/env.js';
 import type { AppConfig } from '../../src/infra/config/schema.js';
 import { createHttpServer } from '../../src/infra/http/server.js';
 
@@ -507,6 +508,28 @@ describe('HTTP e2e', () => {
 
   it('generates and persists metadata', async () => {
     process.env.MEMPHIS_API_TOKEN = 'test-token';
+    // 2026-09-30: this test timed out at 15 s and the cause was neither
+    // slowness nor a tight timeout - it was isolation. It never set
+    // RUST_CHAIN_ENABLED, so `parseBool(undefined)` (fallback: true)
+    // turned the real Rust bridge ON, and it never set
+    // MEMPHIS_DATA_DIR, so `runMemphisRecall` resolved to the operator's
+    // LIVE data dir: 10057 semantic docs, 80 MB of chain files, and a
+    // real Ollama embedding call per turn.
+    //
+    // Measured on the same box, same test:
+    //   POST /v1/chat/generate            40.5 s   (hit the live index)
+    //   orchestration.generate direct      37 ms   (same provider, no memory)
+    //   bridge.embed_search #1           6.79 s    (Ollama, cold)
+    //   runMemphisRecall, real data dir  5.29 s
+    //   runMemphisRecall, isolated dir   257 ms
+    //
+    // The sibling test above already does the right thing (isolated dir +
+    // stub bridge); this one just never did. Asserting on a raised
+    // timeout instead would have hidden a test that reaches into the
+    // operator's real data - which is the part actually worth fixing.
+    process.env.RUST_CHAIN_ENABLED = 'false';
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-http-generate-'));
+    process.env.MEMPHIS_DATA_DIR = join(dir, '.memphis');
     const config = makeConfig();
     const container = createAppContainer(config);
     const app = createHttpServer(config, container.orchestration, {
@@ -528,4 +551,24 @@ describe('HTTP e2e', () => {
 
     await app.close();
   }, 15000);
+
+  it('treats an unset RUST_CHAIN_ENABLED as ON, not off', () => {
+    // The trap behind the 40-second timeout above, pinned down on its
+    // own. `parseBool`'s fallback is TRUE, so `delete
+    // process.env.RUST_CHAIN_ENABLED` - the idiomatic test cleanup used
+    // in this very file - does not turn the native bridge off, it turns
+    // it ON. Combined with an unset MEMPHIS_DATA_DIR, the test then runs
+    // against the operator's live chain files and a live Ollama.
+    //
+    // First version of this test read process.env directly and failed,
+    // because a sibling test had already left RUST_CHAIN_ENABLED='false'
+    // behind. Assert the parser on values, never on ambient env.
+    expect(parseBool(undefined)).toBe(true);
+    expect(parseBool('')).toBe(true);
+    expect(parseBool('nonsense')).toBe(true);
+    expect(parseBool('false')).toBe(false);
+    expect(parseBool('0')).toBe(false);
+    expect(parseBool('off')).toBe(false);
+    expect(parseBool(undefined, false)).toBe(false);
+  });
 });
