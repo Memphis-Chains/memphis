@@ -665,6 +665,175 @@ fn max_tool_tier_from_env() -> u8 {
         .unwrap_or(2)
 }
 
+/// JSON Schema for a single soul-memory list field (`string[]`).
+///
+/// Before this existed, `memphis_soul_write.updates` was declared as a bare
+/// `{ "type": "object" }` with no `properties` and no `items`. A schema that
+/// describes nothing is not neutral — the model fills the gap with the
+/// simplest guess available, and for a list the guess is
+/// `{ "item": [...] }`. That shape reached `run_soul_write` 18 times across
+/// the chat history and was the payload the pre-fd008ea merge clobbered
+/// silently. See decision #322.
+fn soul_list_field(description: &str) -> Value {
+    json!({
+        "type": "array",
+        "items": { "type": "string" },
+        "description": format!(
+            "{description} Send a bare JSON array like [\"first\", \"second\"] — never              {{\"item\": [...]}}."
+        ),
+        "examples": [["first", "second"]]
+    })
+}
+
+fn soul_scalar_field(description: &str) -> Value {
+    json!({
+        "type": "string",
+        "description": description
+    })
+}
+
+/// Full JSON Schema for `memphis_soul_write.updates`, mirroring
+/// `soulMemoryUpdateSchema` in `src/soul/types.ts` (zod, `.strict()`).
+///
+/// Sections and their field types are the SAME tables the runtime validator
+/// enforces in `validate_soul_update_shape` — `SOUL_SCALAR_FIELDS` and
+/// `SOUL_LIST_FIELDS` below. Three rules make the contract real:
+///
+/// 1. Every list field is `"type": "array"` with `items`. The model is told
+///    the shape instead of guessing it.
+/// 2. `"additionalProperties": false` on each section. A field the runtime
+///    rejects is a field the schema already said was impossible.
+/// 3. No `{"item": ...}` escape hatch anywhere. The wrapper is not a
+///    supported shape, it is the failure mode this schema exists to prevent.
+fn soul_updates_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "Partial soul memory patch. Send arrays as bare JSON arrays, never wrapped in an object: {\"self\":{\"learnings\":[\"a\"]}}, NOT {\"self\":{\"learnings\":{\"item\":[\"a\"]}}}.",
+        "properties": {
+            "user": {
+                "type": "object",
+                "description": "What is known about the operator.",
+                "additionalProperties": false,
+                "properties": {
+                    "name": soul_scalar_field("Operator display name."),
+                    "languages": soul_list_field("Languages the operator writes in."),
+                    "preferences": soul_list_field("How the operator wants work done."),
+                    "expertise": soul_list_field("Domains the operator works in."),
+                    "integrations": soul_list_field("External systems the operator uses.")
+                }
+            },
+            "self": {
+                "type": "object",
+                "description": "What this agent has learned about itself.",
+                "additionalProperties": false,
+                "properties": {
+                    "personality": soul_scalar_field("Agent personality summary."),
+                    "strengths": soul_list_field("Demonstrated strengths."),
+                    "learnings": soul_list_field("Lessons learned, each one a complete sentence."),
+                    "evolvedCapabilities": soul_list_field("Capabilities gained through evolution.")
+                }
+            },
+            "context": {
+                "type": "object",
+                "description": "What the agent is doing right now.",
+                "additionalProperties": false,
+                "properties": {
+                    "activeWork": soul_scalar_field("One line on the current task."),
+                    "recentDecisions": soul_list_field("Short summaries of recent decisions.")
+                }
+            }
+        },
+        "additionalProperties": false
+    })
+}
+
+/// JSON Schema for `memphis_case_query.query` — mirrors the `CaseQuery` struct
+/// in `crates/memphis-core/src/case_entry.rs`.
+fn case_query_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "Filter over case chain entries. Every field is optional; omit what you do not filter on.",
+        "additionalProperties": false,
+        "properties": {
+            "case_type": {
+                "type": "string",
+                "enum": [
+                    "nominative", "genitive", "dative", "accusative",
+                    "instrumental", "locative", "ablative", "vocative"
+                ],
+                "description": "Filter by case entry type."
+            },
+            "entity": { "type": "string", "description": "Filter by entity." },
+            "actor": { "type": "string", "description": "Filter by actor." },
+            "target": { "type": "string", "description": "Filter by target." },
+            "instrument": { "type": "string", "description": "Filter by instrument." },
+            "location": { "type": "string", "description": "Filter by location." },
+            "limit": { "type": "integer", "minimum": 1, "description": "Max results (default: 20)." }
+        }
+    })
+}
+
+/// JSON Schema for `memphis_case_append.entry` — mirrors the `CaseEntry`
+/// enum in `crates/memphis-core/src/case_entry.rs`, which is
+/// `#[serde(tag = "case_type")]`: `case_type` selects the variant and each
+/// variant carries its own required fields.
+///
+/// Kept permissive on purpose. The runtime deserializes with serde and
+/// reports serde's error, so an over-strict schema here would reject
+/// entries the code can still store (callers legitimately pass extra
+/// bookkeeping keys such as `chain`, `kind`, `requestId` or `tags`). The
+/// harm being fixed here is the `{"item": ...}` wrapper on `tags`, not
+/// missing `case_type` — so the schema names the fields and types the
+/// wrapper problem away, while `tags` gets the explicit array shape it
+/// never had.
+fn case_entry_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "Case chain entry. case_type selects the variant and determines the other fields. Send arrays as bare JSON arrays, never wrapped in an object.",
+        "properties": {
+            "case_type": {
+                "type": "string",
+                "enum": [
+                    "nominative", "genitive", "dative", "accusative",
+                    "instrumental", "locative", "ablative", "vocative"
+                ],
+                "description": "Case entry type. Required by the serde-tagged enum."
+            },
+            "entity": { "type": "string", "description": "nominative/locative/ablative: the subject." },
+            "action": { "type": "string", "description": "nominative: what the entity did." },
+            "timestamp": { "type": "string", "description": "nominative: when it happened." },
+            "owner": { "type": "string", "description": "genitive: who holds it." },
+            "possessed": { "type": "string", "description": "genitive: what is held." },
+            "giver": { "type": "string", "description": "dative: who gives." },
+            "recipient": { "type": "string", "description": "dative: who receives." },
+            "object": { "type": "string", "description": "dative/accusative: the object acted on." },
+            "subject": { "type": "string", "description": "accusative: who acts." },
+            "verb": { "type": "string", "description": "accusative: the action performed." },
+            "actor": { "type": "string", "description": "instrumental: who acts." },
+            "instrument": { "type": "string", "description": "instrumental: the means used." },
+            "target": { "type": "string", "description": "instrumental/vocative: the recipient of the action." },
+            "location": { "type": "string", "description": "locative: where." },
+            "origin": { "type": "string", "description": "ablative: where from." },
+            "destination": { "type": "string", "description": "ablative: optional where to." },
+            "invoker": { "type": "string", "description": "vocative: who calls." },
+            "invocation": { "type": "string", "description": "vocative: the call itself." },
+            "content": { "type": "string", "description": "Free-text body for the entry." },
+            "chain": { "type": "string", "description": "Chain the entry belongs to." },
+            "kind": { "type": "string", "description": "Entry kind (bookkeeping)." },
+            "role": { "type": "string", "description": "Entry role (bookkeeping)." },
+            "source": { "type": "string", "description": "Where the entry came from." },
+            "requestId": { "type": "string", "description": "Request identifier (bookkeeping)." },
+            "action_kind": { "type": "string", "description": "Action label (bookkeeping)." },
+            "tags": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Tags. Bare JSON array — never {\"item\": [...]}.",
+                "examples": [["instance-council-response", "collective"]]
+            }
+        }
+    })
+}
+
 fn native_tool_definitions() -> Vec<ChatToolDefinition> {
     vec![
         ChatToolDefinition {
@@ -721,11 +890,11 @@ fn native_tool_definitions() -> Vec<ChatToolDefinition> {
         },
         ChatToolDefinition {
             name: "memphis_soul_write".to_string(),
-            description: "Update soul memory".to_string(),
+            description: "Update soul memory. Arrays must be bare JSON arrays, never objects wrapping an array.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "updates": { "type": "object" }
+                    "updates": soul_updates_schema()
                 },
                 "required": ["updates"]
             }),
@@ -736,18 +905,18 @@ fn native_tool_definitions() -> Vec<ChatToolDefinition> {
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "query": { "type": "object" }
+                    "query": case_query_schema()
                 },
                 "required": ["query"]
             }),
         },
         ChatToolDefinition {
             name: "memphis_case_append".to_string(),
-            description: "Append a case chain entry".to_string(),
+            description: "Append a case chain entry. Arrays must be bare JSON arrays, never objects wrapping an array.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "entry": { "type": "object" }
+                    "entry": case_entry_schema()
                 },
                 "required": ["entry"]
             }),
@@ -4338,6 +4507,325 @@ mod tests {
 
         let after = read_soul(&runtime);
         assert_eq!(after["user"]["preferences"], json!(["first"]));
+    }
+
+    // ── Tool schema contract (decision #322) ──────────────────────────────────
+    //
+    // Regression cover for the `{"item": [...]}` wrapper. `soul_write`,
+    // `case_query` and `case_append` were declared to the model as bare
+    // `{ "type": "object" }` with no `properties` and no `items`. A schema
+    // that describes nothing is not neutral: the model fills the gap and,
+    // for a list, the guess is `{"item": [...]}`. That shape arrived 18
+    // times for soul_write and 6 for case_append in the chat history, and
+    // was what the pre-fd008ea merge clobbered silently.
+    //
+    // These assert the CONTRACT handed to the model, not the runtime
+    // behaviour (the runtime validator is covered separately). The mutation
+    // that must break them: putting `"updates": { "type": "object" }` back.
+
+    /// One `CaseEntry` per variant, built from the real enum so this test
+    /// cannot drift from the deserializer. `CaseType` exposes no `all()`,
+    /// and adding one would widen the change beyond this fix.
+    fn representative_case_entries() -> Vec<CaseEntry> {
+        vec![
+            CaseEntry::Nominative {
+                entity: "e".into(),
+                action: "a".into(),
+                timestamp: "1970-01-01T00:00:00Z".into(),
+            },
+            CaseEntry::Genitive {
+                owner: "o".into(),
+                possessed: "p".into(),
+            },
+            CaseEntry::Dative {
+                giver: "g".into(),
+                recipient: "r".into(),
+                object: "b".into(),
+            },
+            CaseEntry::Accusative {
+                subject: "s".into(),
+                verb: "v".into(),
+                object: "b".into(),
+            },
+            CaseEntry::Instrumental {
+                actor: "a".into(),
+                instrument: "i".into(),
+                target: "t".into(),
+            },
+            CaseEntry::Locative {
+                entity: "e".into(),
+                location: "l".into(),
+            },
+            CaseEntry::Ablative {
+                entity: "e".into(),
+                origin: "o".into(),
+                destination: Some("d".into()),
+            },
+            CaseEntry::Vocative {
+                invoker: "i".into(),
+                invocation: "v".into(),
+                target: "t".into(),
+            },
+        ]
+    }
+
+    fn tool_schema(name: &str) -> Value {
+        native_tool_definitions()
+            .into_iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("tool {name} must be defined"))
+            .input_schema
+    }
+
+    fn schema_at<'a>(schema: &'a Value, path: &[&str]) -> &'a Value {
+        let mut cursor = schema;
+        for key in path {
+            cursor = cursor
+                .get(*key)
+                .unwrap_or_else(|| panic!("schema must define {}", path.join(".")));
+        }
+        cursor
+    }
+
+    /// Walk a schema and collect every node that declares `"type": "array"`
+    /// but no `items`, plus every bare `{ "type": "object" }` that sits
+    /// where the runtime expects a described shape.
+    ///
+    /// Both are the same defect seen from two sides. An array without
+    /// `items` tells the model the shape but not the element type. A bare
+    /// object with no `properties` tells it nothing at all — and "nothing at
+    /// all" is what produced `{ "item": [...] }` 24 times. The bare-object
+    /// check is the one that catches a full regression to the old schema;
+    /// the array check alone passes on it, because a description-free object
+    /// is not an array.
+    fn undescribed_shape_nodes(node: &Value, path: &str, found: &mut Vec<String>) {
+        match node.get("type").and_then(Value::as_str) {
+            Some("array") if node.get("items").is_none() => found
+                .push(format!("{path}: array without items")),
+            Some("object")
+                if node.get("properties").is_none()
+                    && node.get("additionalProperties").is_none()
+                    && path.contains(".properties") =>
+            {
+                found.push(format!(
+                    "{path}: bare \"type\": \"object\" with no properties — this is \
+                     the shape the model fills in with a {{\"item\": [...]}} wrapper"
+                ));
+            }
+            _ => {}
+        }
+        if let Some(map) = node.as_object() {
+            for (key, child) in map {
+                undescribed_shape_nodes(child, &format!("{path}.{key}"), found);
+            }
+        }
+    }
+
+    #[test]
+    fn tool_schemas_declare_no_array_without_items() {
+        for tool in native_tool_definitions() {
+            let mut found = Vec::new();
+            undescribed_shape_nodes(&tool.input_schema, tool.name.as_str(), &mut found);
+            assert!(
+                found.is_empty(),
+                "tool {} has undescribed shapes at {found:?} — a bare \
+                 \"type\": \"array\" or a description-free \"type\": \"object\" is \
+                 where `{{\"item\": [...]}}` gets invented (decision #322)",
+                tool.name
+            );
+        }
+    }
+
+    #[test]
+    fn soul_write_schema_mirrors_the_runtime_validator_field_tables() {
+        let binding = tool_schema("memphis_soul_write");
+        let updates = schema_at(&binding, &["properties", "updates"]);
+
+        // Every section the runtime accepts must be described to the model.
+        for section in SOUL_SECTIONS {
+            assert!(
+                updates["properties"].get(*section).is_some(),
+                "updates.properties must describe section `{section}`; the runtime \
+                 accepts it via SOUL_SECTIONS, so a model that cannot see it will \
+                 guess a shape it was never offered"
+            );
+        }
+
+        // And the field types must agree with the tables the validator
+        // enforces. A schema that says `string` where the runtime demands
+        // `string[]` is worse than no schema: it invites the clobber this
+        // decision exists to prevent.
+        for (section, fields) in SOUL_LIST_FIELDS {
+            for field in *fields {
+                let node = schema_at(updates, &["properties", section, "properties", field]);
+                assert_eq!(
+                    node["type"].as_str(),
+                    Some("array"),
+                    "updates.properties.{section}.{field} must be array to match SOUL_LIST_FIELDS"
+                );
+                assert_eq!(
+                    node["items"]["type"].as_str(),
+                    Some("string"),
+                    "updates.properties.{section}.{field} items must be string"
+                );
+            }
+        }
+        for (section, fields) in SOUL_SCALAR_FIELDS {
+            for field in *fields {
+                let node = schema_at(updates, &["properties", section, "properties", field]);
+                assert_eq!(
+                    node["type"].as_str(),
+                    Some("string"),
+                    "updates.properties.{section}.{field} must be string to match SOUL_SCALAR_FIELDS"
+                );
+            }
+        }
+    }
+
+    /// The sections are closed on purpose. The runtime rejects unknown
+    /// sections and unknown fields; a schema that stays open would let the
+    /// model discover that only by hitting the error at write time.
+    #[test]
+    fn soul_write_schema_closes_sections_and_rejects_the_item_wrapper() {
+        let binding = tool_schema("memphis_soul_write");
+        let updates = schema_at(&binding, &["properties", "updates"]);
+        assert_eq!(
+            updates["additionalProperties"].as_bool(),
+            Some(false),
+            "updates must be closed — SOUL_SECTIONS is a closed set"
+        );
+        for section in SOUL_SECTIONS {
+            let node = schema_at(updates, &["properties", section]);
+            assert_eq!(
+                node["additionalProperties"].as_bool(),
+                Some(false),
+                "updates.properties.{section} must be closed — validate_soul_update_shape \
+                 rejects unknown fields"
+            );
+            assert!(
+                node["properties"].get("item").is_none(),
+                "updates.properties.{section} must not offer an `item` key: the \
+                 {{\"item\": [...]}} wrapper is the failure mode, not a supported shape"
+            );
+        }
+    }
+
+    /// The wrapper and a bare array must be distinguishable by the schema
+    /// alone — no runtime call needed. This is the property that makes the
+    /// fix work: the model is told which one to send.
+    #[test]
+    fn soul_write_schema_separates_a_bare_array_from_an_item_wrapper() {
+        let binding = tool_schema("memphis_soul_write");
+        let field = schema_at(
+            &binding,
+            &[
+                "properties",
+                "updates",
+                "properties",
+                "self",
+                "properties",
+                "learnings",
+            ],
+        );
+        assert_eq!(field["type"].as_str(), Some("array"));
+        // An object wrapper is not assignable to this node. If a future
+        // edit loosens the type, this fails.
+        assert_ne!(field["type"].as_str(), Some("object"));
+        assert!(
+            field["description"]
+                .as_str()
+                .is_some_and(|d| d.contains("item")),
+            "the field description must name the wrapper the model is known to \
+             invent, with a bare array as the alternative"
+        );
+    }
+
+    #[test]
+    fn case_query_schema_matches_the_case_query_struct() {
+        let binding = tool_schema("memphis_case_query");
+        let query = schema_at(&binding, &["properties", "query"]);
+        assert_eq!(
+            query["additionalProperties"].as_bool(),
+            Some(false),
+            "query must be closed — CaseQuery is a fixed struct"
+        );
+        for field in [
+            "case_type",
+            "entity",
+            "actor",
+            "target",
+            "instrument",
+            "location",
+            "limit",
+        ] {
+            assert!(
+                query["properties"].get(field).is_some(),
+                "query must describe `{field}` — it is a field of CaseQuery"
+            );
+        }
+        // case_type is a serde enum in the struct; the schema must offer
+        // exactly the variants serde accepts. The list is derived from real
+        // `CaseEntry` values rather than a hand-written copy, so adding a
+        // variant to the enum without updating the schema fails here.
+        let allowed = query["properties"]["case_type"]["enum"]
+            .as_array()
+            .expect("case_type must be an enum");
+        for entry in representative_case_entries() {
+            let case = entry.case_type();
+            assert!(
+                allowed.iter().any(|v| v.as_str() == Some(case.as_str())),
+                "case_type enum must include variant {case:?}; the schema would \
+                 otherwise reject a value serde accepts"
+            );
+        }
+        // And the reverse: nothing offered that serde would refuse. A value
+        // the schema advertises but the enum lacks is a promise the runtime
+        // cannot keep.
+        for value in allowed {
+            let name = value.as_str().expect("enum entries are strings");
+            assert!(
+                representative_case_entries()
+                    .iter()
+                    .any(|entry| entry.case_type().as_str() == name),
+                "case_type enum offers `{name}`, which is not a CaseType variant"
+            );
+        }
+    }
+
+    #[test]
+    fn case_append_schema_types_tags_as_a_bare_array() {
+        let binding = tool_schema("memphis_case_append");
+        let entry = schema_at(&binding, &["properties", "entry"]);
+        let tags = schema_at(entry, &["properties", "tags"]);
+        assert_eq!(
+            tags["type"].as_str(),
+            Some("array"),
+            "entry.tags must be array — the live history shows 6 case_append calls \
+             that wrapped it as {{\"item\": [...}}"
+        );
+        assert_eq!(tags["items"]["type"].as_str(), Some("string"));
+        assert!(
+            entry["properties"].get("item").is_none(),
+            "entry must not offer an `item` key"
+        );
+    }
+
+    /// Every list-bearing tool must say so in the description the model reads
+    /// first. The schema alone is not enough when the model has been burned
+    /// by the wrapper before and is primed to reproduce it.
+    #[test]
+    fn list_bearing_tools_mention_the_bare_array_rule_in_their_description() {
+        for name in ["memphis_soul_write", "memphis_case_append"] {
+            let description = native_tool_definitions()
+                .into_iter()
+                .find(|tool| tool.name == name)
+                .map(|tool| tool.description)
+                .expect("tool definition");
+            assert!(
+                description.contains("bare JSON arrays"),
+                "{name} description must state the bare-array rule, got: {description}"
+            );
+        }
     }
 
     #[test]
