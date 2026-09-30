@@ -31,7 +31,13 @@ describe('doctor v2', () => {
     expect(report).toHaveProperty('ok');
   });
 
-  it('supports deep scan mode by adding deep checks', { timeout: 30_000 }, async () => {
+  // This one runs the full doctor twice (base + deep), and each pass
+  // shells out for env / binary / provider probes — 13.7s, 18.9s and
+  // 14.3s measured solo on 2026-09-30. The old 30s budget left only
+  // 1.6x headroom, and the test failed intermittently once the suite
+  // grew past ~540 files (load contention inflates the shell probes).
+  // 90s is still a real ceiling: a hung probe should fail, not hang.
+  it('supports deep scan mode by adding deep checks', { timeout: 90_000 }, async () => {
     const base = await runDoctorChecksV2();
     const deep = await runDoctorChecksV2({ deep: true });
 
