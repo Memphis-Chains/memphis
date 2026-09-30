@@ -77,7 +77,27 @@ export function loadSoulMemory(rawEnv: NodeJS.ProcessEnv = process.env): SoulMem
   try {
     const raw = JSON.parse(readFileSync(memoryPath, 'utf8')) as unknown;
     return soulMemorySchema.parse(raw);
-  } catch {
+  } catch (error) {
+    // 2026-09-30 (decision #317): a silent `return null` here was the
+    // data-loss vector. `updateSoulMemory` does
+    // `loadSoulMemory() ?? emptySoulMemory()`, so a null load made the NEXT
+    // write start from an empty baseline and erase every section of the
+    // operator's soul memory -- with no warning anywhere. The file was not
+    // corrupt-but-harmless; it was rejected by the schema (e.g. a list field
+    // holding an object), which is exactly the state a malformed write leaves
+    // behind.
+    //
+    // Refuse loudly and point at the snapshot ring instead. The operator can
+    // restore with `cp <path>.bak-1 <path>`; we never fabricate a baseline over
+    // a file we could not understand.
+    const reason = error instanceof Error ? error.message : String(error);
+    process.stderr.write(
+      `[soul-memory] REFUSING to load ${memoryPath}: ${reason}.\n` +
+        `[soul-memory] The file exists but does not match the schema, so its contents are NOT being used.\n` +
+        `[soul-memory] A subsequent write would otherwise start from an empty baseline and erase every section.\n` +
+        `[soul-memory] Repair it, or restore the newest snapshot ring entry:\n` +
+        `[soul-memory]   cp ${memoryPath}.bak-1 ${memoryPath}\n`,
+    );
     return null;
   }
 }
@@ -267,7 +287,24 @@ export function updateSoulMemory(
   update: SoulMemoryUpdate,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): SoulMemory {
-  const current = loadSoulMemory(rawEnv) ?? emptySoulMemory();
+  const memoryPath = getSoulMemoryPath(rawEnv);
+  const loaded = loadSoulMemory(rawEnv);
+
+  // 2026-09-30 (decision #317): `?? emptySoulMemory()` used to run here for
+  // BOTH "no file yet" (fine) and "file exists but failed schema validation"
+  // (catastrophic -- it silently replaced the operator's whole soul memory
+  // with an empty document on the next write). Separate the two cases and
+  // refuse the second. `loadSoulMemory` has already written the detailed
+  // reason plus the recovery command to stderr.
+  if (!loaded && existsSync(memoryPath)) {
+    throw new Error(
+      `soul-memory: ${memoryPath} exists but could not be validated, so this write was refused. ` +
+        `Writing now would replace it with an empty document and erase every section. ` +
+        `Repair the file, or restore the newest snapshot: cp ${memoryPath}.bak-1 ${memoryPath}`,
+    );
+  }
+
+  const current = loaded ?? emptySoulMemory();
 
   if (update.user) {
     if (update.user.name !== undefined) current.user.name = update.user.name;
