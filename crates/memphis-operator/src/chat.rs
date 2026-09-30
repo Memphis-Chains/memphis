@@ -2801,18 +2801,39 @@ fn run_soul_write(runtime: &OperatorRuntime, updates: Value) -> Result<Value, Op
         .data_dir
         .join("config")
         .join("soul-memory.json");
-    let existing = load_json_file(&soul_path).unwrap_or_else(|| {
-        json!({
+    // Distinguish "no file yet" (legitimate first run -> empty baseline) from
+    // "file exists but is unreadable/corrupt" (must NOT be overwritten with
+    // an empty baseline -- that is how decision #317 escalated one malformed
+    // write into total loss of every section).
+    let existing = match load_json_file(&soul_path) {
+        Some(value) => value,
+        None if !soul_path.exists() => json!({
             "schemaVersion": 1,
             "lastUpdated": Utc::now().to_rfc3339(),
             "user": { "languages": [], "preferences": [], "expertise": [], "integrations": [] },
             "self": { "strengths": [], "learnings": [], "evolvedCapabilities": [] },
             "context": { "recentDecisions": [] },
-        })
-    });
+        }),
+        None => {
+            let preview = fs::read_to_string(&soul_path)
+                .map(|raw| raw.chars().take(200).collect::<String>())
+                .unwrap_or_else(|error| format!("<unreadable: {error}>"));
+            return Err(OperatorError::Message(format!(
+                "soul_write: {} exists but is not valid JSON; refusing to write over it \
+                 (an empty baseline would erase every section). First 200 chars: {preview}. \
+                 Repair or move the file aside, then retry.",
+                soul_path.display()
+            )));
+        }
+    };
 
     let mut merged = existing;
-    deep_merge_soul(&mut merged, &updates);
+    // Shape conflicts are REFUSED, not merged. `merge_soul_value` validates
+    // before mutating, so on Err the in-memory document is still the exact
+    // bytes we loaded and we return before `write_json_file` — the operator's
+    // existing soul memory is never touched by a malformed patch.
+    merge_soul_value(&mut merged, &updates)
+        .map_err(|reason| OperatorError::Message(format!("{reason}; no changes were written")))?;
     if let Some(object) = merged.as_object_mut() {
         object.insert(
             "lastUpdated".to_string(),
@@ -3462,17 +3483,100 @@ fn ensure_soul_manifest(runtime: &OperatorRuntime) -> Result<Value, OperatorErro
     Ok(manifest)
 }
 
-fn deep_merge_soul(target: &mut Value, patch: &Value) {
+/// Soul list fields are array-of-string by schema (`self.strengths`,
+/// `self.learnings`, `user.preferences`, `context.recentDecisions`, ...).
+/// A single string in a list position is accepted as a one-item list
+/// (mirrors `dedupeAppend` in the TS `updateSoulMemory`), but an OBJECT is
+/// never a legitimate list value.
+///
+/// 2026-09-30 (decision #317): the old `(target, patch) => *target =
+/// patch.clone()` fallthrough silently accepted a `{"item": [...]}` patch
+/// against a list field and clobbered the whole section, then still returned
+/// `success: true`. The TS side rejects these shapes (`soulMemoryUpdateSchema`
+/// is `.strict()`), so the two surfaces disagreed. Worse: once the file held
+/// an object in a list field, the TS loader's Zod parse returned null, which
+/// made the NEXT merge start from an empty baseline and wipe every other
+/// section. One bad write cascaded into total data loss.
+///
+/// Validation happens BEFORE any mutation, so a rejected patch leaves the
+/// in-memory document byte-identical to what was loaded.
+fn is_soul_list_value(value: &Value) -> bool {
+    match value {
+        Value::Array(items) => items.iter().all(Value::is_string),
+        // Single string in a list position: one-item list, matches TS.
+        Value::String(_) => true,
+        _ => false,
+    }
+}
+
+fn soul_value_kind(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "bool",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
+/// Classify a shape conflict between an existing value and an incoming patch.
+///
+/// Returns `None` when the pair is a legitimate merge (object/object,
+/// list/list, or scalar replacement) so the caller can proceed.
+/// Returns `Some(message)` when one side is a list and the other an object —
+/// that is always corruption, never a merge.
+///
+/// `legacy` is the raw JSON text when the caller wants to distinguish "the
+/// existing file is corrupt" from "the patch is corrupt", so the error can
+/// name the repair path instead of silently refusing forever.
+fn soul_shape_conflict(target: &Value, patch: &Value) -> Option<String> {
+    match (target, patch) {
+        (Value::Object(_), patch_value) if is_soul_list_value(patch_value) => {
+            let keys = patch_value
+                .as_object()
+                .map(|map| {
+                    map.keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            Some(format!(
+                "soul_write: refusing to merge list into object field (patch has object keys [{keys}]); \
+                 list fields must stay arrays"
+            ))
+        }
+        (target_value, Value::Object(_)) if is_soul_list_value(target_value) => Some(format!(
+            "soul_write: refusing to merge object into list field (existing value is {}); \
+             list fields must stay arrays",
+            soul_value_kind(target_value)
+        )),
+        _ => None,
+    }
+}
+
+/// Deep-merge a soul-memory patch into `target`, rejecting shape conflicts.
+///
+/// Merges objects recursively, appends to string lists with dedupe, and
+/// allows scalar replacement (`context.activeWork` legitimately overwrites).
+/// A list-vs-object mismatch returns `Err` INSTEAD of clobbering, and the
+/// validation runs before any mutation so the target is left untouched.
+fn merge_soul_value(target: &mut Value, patch: &Value) -> Result<(), String> {
+    if let Some(conflict) = soul_shape_conflict(target, patch) {
+        return Err(conflict);
+    }
     match (target, patch) {
         (Value::Object(target_map), Value::Object(patch_map)) => {
             for (key, patch_value) in patch_map {
                 match target_map.get_mut(key) {
-                    Some(existing) => deep_merge_soul(existing, patch_value),
+                    Some(existing) => merge_soul_value(existing, patch_value)?,
                     None => {
                         target_map.insert(key.clone(), patch_value.clone());
                     }
                 }
             }
+            Ok(())
         }
         (Value::Array(target_items), Value::Array(patch_items)) => {
             let mut seen = target_items
@@ -3487,9 +3591,11 @@ fn deep_merge_soul(target: &mut Value, patch: &Value) {
                     }
                 }
             }
+            Ok(())
         }
-        (target, patch) => {
-            *target = patch.clone();
+        (target_value, patch_value) => {
+            *target_value = patch_value.clone();
+            Ok(())
         }
     }
 }
@@ -3737,6 +3843,210 @@ mod tests {
             .to_string()
             .contains("must contain at least one of user, self, or context"));
         assert!(!root.join("config").join("soul-memory.json").exists());
+    }
+
+    // ── decision #317: soul_write shape-conflict regressions ──────────────
+    //
+    // Each test here maps to one observed failure mode. They assert the
+    // OUTCOME (data on disk) plus the ERROR, because the original defect
+    // reported `success: true` while destroying the file.
+
+    fn write_soul_fixture(runtime: &OperatorRuntime, value: &Value) {
+        let path = runtime.config.data_dir.join("config").join("soul-memory.json");
+        fs::create_dir_all(path.parent().expect("config dir")).expect("create config dir");
+        fs::write(&path, serde_json::to_vec_pretty(value).expect("serialize fixture"))
+            .expect("write fixture");
+    }
+
+    fn read_soul(runtime: &OperatorRuntime) -> Value {
+        let path = runtime.config.data_dir.join("config").join("soul-memory.json");
+        load_json_file(&path).expect("soul-memory.json must stay valid JSON")
+    }
+
+    #[test]
+    fn soul_write_refuses_object_wrapped_list_and_leaves_data_intact() {
+        let root = temp_runtime_root("soul-wrapped-list");
+        let runtime = runtime_for(root.as_path());
+        write_soul_fixture(
+            &runtime,
+            &json!({
+                "schemaVersion": 1,
+                "user": { "preferences": ["keep me"] },
+                "self": { "strengths": ["survive"] },
+                "context": { "recentDecisions": [] }
+            }),
+        );
+
+        // The exact shape observed in the wild: array wrapped as {"item": ...}
+        let error = run_soul_write(
+            &runtime,
+            json!({ "self": { "strengths": { "item": ["clobber"] } } }),
+        )
+        .expect_err("object-wrapped list must be refused, not merged");
+
+        // Target holds a list, patch is an object -> the list-vs-object arm.
+        let message = error.to_string();
+        assert!(
+            message.contains("refusing to merge object into list field"),
+            "error must name the shape conflict, got: {message}"
+        );
+
+        // The load-bearing assertion: nothing on disk changed.
+        let after = read_soul(&runtime);
+        assert_eq!(
+            after["self"]["strengths"],
+            json!(["survive"]),
+            "strengths must be untouched after a refused write"
+        );
+        assert_eq!(
+            after["user"]["preferences"],
+            json!(["keep me"]),
+            "unrelated sections must be untouched"
+        );
+    }
+
+    #[test]
+    fn soul_write_refuses_object_patch_against_existing_list() {
+        let root = temp_runtime_root("soul-object-into-list");
+        let runtime = runtime_for(root.as_path());
+        write_soul_fixture(
+            &runtime,
+            &json!({
+                "schemaVersion": 1,
+                "user": { "preferences": ["original"] },
+                "self": { "learnings": [] },
+                "context": { "recentDecisions": [] }
+            }),
+        );
+
+        // Existing list, incoming object -> refused, list survives.
+        let error = run_soul_write(
+            &runtime,
+            json!({ "user": { "preferences": { "item": ["nope"] } } }),
+        )
+        .expect_err("object against an existing list must be refused");
+
+        let message = error.to_string();
+        assert!(
+            message.contains("refusing to merge object into list field"),
+            "error must name the list-vs-object conflict, got: {message}"
+        );
+        assert_eq!(read_soul(&runtime)["user"]["preferences"], json!(["original"]));
+
+        // Mirror arm: an ALREADY-CORRUPT object in a list field must not be
+        // silently clobbered by a legitimate array patch either -- refuse and
+        // report, so the operator repairs deliberately instead of losing the
+        // evidence of what happened.
+        let root2 = temp_runtime_root("soul-corrupt-field");
+        let runtime2 = runtime_for(root2.as_path());
+        write_soul_fixture(
+            &runtime2,
+            &json!({
+                "schemaVersion": 1,
+                "user": { "preferences": { "item": ["corrupt evidence"] } },
+                "self": { "learnings": [] },
+                "context": { "recentDecisions": [] }
+            }),
+        );
+
+        let error = run_soul_write(
+            &runtime2,
+            json!({ "user": { "preferences": ["legit"] } }),
+        )
+        .expect_err("array patch into a corrupt object field must be refused");
+
+        let message = error.to_string();
+        assert!(
+            message.contains("refusing to merge list into object field"),
+            "error must name the object-vs-list conflict, got: {message}"
+        );
+        assert_eq!(
+            read_soul(&runtime2)["user"]["preferences"],
+            json!({ "item": ["corrupt evidence"] }),
+            "corrupt field must be preserved as evidence, not overwritten"
+        );
+    }
+
+    #[test]
+    fn soul_write_refuses_to_overwrite_unparseable_existing_file() {
+        let root = temp_runtime_root("soul-unparseable");
+        let runtime = runtime_for(root.as_path());
+        let path = root.join("config").join("soul-memory.json");
+        fs::create_dir_all(path.parent().expect("config dir")).expect("create config dir");
+        // Truncated JSON -- the shape a half-finished write leaves behind.
+        fs::write(&path, b"{\"self\": {\"strengths\": [\"a\", \"b\"") .expect("write corrupt file");
+
+        let error = run_soul_write(
+            &runtime,
+            json!({ "context": { "activeWork": "should not clobber" } }),
+        )
+        .expect_err("unparseable existing file must not be silently replaced");
+
+        let message = error.to_string();
+        assert!(
+            message.contains("exists but is not valid JSON"),
+            "error must name the unreadable-file path, got: {message}"
+        );
+        assert!(
+            message.contains("empty baseline would erase every section"),
+            "error must explain why it refuses, got: {message}"
+        );
+
+        // Byte-identical: the corrupt file was NOT replaced by an empty one.
+        let raw = fs::read_to_string(&path).expect("read back");
+        assert!(
+            raw.contains("\"strengths\""),
+            "corrupt file must be left in place for manual repair, got: {raw}"
+        );
+    }
+
+    #[test]
+    fn soul_write_still_accepts_valid_arrays_and_scalar_overwrite() {
+        let root = temp_runtime_root("soul-valid-paths");
+        let runtime = runtime_for(root.as_path());
+        write_soul_fixture(
+            &runtime,
+            &json!({
+                "schemaVersion": 1,
+                "user": { "preferences": ["a"] },
+                "self": { "strengths": ["b"] },
+                "context": { "activeWork": "old", "recentDecisions": [] }
+            }),
+        );
+
+        // Arrays append with dedupe...
+        run_soul_write(
+            &runtime,
+            json!({
+                "user": { "preferences": ["a", "c"] },
+                "self": { "strengths": ["d"] },
+                "context": { "recentDecisions": ["decision one"] }
+            }),
+        )
+        .expect("valid arrays must merge");
+
+        // ...and a scalar legitimately overwrites.
+        run_soul_write(&runtime, json!({ "context": { "activeWork": "new" } }))
+            .expect("scalar overwrite must succeed");
+
+        let after = read_soul(&runtime);
+        assert_eq!(after["user"]["preferences"], json!(["a", "c"]), "dedupe append");
+        assert_eq!(after["self"]["strengths"], json!(["b", "d"]));
+        assert_eq!(after["context"]["recentDecisions"], json!(["decision one"]));
+        assert_eq!(after["context"]["activeWork"], json!("new"), "scalar overwrite");
+    }
+
+    #[test]
+    fn soul_write_creates_baseline_when_file_absent() {
+        let root = temp_runtime_root("soul-first-run");
+        let runtime = runtime_for(root.as_path());
+        assert!(!root.join("config").join("soul-memory.json").exists());
+
+        run_soul_write(&runtime, json!({ "user": { "preferences": ["first"] } }))
+            .expect("first run must create the file");
+
+        let after = read_soul(&runtime);
+        assert_eq!(after["user"]["preferences"], json!(["first"]));
     }
 
     #[test]
