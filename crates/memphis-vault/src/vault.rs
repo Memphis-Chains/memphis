@@ -9,6 +9,11 @@ use crate::types::{
     VaultConfig, VaultEntry, VaultInitRequest, VaultInitResult as LegacyVaultInitResult,
 };
 
+// Clone lets callers memoise a derived handle instead of re-running the
+// scrypt KDF. The master key is already in memory here, so cloning it is
+// no worse than handing out a reference; see `load_vault_cached` in
+// memphis-operator, which is where the win is realised.
+#[derive(Clone)]
 pub struct Vault {
     pub salt: [u8; 32],
     master_key: [u8; 32],
