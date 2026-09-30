@@ -2763,6 +2763,12 @@ fn run_soul_read(runtime: &OperatorRuntime, section: Option<&str>) -> Result<Val
 }
 
 fn run_soul_write(runtime: &OperatorRuntime, updates: Value) -> Result<Value, OperatorError> {
+    // Shape validation runs FIRST so a caller that sends only unknown keys
+    // gets "unknown section `meta`" instead of the generic "must contain at
+    // least one of user, self, context" — the specific error is the one that
+    // tells the operator what to fix.
+    validate_soul_update_shape(&updates)?;
+
     let has_supported_section = ["user", "self", "context"]
         .iter()
         .any(|key| updates.get(key).is_some());
@@ -2772,6 +2778,7 @@ fn run_soul_write(runtime: &OperatorRuntime, updates: Value) -> Result<Value, Op
                 .to_string(),
         ));
     }
+
 
     let raw =
         serde_json::to_string(&updates).map_err(|error| OperatorError::Json(error.to_string()))?;
@@ -3556,6 +3563,142 @@ fn soul_shape_conflict(target: &Value, patch: &Value) -> Option<String> {
     }
 }
 
+/// Field shape tables for `validate_soul_update_shape`, mirroring
+/// `soulMemoryUpdateSchema` in `src/soul/types.ts` (zod, `.strict()`).
+/// Scalars are optional strings; list fields are arrays of strings.
+const SOUL_SCALAR_FIELDS: &[(&str, &[&str])] = &[
+    ("user", &["name"]),
+    ("self", &["personality"]),
+    ("context", &["activeWork"]),
+];
+
+const SOUL_LIST_FIELDS: &[(&str, &[&str])] = &[
+    (
+        "user",
+        &["languages", "preferences", "expertise", "integrations"],
+    ),
+    (
+        "self",
+        &["strengths", "learnings", "evolvedCapabilities"],
+    ),
+    ("context", &["recentDecisions"]),
+];
+
+const SOUL_SECTIONS: &[&str] = &["user", "self", "context"];
+
+fn soul_field_kind(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null (delete the key instead — this schema has no null)",
+        Value::Bool(_) => "bool",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(items) => {
+            if items.iter().all(Value::is_string) {
+                "array of strings"
+            } else {
+                "array containing non-string entries"
+            }
+        }
+        Value::Object(map) if map.len() == 1 && map.contains_key("item") => {
+            r#"object {\"item\": [...]} — a transport envelope leaked into the payload; \
+               send the bare array instead"#
+        }
+        Value::Object(_) => "object",
+    }
+}
+
+/// Reject a soul-write patch whose shape the schema does not allow.
+///
+/// Mirrors `soulMemoryUpdateSchema` so the Rust and JS entry points for
+/// `memphis_soul_write` accept the same documents. Runs before any merge, so
+/// a rejection leaves the on-disk file untouched — the operator's existing
+/// soul memory can never be damaged by a malformed patch.
+fn validate_soul_update_shape(updates: &Value) -> Result<(), OperatorError> {
+    let object = match updates.as_object() {
+        Some(map) => map,
+        None => {
+            return Err(OperatorError::Message(format!(
+                "soul_write: updates must be an object with at least one of {}, got {}",
+                SOUL_SECTIONS.join(", "),
+                soul_value_kind(updates)
+            )))
+        }
+    };
+
+    for (key, value) in object {
+        if !SOUL_SECTIONS.contains(&key.as_str()) {
+            return Err(OperatorError::Message(format!(
+                "soul_write: unknown section `{key}`; only {} are writable",
+                SOUL_SECTIONS.join(", ")
+            )));
+        }
+        let section = match value.as_object() {
+            Some(map) => map,
+            None => {
+                return Err(OperatorError::Message(format!(
+                    "soul_write: `{key}` must be an object of fields, got {}",
+                    soul_value_kind(value)
+                )))
+            }
+        };
+
+        for (field, field_value) in section {
+            let path = format!("{key}.{field}");
+            if SOUL_SCALAR_FIELDS
+                .iter()
+                .find(|(section_key, _)| *section_key == key)
+                .is_some_and(|(_, fields)| fields.contains(&field.as_str()))
+            {
+                if !field_value.is_string() {
+                    return Err(OperatorError::Message(format!(
+                        "soul_write: `{path}` must be a string, got {}",
+                        soul_field_kind(field_value)
+                    )));
+                }
+                continue;
+            }
+            if SOUL_LIST_FIELDS
+                .iter()
+                .find(|(section_key, _)| *section_key == key)
+                .is_some_and(|(_, fields)| fields.contains(&field.as_str()))
+            {
+                let items = match field_value {
+                    Value::Array(items) => items,
+                    // A bare string in a list position is a one-item list.
+                    // The TS merge guard (`is_soul_list_value`) has always
+                    // accepted this, so accepting it here keeps the two
+                    // surfaces in agreement instead of tightening the Rust
+                    // one in the wrong direction. `merge_soul_value` is what
+                    // actually normalises it to a one-element array.
+                    Value::String(_) => continue,
+                    _ => {
+                        return Err(OperatorError::Message(format!(
+                            "soul_write: `{path}` must be an array of strings, got {}",
+                            soul_field_kind(field_value)
+                        )))
+                    }
+                };
+                if let Some(bad) = items.iter().find(|item| !item.is_string()) {
+                    return Err(OperatorError::Message(format!(
+                        "soul_write: `{path}` must contain only strings, found {} at position {}",
+                        soul_value_kind(bad),
+                        items
+                            .iter()
+                            .position(|item| std::ptr::eq(item, bad))
+                            .unwrap_or(0)
+                    )));
+                }
+                continue;
+            }
+            return Err(OperatorError::Message(format!(
+                "soul_write: unknown field `{path}`; this section is strict — \
+                 check the field list in the tool description"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Deep-merge a soul-memory patch into `target`, rejecting shape conflicts.
 ///
 /// Merges objects recursively, appends to string lists with dedupe, and
@@ -3590,6 +3733,20 @@ fn merge_soul_value(target: &mut Value, patch: &Value) -> Result<(), String> {
                         target_items.push(Value::String(text.to_string()));
                     }
                 }
+            }
+            Ok(())
+        }
+        // A bare string in a list position is a one-item list — `is_soul_list_value`
+        // has always classified it that way. The merge arm was NOT consistent
+        // with that classification: it fell through to scalar replacement and
+        // wrote `"solo"` where the schema declares an array, which
+        // `loadSoulMemory` then rejected on the next load (same failure class
+        // as decision #317). Normalise here so the file is always schema-valid.
+        (Value::Array(target_items), Value::String(text)) => {
+            let text = text.clone();
+            let already_present = target_items.iter().any(|item| item.as_str() == Some(&text));
+            if !already_present {
+                target_items.push(Value::String(text));
             }
             Ok(())
         }
@@ -3884,11 +4041,17 @@ mod tests {
         )
         .expect_err("object-wrapped list must be refused, not merged");
 
-        // Target holds a list, patch is an object -> the list-vs-object arm.
+        // The patch is rejected. As of decision #319 the shape gate in
+        // `validate_soul_update_shape` fires BEFORE the merge-level
+        // list-vs-object guard, so the error now names the schema violation
+        // rather than the merge arm. Both outcomes are correct — the test
+        // pins "rejected, data intact", not which guard spoke.
         let message = error.to_string();
         assert!(
-            message.contains("refusing to merge object into list field"),
-            "error must name the shape conflict, got: {message}"
+            message.contains("self.strengths")
+                && (message.contains("must be an array of strings")
+                    || message.contains("refusing to merge object into list field")),
+            "error must name the offending field, got: {message}"
         );
 
         // The load-bearing assertion: nothing on disk changed.
@@ -3928,8 +4091,10 @@ mod tests {
 
         let message = error.to_string();
         assert!(
-            message.contains("refusing to merge object into list field"),
-            "error must name the list-vs-object conflict, got: {message}"
+            message.contains("user.preferences")
+                && (message.contains("must be an array of strings")
+                    || message.contains("refusing to merge object into list field")),
+            "error must name the offending field, got: {message}"
         );
         assert_eq!(read_soul(&runtime)["user"]["preferences"], json!(["original"]));
 
@@ -3965,6 +4130,132 @@ mod tests {
             json!({ "item": ["corrupt evidence"] }),
             "corrupt field must be preserved as evidence, not overwritten"
         );
+    }
+
+    /// Decision #319: the two observed production failures both slipped past
+    /// `merge_soul_value` because nothing validated the PATCH shape first.
+    /// These pin the exact payloads that corrupted real data.
+    #[test]
+    fn soul_write_rejects_null_scalar_that_zod_would_reject() {
+        let root = temp_runtime_root("soul-null-scalar");
+        let runtime = runtime_for(root.as_path());
+        write_soul_fixture(
+            &runtime,
+            &json!({
+                "schemaVersion": 1,
+                "user": { "preferences": ["keep"] },
+                "self": { "strengths": ["keep"] },
+                "context": { "recentDecisions": [] }
+            }),
+        );
+
+        // This exact payload reached disk at 10:58 on 2026-09-30 and made
+        // loadSoulMemory reject the entire document on the next boot.
+        let error = run_soul_write(
+            &runtime,
+            json!({ "context": { "activeWork": Value::Null } }),
+        )
+        .expect_err("null in a z.string() field must be refused");
+
+        let message = error.to_string();
+        assert!(
+            message.contains("context.activeWork") && message.contains("must be a string"),
+            "error must name the offending field, got: {message}"
+        );
+        assert!(
+            read_soul(&runtime).get("context").is_some_and(|c| c.get("activeWork").is_none()),
+            "activeWork must not be written as null"
+        );
+    }
+
+    #[test]
+    fn soul_write_rejects_unknown_section_and_unknown_field() {
+        let root = temp_runtime_root("soul-unknown-keys");
+        let runtime = runtime_for(root.as_path());
+        write_soul_fixture(
+            &runtime,
+            &json!({
+                "schemaVersion": 1,
+                "user": { "preferences": ["keep"] },
+                "self": { "strengths": [], "learnings": [], "evolvedCapabilities": [] },
+                "context": { "recentDecisions": [] }
+            }),
+        );
+
+        let section_error = run_soul_write(&runtime, json!({ "meta": { "x": 1 } }))
+            .expect_err("unknown section must be refused");
+        assert!(
+            section_error.to_string().contains("unknown section"),
+            "got: {section_error}"
+        );
+
+        let field_error =
+            run_soul_write(&runtime, json!({ "self": { "notAField": "x" } }))
+                .expect_err("unknown field must be refused");
+        assert!(
+            field_error.to_string().contains("self.notAField"),
+            "got: {field_error}"
+        );
+
+        // Zod is `.strict()`; an unknown key on the JS side used to be the
+        // only surface that caught this. Both surfaces must now agree.
+        assert_eq!(read_soul(&runtime)["user"]["preferences"], json!(["keep"]));
+    }
+
+    #[test]
+    fn soul_write_rejects_non_string_list_entries() {
+        let root = temp_runtime_root("soul-list-entries");
+        let runtime = runtime_for(root.as_path());
+        write_soul_fixture(
+            &runtime,
+            &json!({
+                "schemaVersion": 1,
+                "user": { "preferences": ["keep"] },
+                "self": { "strengths": [], "learnings": [], "evolvedCapabilities": [] },
+                "context": { "recentDecisions": [] }
+            }),
+        );
+
+        // A bare STRING in a list position is deliberately NOT in this list —
+        // it is a one-item list and is accepted (see
+        // `soul_write_accepts_single_string_where_list_expected`). These three
+        // are shapes no reasonable reading accepts.
+        for payload in [
+            json!({ "self": { "learnings": [1, 2] } }),
+            json!({ "user": { "preferences": [{ "item": "nested" }] } }),
+            json!({ "context": { "recentDecisions": false } }),
+        ] {
+            let error = run_soul_write(&runtime, payload.clone())
+                .expect_err("non-string list entry must be refused");
+            assert!(
+                error.to_string().contains("soul_write:"),
+                "every refusal must be attributable, got: {error}"
+            );
+        }
+        assert_eq!(read_soul(&runtime)["user"]["preferences"], json!(["keep"]));
+    }
+
+    /// A single string in a list position is a one-item list — the TS side
+    /// accepts it (`is_soul_list_value`) and so must this gate, or the two
+    /// surfaces would disagree on a payload that used to work.
+    #[test]
+    fn soul_write_accepts_single_string_where_list_expected() {
+        let root = temp_runtime_root("soul-single-string");
+        let runtime = runtime_for(root.as_path());
+        write_soul_fixture(
+            &runtime,
+            &json!({
+                "schemaVersion": 1,
+                "user": { "preferences": [] },
+                "self": { "strengths": [], "learnings": [], "evolvedCapabilities": [] },
+                "context": { "recentDecisions": [] }
+            }),
+        );
+
+        let result = run_soul_write(&runtime, json!({ "user": { "preferences": "solo" } }))
+            .expect("a bare string in a list field is a one-item list, not a shape error");
+        assert_eq!(result["success"], json!(true));
+        assert_eq!(read_soul(&runtime)["user"]["preferences"], json!(["solo"]));
     }
 
     #[test]
