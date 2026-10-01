@@ -1,6 +1,7 @@
 mod app;
 mod client;
 mod config;
+mod error_log;
 mod sanitize;
 mod ui;
 mod widgets;
@@ -22,8 +23,8 @@ use config::TuiConfig;
 use crossterm::{
     cursor::{Hide, Show},
     event::{
-        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
-        EnableMouseCapture, Event, MouseEvent, MouseEventKind,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event, MouseEvent, MouseEventKind,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -413,8 +414,7 @@ fn main() -> ExitCode {
                         };
                         if result.is_ok() {
                             app.mouse_captured = new_state;
-                            app.mouse_capture_toast =
-                                Some(MouseCaptureToast::fresh(new_state));
+                            app.mouse_capture_toast = Some(MouseCaptureToast::fresh(new_state));
                         }
                     }
                     AppAction::None => {}
@@ -527,7 +527,12 @@ fn build_check_only_report_from_parts(
     }
 }
 
-fn run_command(app: &mut AppState, client: &mut MemphisClient, command: &str, json: bool) -> ExitCode {
+fn run_command(
+    app: &mut AppState,
+    client: &mut MemphisClient,
+    command: &str,
+    json: bool,
+) -> ExitCode {
     let report = execute_run_command(app, client, command, Duration::from_secs(30));
 
     if json {
@@ -781,7 +786,12 @@ mod tests {
         let mut app = AppState::new(config);
         app.refresh(&client);
 
-        let report = execute_run_command(&mut app, &mut client, "/overview", Duration::from_millis(10));
+        let report = execute_run_command(
+            &mut app,
+            &mut client,
+            "/overview",
+            Duration::from_millis(10),
+        );
 
         assert!(report.ok);
         assert_eq!(report.mode, "run-command");
@@ -802,7 +812,8 @@ mod tests {
         let mut app = AppState::new(config);
         app.refresh(&client);
 
-        let report = execute_run_command(&mut app, &mut client, "/banana", Duration::from_millis(10));
+        let report =
+            execute_run_command(&mut app, &mut client, "/banana", Duration::from_millis(10));
 
         assert!(!report.ok);
         assert_eq!(report.route, "unsupported");
