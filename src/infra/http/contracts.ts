@@ -106,6 +106,11 @@ export const providersHealthResponseSchema = z.object({
       ok: z.boolean(),
       latencyMs: z.number().int().nonnegative().optional(),
       error: z.string().optional(),
+      // Present only for providers that are keyed on an API credential.
+      // `ok` says "a key exists"; this says whether that key is one a
+      // provider would actually accept. See journal-633 for the audit
+      // that motivated separating the two.
+      credentialState: z.enum(['missing', 'present', 'placeholder']).optional(),
     }),
   ),
 });

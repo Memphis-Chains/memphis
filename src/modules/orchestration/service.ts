@@ -15,6 +15,8 @@ import {
   sanitizeDegradationReason,
   validateProviderName,
 } from '../../infra/security/sanitizers.js';
+import { classifyProviderCredential, describeCredentialState } from '../../providers/credential-state.js';
+import { resolveProviderKey } from '../../providers/index.js';
 import type { ChatOptions } from '../../providers/index.js';
 import { normalizeRuntimeProvider, type RuntimeProvider } from '../../providers/runtime.js';
 
@@ -165,6 +167,26 @@ export interface DefaultProviderSwapResult {
   previous: ProviderName;
   next: ProviderName;
 }
+
+/**
+ * Providers whose `isConfigured()` is driven by an API key. Everything
+ * else (local-fallback, ollama) is keyed on reachability, not on a
+ * credential, and reporting a credential state for them would be
+ * meaningless.
+ *
+ * Mirrors the `VAULT_KEY_MAP` / `PLAINTEXT_KEY_MAP` tables in
+ * `src/providers/index.ts`; kept local rather than exported from there
+ * so this module does not grow a dependency on the provider registry's
+ * internals.
+ */
+const PROVIDERS_REQUIRING_CREDENTIAL: ReadonlySet<string> = new Set([
+  'minimax',
+  'anthropic',
+  'deepseek',
+  'glm',
+  'shared-llm',
+  'decentralized-llm',
+]);
 
 export class OrchestrationService {
   private readonly providers = new Map<ProviderName, RuntimeProvider>();
@@ -658,20 +680,62 @@ export class OrchestrationService {
     }
   }
 
+  /**
+   * Per-provider health, with credential state reported alongside.
+   *
+   * `ok` is deliberately left as `provider.healthCheck()` reports it —
+   * the adapters' `isAvailable()` is a tautology over `isConfigured()`
+   * (journal-633), so `ok: true` means "a key is present", not "the
+   * provider answered". Rather than change that contract here (it is
+   * consumed by cascade logic and by the TUI status line), we add
+   * `credentialState` so an operator can tell a working provider from
+   * one that is merely configured.
+   *
+   * The credential is resolved the same way the provider itself resolves
+   * it — vault first, then plaintext — so the reported state reflects
+   * the key that would actually be used, not a different env var.
+   */
   public async providersHealth() {
     const providerList = [...this.providers.values()];
     const checks = await Promise.allSettled(providerList.map((provider) => provider.healthCheck()));
 
     return checks.map((result, idx) => {
+      const provider = providerList[idx];
+
+      // `resolveProviderKey` returns undefined both for "provider takes
+      // no credential" (local-fallback, ollama — no mapping exists) and
+      // for "credential missing". `PROVIDERS_REQUIRING_CREDENTIAL`
+      // separates the two so we do not report `missing` for a provider
+      // that was never supposed to have a key.
+      const resolvedKey = resolveProviderKey(provider.name);
+      const needsCredential = PROVIDERS_REQUIRING_CREDENTIAL.has(provider.name);
+      const credentialState = classifyProviderCredential(resolvedKey);
+      const credentialDetail = needsCredential && credentialState !== 'present'
+        ? describeCredentialState(credentialState)
+        : undefined;
+
       if (result.status === 'fulfilled') {
-        return result.value;
+        return {
+          ...result.value,
+          // Only credential-bearing providers carry the field. For the
+          // rest there is no key to be in any state, and reporting
+          // `missing` would read as a fault.
+          ...(needsCredential
+            ? {
+                credentialState,
+                // Keep a healthy cascade quiet: only explain when the
+                // credential is the problem.
+                ...(credentialDetail ? { error: credentialDetail } : {}),
+              }
+            : {}),
+        };
       }
 
-      const provider = providerList[idx];
       return {
         name: provider.name,
         ok: false,
         error: result.reason instanceof Error ? result.reason.message : 'Unknown provider error',
+        ...(needsCredential ? { credentialState } : {}),
       };
     });
   }

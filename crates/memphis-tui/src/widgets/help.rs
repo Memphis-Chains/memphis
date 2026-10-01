@@ -67,7 +67,10 @@ impl Widget for HelpOverlay {
             kv("Alt+↑ / Alt+↓", "scroll one line"),
             kv("Home / g", "jump to top"),
             kv("End / G", "jump to bottom (auto-stick)"),
-            kv("Mouse wheel", "scroll (when mouse capture is ON — toggle with F2)"),
+            kv(
+                "Mouse wheel",
+                "scroll (when mouse capture is ON — toggle with F2)",
+            ),
             Line::from(""),
             Line::from(Span::styled("  input & history", dim)),
             kv("↑ / ↓", "previous / next prompt (history)"),
@@ -81,21 +84,18 @@ impl Widget for HelpOverlay {
             Line::from(""),
             Line::from(vec![
                 Span::raw("  "),
-                Span::styled(
-                    "Tip: when you scroll up, auto-stick disengages. ",
-                    plain,
-                ),
+                Span::styled("Tip: when you scroll up, auto-stick disengages. ", plain),
                 Span::styled("End", key),
                 Span::styled(" re-engages it.", plain),
             ]),
             Line::from(vec![
                 Span::raw("  "),
+                Span::styled("Mouse capture default = ON. Press ", plain),
+                Span::styled("F2", key),
                 Span::styled(
-                    "Mouse capture default = ON. Press ",
+                    " to release for text selection, F2 again to re-enable.",
                     plain,
                 ),
-                Span::styled("F2", key),
-                Span::styled(" to release for text selection, F2 again to re-enable.", plain),
             ]),
         ];
 
