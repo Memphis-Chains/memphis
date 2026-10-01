@@ -80,7 +80,6 @@ impl ScrollState {
         self.offset = self.max_offset();
     }
 
-
     fn sync_viewport(&mut self, content_height: usize, viewport_height: usize) {
         self.content_height = content_height;
         self.viewport_height = viewport_height;
@@ -234,7 +233,14 @@ impl StatefulWidget for OutputBody<'_> {
                 .end_symbol(None);
             // Inset by one row top/bottom so the thumb doesn't overlap
             // a border edge if the parent layout draws one above/below.
-            scrollbar.render(area.inner(Margin { vertical: 0, horizontal: 0 }), buf, &mut sb_state);
+            scrollbar.render(
+                area.inner(Margin {
+                    vertical: 0,
+                    horizontal: 0,
+                }),
+                buf,
+                &mut sb_state,
+            );
         }
     }
 }
@@ -455,6 +461,9 @@ mod tests {
             let s = buffer2.cell((buffer2.area.width - 1, y)).unwrap().symbol();
             s != " "
         });
-        assert!(any_chrome, "scrollbar should be visible when content overflows");
+        assert!(
+            any_chrome,
+            "scrollbar should be visible when content overflows"
+        );
     }
 }

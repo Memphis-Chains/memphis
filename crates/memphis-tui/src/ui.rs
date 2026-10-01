@@ -8,7 +8,9 @@ use ratatui::{
 };
 
 use crate::app::{AppState, StatusBarContext};
-use crate::widgets::{HelpOverlay, NotificationBanner, OutputBody, PromptLine, ScrollState, StatusBar};
+use crate::widgets::{
+    HelpOverlay, NotificationBanner, OutputBody, PromptLine, ScrollState, StatusBar,
+};
 
 const RENDERER_MODE: &str = "ratatui";
 
@@ -93,7 +95,6 @@ impl UiRenderer {
     pub fn scroll_to_bottom(&mut self) {
         self.scroll_state.scroll_to_bottom();
     }
-
 }
 
 pub fn renderer_mode() -> &'static str {

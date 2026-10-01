@@ -21,6 +21,7 @@ use crate::client::{
     ExtensionHostResult, MemphisClient,
 };
 use crate::config::TuiConfig;
+use crate::error_log::record_error;
 
 const OUTPUT_BUFFER_LIMIT: usize = 1200;
 
@@ -1751,12 +1752,22 @@ impl AppState {
                 detail,
                 action,
             } => {
+                // Record the raw text alongside the classification. The
+                // banner the operator sees is derived from a substring
+                // match, so on its own it cannot distinguish a provider
+                // timeout from a refused socket from a DNS failure — the
+                // distinctions that matter when deciding whether to
+                // retry, switch provider, or go fix the config.
+                record_error("native-chat", error, Some(status));
                 self.append_line(section("Native chat"));
                 self.append_line(warning(status));
                 self.append_line(dim(detail));
                 self.append_line(dim(action));
             }
-            RuntimeErrorPresentation::Fatal => self.append_line(error_line(error)),
+            RuntimeErrorPresentation::Fatal => {
+                record_error("native-chat", error, Some("fatal"));
+                self.append_line(error_line(error));
+            }
         }
     }
 
