@@ -104,11 +104,45 @@ export type GenerateResult = {
   trace?: ProviderTrace;
 };
 
+/**
+ * Credential state, independent of whether the provider answered.
+ *
+ * Every `isAvailable()` implementation in this codebase returns
+ * `isConfigured()` (a tautology — see the audit in journal-633), so
+ * `ProviderHealth.ok` has always meant "a key is present in the
+ * environment", not "the key works". Measured 2026-10-01: an
+ * `ANTHROPIC_API_KEY=sk-test` placeholder produced `ok: true,
+ * latencyMs: 3` from `/v1/providers/health` while a real POST to
+ * `api.anthropic.com/v1/messages` returned HTTP 401 in 280 ms.
+ *
+ * That distinction matters during a cascade: when the primary provider
+ * fails, the orchestrator walks the fallback list and burns a round trip
+ * per dead provider before reaching a working one. `credentialState`
+ * lets the operator (and future cascade logic) tell the two cases apart
+ * without having to issue a test request.
+ *
+ * - `missing`  — no key at all; provider is not registered.
+ * - `present`  — a non-empty key exists. Not verified against the
+ *                remote endpoint (that is what `ok` still reports).
+ * - `placeholder` — a non-empty key that matches a known scaffold value
+ *                (`sk-test`, `changeme`, `xxx`, ...). These are always
+ *                `ok: true` under the old check and always fail in
+ *                production; flagging them lets `/providers` explain
+ *                why a cascade skips a provider.
+ */
+export type ProviderCredentialState = 'missing' | 'present' | 'placeholder';
+
 export type ProviderHealth = {
   name: ProviderName;
   ok: boolean;
   latencyMs?: number;
   error?: string;
+  /**
+   * Whether a usable credential is present. Absent on providers that
+   * need no key (local-fallback, ollama) — `ok` remains the authority
+   * for those.
+   */
+  credentialState?: ProviderCredentialState;
 };
 
 export type SearchResult = {
