@@ -58,7 +58,24 @@ function minimaxCapabilities(model: string): ModelCapabilitySnapshot {
   // remain at 200k. The 32k fallback covers M1 + Text-01 + anything
   // else not explicitly listed.
   const normalized = model.toLowerCase();
-  if (/^(minimax-)?m3$/i.test(model)) {
+
+  // M3 family, any point release and any suffix.
+  //
+  // 2026-10-01: this was `/^(minimax-)?m3$/i`, anchored at both ends, so
+  // it only matched the bare name. The operator's configured model is
+  // `MiniMax-M3.1-Flash-Preview` — measured 32000 context tokens and
+  // `supportsVision: false` instead of 1000000 and `true`. A 31x
+  // understatement of the window is what makes long sessions die early,
+  // and a false `supportsVision` is what makes an image get routed to a
+  // text-only path.
+  //
+  // The family match is deliberately prefix-based rather than an
+  // enumerated list: MiniMax ships point releases and preview suffixes
+  // faster than this table gets updated, and every one of them inherits
+  // the family's window. An unrecognised name still falls through to the
+  // conservative 32k default below, so widening the pattern cannot make
+  // an unknown model look capable.
+  if (/^(minimax-)?m3(\.\d+)*([.-][a-z0-9]+)*$/i.test(model)) {
     return {
       contextWindowTokens: 1000000,
       supportsStreaming: true,
@@ -79,7 +96,10 @@ function minimaxCapabilities(model: string): ModelCapabilitySnapshot {
   // M2 family (M2, M2.1, M2.5, M2.7 + their -highspeed variants) and
   // m2-her: 200k input window. Regex matches both the `MiniMax-M2`
   // capitalization Memphis sends and the docs' lowercase form.
-  if (/^(minimax-)?m2(\.\d+)?(-highspeed)?$|^m2-her$/i.test(model)) {
+  // M2 family: `M2`, `M2.1`, `M2.5`, `M2.7`, their `-highspeed` variants,
+  // and `m2-her`. Point releases and suffixes are matched by prefix, same
+  // reasoning as the M3 branch above.
+  if (/^(minimax-)?m2(\.\d+)*([.-][a-z0-9]+)*$/i.test(model)) {
     return {
       contextWindowTokens: 200000,
       supportsStreaming: true,
