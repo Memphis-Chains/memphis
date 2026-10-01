@@ -712,6 +712,29 @@ impl EmbedPipeline {
         Ok(pipeline)
     }
 
+    /// Build a pipeline that knows its provider but has NOT loaded any
+    /// persisted documents.
+    ///
+    /// For callers that only need `provider_name()` — which is a config
+    /// field, not index state. `with_persistence` reads and parses the
+    /// whole index (107 MB on this operator's runtime) to serve that one
+    /// string, which is why the TUI's startup probe used to spend seconds
+    /// on JSON alone. Search callers still need `with_persistence`; this
+    /// constructor would return zero hits.
+    pub fn with_provider_only(config: EmbedConfig) -> Result<Self, EmbedError> {
+        if config.dim == 0 {
+            return Err(EmbedError::InvalidDimension(config.dim));
+        }
+        let provider = build_provider(&config.mode, &config)?;
+        Ok(Self {
+            config,
+            provider,
+            docs: HashMap::new(),
+            persistence: None,
+            auto_persist: true,
+        })
+    }
+
     pub fn provider_name(&self) -> &str {
         self.provider.name()
     }

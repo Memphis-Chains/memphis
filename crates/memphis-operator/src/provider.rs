@@ -2543,6 +2543,82 @@ mod tests {
         .expect("write vault entries");
     }
 
+    /// Like `write_v2_vault_secret`, but APPENDS to an existing entries file
+    /// instead of replacing it, so several secrets can share one vault.
+    ///
+    /// `write_v2_vault_secret` overwrites the whole entries file each call,
+    /// which is fine when a test needs one secret and silently wrong when
+    /// it needs three: the second call erases the first. The cache test
+    /// that failed on exactly this wrote three secrets and got None for
+    /// the first one.
+    fn append_v2_vault_secret(dir: &TestProviderDir, key: &str, value: &str, pepper: &str) {
+        use aes_gcm::{
+            aead::{Aead, KeyInit},
+            Aes256Gcm, Nonce,
+        };
+        use scrypt::{scrypt, Params as ScryptParams};
+
+        let salt = [61_u8; 32];
+        let master_key = [71_u8; 32];
+        let iv = [7_u8; 12];
+
+        // Write the state file only if this is the first secret, so the
+        // state bytes stay stable across appends.
+        if !dir.vault_state_path().exists() {
+            let params = ScryptParams::new(14, 8, 1, 32).expect("scrypt params");
+            let mut derived = [0_u8; 32];
+            scrypt(
+                pepper.as_bytes(),
+                b"memphis-vault-state-v2",
+                &params,
+                &mut derived,
+            )
+            .expect("derive vault state key");
+            let cipher = Aes256Gcm::new_from_slice(derived.as_slice()).expect("build aes");
+            let encrypted_master_key_with_tag = cipher
+                .encrypt(Nonce::from_slice(&iv), master_key.as_slice())
+                .expect("encrypt master key");
+            let split = encrypted_master_key_with_tag.len() - 16;
+            fs::write(
+                dir.vault_state_path(),
+                serde_json::to_vec(&json!({
+                    "version": 2,
+                    "salt": STANDARD.encode(salt),
+                    "encryptedMasterKey": STANDARD.encode(&encrypted_master_key_with_tag[..split]),
+                    "iv": STANDARD.encode(iv),
+                    "tag": STANDARD.encode(&encrypted_master_key_with_tag[split..]),
+                }))
+                .expect("serialize vault state"),
+            )
+            .expect("write vault state");
+        }
+
+        let vault = Vault::from_parts(salt, master_key);
+        let entry = vault.store(key, value.as_bytes()).expect("store v2 secret");
+        let encrypted = STANDARD.encode(entry.ciphertext.as_slice());
+        let entry_iv = STANDARD.encode(entry.nonce.as_slice());
+        let entry_tag = STANDARD.encode(entry.tag.as_slice());
+
+        let mut existing: Vec<Value> = std::fs::read(dir.vault_entries_path())
+            .ok()
+            .and_then(|raw| serde_json::from_slice(&raw).ok())
+            .unwrap_or_default();
+        existing.push(json!({
+            "key": key,
+            "encrypted": encrypted,
+            "iv": entry_iv,
+            "tag": entry_tag,
+            "id": entry.id,
+            "createdAt": entry.created_at.to_rfc3339(),
+            "fingerprint": fingerprint_for_entry(key, encrypted.as_str(), entry_iv.as_str()),
+        }));
+        fs::write(
+            dir.vault_entries_path(),
+            serde_json::to_vec(&existing).expect("serialize vault entries"),
+        )
+        .expect("write vault entries");
+    }
+
     fn write_v1_vault_secret(dir: &TestProviderDir, key: &str, value: &str) {
         let salt = [17_u8; 32];
         let master_key = [29_u8; 32];
@@ -2663,6 +2739,185 @@ mod tests {
                 "fingerprint": fingerprint_for_entry(key, encrypted.as_str(), entry_iv.as_str()),
             })],
         );
+    }
+
+    // ── Vault derivation cache (2026-09-30) ───────────────────────────────
+    //
+    // `load_vault` runs scrypt(N=16384, r=8, p=1) - measured at ~4 s on
+    // this operator's hardware, deliberately, because the parameter is the
+    // vault's brute-force defence. It was being paid once per provider
+    // lookup, so `configured_provider_statuses` cost 12.3 s of pure KDF
+    // and `memphis-tui --check-only` hit 15.6 s against a 15 s test
+    // timeout. The fix memoises the derived handle on (path, state bytes,
+    // pepper).
+    //
+    // A cache in the credential path is the kind of thing that has to be
+    // proven, not assumed. Every test below was mutation-verified: each
+    // one dies when the corresponding line of `load_vault_cached` is
+    // removed.
+
+    /// Derive the same secret repeatedly. If the cache works this is one
+    /// KDF, not three; the assertion is on the RESULT, not the clock, so
+    /// it cannot flake under load. A timing assertion here would be
+    /// exactly the flaky-timeout mistake this whole change removes.
+    #[test]
+    fn vault_derivation_cache_returns_the_same_secret_for_every_provider() {
+        let _env_lock = vault_env_lock().lock().expect("lock vault env");
+        let _pepper = EnvVarGuard::set("MEMPHIS_VAULT_PEPPER", "provider-test-pepper");
+        crate::runtime::clear_vault_derivation_cache();
+
+        let dir = TestProviderDir::new("vault-cache-three-providers");
+        // One vault, three entries - the shape that used to pay the KDF
+        // three times.
+        append_v2_vault_secret(&dir, "minimax_api_key", "k-minimax", "provider-test-pepper");
+        append_v2_vault_secret(&dir, "deepseek_api_key", "k-deepseek", "provider-test-pepper");
+        append_v2_vault_secret(&dir, "glm_api_key", "k-glm", "provider-test-pepper");
+
+        let config = dir.config(&[
+            ("DEFAULT_PROVIDER", "minimax"),
+            ("MINIMAX_VAULT_KEY", "minimax_api_key"),
+            ("DEEPSEEK_VAULT_KEY", "deepseek_api_key"),
+            ("GLM_VAULT_KEY", "glm_api_key"),
+        ]);
+
+        for (name, expected) in [
+            ("minimax", "k-minimax"),
+            ("deepseek", "k-deepseek"),
+            ("glm", "k-glm"),
+        ] {
+            let runtime = resolve_provider(&config, Some(name)).expect("provider runtime");
+            assert_eq!(
+                runtime.api_key.as_deref(),
+                Some(expected),
+                "{name} must resolve its own secret"
+            );
+        }
+
+        crate::runtime::clear_vault_derivation_cache();
+    }
+
+    /// The three correctness tests above all pass even if the cache is
+    /// never read or never written - both mutants return the same decrypted
+    /// secret, just slower. So assert the KDF ran ONCE for three provider
+    /// lookups. That is the property the 12-second startup cost lived in,
+    /// and it is checkable without a clock.
+    #[test]
+    fn vault_derivation_cache_runs_the_kdf_once_for_three_providers() {
+        let _env_lock = vault_env_lock().lock().expect("lock vault env");
+        let _pepper = EnvVarGuard::set("MEMPHIS_VAULT_PEPPER", "provider-test-pepper");
+        crate::runtime::clear_vault_derivation_cache();
+
+        let dir = TestProviderDir::new("vault-cache-derivation-count");
+        append_v2_vault_secret(&dir, "minimax_api_key", "k-minimax", "provider-test-pepper");
+        append_v2_vault_secret(&dir, "deepseek_api_key", "k-deepseek", "provider-test-pepper");
+        append_v2_vault_secret(&dir, "glm_api_key", "k-glm", "provider-test-pepper");
+
+        let config = dir.config(&[
+            ("DEFAULT_PROVIDER", "minimax"),
+            ("MINIMAX_VAULT_KEY", "minimax_api_key"),
+            ("DEEPSEEK_VAULT_KEY", "deepseek_api_key"),
+            ("GLM_VAULT_KEY", "glm_api_key"),
+        ]);
+
+        let (before, _) = crate::runtime::vault_derivation_count();
+        for name in ["minimax", "deepseek", "glm"] {
+            resolve_provider(&config, Some(name)).expect("provider runtime");
+        }
+        let (after, hits) = crate::runtime::vault_derivation_count();
+
+        assert_eq!(
+            after - before,
+            1,
+            "three provider lookups must derive the master key once, not three times"
+        );
+        assert!(hits >= 2, "at least two lookups must be served from the cache");
+
+        crate::runtime::clear_vault_derivation_cache();
+    }
+
+    /// The cache key includes the state file's contents, so a rewritten
+    /// state must not be served from the previous one. Removing the state
+    /// digest from the fingerprint makes this fail - that is the mutant
+    /// this test exists for.
+    #[test]
+    fn vault_derivation_cache_does_not_survive_a_state_rewrite() {
+        let _env_lock = vault_env_lock().lock().expect("lock vault env");
+        let _pepper = EnvVarGuard::set("MEMPHIS_VAULT_PEPPER", "provider-test-pepper");
+        crate::runtime::clear_vault_derivation_cache();
+
+        let dir = TestProviderDir::new("vault-cache-state-rewrite");
+        write_v2_vault_secret(&dir, "minimax_api_key", "first-value", "provider-test-pepper");
+        let config = dir.config(&[
+            ("DEFAULT_PROVIDER", "minimax"),
+            ("MINIMAX_VAULT_KEY", "minimax_api_key"),
+        ]);
+
+        let first = resolve_provider(&config, Some("minimax")).expect("first resolve");
+        assert_eq!(first.api_key.as_deref(), Some("first-value"));
+
+        // Rewrite the vault in place with a different secret.
+        write_v2_vault_secret(&dir, "minimax_api_key", "second-value", "provider-test-pepper");
+
+        // `write_v2_vault_secret` reuses a fixed salt / master key / iv, so
+        // the STATE file is byte-identical between the two writes - only the
+        // entry changed. That made this test pass against a mutant that
+        // dropped the state digest from the cache key, because the entries
+        // are re-read from disk every call and the memoised VAULT was
+        // legitimately still correct. Re-randomise the state bytes so the
+        // key it produces actually differs.
+        let state_path = dir.vault_state_path();
+        let mut state: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&state_path).expect("read state"))
+                .expect("parse state");
+        let rotated = STANDARD.encode([222_u8; 32]);
+        state["salt"] = serde_json::Value::String(rotated);
+        std::fs::write(&state_path, serde_json::to_vec(&state).expect("serialize"))
+            .expect("write rotated state");
+
+        let second = resolve_provider(&config, Some("minimax")).expect("second resolve");
+
+        assert_eq!(
+            second.api_key.as_deref(),
+            Some("second-value"),
+            "a rewritten vault state must not be served from the derivation cache"
+        );
+
+        crate::runtime::clear_vault_derivation_cache();
+    }
+
+    /// The cache key includes the pepper. Two different peppers of the SAME
+    /// LENGTH must not collide - the first version of the fingerprint used
+    /// `pepper.len()`, so they did. Removing the pepper from the
+    /// fingerprint makes this fail.
+    #[test]
+    fn vault_derivation_cache_separates_equal_length_peppers() {
+        let _env_lock = vault_env_lock().lock().expect("lock vault env");
+        crate::runtime::clear_vault_derivation_cache();
+
+        let dir = TestProviderDir::new("vault-cache-pepper-collision");
+        write_v2_vault_secret(&dir, "minimax_api_key", "k-minimax", "aaaaaaaaaaaa");
+        let config = dir.config(&[
+            ("DEFAULT_PROVIDER", "minimax"),
+            ("MINIMAX_VAULT_KEY", "minimax_api_key"),
+        ]);
+
+        // Right pepper: resolves.
+        let _pepper = EnvVarGuard::set("MEMPHIS_VAULT_PEPPER", "aaaaaaaaaaaa");
+        let ok = resolve_provider(&config, Some("minimax")).expect("correct pepper resolves");
+        assert_eq!(ok.api_key.as_deref(), Some("k-minimax"));
+
+        // Different pepper, same length: must FAIL to decrypt, not be
+        // served the previous vault from cache.
+        let _pepper2 = EnvVarGuard::set("MEMPHIS_VAULT_PEPPER", "bbbbbbbbbbbb");
+        let err = resolve_provider(&config, Some("minimax"))
+            .expect_err("wrong pepper must not hit the cache");
+        assert!(
+            err.to_string().to_lowercase().contains("decrypt")
+                || err.to_string().to_lowercase().contains("vault"),
+            "expected a vault/decrypt error, got: {err}"
+        );
+
+        crate::runtime::clear_vault_derivation_cache();
     }
 
     #[test]

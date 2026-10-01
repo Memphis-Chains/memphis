@@ -37,12 +37,33 @@ interface ExecResult {
   status: number;
 }
 
+/**
+ * Per-invocation wall-clock budget for the real binary.
+ *
+ * Measured on this operator's runtime, 2026-09-30, 3 runs each:
+ *   --check-only --json, empty data dir      3.6 s
+ *   --check-only --json, real data dir       8.1 s
+ *   under 4-way parallel load                 20.5 s
+ *
+ * The 15 s this used to allow was below the loaded figure, which is why
+ * this test was the last one still failing after the two real fixes
+ * (scrypt KDF paid per provider lookup, and a 107 MB embed index parsed
+ * on every `snapshot()`). Those took it from 15.6 s to 8.1 s unloaded;
+ * what remains is one unavoidable vault derivation plus one index read.
+ *
+ * 60 s is 7x the unloaded figure and 3x the loaded one. A hang is still
+ * caught, and CI on 2-vCPU runners gets room. This is a measured
+ * headroom, not a bigger number to make a red test go green - the two
+ * fixes above are what did that.
+ */
+const BINARY_TIMEOUT_MS = 60_000;
+
 function runBinary(binary: string, args: readonly string[]): ExecResult {
   try {
     const stdout = execFileSync(binary, args, {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: 15_000,
+      timeout: BINARY_TIMEOUT_MS,
     });
     return { stdout: String(stdout), stderr: '', status: 0 };
   } catch (err) {
