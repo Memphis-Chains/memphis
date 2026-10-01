@@ -228,26 +228,37 @@ describe('mcp tools — send', () => {
     expect(result.error).toContain('Unsupported channel');
   });
 
-  it('returns error when TELEGRAM_BOT_TOKEN not set', async () => {
+  it('returns error when no bot token can be resolved', async () => {
+    // 2026-10-01: this used to accept three different error strings
+    // ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "chat ID") on the
+    // theory that a vault entry might or might not be present. That is
+    // an assertion that cannot fail: whatever broke, the test passed.
+    // It passed for the entire life of the tool while the tool was in
+    // fact unable to send anything — a `VAULT:` reference reached the
+    // API verbatim and the chat id was read from a variable the
+    // operator does not set. Pin the single contract: no resolvable
+    // token means no send, and the error names the token.
+    delete process.env.MEMPHIS_TELEGRAM_BOT_TOKEN;
+    delete process.env.MEMPHIS_TELEGRAM_TOKEN_OVERRIDE;
+    delete process.env.TELEGRAM_BOT_TOKEN;
+
     const result = await runMemphisSend({ channel: 'telegram', message: 'hi' });
+
     expect(result.sent).toBe(false);
-    // 2026-09-12: vault lazy-load resolves a real Telegram token from
-    // ~/.memphis/vault-entries.json (entry 'telegram_bot_token'), so the
-    // runtime reaches the chatId validation step. Accept either error path:
-    // missing token (no vault) OR missing chatId (vault resolved).
-    const err = result.error ?? '';
-    const ok =
-      err.includes('TELEGRAM_BOT_TOKEN') ||
-      err.includes('TELEGRAM_CHAT_ID') ||
-      err.includes('chat ID');
-    expect(ok).toBe(true);
+    expect(result.error).toContain('TELEGRAM_BOT_TOKEN');
   });
 
   it('returns error when no chat ID available', async () => {
-    process.env.TELEGRAM_BOT_TOKEN = 'test-token';
+    process.env.MEMPHIS_TELEGRAM_BOT_TOKEN = 'test-token';
+    delete process.env.MEMPHIS_TELEGRAM_CHAT_ID;
+    delete process.env.TELEGRAM_CHAT_ID;
+
     const result = await runMemphisSend({ channel: 'telegram', message: 'hi' });
+
     expect(result.sent).toBe(false);
-    expect(result.error).toContain('chat ID');
+    // The operator configures the prefixed name; the error has to point
+    // at the one they would actually set.
+    expect(result.error).toContain('MEMPHIS_TELEGRAM_CHAT_ID');
   });
 
   it('sends message via Telegram API', async () => {
