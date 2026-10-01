@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    panic,
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, Sender, TryRecvError},
@@ -1541,7 +1542,29 @@ impl AppState {
             cancel_behavior,
             kind,
         });
-        thread::spawn(move || run(sender, cancel_flag));
+        // Wrap the worker body in catch_unwind so a panic inside the
+        // command (typically a panic crossing the NAPI JS<->Rust boundary
+        // in client.stream_chat_with_cancel) surfaces as a normal
+        // `WorkerEvent::Error` instead of silently dropping the sender.
+        //
+        // Without this, a panicking thread kills itself, the Sender is
+        // dropped, and poll_active_command sees `Disconnected` with no
+        // terminal event — which the operator sees as the unhelpful
+        // "native chat stopped without a terminal event" with no
+        // indication of what actually failed.
+        //
+        // The panic hook still prints the default backtrace to stderr so
+        // the crash is not swallowed silently; we only convert the
+        // unwinding into a message the TUI can render.
+        let error_sender = sender.clone();
+        thread::spawn(move || {
+            let hook_result =
+                panic::catch_unwind(panic::AssertUnwindSafe(|| run(sender, cancel_flag)));
+            if let Err(payload) = hook_result {
+                let detail = panic_payload_to_string(&payload);
+                let _ = error_sender.send(WorkerEvent::Error(format!("worker panicked: {detail}")));
+            }
+        });
     }
 
     fn apply_worker_event(&mut self, event: WorkerEvent) -> bool {
@@ -4908,6 +4931,63 @@ mod tests {
         }
     }
 
+    /// Regression test: a panicking worker must surface a readable error,
+    /// not the opaque "native chat stopped without a terminal event".
+    ///
+    /// Before catch_unwind, a panic inside the worker thread dropped the
+    /// Sender, poll_active_command saw Disconnected with no terminal
+    /// event, and the operator got a message that named the symptom but
+    /// not the cause. This asserts both halves of the contract: the
+    /// panic detail is rendered, and the unhelpful marker is not.
+    #[test]
+    fn panicking_worker_surfaces_panic_detail_not_generic_stop() {
+        let mut app = AppState::new(config());
+        app.spawn_worker(
+            "native chat",
+            ActiveCommandKind::NativeChat,
+            CancelBehavior::Standard,
+            |sender, _cancel| {
+                // Panic before sending any terminal event — this is the
+                // exact shape that used to produce the opaque message.
+                let _ = &sender;
+                panic!("synthetic worker panic for regression test");
+            },
+        );
+
+        // The worker thread needs a moment to panic and drop the sender.
+        // Poll in a bounded loop so the test does not depend on a fixed
+        // sleep duration.
+        let mut saw_terminal = false;
+        for _ in 0..200 {
+            app.poll_active_command();
+            if app.active_command.is_none() {
+                saw_terminal = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            saw_terminal,
+            "active command never resolved — poll_active_command did not observe the panic"
+        );
+
+        let rendered = app
+            .output_buffer
+            .iter()
+            .map(|line| line.content.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            rendered.contains("worker panicked")
+                && rendered.contains("synthetic worker panic for regression test"),
+            "panic detail missing from rendered output; got:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("stopped without a terminal event"),
+            "generic opaque marker still rendered; got:\n{rendered}"
+        );
+    }
+
     #[test]
     fn enter_submits_input() {
         let mut app = AppState::new(config());
@@ -6644,4 +6724,20 @@ mod tests {
         assert_eq!(command.command, "security.tier.set");
         assert_eq!(command.args.get("tier").and_then(Value::as_u64), Some(2));
     }
+}
+
+/// Extract a human-readable message from a panic payload.
+///
+/// `panic::catch_unwind` hands back `Box<dyn Any + Send>`; the concrete
+/// type is either `&'static str` (the common `panic!("literal")` and
+/// assert messages) or `String` (`panic!("{}", x)`). Anything else we
+/// degrade to a fixed marker rather than pretending we have detail.
+fn panic_payload_to_string(payload: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&'static str>() {
+        return (*s).to_string();
+    }
+    if let Some(s) = payload.downcast_ref::<String>() {
+        return s.clone();
+    }
+    "unknown panic payload".to_string()
 }
