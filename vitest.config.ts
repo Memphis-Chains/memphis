@@ -25,6 +25,36 @@ export default defineConfig({
       },
     },
     env: {
+      // 2026-09-30: this was NOT set, and every test inherited
+      // NODE_ENV=development from the shell. Three separate isolation
+      // guards in this codebase all key on `NODE_ENV === 'test'`:
+      //
+      //   shouldUseIsolatedTestMemory   (src/gateway/memory-client.ts)
+      //   shouldUseTestIsolatedCognitiveState (src/cognitive/runtime-support.ts)
+      //   shouldUseIsolatedTestMemory's sibling in the http path
+      //
+      // With the flag off, all of them were FALSE, so any test that did
+      // not set NODE_ENV itself read and wrote the operator's LIVE
+      // runtime: real chain files, real embed index, real cognitive
+      // state, and a real Ollama embedding call per turn.
+      //
+      // Measured cost of one turn that reached the live runtime:
+      //   runPostResponseCognitivePass  29.8 s   (ModelA auto-capture)
+      //   memory.store (live journal)   354 ms
+      //   bridge.embed_search, cold     6.79 s
+      //
+      // It also made the suite non-hermetic: a test's result depended on
+      // how much the operator had written that day. That is why
+      // `local-worker-runner.test.ts` sat right on its 30s timeout - the
+      // 28.5s was not the worker, it was the cognitive pass reaching into
+      // ~/.memphis. It passes alone and fails under load because the cost
+      // scales with the real data directory.
+      //
+      // Setting it here, not per-test: the guards are the contract, and a
+      // per-test opt-in is how they got switched off in the first place.
+      // A test that genuinely needs production NODE_ENV can override it
+      // in its own file.
+      NODE_ENV: 'test',
       MEMPHIS_API_TOKEN: '',
       RUST_CHAIN_ENABLED: 'true',
       // Pin rate-limit defaults for deterministic test behavior regardless
