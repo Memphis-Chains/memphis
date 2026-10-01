@@ -2,7 +2,7 @@
  * Unit tests for soul memory read, write, deep merge, and empty detection.
  */
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -339,6 +339,72 @@ describe('soul memory', () => {
         user: { expertise: ['Rust', 42, null, 'Go'] },
       });
       expect(merged.user.expertise).toEqual(['Rust', 'Go']);
+    });
+  });
+  // ── decision #317: a schema-rejected file must never be silently replaced ──
+  describe('refuses to overwrite a file that fails schema validation (#317)', () => {
+    function soulPath(): string {
+      return join(dataDir, 'config', 'soul-memory.json');
+    }
+
+    function seedCorrupt(): void {
+      mkdirSync(join(dataDir, 'config'), { recursive: true });
+      // The exact real-world corruption: a list field holding an object.
+      // `soulMemorySchema` rejects it -> loadSoulMemory() returns null.
+      writeFileSync(
+        soulPath(),
+        JSON.stringify(
+          {
+            schemaVersion: 1,
+            lastUpdated: '2026-09-29T00:00:00.000Z',
+            user: { preferences: { item: ['evidence'] }, languages: [] },
+            self: { strengths: ['survivor'], learnings: [], evolvedCapabilities: [] },
+            context: { recentDecisions: [] },
+          },
+          null,
+          2,
+        ),
+      );
+    }
+
+    it('updateSoulMemory throws instead of starting from an empty baseline', () => {
+      seedCorrupt();
+
+      expect(() => updateSoulMemory({ user: { languages: ['pl'] } })).toThrow(
+        /exists but could not be validated/,
+      );
+    });
+
+    it('leaves the on-disk file byte-identical after a refused write', () => {
+      seedCorrupt();
+      const before = readFileSync(soulPath(), 'utf8');
+
+      expect(() => updateSoulMemory({ user: { languages: ['pl'] } })).toThrow();
+
+      const after = readFileSync(soulPath(), 'utf8');
+      expect(after).toBe(before);
+      // The operator-curated content must still be recoverable from disk.
+      expect(JSON.parse(after).self.strengths).toEqual(['survivor']);
+    });
+
+    it('loadSoulMemory explains the refusal on stderr, pointing at the snapshot ring', () => {
+      seedCorrupt();
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+      expect(loadSoulMemory()).toBeNull();
+
+      const messages = stderrSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(messages).toContain('[soul-memory] REFUSING to load');
+      expect(messages).toContain('erase every section');
+      expect(messages).toContain('.bak-1');
+      stderrSpy.mockRestore();
+    });
+
+    it('still creates a baseline when no file exists (first run is legitimate)', () => {
+      expect(existsSync(soulPath())).toBe(false);
+      const merged = updateSoulMemory({ user: { preferences: ['first run'] } });
+      expect(merged.user.preferences).toEqual(['first run']);
+      expect(existsSync(soulPath())).toBe(true);
     });
   });
 });

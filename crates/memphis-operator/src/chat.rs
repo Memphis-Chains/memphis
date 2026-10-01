@@ -665,6 +665,175 @@ fn max_tool_tier_from_env() -> u8 {
         .unwrap_or(2)
 }
 
+/// JSON Schema for a single soul-memory list field (`string[]`).
+///
+/// Before this existed, `memphis_soul_write.updates` was declared as a bare
+/// `{ "type": "object" }` with no `properties` and no `items`. A schema that
+/// describes nothing is not neutral — the model fills the gap with the
+/// simplest guess available, and for a list the guess is
+/// `{ "item": [...] }`. That shape reached `run_soul_write` 18 times across
+/// the chat history and was the payload the pre-fd008ea merge clobbered
+/// silently. See decision #322.
+fn soul_list_field(description: &str) -> Value {
+    json!({
+        "type": "array",
+        "items": { "type": "string" },
+        "description": format!(
+            "{description} Send a bare JSON array like [\"first\", \"second\"] — never              {{\"item\": [...]}}."
+        ),
+        "examples": [["first", "second"]]
+    })
+}
+
+fn soul_scalar_field(description: &str) -> Value {
+    json!({
+        "type": "string",
+        "description": description
+    })
+}
+
+/// Full JSON Schema for `memphis_soul_write.updates`, mirroring
+/// `soulMemoryUpdateSchema` in `src/soul/types.ts` (zod, `.strict()`).
+///
+/// Sections and their field types are the SAME tables the runtime validator
+/// enforces in `validate_soul_update_shape` — `SOUL_SCALAR_FIELDS` and
+/// `SOUL_LIST_FIELDS` below. Three rules make the contract real:
+///
+/// 1. Every list field is `"type": "array"` with `items`. The model is told
+///    the shape instead of guessing it.
+/// 2. `"additionalProperties": false` on each section. A field the runtime
+///    rejects is a field the schema already said was impossible.
+/// 3. No `{"item": ...}` escape hatch anywhere. The wrapper is not a
+///    supported shape, it is the failure mode this schema exists to prevent.
+fn soul_updates_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "Partial soul memory patch. Send arrays as bare JSON arrays, never wrapped in an object: {\"self\":{\"learnings\":[\"a\"]}}, NOT {\"self\":{\"learnings\":{\"item\":[\"a\"]}}}.",
+        "properties": {
+            "user": {
+                "type": "object",
+                "description": "What is known about the operator.",
+                "additionalProperties": false,
+                "properties": {
+                    "name": soul_scalar_field("Operator display name."),
+                    "languages": soul_list_field("Languages the operator writes in."),
+                    "preferences": soul_list_field("How the operator wants work done."),
+                    "expertise": soul_list_field("Domains the operator works in."),
+                    "integrations": soul_list_field("External systems the operator uses.")
+                }
+            },
+            "self": {
+                "type": "object",
+                "description": "What this agent has learned about itself.",
+                "additionalProperties": false,
+                "properties": {
+                    "personality": soul_scalar_field("Agent personality summary."),
+                    "strengths": soul_list_field("Demonstrated strengths."),
+                    "learnings": soul_list_field("Lessons learned, each one a complete sentence."),
+                    "evolvedCapabilities": soul_list_field("Capabilities gained through evolution.")
+                }
+            },
+            "context": {
+                "type": "object",
+                "description": "What the agent is doing right now.",
+                "additionalProperties": false,
+                "properties": {
+                    "activeWork": soul_scalar_field("One line on the current task."),
+                    "recentDecisions": soul_list_field("Short summaries of recent decisions.")
+                }
+            }
+        },
+        "additionalProperties": false
+    })
+}
+
+/// JSON Schema for `memphis_case_query.query` — mirrors the `CaseQuery` struct
+/// in `crates/memphis-core/src/case_entry.rs`.
+fn case_query_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "Filter over case chain entries. Every field is optional; omit what you do not filter on.",
+        "additionalProperties": false,
+        "properties": {
+            "case_type": {
+                "type": "string",
+                "enum": [
+                    "nominative", "genitive", "dative", "accusative",
+                    "instrumental", "locative", "ablative", "vocative"
+                ],
+                "description": "Filter by case entry type."
+            },
+            "entity": { "type": "string", "description": "Filter by entity." },
+            "actor": { "type": "string", "description": "Filter by actor." },
+            "target": { "type": "string", "description": "Filter by target." },
+            "instrument": { "type": "string", "description": "Filter by instrument." },
+            "location": { "type": "string", "description": "Filter by location." },
+            "limit": { "type": "integer", "minimum": 1, "description": "Max results (default: 20)." }
+        }
+    })
+}
+
+/// JSON Schema for `memphis_case_append.entry` — mirrors the `CaseEntry`
+/// enum in `crates/memphis-core/src/case_entry.rs`, which is
+/// `#[serde(tag = "case_type")]`: `case_type` selects the variant and each
+/// variant carries its own required fields.
+///
+/// Kept permissive on purpose. The runtime deserializes with serde and
+/// reports serde's error, so an over-strict schema here would reject
+/// entries the code can still store (callers legitimately pass extra
+/// bookkeeping keys such as `chain`, `kind`, `requestId` or `tags`). The
+/// harm being fixed here is the `{"item": ...}` wrapper on `tags`, not
+/// missing `case_type` — so the schema names the fields and types the
+/// wrapper problem away, while `tags` gets the explicit array shape it
+/// never had.
+fn case_entry_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "Case chain entry. case_type selects the variant and determines the other fields. Send arrays as bare JSON arrays, never wrapped in an object.",
+        "properties": {
+            "case_type": {
+                "type": "string",
+                "enum": [
+                    "nominative", "genitive", "dative", "accusative",
+                    "instrumental", "locative", "ablative", "vocative"
+                ],
+                "description": "Case entry type. Required by the serde-tagged enum."
+            },
+            "entity": { "type": "string", "description": "nominative/locative/ablative: the subject." },
+            "action": { "type": "string", "description": "nominative: what the entity did." },
+            "timestamp": { "type": "string", "description": "nominative: when it happened." },
+            "owner": { "type": "string", "description": "genitive: who holds it." },
+            "possessed": { "type": "string", "description": "genitive: what is held." },
+            "giver": { "type": "string", "description": "dative: who gives." },
+            "recipient": { "type": "string", "description": "dative: who receives." },
+            "object": { "type": "string", "description": "dative/accusative: the object acted on." },
+            "subject": { "type": "string", "description": "accusative: who acts." },
+            "verb": { "type": "string", "description": "accusative: the action performed." },
+            "actor": { "type": "string", "description": "instrumental: who acts." },
+            "instrument": { "type": "string", "description": "instrumental: the means used." },
+            "target": { "type": "string", "description": "instrumental/vocative: the recipient of the action." },
+            "location": { "type": "string", "description": "locative: where." },
+            "origin": { "type": "string", "description": "ablative: where from." },
+            "destination": { "type": "string", "description": "ablative: optional where to." },
+            "invoker": { "type": "string", "description": "vocative: who calls." },
+            "invocation": { "type": "string", "description": "vocative: the call itself." },
+            "content": { "type": "string", "description": "Free-text body for the entry." },
+            "chain": { "type": "string", "description": "Chain the entry belongs to." },
+            "kind": { "type": "string", "description": "Entry kind (bookkeeping)." },
+            "role": { "type": "string", "description": "Entry role (bookkeeping)." },
+            "source": { "type": "string", "description": "Where the entry came from." },
+            "requestId": { "type": "string", "description": "Request identifier (bookkeeping)." },
+            "action_kind": { "type": "string", "description": "Action label (bookkeeping)." },
+            "tags": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Tags. Bare JSON array — never {\"item\": [...]}.",
+                "examples": [["instance-council-response", "collective"]]
+            }
+        }
+    })
+}
+
 fn native_tool_definitions() -> Vec<ChatToolDefinition> {
     vec![
         ChatToolDefinition {
@@ -721,11 +890,11 @@ fn native_tool_definitions() -> Vec<ChatToolDefinition> {
         },
         ChatToolDefinition {
             name: "memphis_soul_write".to_string(),
-            description: "Update soul memory".to_string(),
+            description: "Update soul memory. Arrays must be bare JSON arrays, never objects wrapping an array.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "updates": { "type": "object" }
+                    "updates": soul_updates_schema()
                 },
                 "required": ["updates"]
             }),
@@ -736,18 +905,18 @@ fn native_tool_definitions() -> Vec<ChatToolDefinition> {
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "query": { "type": "object" }
+                    "query": case_query_schema()
                 },
                 "required": ["query"]
             }),
         },
         ChatToolDefinition {
             name: "memphis_case_append".to_string(),
-            description: "Append a case chain entry".to_string(),
+            description: "Append a case chain entry. Arrays must be bare JSON arrays, never objects wrapping an array.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "entry": { "type": "object" }
+                    "entry": case_entry_schema()
                 },
                 "required": ["entry"]
             }),
@@ -2763,6 +2932,12 @@ fn run_soul_read(runtime: &OperatorRuntime, section: Option<&str>) -> Result<Val
 }
 
 fn run_soul_write(runtime: &OperatorRuntime, updates: Value) -> Result<Value, OperatorError> {
+    // Shape validation runs FIRST so a caller that sends only unknown keys
+    // gets "unknown section `meta`" instead of the generic "must contain at
+    // least one of user, self, context" — the specific error is the one that
+    // tells the operator what to fix.
+    validate_soul_update_shape(&updates)?;
+
     let has_supported_section = ["user", "self", "context"]
         .iter()
         .any(|key| updates.get(key).is_some());
@@ -2772,6 +2947,7 @@ fn run_soul_write(runtime: &OperatorRuntime, updates: Value) -> Result<Value, Op
                 .to_string(),
         ));
     }
+
 
     let raw =
         serde_json::to_string(&updates).map_err(|error| OperatorError::Json(error.to_string()))?;
@@ -2801,18 +2977,39 @@ fn run_soul_write(runtime: &OperatorRuntime, updates: Value) -> Result<Value, Op
         .data_dir
         .join("config")
         .join("soul-memory.json");
-    let existing = load_json_file(&soul_path).unwrap_or_else(|| {
-        json!({
+    // Distinguish "no file yet" (legitimate first run -> empty baseline) from
+    // "file exists but is unreadable/corrupt" (must NOT be overwritten with
+    // an empty baseline -- that is how decision #317 escalated one malformed
+    // write into total loss of every section).
+    let existing = match load_json_file(&soul_path) {
+        Some(value) => value,
+        None if !soul_path.exists() => json!({
             "schemaVersion": 1,
             "lastUpdated": Utc::now().to_rfc3339(),
             "user": { "languages": [], "preferences": [], "expertise": [], "integrations": [] },
             "self": { "strengths": [], "learnings": [], "evolvedCapabilities": [] },
             "context": { "recentDecisions": [] },
-        })
-    });
+        }),
+        None => {
+            let preview = fs::read_to_string(&soul_path)
+                .map(|raw| raw.chars().take(200).collect::<String>())
+                .unwrap_or_else(|error| format!("<unreadable: {error}>"));
+            return Err(OperatorError::Message(format!(
+                "soul_write: {} exists but is not valid JSON; refusing to write over it \
+                 (an empty baseline would erase every section). First 200 chars: {preview}. \
+                 Repair or move the file aside, then retry.",
+                soul_path.display()
+            )));
+        }
+    };
 
     let mut merged = existing;
-    deep_merge_soul(&mut merged, &updates);
+    // Shape conflicts are REFUSED, not merged. `merge_soul_value` validates
+    // before mutating, so on Err the in-memory document is still the exact
+    // bytes we loaded and we return before `write_json_file` — the operator's
+    // existing soul memory is never touched by a malformed patch.
+    merge_soul_value(&mut merged, &updates)
+        .map_err(|reason| OperatorError::Message(format!("{reason}; no changes were written")))?;
     if let Some(object) = merged.as_object_mut() {
         object.insert(
             "lastUpdated".to_string(),
@@ -3462,17 +3659,236 @@ fn ensure_soul_manifest(runtime: &OperatorRuntime) -> Result<Value, OperatorErro
     Ok(manifest)
 }
 
-fn deep_merge_soul(target: &mut Value, patch: &Value) {
+/// Soul list fields are array-of-string by schema (`self.strengths`,
+/// `self.learnings`, `user.preferences`, `context.recentDecisions`, ...).
+/// A single string in a list position is accepted as a one-item list
+/// (mirrors `dedupeAppend` in the TS `updateSoulMemory`), but an OBJECT is
+/// never a legitimate list value.
+///
+/// 2026-09-30 (decision #317): the old `(target, patch) => *target =
+/// patch.clone()` fallthrough silently accepted a `{"item": [...]}` patch
+/// against a list field and clobbered the whole section, then still returned
+/// `success: true`. The TS side rejects these shapes (`soulMemoryUpdateSchema`
+/// is `.strict()`), so the two surfaces disagreed. Worse: once the file held
+/// an object in a list field, the TS loader's Zod parse returned null, which
+/// made the NEXT merge start from an empty baseline and wipe every other
+/// section. One bad write cascaded into total data loss.
+///
+/// Validation happens BEFORE any mutation, so a rejected patch leaves the
+/// in-memory document byte-identical to what was loaded.
+fn is_soul_list_value(value: &Value) -> bool {
+    match value {
+        Value::Array(items) => items.iter().all(Value::is_string),
+        // Single string in a list position: one-item list, matches TS.
+        Value::String(_) => true,
+        _ => false,
+    }
+}
+
+fn soul_value_kind(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "bool",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
+/// Classify a shape conflict between an existing value and an incoming patch.
+///
+/// Returns `None` when the pair is a legitimate merge (object/object,
+/// list/list, or scalar replacement) so the caller can proceed.
+/// Returns `Some(message)` when one side is a list and the other an object —
+/// that is always corruption, never a merge.
+///
+/// `legacy` is the raw JSON text when the caller wants to distinguish "the
+/// existing file is corrupt" from "the patch is corrupt", so the error can
+/// name the repair path instead of silently refusing forever.
+fn soul_shape_conflict(target: &Value, patch: &Value) -> Option<String> {
+    match (target, patch) {
+        (Value::Object(_), patch_value) if is_soul_list_value(patch_value) => {
+            let keys = patch_value
+                .as_object()
+                .map(|map| {
+                    map.keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            Some(format!(
+                "soul_write: refusing to merge list into object field (patch has object keys [{keys}]); \
+                 list fields must stay arrays"
+            ))
+        }
+        (target_value, Value::Object(_)) if is_soul_list_value(target_value) => Some(format!(
+            "soul_write: refusing to merge object into list field (existing value is {}); \
+             list fields must stay arrays",
+            soul_value_kind(target_value)
+        )),
+        _ => None,
+    }
+}
+
+/// Field shape tables for `validate_soul_update_shape`, mirroring
+/// `soulMemoryUpdateSchema` in `src/soul/types.ts` (zod, `.strict()`).
+/// Scalars are optional strings; list fields are arrays of strings.
+const SOUL_SCALAR_FIELDS: &[(&str, &[&str])] = &[
+    ("user", &["name"]),
+    ("self", &["personality"]),
+    ("context", &["activeWork"]),
+];
+
+const SOUL_LIST_FIELDS: &[(&str, &[&str])] = &[
+    (
+        "user",
+        &["languages", "preferences", "expertise", "integrations"],
+    ),
+    (
+        "self",
+        &["strengths", "learnings", "evolvedCapabilities"],
+    ),
+    ("context", &["recentDecisions"]),
+];
+
+const SOUL_SECTIONS: &[&str] = &["user", "self", "context"];
+
+fn soul_field_kind(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null (delete the key instead — this schema has no null)",
+        Value::Bool(_) => "bool",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(items) => {
+            if items.iter().all(Value::is_string) {
+                "array of strings"
+            } else {
+                "array containing non-string entries"
+            }
+        }
+        Value::Object(map) if map.len() == 1 && map.contains_key("item") => {
+            r#"object {\"item\": [...]} — a transport envelope leaked into the payload; \
+               send the bare array instead"#
+        }
+        Value::Object(_) => "object",
+    }
+}
+
+/// Reject a soul-write patch whose shape the schema does not allow.
+///
+/// Mirrors `soulMemoryUpdateSchema` so the Rust and JS entry points for
+/// `memphis_soul_write` accept the same documents. Runs before any merge, so
+/// a rejection leaves the on-disk file untouched — the operator's existing
+/// soul memory can never be damaged by a malformed patch.
+fn validate_soul_update_shape(updates: &Value) -> Result<(), OperatorError> {
+    let object = match updates.as_object() {
+        Some(map) => map,
+        None => {
+            return Err(OperatorError::Message(format!(
+                "soul_write: updates must be an object with at least one of {}, got {}",
+                SOUL_SECTIONS.join(", "),
+                soul_value_kind(updates)
+            )))
+        }
+    };
+
+    for (key, value) in object {
+        if !SOUL_SECTIONS.contains(&key.as_str()) {
+            return Err(OperatorError::Message(format!(
+                "soul_write: unknown section `{key}`; only {} are writable",
+                SOUL_SECTIONS.join(", ")
+            )));
+        }
+        let section = match value.as_object() {
+            Some(map) => map,
+            None => {
+                return Err(OperatorError::Message(format!(
+                    "soul_write: `{key}` must be an object of fields, got {}",
+                    soul_value_kind(value)
+                )))
+            }
+        };
+
+        for (field, field_value) in section {
+            let path = format!("{key}.{field}");
+            if SOUL_SCALAR_FIELDS
+                .iter()
+                .find(|(section_key, _)| *section_key == key)
+                .is_some_and(|(_, fields)| fields.contains(&field.as_str()))
+            {
+                if !field_value.is_string() {
+                    return Err(OperatorError::Message(format!(
+                        "soul_write: `{path}` must be a string, got {}",
+                        soul_field_kind(field_value)
+                    )));
+                }
+                continue;
+            }
+            if SOUL_LIST_FIELDS
+                .iter()
+                .find(|(section_key, _)| *section_key == key)
+                .is_some_and(|(_, fields)| fields.contains(&field.as_str()))
+            {
+                let items = match field_value {
+                    Value::Array(items) => items,
+                    // A bare string in a list position is a one-item list.
+                    // The TS merge guard (`is_soul_list_value`) has always
+                    // accepted this, so accepting it here keeps the two
+                    // surfaces in agreement instead of tightening the Rust
+                    // one in the wrong direction. `merge_soul_value` is what
+                    // actually normalises it to a one-element array.
+                    Value::String(_) => continue,
+                    _ => {
+                        return Err(OperatorError::Message(format!(
+                            "soul_write: `{path}` must be an array of strings, got {}",
+                            soul_field_kind(field_value)
+                        )))
+                    }
+                };
+                if let Some(bad) = items.iter().find(|item| !item.is_string()) {
+                    return Err(OperatorError::Message(format!(
+                        "soul_write: `{path}` must contain only strings, found {} at position {}",
+                        soul_value_kind(bad),
+                        items
+                            .iter()
+                            .position(|item| std::ptr::eq(item, bad))
+                            .unwrap_or(0)
+                    )));
+                }
+                continue;
+            }
+            return Err(OperatorError::Message(format!(
+                "soul_write: unknown field `{path}`; this section is strict — \
+                 check the field list in the tool description"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Deep-merge a soul-memory patch into `target`, rejecting shape conflicts.
+///
+/// Merges objects recursively, appends to string lists with dedupe, and
+/// allows scalar replacement (`context.activeWork` legitimately overwrites).
+/// A list-vs-object mismatch returns `Err` INSTEAD of clobbering, and the
+/// validation runs before any mutation so the target is left untouched.
+fn merge_soul_value(target: &mut Value, patch: &Value) -> Result<(), String> {
+    if let Some(conflict) = soul_shape_conflict(target, patch) {
+        return Err(conflict);
+    }
     match (target, patch) {
         (Value::Object(target_map), Value::Object(patch_map)) => {
             for (key, patch_value) in patch_map {
                 match target_map.get_mut(key) {
-                    Some(existing) => deep_merge_soul(existing, patch_value),
+                    Some(existing) => merge_soul_value(existing, patch_value)?,
                     None => {
                         target_map.insert(key.clone(), patch_value.clone());
                     }
                 }
             }
+            Ok(())
         }
         (Value::Array(target_items), Value::Array(patch_items)) => {
             let mut seen = target_items
@@ -3487,9 +3903,25 @@ fn deep_merge_soul(target: &mut Value, patch: &Value) {
                     }
                 }
             }
+            Ok(())
         }
-        (target, patch) => {
-            *target = patch.clone();
+        // A bare string in a list position is a one-item list — `is_soul_list_value`
+        // has always classified it that way. The merge arm was NOT consistent
+        // with that classification: it fell through to scalar replacement and
+        // wrote `"solo"` where the schema declares an array, which
+        // `loadSoulMemory` then rejected on the next load (same failure class
+        // as decision #317). Normalise here so the file is always schema-valid.
+        (Value::Array(target_items), Value::String(text)) => {
+            let text = text.clone();
+            let already_present = target_items.iter().any(|item| item.as_str() == Some(&text));
+            if !already_present {
+                target_items.push(Value::String(text));
+            }
+            Ok(())
+        }
+        (target_value, patch_value) => {
+            *target_value = patch_value.clone();
+            Ok(())
         }
     }
 }
@@ -3737,6 +4169,735 @@ mod tests {
             .to_string()
             .contains("must contain at least one of user, self, or context"));
         assert!(!root.join("config").join("soul-memory.json").exists());
+    }
+
+    // ── decision #317: soul_write shape-conflict regressions ──────────────
+    //
+    // Each test here maps to one observed failure mode. They assert the
+    // OUTCOME (data on disk) plus the ERROR, because the original defect
+    // reported `success: true` while destroying the file.
+
+    fn write_soul_fixture(runtime: &OperatorRuntime, value: &Value) {
+        let path = runtime.config.data_dir.join("config").join("soul-memory.json");
+        fs::create_dir_all(path.parent().expect("config dir")).expect("create config dir");
+        fs::write(&path, serde_json::to_vec_pretty(value).expect("serialize fixture"))
+            .expect("write fixture");
+    }
+
+    fn read_soul(runtime: &OperatorRuntime) -> Value {
+        let path = runtime.config.data_dir.join("config").join("soul-memory.json");
+        load_json_file(&path).expect("soul-memory.json must stay valid JSON")
+    }
+
+    #[test]
+    fn soul_write_refuses_object_wrapped_list_and_leaves_data_intact() {
+        let root = temp_runtime_root("soul-wrapped-list");
+        let runtime = runtime_for(root.as_path());
+        write_soul_fixture(
+            &runtime,
+            &json!({
+                "schemaVersion": 1,
+                "user": { "preferences": ["keep me"] },
+                "self": { "strengths": ["survive"] },
+                "context": { "recentDecisions": [] }
+            }),
+        );
+
+        // The exact shape observed in the wild: array wrapped as {"item": ...}
+        let error = run_soul_write(
+            &runtime,
+            json!({ "self": { "strengths": { "item": ["clobber"] } } }),
+        )
+        .expect_err("object-wrapped list must be refused, not merged");
+
+        // The patch is rejected. As of decision #319 the shape gate in
+        // `validate_soul_update_shape` fires BEFORE the merge-level
+        // list-vs-object guard, so the error now names the schema violation
+        // rather than the merge arm. Both outcomes are correct — the test
+        // pins "rejected, data intact", not which guard spoke.
+        let message = error.to_string();
+        assert!(
+            message.contains("self.strengths")
+                && (message.contains("must be an array of strings")
+                    || message.contains("refusing to merge object into list field")),
+            "error must name the offending field, got: {message}"
+        );
+
+        // The load-bearing assertion: nothing on disk changed.
+        let after = read_soul(&runtime);
+        assert_eq!(
+            after["self"]["strengths"],
+            json!(["survive"]),
+            "strengths must be untouched after a refused write"
+        );
+        assert_eq!(
+            after["user"]["preferences"],
+            json!(["keep me"]),
+            "unrelated sections must be untouched"
+        );
+    }
+
+    #[test]
+    fn soul_write_refuses_object_patch_against_existing_list() {
+        let root = temp_runtime_root("soul-object-into-list");
+        let runtime = runtime_for(root.as_path());
+        write_soul_fixture(
+            &runtime,
+            &json!({
+                "schemaVersion": 1,
+                "user": { "preferences": ["original"] },
+                "self": { "learnings": [] },
+                "context": { "recentDecisions": [] }
+            }),
+        );
+
+        // Existing list, incoming object -> refused, list survives.
+        let error = run_soul_write(
+            &runtime,
+            json!({ "user": { "preferences": { "item": ["nope"] } } }),
+        )
+        .expect_err("object against an existing list must be refused");
+
+        let message = error.to_string();
+        assert!(
+            message.contains("user.preferences")
+                && (message.contains("must be an array of strings")
+                    || message.contains("refusing to merge object into list field")),
+            "error must name the offending field, got: {message}"
+        );
+        assert_eq!(read_soul(&runtime)["user"]["preferences"], json!(["original"]));
+
+        // Mirror arm: an ALREADY-CORRUPT object in a list field must not be
+        // silently clobbered by a legitimate array patch either -- refuse and
+        // report, so the operator repairs deliberately instead of losing the
+        // evidence of what happened.
+        let root2 = temp_runtime_root("soul-corrupt-field");
+        let runtime2 = runtime_for(root2.as_path());
+        write_soul_fixture(
+            &runtime2,
+            &json!({
+                "schemaVersion": 1,
+                "user": { "preferences": { "item": ["corrupt evidence"] } },
+                "self": { "learnings": [] },
+                "context": { "recentDecisions": [] }
+            }),
+        );
+
+        let error = run_soul_write(
+            &runtime2,
+            json!({ "user": { "preferences": ["legit"] } }),
+        )
+        .expect_err("array patch into a corrupt object field must be refused");
+
+        let message = error.to_string();
+        assert!(
+            message.contains("refusing to merge list into object field"),
+            "error must name the object-vs-list conflict, got: {message}"
+        );
+        assert_eq!(
+            read_soul(&runtime2)["user"]["preferences"],
+            json!({ "item": ["corrupt evidence"] }),
+            "corrupt field must be preserved as evidence, not overwritten"
+        );
+    }
+
+    /// Decision #319: the two observed production failures both slipped past
+    /// `merge_soul_value` because nothing validated the PATCH shape first.
+    /// These pin the exact payloads that corrupted real data.
+    #[test]
+    fn soul_write_rejects_null_scalar_that_zod_would_reject() {
+        let root = temp_runtime_root("soul-null-scalar");
+        let runtime = runtime_for(root.as_path());
+        write_soul_fixture(
+            &runtime,
+            &json!({
+                "schemaVersion": 1,
+                "user": { "preferences": ["keep"] },
+                "self": { "strengths": ["keep"] },
+                "context": { "recentDecisions": [] }
+            }),
+        );
+
+        // This exact payload reached disk at 10:58 on 2026-09-30 and made
+        // loadSoulMemory reject the entire document on the next boot.
+        let error = run_soul_write(
+            &runtime,
+            json!({ "context": { "activeWork": Value::Null } }),
+        )
+        .expect_err("null in a z.string() field must be refused");
+
+        let message = error.to_string();
+        assert!(
+            message.contains("context.activeWork") && message.contains("must be a string"),
+            "error must name the offending field, got: {message}"
+        );
+        assert!(
+            read_soul(&runtime).get("context").is_some_and(|c| c.get("activeWork").is_none()),
+            "activeWork must not be written as null"
+        );
+    }
+
+    #[test]
+    fn soul_write_rejects_unknown_section_and_unknown_field() {
+        let root = temp_runtime_root("soul-unknown-keys");
+        let runtime = runtime_for(root.as_path());
+        write_soul_fixture(
+            &runtime,
+            &json!({
+                "schemaVersion": 1,
+                "user": { "preferences": ["keep"] },
+                "self": { "strengths": [], "learnings": [], "evolvedCapabilities": [] },
+                "context": { "recentDecisions": [] }
+            }),
+        );
+
+        let section_error = run_soul_write(&runtime, json!({ "meta": { "x": 1 } }))
+            .expect_err("unknown section must be refused");
+        assert!(
+            section_error.to_string().contains("unknown section"),
+            "got: {section_error}"
+        );
+
+        let field_error =
+            run_soul_write(&runtime, json!({ "self": { "notAField": "x" } }))
+                .expect_err("unknown field must be refused");
+        assert!(
+            field_error.to_string().contains("self.notAField"),
+            "got: {field_error}"
+        );
+
+        // Zod is `.strict()`; an unknown key on the JS side used to be the
+        // only surface that caught this. Both surfaces must now agree.
+        assert_eq!(read_soul(&runtime)["user"]["preferences"], json!(["keep"]));
+    }
+
+    #[test]
+    fn soul_write_rejects_non_string_list_entries() {
+        let root = temp_runtime_root("soul-list-entries");
+        let runtime = runtime_for(root.as_path());
+        write_soul_fixture(
+            &runtime,
+            &json!({
+                "schemaVersion": 1,
+                "user": { "preferences": ["keep"] },
+                "self": { "strengths": [], "learnings": [], "evolvedCapabilities": [] },
+                "context": { "recentDecisions": [] }
+            }),
+        );
+
+        // A bare STRING in a list position is deliberately NOT in this list —
+        // it is a one-item list and is accepted (see
+        // `soul_write_accepts_single_string_where_list_expected`). These three
+        // are shapes no reasonable reading accepts.
+        for payload in [
+            json!({ "self": { "learnings": [1, 2] } }),
+            json!({ "user": { "preferences": [{ "item": "nested" }] } }),
+            json!({ "context": { "recentDecisions": false } }),
+        ] {
+            let error = run_soul_write(&runtime, payload.clone())
+                .expect_err("non-string list entry must be refused");
+            assert!(
+                error.to_string().contains("soul_write:"),
+                "every refusal must be attributable, got: {error}"
+            );
+        }
+        assert_eq!(read_soul(&runtime)["user"]["preferences"], json!(["keep"]));
+    }
+
+    /// A single string in a list position is a one-item list — the TS side
+    /// accepts it (`is_soul_list_value`) and so must this gate, or the two
+    /// surfaces would disagree on a payload that used to work.
+    #[test]
+    fn soul_write_accepts_single_string_where_list_expected() {
+        let root = temp_runtime_root("soul-single-string");
+        let runtime = runtime_for(root.as_path());
+        write_soul_fixture(
+            &runtime,
+            &json!({
+                "schemaVersion": 1,
+                "user": { "preferences": [] },
+                "self": { "strengths": [], "learnings": [], "evolvedCapabilities": [] },
+                "context": { "recentDecisions": [] }
+            }),
+        );
+
+        let result = run_soul_write(&runtime, json!({ "user": { "preferences": "solo" } }))
+            .expect("a bare string in a list field is a one-item list, not a shape error");
+        assert_eq!(result["success"], json!(true));
+        assert_eq!(read_soul(&runtime)["user"]["preferences"], json!(["solo"]));
+    }
+
+    #[test]
+    fn soul_write_refuses_to_overwrite_unparseable_existing_file() {
+        let root = temp_runtime_root("soul-unparseable");
+        let runtime = runtime_for(root.as_path());
+        let path = root.join("config").join("soul-memory.json");
+        fs::create_dir_all(path.parent().expect("config dir")).expect("create config dir");
+        // Truncated JSON -- the shape a half-finished write leaves behind.
+        fs::write(&path, b"{\"self\": {\"strengths\": [\"a\", \"b\"") .expect("write corrupt file");
+
+        let error = run_soul_write(
+            &runtime,
+            json!({ "context": { "activeWork": "should not clobber" } }),
+        )
+        .expect_err("unparseable existing file must not be silently replaced");
+
+        let message = error.to_string();
+        assert!(
+            message.contains("exists but is not valid JSON"),
+            "error must name the unreadable-file path, got: {message}"
+        );
+        assert!(
+            message.contains("empty baseline would erase every section"),
+            "error must explain why it refuses, got: {message}"
+        );
+
+        // Byte-identical: the corrupt file was NOT replaced by an empty one.
+        let raw = fs::read_to_string(&path).expect("read back");
+        assert!(
+            raw.contains("\"strengths\""),
+            "corrupt file must be left in place for manual repair, got: {raw}"
+        );
+    }
+
+    #[test]
+    fn soul_write_still_accepts_valid_arrays_and_scalar_overwrite() {
+        let root = temp_runtime_root("soul-valid-paths");
+        let runtime = runtime_for(root.as_path());
+        write_soul_fixture(
+            &runtime,
+            &json!({
+                "schemaVersion": 1,
+                "user": { "preferences": ["a"] },
+                "self": { "strengths": ["b"] },
+                "context": { "activeWork": "old", "recentDecisions": [] }
+            }),
+        );
+
+        // Arrays append with dedupe...
+        run_soul_write(
+            &runtime,
+            json!({
+                "user": { "preferences": ["a", "c"] },
+                "self": { "strengths": ["d"] },
+                "context": { "recentDecisions": ["decision one"] }
+            }),
+        )
+        .expect("valid arrays must merge");
+
+        // ...and a scalar legitimately overwrites.
+        run_soul_write(&runtime, json!({ "context": { "activeWork": "new" } }))
+            .expect("scalar overwrite must succeed");
+
+        let after = read_soul(&runtime);
+        assert_eq!(after["user"]["preferences"], json!(["a", "c"]), "dedupe append");
+        assert_eq!(after["self"]["strengths"], json!(["b", "d"]));
+        assert_eq!(after["context"]["recentDecisions"], json!(["decision one"]));
+        assert_eq!(after["context"]["activeWork"], json!("new"), "scalar overwrite");
+    }
+
+    #[test]
+    fn soul_write_creates_baseline_when_file_absent() {
+        let root = temp_runtime_root("soul-first-run");
+        let runtime = runtime_for(root.as_path());
+        assert!(!root.join("config").join("soul-memory.json").exists());
+
+        run_soul_write(&runtime, json!({ "user": { "preferences": ["first"] } }))
+            .expect("first run must create the file");
+
+        let after = read_soul(&runtime);
+        assert_eq!(after["user"]["preferences"], json!(["first"]));
+    }
+
+    // ── Tool schema contract (decision #322) ──────────────────────────────────
+    //
+    // Regression cover for the `{"item": [...]}` wrapper. `soul_write`,
+    // `case_query` and `case_append` were declared to the model as bare
+    // `{ "type": "object" }` with no `properties` and no `items`. A schema
+    // that describes nothing is not neutral: the model fills the gap and,
+    // for a list, the guess is `{"item": [...]}`. That shape arrived 18
+    // times for soul_write and 6 for case_append in the chat history, and
+    // was what the pre-fd008ea merge clobbered silently.
+    //
+    // These assert the CONTRACT handed to the model, not the runtime
+    // behaviour (the runtime validator is covered separately). The mutation
+    // that must break them: putting `"updates": { "type": "object" }` back.
+
+    /// One `CaseEntry` per variant, built from the real enum so this test
+    /// cannot drift from the deserializer. `CaseType` exposes no `all()`,
+    /// and adding one would widen the change beyond this fix.
+    fn representative_case_entries() -> Vec<CaseEntry> {
+        vec![
+            CaseEntry::Nominative {
+                entity: "e".into(),
+                action: "a".into(),
+                timestamp: "1970-01-01T00:00:00Z".into(),
+            },
+            CaseEntry::Genitive {
+                owner: "o".into(),
+                possessed: "p".into(),
+            },
+            CaseEntry::Dative {
+                giver: "g".into(),
+                recipient: "r".into(),
+                object: "b".into(),
+            },
+            CaseEntry::Accusative {
+                subject: "s".into(),
+                verb: "v".into(),
+                object: "b".into(),
+            },
+            CaseEntry::Instrumental {
+                actor: "a".into(),
+                instrument: "i".into(),
+                target: "t".into(),
+            },
+            CaseEntry::Locative {
+                entity: "e".into(),
+                location: "l".into(),
+            },
+            CaseEntry::Ablative {
+                entity: "e".into(),
+                origin: "o".into(),
+                destination: Some("d".into()),
+            },
+            CaseEntry::Vocative {
+                invoker: "i".into(),
+                invocation: "v".into(),
+                target: "t".into(),
+            },
+        ]
+    }
+
+    fn tool_schema(name: &str) -> Value {
+        native_tool_definitions()
+            .into_iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("tool {name} must be defined"))
+            .input_schema
+    }
+
+    fn schema_at<'a>(schema: &'a Value, path: &[&str]) -> &'a Value {
+        let mut cursor = schema;
+        for key in path {
+            cursor = cursor
+                .get(*key)
+                .unwrap_or_else(|| panic!("schema must define {}", path.join(".")));
+        }
+        cursor
+    }
+
+    /// Walk a schema and collect every node that declares `"type": "array"`
+    /// but no `items`, plus every bare `{ "type": "object" }` that sits
+    /// where the runtime expects a described shape.
+    ///
+    /// Both are the same defect seen from two sides. An array without
+    /// `items` tells the model the shape but not the element type. A bare
+    /// object with no `properties` tells it nothing at all — and "nothing at
+    /// all" is what produced `{ "item": [...] }` 24 times. The bare-object
+    /// check is the one that catches a full regression to the old schema;
+    /// the array check alone passes on it, because a description-free object
+    /// is not an array.
+    fn undescribed_shape_nodes(node: &Value, path: &str, found: &mut Vec<String>) {
+        match node.get("type").and_then(Value::as_str) {
+            Some("array") if node.get("items").is_none() => found
+                .push(format!("{path}: array without items")),
+            Some("object")
+                if node.get("properties").is_none()
+                    && node.get("additionalProperties").is_none()
+                    && path.contains(".properties") =>
+            {
+                found.push(format!(
+                    "{path}: bare \"type\": \"object\" with no properties — this is \
+                     the shape the model fills in with a {{\"item\": [...]}} wrapper"
+                ));
+            }
+            _ => {}
+        }
+        if let Some(map) = node.as_object() {
+            for (key, child) in map {
+                undescribed_shape_nodes(child, &format!("{path}.{key}"), found);
+            }
+        }
+    }
+
+    #[test]
+    fn tool_schemas_declare_no_array_without_items() {
+        for tool in native_tool_definitions() {
+            let mut found = Vec::new();
+            undescribed_shape_nodes(&tool.input_schema, tool.name.as_str(), &mut found);
+            assert!(
+                found.is_empty(),
+                "tool {} has undescribed shapes at {found:?} — a bare \
+                 \"type\": \"array\" or a description-free \"type\": \"object\" is \
+                 where `{{\"item\": [...]}}` gets invented (decision #322)",
+                tool.name
+            );
+        }
+    }
+
+    /// The guard needs its own test. `tool_schemas_declare_no_array_without_items`
+    /// passes today because every schema in `native_tool_definitions()` is
+    /// correct — not because the walk can detect anything. A filter that
+    /// matches nothing makes every mutant "survive", and a guard that
+    /// matches nothing makes every schema "pass": the same defect seen from
+    /// the test side, and the same way to stay hidden.
+    ///
+    /// This test feeds the walk hand-built schemas that carry the exact
+    /// defects the contract exists to prevent, so a neutered guard fails
+    /// here instead of silently approving the real schemas.
+    #[test]
+    fn undescribed_shape_walk_detects_the_defects_it_claims_to() {
+        // A tool input schema always roots at a properties bag, which is
+        // why the guard keys on `path.contains(".properties")`: the top-level
+        // object of the tool itself legitimately has no `properties` of its
+        // own name, but every named tool argument does.
+        let wrapper_under_properties = json!({
+            "type": "object",
+            "properties": { "updates": { "type": "object" } }
+        });
+        let array_without_items = json!({
+            "type": "object",
+            "properties": { "tags": { "type": "array" } }
+        });
+        let array_with_items = json!({
+            "type": "object",
+            "properties": { "tags": { "type": "array", "items": { "type": "string" } } }
+        });
+        let closed_empty_object = json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {}
+                }
+            }
+        });
+
+        let mut found = Vec::new();
+        undescribed_shape_nodes(&wrapper_under_properties, "t", &mut found);
+        assert!(
+            found.iter().any(|f| f.contains("t.properties.updates")),
+            "a bare \"type\": \"object\" under .properties must be reported, got {found:?} \
+             — this is the pre-ec74b8d shape that produced {{\"item\": [...]}} 18 times"
+        );
+
+        found.clear();
+        undescribed_shape_nodes(&array_without_items, "t", &mut found);
+        assert!(
+            found.iter().any(|f| f.contains("array without items")),
+            "an array with no items must be reported, got {found:?}"
+        );
+
+        // Negative controls. These two MUST produce nothing, or the guard is
+        // crying wolf and the real schemas will be ignored.
+        found.clear();
+        undescribed_shape_nodes(&array_with_items, "t", &mut found);
+        assert!(
+            found.is_empty(),
+            "a correctly described array must not be reported, got {found:?}"
+        );
+
+        found.clear();
+        undescribed_shape_nodes(&closed_empty_object, "t", &mut found);
+        assert!(
+            found.is_empty(),
+            "an object closed with additionalProperties:false is a deliberate \
+             shape, not an undescribed one, got {found:?}"
+        );
+    }
+
+    #[test]
+    fn soul_write_schema_mirrors_the_runtime_validator_field_tables() {
+        let binding = tool_schema("memphis_soul_write");
+        let updates = schema_at(&binding, &["properties", "updates"]);
+
+        // Every section the runtime accepts must be described to the model.
+        for section in SOUL_SECTIONS {
+            assert!(
+                updates["properties"].get(*section).is_some(),
+                "updates.properties must describe section `{section}`; the runtime \
+                 accepts it via SOUL_SECTIONS, so a model that cannot see it will \
+                 guess a shape it was never offered"
+            );
+        }
+
+        // And the field types must agree with the tables the validator
+        // enforces. A schema that says `string` where the runtime demands
+        // `string[]` is worse than no schema: it invites the clobber this
+        // decision exists to prevent.
+        for (section, fields) in SOUL_LIST_FIELDS {
+            for field in *fields {
+                let node = schema_at(updates, &["properties", section, "properties", field]);
+                assert_eq!(
+                    node["type"].as_str(),
+                    Some("array"),
+                    "updates.properties.{section}.{field} must be array to match SOUL_LIST_FIELDS"
+                );
+                assert_eq!(
+                    node["items"]["type"].as_str(),
+                    Some("string"),
+                    "updates.properties.{section}.{field} items must be string"
+                );
+            }
+        }
+        for (section, fields) in SOUL_SCALAR_FIELDS {
+            for field in *fields {
+                let node = schema_at(updates, &["properties", section, "properties", field]);
+                assert_eq!(
+                    node["type"].as_str(),
+                    Some("string"),
+                    "updates.properties.{section}.{field} must be string to match SOUL_SCALAR_FIELDS"
+                );
+            }
+        }
+    }
+
+    /// The sections are closed on purpose. The runtime rejects unknown
+    /// sections and unknown fields; a schema that stays open would let the
+    /// model discover that only by hitting the error at write time.
+    #[test]
+    fn soul_write_schema_closes_sections_and_rejects_the_item_wrapper() {
+        let binding = tool_schema("memphis_soul_write");
+        let updates = schema_at(&binding, &["properties", "updates"]);
+        assert_eq!(
+            updates["additionalProperties"].as_bool(),
+            Some(false),
+            "updates must be closed — SOUL_SECTIONS is a closed set"
+        );
+        for section in SOUL_SECTIONS {
+            let node = schema_at(updates, &["properties", section]);
+            assert_eq!(
+                node["additionalProperties"].as_bool(),
+                Some(false),
+                "updates.properties.{section} must be closed — validate_soul_update_shape \
+                 rejects unknown fields"
+            );
+            assert!(
+                node["properties"].get("item").is_none(),
+                "updates.properties.{section} must not offer an `item` key: the \
+                 {{\"item\": [...]}} wrapper is the failure mode, not a supported shape"
+            );
+        }
+    }
+
+    /// The wrapper and a bare array must be distinguishable by the schema
+    /// alone — no runtime call needed. This is the property that makes the
+    /// fix work: the model is told which one to send.
+    #[test]
+    fn soul_write_schema_separates_a_bare_array_from_an_item_wrapper() {
+        let binding = tool_schema("memphis_soul_write");
+        let field = schema_at(
+            &binding,
+            &[
+                "properties",
+                "updates",
+                "properties",
+                "self",
+                "properties",
+                "learnings",
+            ],
+        );
+        assert_eq!(field["type"].as_str(), Some("array"));
+        // An object wrapper is not assignable to this node. If a future
+        // edit loosens the type, this fails.
+        assert_ne!(field["type"].as_str(), Some("object"));
+        assert!(
+            field["description"]
+                .as_str()
+                .is_some_and(|d| d.contains("item")),
+            "the field description must name the wrapper the model is known to \
+             invent, with a bare array as the alternative"
+        );
+    }
+
+    #[test]
+    fn case_query_schema_matches_the_case_query_struct() {
+        let binding = tool_schema("memphis_case_query");
+        let query = schema_at(&binding, &["properties", "query"]);
+        assert_eq!(
+            query["additionalProperties"].as_bool(),
+            Some(false),
+            "query must be closed — CaseQuery is a fixed struct"
+        );
+        for field in [
+            "case_type",
+            "entity",
+            "actor",
+            "target",
+            "instrument",
+            "location",
+            "limit",
+        ] {
+            assert!(
+                query["properties"].get(field).is_some(),
+                "query must describe `{field}` — it is a field of CaseQuery"
+            );
+        }
+        // case_type is a serde enum in the struct; the schema must offer
+        // exactly the variants serde accepts. The list is derived from real
+        // `CaseEntry` values rather than a hand-written copy, so adding a
+        // variant to the enum without updating the schema fails here.
+        let allowed = query["properties"]["case_type"]["enum"]
+            .as_array()
+            .expect("case_type must be an enum");
+        for entry in representative_case_entries() {
+            let case = entry.case_type();
+            assert!(
+                allowed.iter().any(|v| v.as_str() == Some(case.as_str())),
+                "case_type enum must include variant {case:?}; the schema would \
+                 otherwise reject a value serde accepts"
+            );
+        }
+        // And the reverse: nothing offered that serde would refuse. A value
+        // the schema advertises but the enum lacks is a promise the runtime
+        // cannot keep.
+        for value in allowed {
+            let name = value.as_str().expect("enum entries are strings");
+            assert!(
+                representative_case_entries()
+                    .iter()
+                    .any(|entry| entry.case_type().as_str() == name),
+                "case_type enum offers `{name}`, which is not a CaseType variant"
+            );
+        }
+    }
+
+    #[test]
+    fn case_append_schema_types_tags_as_a_bare_array() {
+        let binding = tool_schema("memphis_case_append");
+        let entry = schema_at(&binding, &["properties", "entry"]);
+        let tags = schema_at(entry, &["properties", "tags"]);
+        assert_eq!(
+            tags["type"].as_str(),
+            Some("array"),
+            "entry.tags must be array — the live history shows 6 case_append calls \
+             that wrapped it as {{\"item\": [...}}"
+        );
+        assert_eq!(tags["items"]["type"].as_str(), Some("string"));
+        assert!(
+            entry["properties"].get("item").is_none(),
+            "entry must not offer an `item` key"
+        );
+    }
+
+    /// Every list-bearing tool must say so in the description the model reads
+    /// first. The schema alone is not enough when the model has been burned
+    /// by the wrapper before and is primed to reproduce it.
+    #[test]
+    fn list_bearing_tools_mention_the_bare_array_rule_in_their_description() {
+        for name in ["memphis_soul_write", "memphis_case_append"] {
+            let description = native_tool_definitions()
+                .into_iter()
+                .find(|tool| tool.name == name)
+                .map(|tool| tool.description)
+                .expect("tool definition");
+            assert!(
+                description.contains("bare JSON arrays"),
+                "{name} description must state the bare-array rule, got: {description}"
+            );
+        }
     }
 
     #[test]
