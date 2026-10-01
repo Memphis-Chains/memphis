@@ -11,11 +11,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub use memphis_operator::ProviderStatus;
 use memphis_operator::{
     ChatExchange, ChatSessionView, ChatStreamEvent, MemoryQueryResult, OperatorError,
     OperatorRuntime, OperatorSnapshot, VaultSecretView,
 };
-pub use memphis_operator::ProviderStatus;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -44,9 +44,8 @@ fn env_duration_secs(var: &str, default_secs: u64) -> Duration {
 
 static HOST_HANDSHAKE_TIMEOUT: std::sync::LazyLock<Duration> =
     std::sync::LazyLock::new(|| env_duration_secs("MEMPHIS_TUI_HOST_HANDSHAKE_TIMEOUT_MS", 120));
-static HOST_REQUEST_START_TIMEOUT: std::sync::LazyLock<Duration> = std::sync::LazyLock::new(|| {
-    env_duration_secs("MEMPHIS_TUI_HOST_REQUEST_START_TIMEOUT_MS", 60)
-});
+static HOST_REQUEST_START_TIMEOUT: std::sync::LazyLock<Duration> =
+    std::sync::LazyLock::new(|| env_duration_secs("MEMPHIS_TUI_HOST_REQUEST_START_TIMEOUT_MS", 60));
 static HOST_REQUEST_IDLE_TIMEOUT: std::sync::LazyLock<Duration> = std::sync::LazyLock::new(|| {
     env_duration_secs("MEMPHIS_TUI_HOST_REQUEST_IDLE_TIMEOUT_MS", 1_800)
 });
@@ -363,7 +362,8 @@ impl MemphisClient {
                                 request_id, *HOST_REQUEST_START_TIMEOUT
                             ),
                         ));
-                    } else if saw_started && last_progress_at.elapsed() >= *HOST_REQUEST_IDLE_TIMEOUT
+                    } else if saw_started
+                        && last_progress_at.elapsed() >= *HOST_REQUEST_IDLE_TIMEOUT
                     {
                         return Err(reset_session_with_error(
                             &mut manager,
@@ -975,8 +975,7 @@ fn write_dotenv_value(path: &Path, key: &str, value: &str) -> Result<(), String>
     if !serialized.ends_with('\n') {
         serialized.push('\n');
     }
-    std::fs::write(path, serialized)
-        .map_err(|error| format!("write {}: {error}", path.display()))
+    std::fs::write(path, serialized).map_err(|error| format!("write {}: {error}", path.display()))
 }
 
 /// Map a provider name to the env key that holds its default model.
@@ -994,8 +993,7 @@ mod reload_tests {
     use std::path::PathBuf;
 
     fn tmpfile(name: &str, content: &str) -> PathBuf {
-        let dir =
-            tempdir_path(&format!("memphis-tui-reload-{name}-{}", std::process::id()));
+        let dir = tempdir_path(&format!("memphis-tui-reload-{name}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("mkdir tmp");
         let path = dir.join(name);
         write(&path, content).expect("write fixture");
@@ -1036,7 +1034,10 @@ mod reload_tests {
         assert_eq!(applied, 3);
         assert_eq!(std::env::var("TUI_RELOAD_TEST_FOO").unwrap(), "1");
         assert_eq!(std::env::var("TUI_RELOAD_TEST_BAR").unwrap(), "with spaces");
-        assert_eq!(std::env::var("TUI_RELOAD_TEST_BAZ").unwrap(), "quoted-single");
+        assert_eq!(
+            std::env::var("TUI_RELOAD_TEST_BAZ").unwrap(),
+            "quoted-single"
+        );
 
         // cleanup
         std::env::remove_var("TUI_RELOAD_TEST_FOO");
@@ -1055,10 +1056,7 @@ mod reload_tests {
 
     #[test]
     fn package_name_matches_recognises_memphis_package_json() {
-        let dir = tempdir_path(&format!(
-            "memphis-tui-reload-pkg-{}",
-            std::process::id()
-        ));
+        let dir = tempdir_path(&format!("memphis-tui-reload-pkg-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("mkdir");
         write(
             dir.join("package.json"),
