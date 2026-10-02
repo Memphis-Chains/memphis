@@ -737,7 +737,7 @@
       "license": "MIT"
     },
     "node_modules/@grpc/grpc-js": {
-      "version": "1.14.4",
+      "version": "1.14.5",
       "license": "Apache-2.0",
       "dependencies": {
         "@grpc/proto-loader": "^0.8.0",
