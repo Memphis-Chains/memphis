@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -14,7 +14,12 @@ describe('runMemphisConfigSet (closes deferred item #7)', () => {
     tmpDir = mkdtempSync(join(tmpdir(), 'memphis-config-set-'));
     process.env.MEMPHIS_DATA_DIR = tmpDir;
     // Use a real .env path writable by the test.
-    process.env.MEMPHIS_ENV_PATH = join(tmpDir, '.env');
+    // MUST be MEMPHIS_ENV_FILE, not MEMPHIS_ENV_PATH. resolveDotEnvPath()
+    // (src/infra/config/dotenv-file.ts) reads MEMPHIS_ENV_FILE; MEMPHIS_ENV_PATH
+    // exists nowhere in src/ or crates/. The wrong name made this test resolve
+    // the operator's real .env and write to it on every run — that is how the
+    // sk-test placeholder below and a stale GEN_TIMEOUT_MS kept reappearing.
+    process.env.MEMPHIS_ENV_FILE = join(tmpDir, '.env');
   });
 
   afterEach(() => {
@@ -23,6 +28,14 @@ describe('runMemphisConfigSet (closes deferred item #7)', () => {
       if (!(key in savedEnv)) delete process.env[key];
     }
     Object.assign(process.env, savedEnv);
+  });
+
+  it('resolves the dotenv path inside the per-test tmp dir, not the operator .env', () => {
+    // Regression guard for the MEMPHIS_ENV_PATH typo. If isolation is ever
+    // lost again this fails before any write reaches production config.
+    const result = runMemphisConfigSet({ key: 'GEN_TIMEOUT_MS', value: '123456' });
+    expect(result.ok).toBe(true);
+    expect(readFileSync(join(tmpDir, '.env'), 'utf8')).toContain('GEN_TIMEOUT_MS=123456');
   });
 
   it('refuses cold fields with cold-field reason', () => {
@@ -84,14 +97,17 @@ describe('runMemphisConfigSet (closes deferred item #7)', () => {
   it('accepts valid hot-field writes and reports the redacted value', () => {
     const result = runMemphisConfigSet({
       key: 'GEN_TIMEOUT_MS',
-      value: '45000',
+      // 123456 is deliberately not a plausible production value. 45000 is a real
+      // GEN_TIMEOUT_MS the operator runs; if isolation ever breaks again, this
+      // test would silently overwrite the live setting.
+      value: '123456',
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.key).toBe('GEN_TIMEOUT_MS');
       expect(result.tier).toBe('hot');
     }
-    expect(process.env.GEN_TIMEOUT_MS).toBe('45000');
+    expect(process.env.GEN_TIMEOUT_MS).toBe('123456');
   });
 
   it('rejects values containing newlines', () => {
