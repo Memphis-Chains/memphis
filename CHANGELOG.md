@@ -1,3 +1,117 @@
+## v1.13.5 - 2026-10-02
+
+40 commits since the `v1.13.4` tag. Two release blockers closed, one test-isolation
+defect that wrote to the operator's live configuration, and the Tauri/concurrency
+work that was already in flight.
+
+### Release blockers (both found via the nightly-crystal artifact, not the job log)
+
+- **Format gate.** `scripts/format-check-changed.sh` checks `HEAD^..HEAD` only, so
+  the gate saw a regression introduced in `ed2f1f4`: 11 files violated Prettier.
+  Reformatted; the only text-level change is one `.toBe()` call collapsed to a
+  single line, semantics identical, `tsc` clean.
+- **Dependency audit.** `@grpc/grpc-js` 1.14.0–1.14.4 carries two High advisories
+  (GHSA-m9gg-hp2v-232j, GHSA-f596-whhp-79r4). `nightly-crystal-pass.sh:143` runs
+  `npm audit --omit=dev --audit-level=high`, so this is a hard gate, not advisory.
+  Bumped to 1.14.5 in `overrides`.
+
+### Configuration isolation (the `sk-test` mystery)
+
+- **`mcp-config-set.test.ts` wrote to the operator's real `.env`.** The test set
+  `MEMPHIS_ENV_PATH`; the variable `resolveDotEnvPath()` actually reads
+  (`src/infra/config/dotenv-file.ts:7`) is `MEMPHIS_ENV_FILE`. The override was
+  ignored, every run resolved the install-root `.env`, and `setDotEnvValues`
+  wrote production config — which is how a `ANTHROPIC_API_KEY=sk-test` placeholder
+  kept reappearing and why `GEN_TIMEOUT_MS` reverted to a stale 45000 against a
+  600000 value the surrounding comment justified at length.
+- Fixed the variable name, changed the test value to `123456` (45000 was a real
+  operator setting), and added a guard test asserting writes land in the per-test
+  tmp `.env`. All 8 original tests preserved.
+- **`npm-shrinkwrap.json` is the pin, not `package-lock.json`.** The latter is in
+  `.gitignore:9` and unused by `npm ci`. Changing `overrides` without syncing the
+  shrinkwrap fails the `Install` step. One-line diff; rebuilding the lock dragged
+  in unrelated drift (`@napi-rs/wasm-runtime`, `@tybys/wasm-util`).
+
+### Providers and models
+
+- **MiniMax M3 context window (#654).** The anchored regex in
+  `model-capabilities.ts` missed `M3.1-Flash-Preview` and capped it at 32k instead
+  of 1M. `MEMPHIS_CHAT_MAX_MESSAGES` raised to 20000 to match.
+- **Health now separates "configured" from "usable" (#653).** A provider with a
+  vault ref pointing at a non-existent entry is no longer reported as healthy.
+- **Dead vault refs removed from `.env`.** `DEEPSEEK_VAULT_KEY` and
+  `GLM_VAULT_KEY` pointed at entries that never existed, producing a
+  `vault_not_found` loud skip on every boot (`doctor-v2.ts:977`). `MINIMAX_VAULT_KEY`
+  is valid and stays.
+
+### Telegram
+
+- **`memphis_send` could not send with real configuration** (`ed2f1f4`). The tool
+  read `process.env` directly, so `VAULT:telegram_bot_token` went out verbatim and
+  Telegram returned 404, and it looked for `TELEGRAM_CHAT_ID` while the operator
+  configures `MEMPHIS_TELEGRAM_CHAT_ID`. Added `resolveTelegramBotToken` with
+  vault-first ordering; 10 new test files, one case each (the shared-`stubGlobal`
+  approach made the file order-dependent and intermittently unbound).
+- **Inbound logging added** to `telegram-presence.ts` — the middleware every
+  update already passes through. Logs `updateId`, `fromId`, `username`, `chatId`,
+  `allowed`, `tier`, and a 200-char preview, with allowlist-rejected messages on a
+  separate `warn`. Previously the gateway logged nothing inbound, so traffic it
+  received and dropped was invisible.
+
+### Concurrency, memory, and runtime
+
+- **ADR-009 cross-process write race (#643).** Regression test drives two
+  concurrent `writeBlockAtomic` callers; the corruption class is a race, so the
+  test has to actually race.
+- **Memory persistence limit (#651).** `assistantReply.slice(0, 500)` truncated
+  what the embed index saw, so semantic search could not recover long answers
+  beyond 500 chars. Raised to 4000 with a `MEMPHIS_MEMORY_REPLY_LIMIT` env
+  override and a regression test.
+- **Four real bottlenecks behind the three "flaky" timeouts (#650).** Also
+  carries the `memphis_soul_write` / `memphis_case_query` / `memphis_case_append`
+  JSON Schemas, which were bare `{"type": "object"}` with no `properties` — the
+  model was guessing the shape and reaching for `{"item": [...]}`. Now every list
+  field is `array` + `items` with `additionalProperties: false`, guarded by
+  `tool_schemas_declare_no_array_without_items`.
+- **Worker panic surfacing (#652).** A panicking worker reported as
+  "stopped without a terminal event"; the panic reason now reaches the operator.
+- **Security event no longer corrupts runtime health** (`df290c6`).
+
+### Ops and desktop
+
+- **Backup USB autodetection** (`cd63745`, contract in `315a16d`). The script
+  hardcoded a pre-XDG path while this host automounts under `/run/media`, so every
+  run exited 2 and `SuccessExitStatus=0 1 2` reported it as success.
+- **Tauri Phase G-minimal scaffold** (#644). Two real bugs fixed en route: the
+  manifest path was two levels off, and adding Tauri to the cargo `members` list
+  broke `cargo build --workspace` on `glib-sys`, so it moved to `exclude` with a
+  documented build command.
+- **Phase L offline-invariant CI gate**, dashboard DB + API, chain integrity
+  sweep with an hourly timer, and `set-github-pat` helper.
+
+### Repository hygiene
+
+- Client data and a Telegram `chat_id` scrubbed from what was, until
+  `68780a7`, a public repository. `.gitignore` hardened for operator artifacts
+  (`7a99797`, `fe9f150`).
+- CHANGELOG entry for v1.13.4, which had 61 undocumented commits (`536812a`).
+
+### Verification
+
+- `unit`: 405 files / 2876 tests passed. `integration`: 60 files / 227 tests passed.
+- `tsc --noEmit` and `eslint` clean. `cargo test -p memphis-operator schema`: 6/6.
+- `nightly-crystal-pass.sh`: pass=8 fail=0.
+- CI run `37038551780` on `23ffbc9`: `quality-gate` 15/15, plus
+  `cross-arch (macos-latest)` and `cross-arch (ubuntu-24.04-arm)` both success.
+- `.env` md5 identical before and after the full 2876-test suite — the isolation
+  fix holds at suite scale, not just on a single run.
+
+### Known limitation
+
+`format:check:changed` only inspects `HEAD^..HEAD`, so 186 files in the repository
+do not pass `prettier --check .`. This is the gate's intended scope, not an
+oversight, and no repository-wide reformat was done here.
+
 ## v1.13.4 - 2026-09-21
 
 ### CI portability + scheduled workflow PAT fix
