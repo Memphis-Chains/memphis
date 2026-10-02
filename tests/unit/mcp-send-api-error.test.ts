@@ -134,7 +134,6 @@ void fetchMock;
 
 describe('runMemphisSend', () => {
   it('surfaces the Telegram status and body instead of swallowing it', async () => {
-
     operatorEnv();
     fetchMock.mockReset();
     fetchMock.mockResolvedValue(errorResponse(400, 'Bad Request: chat not found'));

@@ -134,7 +134,6 @@ void fetchMock;
 
 describe('runMemphisSend', () => {
   it('refuses to send while the bot token is still a VAULT: reference', async () => {
-
     process.env.MEMPHIS_TELEGRAM_BOT_TOKEN = 'VAULT:telegram_bot_token';
     process.env.MEMPHIS_TELEGRAM_CHAT_ID = CHAT_ID;
     fetchMock.mockReset();

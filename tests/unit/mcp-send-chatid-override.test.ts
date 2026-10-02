@@ -134,7 +134,6 @@ void fetchMock;
 
 describe('runMemphisSend', () => {
   it('lets an explicit chatId override the configured one', async () => {
-
     operatorEnv();
     fetchMock.mockReset();
     fetchMock.mockResolvedValue(okResponse(14));

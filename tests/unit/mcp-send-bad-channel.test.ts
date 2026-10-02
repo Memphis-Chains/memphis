@@ -134,7 +134,6 @@ void fetchMock;
 
 describe('runMemphisSend', () => {
   it('rejects a non-telegram channel before reading the environment', async () => {
-
     operatorEnv();
     fetchMock.mockReset();
     fetchMock.mockResolvedValue(okResponse(18));

@@ -216,7 +216,7 @@
   },
   "overrides": {
     "@babel/core": "^7.29.7",
-    "@grpc/grpc-js": "^1.14.4",
+    "@grpc/grpc-js": "^1.14.5",
     "@hono/node-server": "^1.19.15",
     "@opentelemetry/propagator-jaeger": "^2.10.0",
     "body-parser": "^2.2.3",

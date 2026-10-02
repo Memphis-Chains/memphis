@@ -90,7 +90,9 @@ export async function runMemphisSend(input: SendInput): Promise<SendOutput> {
   // `input.chatId` wins, then the `MEMPHIS_`-prefixed name the
   // operator's `.env` actually sets, then the legacy unprefixed one.
   const chatId =
-    input.chatId?.trim() || process.env.MEMPHIS_TELEGRAM_CHAT_ID?.trim() || process.env.TELEGRAM_CHAT_ID?.trim();
+    input.chatId?.trim() ||
+    process.env.MEMPHIS_TELEGRAM_CHAT_ID?.trim() ||
+    process.env.TELEGRAM_CHAT_ID?.trim();
   if (!chatId) {
     return {
       sent: false,
