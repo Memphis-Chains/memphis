@@ -134,7 +134,6 @@ void fetchMock;
 
 describe('runMemphisSend', () => {
   it('treats a whitespace-only chat id as absent', async () => {
-
     operatorEnv();
     process.env.MEMPHIS_TELEGRAM_CHAT_ID = '   ';
     delete process.env.TELEGRAM_CHAT_ID;

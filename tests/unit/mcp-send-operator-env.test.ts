@@ -134,7 +134,6 @@ void fetchMock;
 
 describe('runMemphisSend', () => {
   it('sends using only the MEMPHIS_-prefixed names the operator configures', async () => {
-
     operatorEnv();
     fetchMock.mockReset();
     fetchMock.mockResolvedValue(okResponse(777));
@@ -143,9 +142,7 @@ describe('runMemphisSend', () => {
     const out = await runMemphisSend({ channel: 'telegram', message: 'smoke' });
 
     expect(out).toEqual({ sent: true, channel: 'telegram', messageId: 777 });
-    expect(fetchMock.mock.calls[0][0]).toBe(
-      `https://api.telegram.org/bot${TOKEN}/sendMessage`,
-    );
+    expect(fetchMock.mock.calls[0][0]).toBe(`https://api.telegram.org/bot${TOKEN}/sendMessage`);
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
     expect(body.chat_id).toBe(CHAT_ID);
     clearEnv();
