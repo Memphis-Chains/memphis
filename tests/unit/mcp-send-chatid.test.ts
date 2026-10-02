@@ -134,7 +134,6 @@ void fetchMock;
 
 describe('runMemphisSend', () => {
   it('reads MEMPHIS_TELEGRAM_CHAT_ID, the name the operator configures', async () => {
-
     operatorEnv();
     fetchMock.mockReset();
     fetchMock.mockResolvedValue(okResponse(13));

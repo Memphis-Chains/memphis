@@ -134,7 +134,6 @@ void fetchMock;
 
 describe('runMemphisSend', () => {
   it('names MEMPHIS_TELEGRAM_CHAT_ID in the error when no chat id exists', async () => {
-
     operatorEnv();
     delete process.env.MEMPHIS_TELEGRAM_CHAT_ID;
     delete process.env.TELEGRAM_CHAT_ID;

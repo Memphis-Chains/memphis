@@ -134,7 +134,6 @@ void fetchMock;
 
 describe('runMemphisSend', () => {
   it('falls back to the legacy unprefixed TELEGRAM_BOT_TOKEN', async () => {
-
     operatorEnv();
     delete process.env.MEMPHIS_TELEGRAM_BOT_TOKEN;
     delete process.env.MEMPHIS_TELEGRAM_TOKEN_OVERRIDE;

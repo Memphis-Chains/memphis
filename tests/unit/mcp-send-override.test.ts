@@ -134,7 +134,6 @@ void fetchMock;
 
 describe('runMemphisSend', () => {
   it('prefers MEMPHIS_TELEGRAM_TOKEN_OVERRIDE over the vault reference', async () => {
-
     process.env.MEMPHIS_TELEGRAM_BOT_TOKEN = 'VAULT:telegram_bot_token';
     process.env.MEMPHIS_TELEGRAM_TOKEN_OVERRIDE = '999:AAoverride';
     process.env.MEMPHIS_TELEGRAM_CHAT_ID = CHAT_ID;
