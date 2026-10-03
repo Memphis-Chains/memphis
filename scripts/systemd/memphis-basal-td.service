@@ -1,0 +1,39 @@
+[Unit]
+Description=Memphis BASAL-1.0 typed-decision server (port 8000)
+After=network-online.target
+Wants=network-online.target
+# Give up after 10 failures (~5 min) instead of retrying indefinitely. The
+# model is a nice-to-have classifier; if it cannot come up, Memphis keeps
+# working without it and memphis_classify returns a structured
+# "unreachable" error with the start command. These keys live in [Unit],
+# not [Service] — systemd-analyze verify rejects them elsewhere.
+StartLimitIntervalSec=600
+StartLimitBurst=10
+
+[Service]
+Type=simple
+# 1.5B-parameter model in a python/torch stack, not a node dependency, so
+# it lives in its own venv created by scripts/install-basal.sh.
+# If the venv is missing, ExecStart fails and Restart=on-failure retries;
+# fix with: bash scripts/install-basal.sh
+ExecStart=%h/.local/share/basal/venv/bin/python %h/.local/share/basal/basal_cpu.py
+WorkingDirectory=%h/.local/share/basal
+Restart=on-failure
+# 30s, not the 5-15s the voice servers use: the model takes ~1s to load but
+# a failure inside it costs minutes, and a tight loop would spin the CPU
+# against a single-threaded model. Bounded so a permanently broken
+# install does not burn the host forever.
+RestartSec=30
+# The model loads into RAM (~0.4 GB bf16) and infers on CPU. Memphis and
+# the voice servers are latency-sensitive; classifying must not outrank
+# them for the single-digit core count this host has.
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+Environment=BASAL_PORT=8000
+Environment=BASAL_DTYPE=bfloat16
+StandardOutput=append:%h/.memphis/logs/basal-server.log
+StandardError=append:%h/.memphis/logs/basal-server.log
+
+[Install]
+WantedBy=default.target
