@@ -1,3 +1,4 @@
+import { runMemphisClassify } from '../../../mcp/tools/classify.js';
 import { runMemphisDecide } from '../../../mcp/tools/decide.js';
 import { runMemphisJournal } from '../../../mcp/tools/journal.js';
 import { runMemphisKartograf } from '../../../mcp/tools/kartograf.js';
@@ -20,9 +21,7 @@ export type MemoryRuntimeToolDeps = {
   turnId?: string;
 };
 
-export function createMemoryRuntimeTools(
-  deps: MemoryRuntimeToolDeps,
-): RuntimeToolDefinition[] {
+export function createMemoryRuntimeTools(deps: MemoryRuntimeToolDeps): RuntimeToolDefinition[] {
   return [
     buildTool({
       name: 'memphis_journal',
@@ -96,6 +95,90 @@ export function createMemoryRuntimeTools(
       },
       execute(input) {
         return runMemphisKartograf(input, deps.rawEnv);
+      },
+    }),
+    buildTool({
+      name: 'memphis_classify',
+      description:
+        'Typed decision over a state via the local BASAL-1.0 service — returns a calibrated probability per option plus `auto` (confidence cleared the threshold). Categories come from `criteria`, so no retraining. SLOW: 70-140s per call on a host without a supported GPU. Returns a structured error with a start command when the service is down.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          state: { type: 'string', description: 'Text to classify (1-32000 chars)' },
+          question: { type: 'string', description: 'What to decide about it, in plain language' },
+          criteria: {
+            description:
+              'Options as {key: description} pairs, or an array of 2-10 labels. The model reads the descriptions.',
+            oneOf: [
+              { type: 'object', additionalProperties: { type: 'string' } },
+              { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 10 },
+            ],
+          },
+          type: { type: 'string', enum: ['choice', 'noul', 'score'] },
+          threshold: { type: 'number', description: 'Auto-action at or above this (default 0.93)' },
+          orders: {
+            type: 'number',
+            enum: [1, 2],
+            description:
+              '1 = one pass (fast, order-sensitive). 2 = averaged over both option orders.',
+          },
+        },
+        required: ['state', 'question', 'criteria'],
+      },
+      // Not concurrency-safe: a call holds the single-threaded CPU model for
+      // minutes. Running several at once starves the host and makes every
+      // one of them slower.
+      isConcurrencySafe: false,
+      isReadOnly: true,
+      validateInput(args) {
+        const a = args as {
+          state?: unknown;
+          question?: unknown;
+          criteria?: unknown;
+          type?: unknown;
+          threshold?: unknown;
+          orders?: unknown;
+        };
+        if (typeof a.state !== 'string' || a.state.trim().length === 0) {
+          throw new Error('memphis_classify: state (non-empty string) is required');
+        }
+        if (typeof a.question !== 'string' || a.question.trim().length === 0) {
+          throw new Error('memphis_classify: question (non-empty string) is required');
+        }
+        const rawCriteria: unknown = a.criteria;
+        const isArrayCriteria = Array.isArray(rawCriteria);
+        const rawMap: Record<string, unknown> =
+          !isArrayCriteria && rawCriteria && typeof rawCriteria === 'object'
+            ? (rawCriteria as Record<string, unknown>)
+            : {};
+        const asList: string[] = isArrayCriteria
+          ? (rawCriteria as unknown[]).filter(
+              (c): c is string => typeof c === 'string' && c.trim().length > 0,
+            )
+          : Object.keys(rawMap).filter((k) => k.trim().length > 0);
+        if (asList.length < 2) {
+          throw new Error('memphis_classify: criteria needs at least two options');
+        }
+        if (asList.length > 10) {
+          throw new Error(`memphis_classify: at most 10 options, got ${asList.length}`);
+        }
+        const criteria: Record<string, string> | string[] = isArrayCriteria
+          ? asList
+          : Object.fromEntries(asList.map((k) => [k, String(rawMap[k])]));
+        const qType: 'choice' | 'noul' | 'score' | undefined =
+          a.type === 'choice' || a.type === 'noul' || a.type === 'score' ? a.type : undefined;
+        const orders: 1 | 2 | undefined = a.orders === 1 || a.orders === 2 ? a.orders : undefined;
+        return {
+          state: a.state,
+          question: a.question,
+          criteria,
+          ...(qType !== undefined ? { type: qType } : {}),
+          ...(typeof a.threshold === 'number' ? { threshold: a.threshold } : {}),
+          ...(orders !== undefined ? { orders } : {}),
+        };
+      },
+      execute(input) {
+        return runMemphisClassify(input, deps.rawEnv);
       },
     }),
     buildTool({
