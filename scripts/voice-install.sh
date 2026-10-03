@@ -174,6 +174,45 @@ except Exception as e:
     model = WhisperModel(size, device="cpu", compute_type="int8")
 print("[whisper] ready", flush=True)
 
+def sanitize_for_speech(text):
+    """Strip characters Piper reads out loud as noise.
+
+    Operator dictation: markdown, URLs and emoji arrive in the text
+    because the model quotes them. Piper has no phoneme for `**`, `<`,
+    `~` or `&`, so it either skips them or pronounces the symbol name.
+    Polish diacritics are preserved — only non-speech markup goes.
+    """
+    if not text:
+        return ''
+    # URLs and emails: read as nothing rather than spelled out
+    text = re.sub(r'https?://\S+', ' ', text)
+    text = re.sub(r'\b[\w.%+-]+@[\w.-]+\.\w{2,}\b', ' ', text)
+    # markdown emphasis / code / headings
+    text = re.sub(r'```[\s\S]*?```', ' ', text)
+    text = re.sub(r'`[^`]*`', '', text)
+    text = re.sub(r'\*\*\*|\*\*|__|(?<![\w*])\*(?![\w*])|(?<![\w_])_(?![\w_])', '', text)
+    text = re.sub(r'^\s{0,3}#{1,6}\s*', '', text, flags=re.M)
+    # emoji + variation selectors + zwykłe symbole
+    text = re.sub(r'[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F]', ' ', text)
+    # procent: Piper wymawia symbol, wiec zamieniamy na slowo PRZED
+    # ogolnym czyszczeniem. Kolejnosc wazna — najpierw procent, potem symbole.
+    text = re.sub(r'(?i)(\d+(?:[.,]\d+)?)\s*%', r'\1 procent', text)
+    # symbole typograficzne, ktore Piper wymawia slownie
+    for ch in ('`~^|*_=+<>\\/@#$&'):
+        text = text.replace(ch, ' ')
+    # skróty typowo dyktowane literowo
+    text = re.sub(r'(?i)\b(np|np\.)\s+(\d{1,3})\s*([a-z]{3})', r'punkt \2 \3', text)
+    text = re.sub(r'(?i)\bstr\.\s*(\d{1,2})', r'strona \1', text)
+    # kwota bez spacji: 100zl -> 100 zl, 50euro -> 50 euro
+    text = re.sub(r'(?i)(\d+(?:[.,]\d+)?)(z[łl]|euro|zl|pln)(?![a-ząćęłńóśźż])', r'\1 \2', text)
+    # kwota z symbolem: 100€ juz zamienione na procent? nie — zostaw, Piper czyta 'euro'
+    # sklejone wyliczenia 1.2.3 -> 1. 2. 3. (>=3 kropki, zeby nie psuc 36 § 1)
+    text = re.sub(r'\b(\d+(?:\.\d+){2,})\b', lambda m: ' '.join(m.group(1).split('.')), text)
+    # spacje
+    text = re.sub(r'[ \t]{2,}', ' ', text)
+    return text.strip()
+
+
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
         # Liveness paths: /health for our own probe, /inference + /v1/audio/transcriptions
@@ -265,7 +304,7 @@ for v in "${KNOWN_VOICES[@]}"; do
 "
 done
 cat > "$PIPER_SCRIPT" <<PYEOF
-import subprocess, tempfile, os, json, urllib.parse
+import subprocess, tempfile, os, json, urllib.parse, re
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 VOICE_DIR = os.path.expanduser('$PIPER_DIR/voices')
@@ -330,6 +369,7 @@ class H(BaseHTTPRequestHandler):
             return
         n = int(self.headers.get('Content-Length', '0'))
         text = self.rfile.read(n).decode('utf-8')
+        text = sanitize_for_speech(text)
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as out:
             wav_path = out.name
         try:
