@@ -240,7 +240,17 @@ main() {
   ensure_env_value "MEMPHIS_OWNER_NAME" "${MEMPHIS_OWNER_NAME:-local operator}" >/dev/null
   ensure_env_value "RUST_CHAIN_ENABLED" "true" >/dev/null
   ensure_env_value "RUST_EMBED_PERSIST_ENABLED" "true" >/dev/null
-  ensure_env_value "RUST_EMBED_PERSIST_PATH" "./data/embed-index.json" >/dev/null
+  # Do NOT seed RUST_EMBED_PERSIST_PATH. The default in
+  # crates/memphis-paths/src/lib.rs is ~/.memphis/embed/index-v1.json, and
+  # a relative path here resolves against $ROOT_DIR (the repo), not the
+  # data dir. Every CLI invocation that cd's into the repo would then
+  # write its embed index to <repo>/data/embed-index.json — a second,
+  # stale index that `embed search` reads back and that pollutes the
+  # working tree. This is what made rc-drill return journal-3/journal-4
+  # instead of the anchor it had just stored: the store landed in the
+  # repo, the search read a different file. .env.example:123 already
+  # documents this as an optional override; seeding it contradicts that.
+  # See journal-543 and decision "embed path diversion".
   if [[ -n "${MEMPHIS_TELEGRAM_BOT_TOKEN:-}" ]]; then
     log "Telegram token detected — auto-enabling channel gateway"
     ensure_env_value "MEMPHIS_CHANNEL_GATEWAY_ENABLED" "true" >/dev/null
