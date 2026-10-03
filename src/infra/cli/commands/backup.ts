@@ -334,7 +334,18 @@ function collectFallbackArchiveEntries(root: string, relativePath = '.'): Backup
 
   for (const entry of readdirSync(currentRoot, { withFileTypes: true })) {
     if (relativePath === '.') {
-      if (entry.name === 'backups' || entry.name === 'cache' || entry.name === 'logs') {
+      // `snapshots` is excluded for the same reason as `backups`: it holds
+      // pre-change tarballs of the source tree, so packing it makes every
+      // scheduled backup ~66x larger (53 MB -> 3.3 GB on this host) and
+      // feeds itself — each night's archive contains the previous night's
+      // archive. The archive is also redundant with git: every snapshot here
+      // was a pre-fix copy of a tree that is reconstructible from history.
+      if (
+        entry.name === 'backups' ||
+        entry.name === 'cache' ||
+        entry.name === 'logs' ||
+        entry.name === 'snapshots'
+      ) {
         continue;
       }
       if (entry.name.endsWith('.lock')) {
@@ -581,6 +592,12 @@ function createArchive(memphisRoot: string, backupPath: string): void {
         '--exclude=./backups',
         '--exclude=./cache',
         '--exclude=./logs',
+        // Snapshots are pre-change tarballs of the source tree. Packing
+        // them makes every scheduled backup ~66x larger (53 MB -> 3.3 GB on
+        // this host) and feeds itself: each night's archive contains the
+        // previous night's. Redundant with git, which reconstructs any of
+        // these trees from history.
+        '--exclude=./snapshots',
         '--exclude=*.lock',
         // CRITICAL — never include vault or auth secrets. Culture requires
         // secrets to be vault-managed, not file-committed; backing them up
