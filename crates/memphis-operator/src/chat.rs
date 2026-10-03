@@ -647,9 +647,76 @@ fn contains_sensitive_stream_marker(value: &str) -> bool {
 ///   0 = safe read/write memory tools (no auth required)
 ///   1 = network or filesystem read (API token or consent)
 ///   2 = execute / self-modify (vault passphrase required)
+/// Default endpoint of the local BASAL-1.0 typed-decision service.
+const BASAL_DEFAULT_URL: &str = "http://127.0.0.1:8000/v1/systemone";
+/// The model's own calibration point for ~1% error, from CALIBRATION.json.
+const BASAL_DEFAULT_THRESHOLD: f64 = 0.93;
+/// Ceiling for one call. The model needs 70-140s on this host; the bound
+/// exists so a wedged service cannot hold a tool call open forever.
+const BASAL_TIMEOUT_SECS: u64 = 300;
+
+/// Parse a BASAL reply into the tool's output shape. Split out from the
+/// HTTP call so the decision semantics — `auto` above all — can be tested
+/// against a recorded reply instead of a 3.2 GB model.
+fn classify_reply_to_json(
+    body: &Value,
+    question_type: &str,
+    question: &str,
+    state: &str,
+    threshold: Option<f64>,
+    orders: u64,
+) -> Result<Value, OperatorError> {
+    if let Some(error) = body.get("error").and_then(Value::as_str) {
+        return Err(OperatorError::Message(match error {
+            "loading" => {
+                "memphis_classify: the BASAL model is still loading; retry in a few seconds"
+                    .to_string()
+            }
+            other => format!("memphis_classify: BASAL returned an error: {other}"),
+        }));
+    }
+    let answer = body
+        .get("answers")
+        .and_then(|answers| answers.get("k"))
+        .ok_or_else(|| {
+            OperatorError::Message(
+                "memphis_classify: BASAL reply carried no answer for the question".to_string(),
+            )
+        })?;
+    let confidence = answer
+        .get("confidence")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    let effective_threshold = threshold.unwrap_or(BASAL_DEFAULT_THRESHOLD);
+    let latency_ms = body
+        .get("usage")
+        .and_then(|usage| usage.get("latency_ms"))
+        .and_then(Value::as_i64)
+        .unwrap_or(-1);
+    Ok(json!({
+        "ok": true,
+        "state": state,
+        "question": question,
+        "type": question_type,
+        "choice": answer.get("choice").and_then(Value::as_str),
+        "noul": answer.get("noul").and_then(Value::as_str),
+        "score": answer.get("score").and_then(Value::as_f64),
+        "probabilities": answer.get("probabilities").cloned().unwrap_or_else(|| json!({})),
+        "confidence": confidence,
+        "threshold": effective_threshold,
+        "auto": confidence >= effective_threshold,
+        "orders": orders,
+        "latencyMs": latency_ms,
+    }))
+}
+
 fn tool_tier(name: &str) -> u8 {
     match name {
-        "memphis_exec" | "memphis_self_modify" | "memphis_test" | "memphis_cron" => 2,
+        "memphis_exec"
+        | "memphis_self_modify"
+        | "memphis_test"
+        | "memphis_cron"
+        | "memphis_classify" => 2,
         "memphis_code_read" | "memphis_web_fetch" | "memphis_grep" | "memphis_glob"
         | "memphis_git" => 1,
         _ => 0,
@@ -1062,6 +1129,28 @@ fn native_tool_definitions() -> Vec<ChatToolDefinition> {
                     "test": { "type": "boolean", "description": "Run build after write; rollback on failure (default: false)" }
                 },
                 "required": ["path", "content"]
+            }),
+        },
+        ChatToolDefinition {
+            name: "memphis_classify".to_string(),
+            description: "Typed decisions via the local BASAL-1.0 service. Reads a state (message, document, case file) and answers one typed question about it — choice, yes/no, or score — returning a calibrated probability per option and never generated text. The point is `auto`: true when confidence clears the threshold (default 0.93, the model's own calibration for ~1% error), false when a human should look. SLOW: 70-140s per call on this host, so never call it in a loop. Returns a structured error with the start command when the service is down.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "state": { "type": "string", "description": "The text to classify: a message, a document, a case file" },
+                    "question": { "type": "string", "description": "What to decide about it, in plain language" },
+                    "criteria": {
+                        "type": "object",
+                        "description": "Options as {key: description} pairs. The model reads the descriptions, so they carry the meaning. Needs at least 2 and at most 10 entries. Send a bare object like {\"cards\": \"Reklamacje kart\"} — not {\"item\": [...] }.",
+                        "additionalProperties": { "type": "string" },
+                        "minProperties": 2,
+                        "maxProperties": 10
+                    },
+                    "type": { "type": "string", "enum": ["choice", "noul", "score"], "description": "choice (default), noul (yes/no) or score (ordinal 0..n-1)" },
+                    "threshold": { "type": "number", "description": "Confidence at or above which the caller may act unattended (default 0.93)" },
+                    "orders": { "type": "number", "description": "1 = one forward pass, faster but order-sensitive; 2 = averaged over both option orders, invariant to ordering" }
+                },
+                "required": ["state", "question", "criteria"]
             }),
         },
         ChatToolDefinition {
@@ -1792,6 +1881,164 @@ fn execute_native_tool(
                     &serde_json::to_string(&json).unwrap(),
                     None,
                     Some("memphis_self_modify"),
+                ),
+            ))
+        }
+        "memphis_classify" => {
+            let state = call
+                .arguments
+                .get("state")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    OperatorError::Message(
+                        "memphis_classify requires a non-empty state".to_string(),
+                    )
+                })?
+                .to_string();
+            let question = call
+                .arguments
+                .get("question")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    OperatorError::Message(
+                        "memphis_classify requires a non-empty question".to_string(),
+                    )
+                })?
+                .to_string();
+
+            let criteria = call
+                .arguments
+                .get("criteria")
+                .and_then(Value::as_object)
+                .ok_or_else(|| {
+                    OperatorError::Message(
+                        "memphis_classify requires criteria as a {key: description} object"
+                            .to_string(),
+                    )
+                })?;
+            let options: Vec<(String, String)> = criteria
+                .iter()
+                .filter_map(|(key, value)| {
+                    value
+                        .as_str()
+                        .map(|description| (key.clone(), description.to_string()))
+                })
+                .collect();
+            if options.len() < 2 {
+                return Err(OperatorError::Message(
+                    "memphis_classify requires at least two criteria options; one option carries no decision".to_string(),
+                ));
+            }
+            if options.len() > 10 {
+                return Err(OperatorError::Message(format!(
+                    "memphis_classify supports at most 10 options, got {}",
+                    options.len()
+                )));
+            }
+
+            let question_type = call
+                .arguments
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("choice")
+                .to_string();
+            if !matches!(question_type.as_str(), "choice" | "noul" | "score") {
+                return Err(OperatorError::Message(format!(
+                    "memphis_classify type must be choice, noul or score; got {question_type}"
+                )));
+            }
+            let threshold = call
+                .arguments
+                .get("threshold")
+                .and_then(Value::as_f64)
+                .map(|value| value.clamp(0.0, 1.0));
+            let orders = match value_usize(call.arguments.get("orders")) {
+                Some(1) => 1u64,
+                Some(other) if other >= 2 => 2u64,
+                Some(other) => {
+                    return Err(OperatorError::Message(format!(
+                        "memphis_classify orders must be 1 or 2; got {other}"
+                    )))
+                }
+                None => 2u64,
+            };
+
+            let url = std::env::var("MEMPHIS_BASAL_URL")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| BASAL_DEFAULT_URL.to_string());
+
+            let mut criteria_map = serde_json::Map::new();
+            for (key, description) in &options {
+                criteria_map.insert(key.clone(), Value::String(description.clone()));
+            }
+            let mut question_spec = json!({
+                "type": question_type,
+                "instructions": question,
+                "criteria": Value::Object(criteria_map),
+            });
+            if let Some(value) = threshold {
+                question_spec["threshold"] = json!(value);
+            }
+            let payload = json!({
+                "state": state,
+                "orders": orders,
+                "questions": { "k": question_spec },
+            });
+
+            // The model needs minutes on this host; the ceiling is here so a
+            // wedged service cannot hold a tool call open forever.
+            let response = ureq::post(&url)
+                .timeout(std::time::Duration::from_secs(BASAL_TIMEOUT_SECS))
+                .send_json(&payload)
+                .map_err(|error| {
+                    OperatorError::Message(format!(
+                        "memphis_classify: BASAL did not answer at {url}: {error}. \
+                         Start it with: systemctl --user start memphis-basal-td"
+                    ))
+                })?;
+
+            let body: Value = response.into_json().map_err(|error| {
+                OperatorError::Message(format!(
+                    "memphis_classify: BASAL reply is not JSON: {error}"
+                ))
+            })?;
+            let json = classify_reply_to_json(
+                &body,
+                &question_type,
+                &question,
+                &state,
+                threshold,
+                orders,
+            )?;
+            let confidence = json
+                .get("confidence")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0);
+            let effective_threshold = threshold.unwrap_or(BASAL_DEFAULT_THRESHOLD);
+            let latency_ms = json.get("latencyMs").and_then(Value::as_i64).unwrap_or(-1);
+            let choice = json
+                .get("choice")
+                .and_then(Value::as_str)
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "-".to_string());
+            Ok((
+                format!(
+                    "classify {choice} confidence={:.3} auto={} latencyMs={}",
+                    confidence,
+                    confidence >= effective_threshold,
+                    latency_ms
+                ),
+                build_wrapped_segment(
+                    "tool_output",
+                    &json.to_string(),
+                    None,
+                    Some("memphis_classify"),
                 ),
             ))
         }
@@ -2948,7 +3195,6 @@ fn run_soul_write(runtime: &OperatorRuntime, updates: Value) -> Result<Value, Op
         ));
     }
 
-
     let raw =
         serde_json::to_string(&updates).map_err(|error| OperatorError::Json(error.to_string()))?;
     if let Err((pattern_id, reason)) = scan_memory_content(raw.as_str()) {
@@ -3711,12 +3957,7 @@ fn soul_shape_conflict(target: &Value, patch: &Value) -> Option<String> {
         (Value::Object(_), patch_value) if is_soul_list_value(patch_value) => {
             let keys = patch_value
                 .as_object()
-                .map(|map| {
-                    map.keys()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                })
+                .map(|map| map.keys().cloned().collect::<Vec<_>>().join(", "))
                 .unwrap_or_default();
             Some(format!(
                 "soul_write: refusing to merge list into object field (patch has object keys [{keys}]); \
@@ -3746,10 +3987,7 @@ const SOUL_LIST_FIELDS: &[(&str, &[&str])] = &[
         "user",
         &["languages", "preferences", "expertise", "integrations"],
     ),
-    (
-        "self",
-        &["strengths", "learnings", "evolvedCapabilities"],
-    ),
+    ("self", &["strengths", "learnings", "evolvedCapabilities"]),
     ("context", &["recentDecisions"]),
 ];
 
@@ -4178,14 +4416,25 @@ mod tests {
     // reported `success: true` while destroying the file.
 
     fn write_soul_fixture(runtime: &OperatorRuntime, value: &Value) {
-        let path = runtime.config.data_dir.join("config").join("soul-memory.json");
+        let path = runtime
+            .config
+            .data_dir
+            .join("config")
+            .join("soul-memory.json");
         fs::create_dir_all(path.parent().expect("config dir")).expect("create config dir");
-        fs::write(&path, serde_json::to_vec_pretty(value).expect("serialize fixture"))
-            .expect("write fixture");
+        fs::write(
+            &path,
+            serde_json::to_vec_pretty(value).expect("serialize fixture"),
+        )
+        .expect("write fixture");
     }
 
     fn read_soul(runtime: &OperatorRuntime) -> Value {
-        let path = runtime.config.data_dir.join("config").join("soul-memory.json");
+        let path = runtime
+            .config
+            .data_dir
+            .join("config")
+            .join("soul-memory.json");
         load_json_file(&path).expect("soul-memory.json must stay valid JSON")
     }
 
@@ -4265,7 +4514,10 @@ mod tests {
                     || message.contains("refusing to merge object into list field")),
             "error must name the offending field, got: {message}"
         );
-        assert_eq!(read_soul(&runtime)["user"]["preferences"], json!(["original"]));
+        assert_eq!(
+            read_soul(&runtime)["user"]["preferences"],
+            json!(["original"])
+        );
 
         // Mirror arm: an ALREADY-CORRUPT object in a list field must not be
         // silently clobbered by a legitimate array patch either -- refuse and
@@ -4283,11 +4535,8 @@ mod tests {
             }),
         );
 
-        let error = run_soul_write(
-            &runtime2,
-            json!({ "user": { "preferences": ["legit"] } }),
-        )
-        .expect_err("array patch into a corrupt object field must be refused");
+        let error = run_soul_write(&runtime2, json!({ "user": { "preferences": ["legit"] } }))
+            .expect_err("array patch into a corrupt object field must be refused");
 
         let message = error.to_string();
         assert!(
@@ -4332,7 +4581,9 @@ mod tests {
             "error must name the offending field, got: {message}"
         );
         assert!(
-            read_soul(&runtime).get("context").is_some_and(|c| c.get("activeWork").is_none()),
+            read_soul(&runtime)
+                .get("context")
+                .is_some_and(|c| c.get("activeWork").is_none()),
             "activeWork must not be written as null"
         );
     }
@@ -4358,9 +4609,8 @@ mod tests {
             "got: {section_error}"
         );
 
-        let field_error =
-            run_soul_write(&runtime, json!({ "self": { "notAField": "x" } }))
-                .expect_err("unknown field must be refused");
+        let field_error = run_soul_write(&runtime, json!({ "self": { "notAField": "x" } }))
+            .expect_err("unknown field must be refused");
         assert!(
             field_error.to_string().contains("self.notAField"),
             "got: {field_error}"
@@ -4434,7 +4684,7 @@ mod tests {
         let path = root.join("config").join("soul-memory.json");
         fs::create_dir_all(path.parent().expect("config dir")).expect("create config dir");
         // Truncated JSON -- the shape a half-finished write leaves behind.
-        fs::write(&path, b"{\"self\": {\"strengths\": [\"a\", \"b\"") .expect("write corrupt file");
+        fs::write(&path, b"{\"self\": {\"strengths\": [\"a\", \"b\"").expect("write corrupt file");
 
         let error = run_soul_write(
             &runtime,
@@ -4490,10 +4740,18 @@ mod tests {
             .expect("scalar overwrite must succeed");
 
         let after = read_soul(&runtime);
-        assert_eq!(after["user"]["preferences"], json!(["a", "c"]), "dedupe append");
+        assert_eq!(
+            after["user"]["preferences"],
+            json!(["a", "c"]),
+            "dedupe append"
+        );
         assert_eq!(after["self"]["strengths"], json!(["b", "d"]));
         assert_eq!(after["context"]["recentDecisions"], json!(["decision one"]));
-        assert_eq!(after["context"]["activeWork"], json!("new"), "scalar overwrite");
+        assert_eq!(
+            after["context"]["activeWork"],
+            json!("new"),
+            "scalar overwrite"
+        );
     }
 
     #[test]
@@ -4600,8 +4858,9 @@ mod tests {
     /// is not an array.
     fn undescribed_shape_nodes(node: &Value, path: &str, found: &mut Vec<String>) {
         match node.get("type").and_then(Value::as_str) {
-            Some("array") if node.get("items").is_none() => found
-                .push(format!("{path}: array without items")),
+            Some("array") if node.get("items").is_none() => {
+                found.push(format!("{path}: array without items"))
+            }
             Some("object")
                 if node.get("properties").is_none()
                     && node.get("additionalProperties").is_none()
@@ -4966,6 +5225,269 @@ mod tests {
             execute_native_tool(&runtime, &verify, 2).expect("verify directory chain");
         assert!(verify_output.contains("\"ok\":true"));
         assert!(verify_output.contains("\"blockCount\":1"));
+    }
+
+    /// BASAL answers over HTTP, so the validation paths are the part worth
+    /// testing: they must fail before a request is sent. The happy path is
+    /// covered against the live service in the manual probe, not here, because
+    /// a test that calls a 3.2 GB model is a test that cannot run in CI.
+    fn classify_call(arguments: Value) -> ChatToolCall {
+        ChatToolCall {
+            id: "classify-call".to_string(),
+            name: "memphis_classify".to_string(),
+            arguments,
+        }
+    }
+
+    #[test]
+    fn classify_is_registered_and_tiered_as_a_network_tool() {
+        let tools = native_tool_definitions();
+        let tool = tools
+            .iter()
+            .find(|tool| tool.name == "memphis_classify")
+            .expect("memphis_classify must be offered to the model");
+        let schema = &tool.input_schema;
+        assert_eq!(schema.get("type").and_then(Value::as_str), Some("object"));
+        // Every declared array needs its item type, and every object needs
+        // its properties — a schema that describes nothing is what made the
+        // model guess `{"item": [...]}` back in decision #322.
+        assert!(schema
+            .get("properties")
+            .and_then(Value::as_object)
+            .is_some_and(|properties| !properties.is_empty()));
+        let criteria = schema
+            .get("properties")
+            .and_then(|properties| properties.get("criteria"))
+            .expect("criteria must be described");
+        assert_eq!(criteria.get("type").and_then(Value::as_str), Some("object"));
+        assert!(
+            criteria
+                .get("additionalProperties")
+                .and_then(Value::as_object)
+                .is_some(),
+            "criteria must declare the shape of its values"
+        );
+        // Tier 2: it reaches the network, so it is not free to call.
+        assert_eq!(tool_tier("memphis_classify"), 2);
+    }
+
+    #[test]
+    fn classify_rejects_calls_that_carry_no_decision() {
+        let root = temp_runtime_root("classify-invalid");
+        let runtime = runtime_for(root.as_path());
+
+        // No request may leave the process for any of these, so an endpoint
+        // that would hang is safe to point at: if the guard is missing, the
+        // test still fails, just slower.
+        unsafe { std::env::set_var("MEMPHIS_BASAL_URL", "http://127.0.0.1:9/v1/systemone") };
+
+        let cases: Vec<(&str, Value, &str)> = vec![
+            (
+                "empty state",
+                json!({ "question": "which one?", "criteria": {"a": "A", "b": "B"} }),
+                "non-empty state",
+            ),
+            (
+                "missing question",
+                json!({ "state": "text", "criteria": {"a": "A", "b": "B"} }),
+                "non-empty question",
+            ),
+            (
+                "one option carries no decision",
+                json!({ "state": "text", "question": "which one?", "criteria": {"a": "A"} }),
+                "at least two criteria options",
+            ),
+            (
+                "criteria as an array is not accepted here",
+                json!({ "state": "text", "question": "which one?", "criteria": ["A", "B"] }),
+                "criteria as a {key: description} object",
+            ),
+            (
+                "unknown question type",
+                json!({
+                    "state": "text",
+                    "question": "which one?",
+                    "criteria": {"a": "A", "b": "B"},
+                    "type": "ranking"
+                }),
+                "must be choice, noul or score",
+            ),
+            (
+                "orders outside 1..2",
+                json!({
+                    "state": "text",
+                    "question": "which one?",
+                    "criteria": {"a": "A", "b": "B"},
+                    "orders": 0
+                }),
+                "orders must be 1 or 2",
+            ),
+        ];
+
+        for (label, arguments, expected) in cases {
+            let error = execute_native_tool(&runtime, &classify_call(arguments), 2)
+                .expect_err(&format!("{label} must be rejected"))
+                .to_string();
+            assert!(
+                error.contains(expected),
+                "{label}: expected {expected:?} in {error:?}"
+            );
+        }
+        unsafe { std::env::remove_var("MEMPHIS_BASAL_URL") };
+    }
+
+    #[test]
+    fn classify_reports_an_unreachable_service_with_a_start_command() {
+        let root = temp_runtime_root("classify-down");
+        let runtime = runtime_for(root.as_path());
+        // Port 9 (discard) is closed here, so this exercises the down path
+        // without depending on whether the operator left BASAL running.
+        unsafe { std::env::set_var("MEMPHIS_BASAL_URL", "http://127.0.0.1:9/v1/systemone") };
+
+        let call = classify_call(json!({
+            "state": "some text",
+            "question": "which one?",
+            "criteria": {"a": "A", "b": "B"},
+            "orders": 1
+        }));
+        let error = execute_native_tool(&runtime, &call, 2)
+            .expect_err("closed port must not look like success")
+            .to_string();
+
+        assert!(
+            error.contains("memphis_classify"),
+            "error must name the tool: {error}"
+        );
+        assert!(
+            error.contains("memphis-basal-td"),
+            "the down path must carry the start command: {error}"
+        );
+        unsafe { std::env::remove_var("MEMPHIS_BASAL_URL") };
+    }
+
+    /// A reply recorded from the live service, shaped like the real one.
+    fn recorded_basal_reply(choice: &str, confidence: f64) -> Value {
+        json!({
+            "model": "basal-1.0-1.5B",
+            "answers": { "k": {
+                "type": "choice",
+                "choice": choice,
+                "probabilities": { "a": confidence, "b": (1.0 - confidence) / 1.0 },
+                "confidence": confidence
+            }},
+            "usage": { "questions": 1, "output_tokens": 0, "latency_ms": 68201, "device": "cpu" }
+        })
+    }
+
+    #[test]
+    fn classify_marks_auto_only_when_confidence_clears_the_threshold() {
+        // 0.981 is what the live service actually returned for a clear
+        // billing message; 0.670 is what it returned for an ambiguous one.
+        let confident = classify_reply_to_json(
+            &recorded_basal_reply("ksiegowosc", 0.981),
+            "choice",
+            "Ktora klasa sprawy?",
+            "faktura ma blad",
+            None,
+            1,
+        )
+        .expect("parse confident reply");
+        assert_eq!(
+            confident.get("choice").and_then(Value::as_str),
+            Some("ksiegowosc")
+        );
+        assert_eq!(confident.get("auto").and_then(Value::as_bool), Some(true));
+        assert_eq!(
+            confident.get("threshold").and_then(Value::as_f64),
+            Some(0.93)
+        );
+
+        let ambiguous = classify_reply_to_json(
+            &recorded_basal_reply("cards", 0.670),
+            "choice",
+            "Ktora klasa sprawy?",
+            "mam pytanie",
+            None,
+            1,
+        )
+        .expect("parse ambiguous reply");
+        assert_eq!(ambiguous.get("auto").and_then(Value::as_bool), Some(false));
+    }
+
+    #[test]
+    fn classify_honors_a_caller_supplied_threshold() {
+        // The same 0.670 reply: escalate at the default, act at 0.5. This is
+        // the whole point of the confidence being calibrated.
+        let body = recorded_basal_reply("cards", 0.670);
+        let strict =
+            classify_reply_to_json(&body, "choice", "q", "s", None, 1).expect("parse at default");
+        let lenient =
+            classify_reply_to_json(&body, "choice", "q", "s", Some(0.5), 1).expect("parse at 0.5");
+        assert_eq!(strict.get("auto").and_then(Value::as_bool), Some(false));
+        assert_eq!(lenient.get("auto").and_then(Value::as_bool), Some(true));
+        assert_eq!(lenient.get("threshold").and_then(Value::as_f64), Some(0.5));
+    }
+
+    #[test]
+    fn classify_surfaces_a_service_error_instead_of_a_confident_answer() {
+        // A model still loading must never read as a low-confidence answer.
+        let error = classify_reply_to_json(
+            &json!({ "ok": false, "error": "loading" }),
+            "choice",
+            "q",
+            "s",
+            None,
+            1,
+        )
+        .expect_err("loading must be an error");
+        assert!(error.to_string().contains("still loading"), "{error}");
+
+        let missing = classify_reply_to_json(&json!({ "ok": true }), "choice", "q", "s", None, 1)
+            .expect_err("a reply with no answer must be an error");
+        assert!(missing.to_string().contains("no answer"), "{missing}");
+    }
+
+    /// Live probe against the running BASAL service. `#[ignore]`d because it
+    /// needs the model resident (~310 MB, minutes per call) and a free port
+    /// 8000 — a test that cannot run in CI belongs outside CI. Run it with:
+    ///   cargo test -p memphis-operator classify_against_live_service -- --ignored
+    /// The recorded replies in the tests above came from this probe.
+    #[test]
+    #[ignore = "needs a running BASAL service on 127.0.0.1:8000"]
+    fn classify_against_live_service() {
+        let root = temp_runtime_root("classify-live");
+        let runtime = runtime_for(root.as_path());
+        let call = classify_call(json!({
+            "state": "Klient pisze: faktura za wrzesien ma blad w kwocie, prosze o korekte.",
+            "question": "Ktora klasa sprawy?",
+            "criteria": {
+                "ksiegowosc": "Faktury, platnosci, rozliczenia",
+                "tech": "Awaria sprzetu lub oprogramowania",
+                "sprzedaz": "Zamowienie, zmiana oferty"
+            },
+            "type": "choice",
+            "orders": 1
+        }));
+        let (summary, output) =
+            execute_native_tool(&runtime, &call, 2).expect("classify against live BASAL");
+        println!("{summary}");
+        println!("{output}");
+    }
+
+    #[test]
+    fn classify_is_refused_above_the_surface_tier() {
+        let root = temp_runtime_root("classify-tier");
+        let runtime = runtime_for(root.as_path());
+        let call = classify_call(json!({
+            "state": "some text",
+            "question": "which one?",
+            "criteria": {"a": "A", "b": "B"}
+        }));
+
+        let error = execute_native_tool(&runtime, &call, 0)
+            .expect_err("tier 0 surface must not reach a network tool")
+            .to_string();
+        assert!(error.contains("requires tier 2"), "unexpected: {error}");
     }
 
     #[test]
