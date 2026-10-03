@@ -25,6 +25,56 @@ export type { ToolCapability, ToolCliFlag, ToolMeta, ToolTier } from './tool-met
 
 export const TOOL_REGISTRY: Record<string, ToolMeta> = {
   memphis_journal: JOURNAL_TOOL,
+  memphis_classify: {
+    name: 'memphis_classify',
+    tier: 2,
+    capabilities: ['read', 'network'],
+    description:
+      "Typed decision over a state via the local BASAL-1.0 service. Reads `state` and answers a typed question about it — choice, yes/no, or score — returning a calibrated probability per option, never free text. Options are described in `criteria`, so one model serves many taxonomies without retraining. The point is `auto`: true when `confidence` clears `threshold` (default 0.93, the model's own calibration for ~1% error), false when a human should look. Latency on the operator's GPU-less host is 70-140s per call, so this is not for interactive loops. Requires the BASAL service; returns a structured error with a start command when it is down.",
+    inputSchema: z
+      .object({
+        state: z.string().min(1).max(32_000),
+        question: z.string().min(1).max(2_000),
+        criteria: z.union([z.record(z.string(), z.string()), z.array(z.string()).min(2).max(10)]),
+        type: z.enum(['choice', 'noul', 'score']).optional(),
+        threshold: z.number().min(0).max(1).optional(),
+        orders: z.union([z.literal(1), z.literal(2)]).optional(),
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+    helpText:
+      "Pick between described options and get a calibrated confidence. `criteria` maps keys to descriptions so results are readable (`{'cards': 'Reklamacje kart'}`). Check `auto` before acting unattended; `auto: false` means escalate. `orders: 1` halves the latency but is sensitive to the order the options are listed in.",
+    cliFlags: [
+      {
+        name: '--state',
+        description: 'Text to classify: a message, a document, a case file.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--question',
+        description: 'What to decide about it, in plain language.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--criteria',
+        description: 'Options as JSON: {key: description} pairs, or an array of labels.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--type',
+        description: 'choice (default), noul (yes/no) or score (ordinal 0..n-1).',
+        takesValue: true,
+      },
+      {
+        name: '--threshold',
+        description: 'Confidence at or above which the caller may act unattended (default 0.93).',
+        takesValue: true,
+      },
+    ],
+  },
   memphis_kartograf: {
     name: 'memphis_kartograf',
     tier: 1,

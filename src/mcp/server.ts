@@ -17,6 +17,7 @@ import {
 } from './tools/case-entry.js';
 import { runMemphisChainQuery } from './tools/chain-query.js';
 import { runMemphisChainVerify } from './tools/chain-verify.js';
+import { runMemphisClassify } from './tools/classify.js';
 import { runMemphisCodeRead } from './tools/code-read.js';
 // Skeleton: memphis_commit_culture is intentionally NOT imported here until
 // tests + audit hook land (see docs/dev/commit-culture-interface.md).
@@ -416,6 +417,39 @@ export function createMemphisMcpServer(
           };
         },
       ),
+    );
+  }
+
+  const classifyPolicy = getToolPolicy(permissions, 'memphis_classify', resolvedManifest);
+  if (shouldRegisterTool('memphis_classify', classifyPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_classify',
+      {
+        description: getToolDescription('memphis_classify'),
+        inputSchema: {
+          state: z.string().min(1).max(32_000),
+          question: z.string().min(1).max(2_000),
+          criteria: z.union([z.record(z.string(), z.string()), z.array(z.string()).min(2).max(10)]),
+          type: z.enum(['choice', 'noul', 'score']).optional(),
+          threshold: z.number().min(0).max(1).optional(),
+          orders: z.union([z.literal(1), z.literal(2)]).optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_classify', classifyPolicy, approvals, async (args) => {
+        const result = await runMemphisClassify({
+          state: requiredStringArg(args, 'state'),
+          question: requiredStringArg(args, 'question'),
+          criteria: (args as { criteria?: Record<string, string> | string[] }).criteria ?? {},
+          ...(args.type !== undefined ? { type: args.type as 'choice' | 'noul' | 'score' } : {}),
+          ...(typeof args.threshold === 'number' ? { threshold: args.threshold } : {}),
+          ...(args.orders !== undefined ? { orders: args.orders as 1 | 2 } : {}),
+        });
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result as unknown as Record<string, unknown>,
+        };
+      }),
     );
   }
 
