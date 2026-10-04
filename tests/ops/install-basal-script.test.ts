@@ -202,3 +202,42 @@ describe('the gguf fast path is a declared part of the install, not a local acci
     expect(source).not.toMatch(/OllamaBackend/);
   });
 });
+
+describe('model switching is measured, not assumed', () => {
+  const switchScript = readFileSync(join(repoRoot, 'scripts', 'basal', 'switch-model.sh'), 'utf8');
+
+  it('takes the gguf repo the author actually published', () => {
+    // The bug this covers: the script defaulted to pawelkiszczak/basal-1.0-*
+    // -GGUF (the 1.0 quantisations). The 1.5 gguf exports live under Remek,
+    // named <model>-GGUF, so every download attempt would 404.
+    expect(switchScript).toContain('REPO="Remek"');
+    expect(switchScript).toContain('-GGUF');
+    expect(switchScript).not.toContain('REPO="pawelkiszczak"');
+  });
+
+  it('probes more than one question before touching the service', () => {
+    // A single question tells you nothing about whether the calibrated
+    // thresholds still hold, which is the entire reason to measure. The
+    // old revision probed once and printed one number.
+    expect(switchScript).toContain('CASES = [');
+    expect(switchScript).toContain('0.93');
+    expect(switchScript).toContain('0.74');
+  });
+
+  it('overrides the model through a systemd drop-in, not the unit file', () => {
+    // The bug this covers: sed on the unit file changes nothing, because
+    // Environment= overrides are not in the unit. A stale 20-model.conf
+    // with BASAL_MODEL=/test/model is what took the service down on
+    // 2026-10-04 21:32, and a sed-based fix would not have replaced it.
+    expect(switchScript).toContain('$UNIT.d/20-model.conf');
+    expect(switchScript).toContain('daemon-reload');
+  });
+
+  it('refuses to continue when the service does not come back ready', () => {
+    // A restart that leaves the port dead must not be reported as done.
+    // raise SystemExit inside the python that reads /health, and the
+    // pipeline must propagate it: `|| exit 1`, not a bare report.
+    expect(switchScript).toMatch(/SystemExit\(0 if d\.get\('ready'\) else/);
+    expect(switchScript).toMatch(/\|\| exit 1/);
+  });
+});
