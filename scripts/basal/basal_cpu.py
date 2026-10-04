@@ -6,6 +6,23 @@ This host has a GTX 960 (compute_cap 5.2) which torch no longer ships
 kernels for, so the server falls back to EagerBackend + bfloat16 on CPU.
 Correct but slow — see /v1/systemone for per-request latency.
 
+Backends (BASAL_BACKEND=gguf|torch, default auto):
+  torch — EagerBackend, bfloat16, the original safetensors weights.
+  gguf  — llama.cpp Q8_0, same weights quantised, full-vocabulary logits.
+Measured on this host, one question, four options, orders=1:
+  torch  99 s   (0.954 Wrzesień 2026)
+  gguf   19 s   (0.879 Wrzesień 2026)
+Same answer, 5.2x faster, identical across repeated runs. "auto" prefers gguf
+when the file is there and silently falls back to torch when it is not or
+does not load, so a partial install still serves.
+
+NOT the upstream `ollama` mode: Ollama caps top_logprobs at 20 and this
+model puts the rejected option letters below that, so a legitimate answer
+comes back incomplete. `format: gguf` in /api/show is also always true on
+Ollama >= 0.23 because it converts safetensors to GGUF on import, which
+defeats upstream's own safetensors check. gguf via llama.cpp has neither
+limit and returns the complete distribution.
+
 Categories are defined per request, not trained in. Confidence comes
 from the model's own calibrated distribution.
 
@@ -30,6 +47,13 @@ MODEL = os.environ.get(
 )
 PORT = int(os.environ.get("BASAL_PORT", "8000"))
 DTYPE = os.environ.get("BASAL_DTYPE", "bfloat16")
+# The HF snapshot directory holds the tokenizer, config and CALIBRATION.json
+# that gguf mode still needs; only the weights come from the .gguf file.
+BASAL_HOME = os.path.dirname(os.path.abspath(__file__))
+GGUF = os.environ.get("BASAL_GGUF", os.path.join(BASAL_HOME, "models", "gguf", "basal-1.0-1.5B-Q8_0.gguf"))
+BACKEND = os.environ.get("BASAL_BACKEND", "auto").lower()
+THREADS = int(os.environ.get("BASAL_THREADS", "3"))
+CTX = int(os.environ.get("BASAL_CTX", "2048"))
 
 app = FastAPI()
 _state = {}
@@ -38,16 +62,78 @@ CAL = {}
 _temps = {}
 
 
+class GgufBackend:
+    """llama.cpp on the same checkpoint, quantised to Q8_0.
+
+    Exposes the same surface _decide() uses: a tokenizer and a run()
+    that maps prompts + letter token ids to per-prompt probabilities.
+    llama.cpp exposes the full logit row, so every option letter is
+    readable even when the model is very confident and the rejected
+    letters fall outside any top-k list.
+    """
+
+    def __init__(self, model_dir, gguf_path, n_threads=None, n_ctx=None):
+        from llama_cpp import Llama
+        from transformers import AutoTokenizer
+
+        self.tok = AutoTokenizer.from_pretrained(model_dir)
+        self.llm = Llama(
+            model_path=gguf_path,
+            n_ctx=n_ctx or CTX,
+            n_threads=n_threads or THREADS,
+            logits_all=True,
+            verbose=False,
+        )
+        self.dev = "cpu"
+        self.gguf = gguf_path
+
+    def run(self, prompts, ids_list):
+        import math
+
+        out = []
+        for prompt, ids in zip(prompts, ids_list):
+            toks = self.llm.tokenize(prompt.encode())
+            self.llm.reset()
+            self.llm.eval(toks)
+            row = self.llm.scores[self.llm.n_tokens - 1]
+            # scores are raw logits, so normalise across the option
+            # letters only — the same softmax over the letter logits the
+            # torch path takes.
+            lps = []
+            for i in ids:
+                v = row[i]
+                if v is None:
+                    raise ValueError("option letter has no logit in the gguf vocabulary")
+                lps.append(float(v))
+            m = max(lps)
+            ex = [math.exp(v - m) for v in lps]
+            s = sum(ex) or 1.0
+            out.append([v / s for v in ex])
+        return out
+
+
 def _load():
     t0 = time.time()
-    eng = EagerBackend(MODEL, dtype=DTYPE, device="cpu")
+    want = BACKEND
+    if want == "auto":
+        want = "gguf" if os.path.exists(GGUF) else "torch"
+    eng = None
+    if want == "gguf":
+        try:
+            eng = GgufBackend(MODEL, GGUF)
+        except Exception as exc:  # noqa: BLE001 - any failure must degrade, not kill the server
+            print(f"[basal] gguf backend unavailable ({exc}); falling back to torch", flush=True)
+            eng = None
+    if eng is None:
+        eng = EagerBackend(MODEL, dtype=DTYPE, device="cpu")
     cal_path = os.path.join(MODEL, "CALIBRATION.json")
     if os.path.exists(cal_path):
         with open(cal_path) as f:
             CAL.update(json.load(f))
         _temps.update(CAL.get("temperature_per_prim", {}))
     _state["eng"] = eng
-    print(f"[basal] model={MODEL.split('/')[-1]} dtype={DTYPE} device=cpu "
+    kind = "gguf" if isinstance(eng, GgufBackend) else "torch"
+    print(f"[basal] model={MODEL.split('/')[-1]} backend={kind} dtype={DTYPE} device=cpu "
           f"threads={torch.get_num_threads()} loaded in {time.time()-t0:.1f}s", flush=True)
 
 
@@ -105,8 +191,10 @@ def _decide(eng, state, question, options, orders=2, lang=None, qtype="choice"):
 
 @app.get("/health")
 def health():
-    ready = "eng" in _state
+    eng = _state.get("eng")
+    ready = eng is not None
     return {"ok": True, "ready": ready, "model": "basal-1.0-1.5B",
+            "backend": "gguf" if isinstance(eng, GgufBackend) else ("torch" if ready else "none"),
             "device": "cpu", "dtype": DTYPE, "temperatures": _temps,
             "thresholds": CAL.get("thresholds", {})}
 
@@ -147,6 +235,7 @@ async def systemone(req: Request):
                              "probabilities": pm, "confidence": max(probs)}
     return {"model": "basal-1.0-1.5B", "answers": answers,
             "usage": {"questions": len(questions), "output_tokens": 0,
+                      "backend": "gguf" if isinstance(eng, GgufBackend) else "torch",
                       "latency_ms": int((time.time() - t0) * 1000), "device": "cpu"}}
 
 
