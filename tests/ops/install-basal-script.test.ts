@@ -147,3 +147,58 @@ describe('scripts/install-basal.sh places the server script in a clean install r
     expect(result.stdout).toBe('');
   });
 });
+
+describe('the gguf fast path is a declared part of the install, not a local accident', () => {
+  const installer = readFileSync(join(repoRoot, 'scripts', 'install-basal.sh'), 'utf8');
+
+  it('installs llama-cpp-python and the Q8_0 weights a clean host needs', () => {
+    // The bug this covers: basal_cpu.py gained a gguf backend that is 5x
+    // faster on this host, but the installer never fetched llama-cpp-python
+    // or the .gguf file, so a clean install silently ran the 99s torch path
+    // while the operator's own machine looked 5x faster than the docs.
+    expect(installer).toContain('llama-cpp-python');
+    expect(installer).toContain('basal-1.0-1.5B-Q8_0.gguf');
+  });
+
+  it('keeps the gguf path optional so a host with a usable GPU is not charged for it', () => {
+    // llama-cpp-python is a ~8 min CPU build plus ~1.6 GB. A host that
+    // cannot use the backend (no supported GPU is exactly our case, but a
+    // working GPU is not) must be able to opt out and still install.
+    expect(installer).toContain('MEMPHIS_BASAL_GGUF:-1');
+    expect(installer).toContain('MEMPHIS_BASAL_GGUF=0');
+  });
+
+  it('the server falls back to torch when the gguf file is absent', () => {
+    // A missing .gguf must degrade, never crash: the whole point of the
+    // fallback is that a partial install still serves.
+    const source = readFileSync(serverSource, 'utf8');
+    expect(source).toContain('falling back to torch');
+    expect(source).toMatch(/except Exception/);
+  });
+
+  it('reports the active backend in /health so the fast path is observable', () => {
+    // "It got faster" is a claim; without a field in /health nobody can
+    // tell which backend answered a request. Scoped to the health handler
+    // on purpose: a bare toContain('"backend"') also matches the usage
+    // block of /v1/systemone, and deleting the /health field left every
+    // test green (verified by mutation).
+    const source = readFileSync(serverSource, 'utf8');
+    const health = source.slice(
+      source.indexOf('@app.get("/health")'),
+      source.indexOf('@app.post("/v1/systemone")'),
+    );
+    expect(health).toContain('GgufBackend');
+    expect(health).toMatch(/"backend"/);
+  });
+
+  it('does not route through the upstream ollama mode', () => {
+    // Measured: Ollama caps top_logprobs at 20 and this model puts the
+    // rejected option letters below that, so a valid answer comes back
+    // incomplete. Its safetensors check is also unreachable because Ollama
+    // >= 0.23 reports format=gguf after converting on import. gguf via
+    // llama.cpp has neither problem, so the server must not import it.
+    const source = readFileSync(serverSource, 'utf8');
+    expect(source).not.toMatch(/from basal\.ollama/);
+    expect(source).not.toMatch(/OllamaBackend/);
+  });
+});

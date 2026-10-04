@@ -42,6 +42,9 @@ UNIT="memphis-basal-td.service"
 PYTHON_VERSION="${MEMPHIS_BASAL_PYTHON:-3.12}"
 MODEL_REPO="${MEMPHIS_BASAL_MODEL:-Remek/basal-1.0-1.5B}"
 BASAL_VERSION="${MEMPHIS_BASAL_VERSION:-v1.0.1}"
+GGUF_REPO="${MEMPHIS_BASAL_GGUF_REPO:-pawelkiszczak/basal-1.0-1.5B-GGUF}"
+GGUF_NAME="${MEMPHIS_BASAL_GGUF_NAME:-basal-1.0-1.5B-Q8_0.gguf}"
+GGUF_FILE="${MEMPHIS_BASAL_GGUF:-$BASAL_DIR/models/gguf/$GGUF_NAME}"
 FORCE=0
 ENABLE_SERVICE=0
 
@@ -243,3 +246,38 @@ printf 'memphis_classify is registered but not required. With the server\n'
 printf 'down it returns a structured "unreachable" error plus the start\n'
 printf 'command. Latency on this host is ~70-140 s per decision.\n'
 printf '────────────────────────────────────────────────────────────\n'
+
+# ── 4b. Q8_0 GGUF weights (llama.cpp backend) ───────────────────────────
+# The torch path on this host is correct but slow: measured 99 s for one
+# four-option question (orders=1) and ~198 s at orders=2, versus 19 s and
+# 38 s for the same question through llama.cpp on the same checkpoint
+# quantised to Q8_0. llama.cpp also returns the full logit row, so an
+# option letter the model is very sure about is never lost to a top-k cap.
+#
+# Optional on purpose: the server falls back to the torch backend when the
+# file is missing, and BASAL_BACKEND=torch forces that path. A host with a
+# supported GPU should not pay the extra ~1.6 GB and the ~8 min CPU build
+# of llama-cpp-python for a backend it cannot use.
+if [[ "${MEMPHIS_BASAL_GGUF:-1}" != "0" ]]; then
+  if "$VENV/bin/python" -c "import llama_cpp" >/dev/null 2>&1; then
+    log "llama-cpp-python present"
+  else
+    log "building llama-cpp-python (CPU wheel, this takes several minutes)"
+    uv pip install --python "$VENV/bin/python" llama-cpp-python >/dev/null 2>&1 \
+      || log "llama-cpp-python build failed — BASAL will fall back to the torch backend"
+  fi
+  if [[ ! -f "$GGUF_FILE" ]]; then
+    log "downloading $GGUF_REPO/$GGUF_NAME (~1.6 GB)"
+    "$VENV/bin/python" -c "
+from huggingface_hub import hf_hub_download
+import shutil, os
+p = hf_hub_download('$GGUF_REPO', '$GGUF_NAME')
+os.makedirs(os.path.dirname('$GGUF_FILE'), exist_ok=True)
+shutil.copy(p, '$GGUF_FILE')
+" >/dev/null 2>&1 || log "GGUF download failed — BASAL will fall back to the torch backend"
+  else
+    log "GGUF weights present"
+  fi
+else
+  log "GGUF backend skipped (MEMPHIS_BASAL_GGUF=0) — torch backend only"
+fi
