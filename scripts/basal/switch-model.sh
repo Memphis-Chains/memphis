@@ -62,16 +62,22 @@ log() { printf '[basal-switch] %s\n' "$*"; }
 die() { printf '[basal-switch] ERROR: %s\n' "$*" >&2; exit 1; }
 
 # ── 1. tokenizer / config / CALIBRATION.json (wagi są w kroku 2) ──────
-if [[ -d "$model_dir" ]]; then
+# snapshot_download ląduje w cache HF jako models--<org>--<name>/snapshots/<sha>,
+# a NIE we wskazanej ścieżce. Pierwsza wersja tego skryptu sprawdzała
+# $model_dir zaraz po pobraniu, więc CALIBRATION.json nigdy się nie pojawiał
+# i skrypt kończył się "brak CALIBRATION.json" na czystym modelu.
+if [[ -f "$model_dir/CALIBRATION.json" ]]; then
   log "katalog modelu już jest: $model_dir"
 else
-  log "pobieram metadane modelu $HF_MODEL"
-  "$VENV" -c "
+  log "pobieram metadane modelu $HF_MODEL (do cache HF)"
+  snap=$("$VENV" -c "
 from huggingface_hub import snapshot_download
 print(snapshot_download('$HF_MODEL', allow_patterns=['*.json', '*.jinja', '*.txt', '*.md']))
-" || die "pobieranie metadanych $HF_MODEL nie powiodło się"
+") || die "pobieranie metadanych $HF_MODEL nie powiodło się"
+  model_dir="$snap"
+  log "model_dir = $model_dir"
 fi
-[[ -f "$model_dir/CALIBRATION.json" ]] || die "brak CALIBRATION.json w $model_dir"
+[[ -f "$model_dir/CALIBRATION.json" ]] || die "brak CALIBRATION.json w $model_dir (snapshot: $model_dir)"
 log "CALIBRATION.json z nowego wydania: temperatury $(python3 -c "
 import json;d=json.load(open('$model_dir/CALIBRATION.json'));print(d.get('temperature_per_prim',{}))
 " 2>/dev/null)"
