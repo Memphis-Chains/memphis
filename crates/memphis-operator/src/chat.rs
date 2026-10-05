@@ -647,13 +647,77 @@ fn contains_sensitive_stream_marker(value: &str) -> bool {
 ///   0 = safe read/write memory tools (no auth required)
 ///   1 = network or filesystem read (API token or consent)
 ///   2 = execute / self-modify (vault passphrase required)
-/// Default endpoint of the local BASAL-1.0 typed-decision service.
+/// Default endpoint of the local BASAL typed-decision service.
 const BASAL_DEFAULT_URL: &str = "http://127.0.0.1:8000/v1/systemone";
-/// The model's own calibration point for ~1% error, from CALIBRATION.json.
+/// Endpoint that reports the loaded model's own calibration points.
+const BASAL_HEALTH_URL: &str = "http://127.0.0.1:8000/health";
+/// Fallback confidence when the service cannot be asked for its own
+/// threshold. 0.93 is the ~1%-error point of basal-1.0, which is where
+/// this constant came from; it is a floor for an unreachable service,
+/// NOT a claim about whichever model happens to be loaded — see
+/// `basal_threshold_from_service`.
 const BASAL_DEFAULT_THRESHOLD: f64 = 0.93;
 /// Ceiling for one call. The model needs 70-140s on this host; the bound
 /// exists so a wedged service cannot hold a tool call open forever.
 const BASAL_TIMEOUT_SECS: u64 = 300;
+
+/// The calibration point the loaded model actually ships, cached after the
+/// first successful read.
+///
+/// The threshold is not a property of BASAL, it is a property of the
+/// weights: basal-1.0-1.5B calibrates at 0.930/0.742 and basal-1.5-mini at
+/// 0.955/0.763 (both measured, `/health` of the same service). A hardcoded
+/// 0.93 therefore means "1% error" on one release and "less than 1%" on the
+/// next — and after the model was switched, the 1.5-mini run that scored
+/// 0.9957 and 0.9706 was called AUTO at 0.93 while the model's own 1%-error
+/// point says 0.955, so `auto` claimed more confidence than the calibration
+/// supports.
+///
+/// Cached because `classify_input` runs on every operator message: a /health
+/// probe per message would double the local HTTP traffic for a number that
+/// changes only when the model is swapped. `OnceLock` gives a lock-free
+/// read on the hot path. The cache is per-process and never invalidated —
+/// a restarted TUI re-reads, which is exactly when a model swap happens
+/// (the service is restarted by systemd, the TUI generally is not).
+fn basal_threshold_from_service() -> f64 {
+    static CACHE: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    *CACHE.get_or_init(|| {
+        // Same env override as the decision call, so pointing
+        // MEMPHIS_BASAL_URL at another service moves the threshold read
+        // with it. Deriving from the systemone URL keeps the two in step
+        // instead of leaving a hardcoded localhost behind.
+        let base = std::env::var("MEMPHIS_BASAL_URL")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| BASAL_DEFAULT_URL.to_string());
+        let health = match base.split("/v1/").next() {
+            Some(prefix) if !prefix.is_empty() => format!("{prefix}/health"),
+            _ => BASAL_HEALTH_URL.to_string(),
+        };
+        let parsed = ureq::get(&health)
+            .timeout(std::time::Duration::from_secs(5))
+            .call()
+            .ok()
+            .and_then(|response| response.into_json::<Value>().ok())
+            .and_then(|body| {
+                body.get("thresholds")?
+                    .get("0.01")?
+                    .get("confidence")?
+                    .as_f64()
+            })
+            .filter(|value| (0.5..1.0).contains(value));
+        match parsed {
+            Some(value) => value,
+            None => {
+                // Unreachable service, older reply without `thresholds`, or a
+                // value outside the plausible band. The caller's own
+                // `threshold` argument still wins; this is only the default.
+                BASAL_DEFAULT_THRESHOLD
+            }
+        }
+    })
+}
 
 /// Parse a BASAL reply into the tool's output shape. Split out from the
 /// HTTP call so the decision semantics — `auto` above all — can be tested
@@ -687,7 +751,7 @@ fn classify_reply_to_json(
         .get("confidence")
         .and_then(Value::as_f64)
         .unwrap_or(0.0);
-    let effective_threshold = threshold.unwrap_or(BASAL_DEFAULT_THRESHOLD);
+    let effective_threshold = threshold.unwrap_or_else(basal_threshold_from_service);
     let latency_ms = body
         .get("usage")
         .and_then(|usage| usage.get("latency_ms"))
@@ -2020,7 +2084,7 @@ fn execute_native_tool(
                 .get("confidence")
                 .and_then(Value::as_f64)
                 .unwrap_or(0.0);
-            let effective_threshold = threshold.unwrap_or(BASAL_DEFAULT_THRESHOLD);
+            let effective_threshold = threshold.unwrap_or_else(basal_threshold_from_service);
             let latency_ms = json.get("latencyMs").and_then(Value::as_i64).unwrap_or(-1);
             let choice = json
                 .get("choice")
@@ -5397,9 +5461,20 @@ mod tests {
             Some("ksiegowosc")
         );
         assert_eq!(confident.get("auto").and_then(Value::as_bool), Some(true));
-        assert_eq!(
-            confident.get("threshold").and_then(Value::as_f64),
-            Some(0.93)
+        // The reported threshold is whatever the loaded model calibrates
+        // at, not a constant: basal-1.0-1.5B says 0.930, basal-1.5-mini
+        // says 0.9546. This assertion used to pin 0.93, which made the
+        // suite pass on one model and fail on the other — and it is what
+        // hid the hardcoded threshold in the first place. What matters is
+        // that the number came from the service and that 0.981 clears it.
+        let threshold = confident
+            .get("threshold")
+            .and_then(Value::as_f64)
+            .expect("threshold is reported");
+        assert_eq!(threshold, basal_threshold_from_service());
+        assert!(
+            0.981 >= threshold,
+            "the recorded confident reply must clear the threshold, got {threshold}"
         );
 
         let ambiguous = classify_reply_to_json(
@@ -5717,5 +5792,104 @@ mod tests {
             "unparseable assistant → tool row has no provable pair → drop"
         );
         assert_eq!(kept[0].role, "assistant");
+    }
+    #[test]
+    fn basal_threshold_follows_the_loaded_model_not_a_hardcoded_constant() {
+        // The bug: 0.93 was a constant, so after switching from
+        // basal-1.0-1.5B (calibrates at 0.930) to basal-1.5-mini (0.955)
+        // `auto` still meant 0.93 — a weaker guarantee than the model
+        // documents. The threshold has to come from the service.
+        //
+        // The first version compared the cached value with a second
+        // /health read, so a broken parse that fell back to 0.93 passed
+        // both sides and the test proved nothing. It stayed green while
+        // the loaded model calibrated at 0.955. Asserted instead against
+        // the value the service reports, read independently — and the
+        // test now fails if the read stops working, rather than quietly
+        // accepting the fallback.
+        let from_service = basal_threshold_from_service();
+        let live = ureq::get(BASAL_HEALTH_URL)
+            .timeout(std::time::Duration::from_secs(5))
+            .call()
+            .ok()
+            .and_then(|r| r.into_json::<Value>().ok())
+            .and_then(|b| {
+                b.get("thresholds")?
+                    .get("0.01")?
+                    .get("confidence")?
+                    .as_f64()
+            })
+            .expect("test needs a reachable BASAL service reporting thresholds");
+        assert!(
+            (0.5..1.0).contains(&from_service),
+            "threshold outside the plausible band: {from_service}"
+        );
+        assert_eq!(
+            from_service, live,
+            "cached threshold must be what /health reports, not a fallback"
+        );
+    }
+
+    #[test]
+    fn explicit_threshold_argument_beats_the_service_default() {
+        // A caller that passes `threshold` means it; the service value is
+        // only a default, never an override.
+        let json = classify_reply_to_json(
+            &json!({"answers": {"k": {"confidence": 0.9, "choice": "a"}}, "usage": {}}),
+            "choice",
+            "q",
+            "s",
+            Some(0.5),
+            2,
+        )
+        .expect("reply parses");
+        assert_eq!(json["threshold"], json!(0.5));
+        assert_eq!(json["auto"], json!(true));
+    }
+
+    #[test]
+    fn service_default_reaches_auto_when_confidence_clears_it() {
+        // With no explicit threshold the decision must use the service's
+        // own calibration, not 0.93.
+        let json = classify_reply_to_json(
+            &json!({"answers": {"k": {"confidence": 0.95, "choice": "a"}}, "usage": {}}),
+            "choice",
+            "q",
+            "s",
+            None,
+            2,
+        )
+        .expect("reply parses");
+        let threshold = json["threshold"].as_f64().expect("threshold is a number");
+        assert_eq!(threshold, basal_threshold_from_service());
+        assert_eq!(
+            json["auto"],
+            json!(0.95 >= threshold),
+            "auto must follow the threshold actually reported"
+        );
+    }
+
+    #[test]
+    fn auto_is_false_below_the_threshold() {
+        // The gap that let `auto: true` survive: with confidence 0.95 and
+        // the loaded model calibrating at 0.9546, 0.95 is BELOW the line, so
+        // a hardcoded `true` disagrees here. Read against the value the
+        // service reports rather than a literal, so the test keeps meaning
+        // something when the model is swapped again.
+        let threshold = basal_threshold_from_service();
+        let below = threshold - 0.01;
+        let json = classify_reply_to_json(
+            &json!({
+                "answers": {"k": {"confidence": below, "choice": "a"}},
+                "usage": {}
+            }),
+            "choice",
+            "q",
+            "s",
+            None,
+            2,
+        )
+        .expect("reply parses");
+        assert_eq!(json["auto"], json!(false), "{below} is under {threshold}");
     }
 }
