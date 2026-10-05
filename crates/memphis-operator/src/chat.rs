@@ -661,6 +661,21 @@ const BASAL_DEFAULT_THRESHOLD: f64 = 0.93;
 /// exists so a wedged service cannot hold a tool call open forever.
 const BASAL_TIMEOUT_SECS: u64 = 300;
 
+/// Pull the 1%-error confidence out of a BASAL `/health` body.
+///
+/// Split out of `basal_threshold_from_service` so the shape of the reply —
+/// not just the fact that a service answered — is covered by tests that
+/// need no daemon. The band check lives here too: a service that reports
+/// 0.2 or 1.5 is not a calibration point, it is a broken reply, and both
+/// callers must treat it as "no threshold" rather than propagating it.
+fn parse_basal_threshold(body: &Value) -> Option<f64> {
+    body.get("thresholds")?
+        .get("0.01")?
+        .get("confidence")?
+        .as_f64()
+        .filter(|value| (0.5..1.0).contains(value))
+}
+
 /// The calibration point the loaded model actually ships, cached after the
 /// first successful read.
 ///
@@ -700,13 +715,7 @@ fn basal_threshold_from_service() -> f64 {
             .call()
             .ok()
             .and_then(|response| response.into_json::<Value>().ok())
-            .and_then(|body| {
-                body.get("thresholds")?
-                    .get("0.01")?
-                    .get("confidence")?
-                    .as_f64()
-            })
-            .filter(|value| (0.5..1.0).contains(value));
+            .and_then(|body| parse_basal_threshold(&body));
         match parsed {
             Some(value) => value,
             None => {
@@ -5793,46 +5802,78 @@ mod tests {
         );
         assert_eq!(kept[0].role, "assistant");
     }
-    // Live probe against the running BASAL service. `#[ignore]`d because it
-    // asserts `cached threshold == value /health reports right now` — the
-    // very contract under test means a real service must be reachable.
-    // Run with `cargo test -p memphis-operator -- --ignored` to execute.
+    // The bug these cover: 0.93 was a constant, so after switching from
+    // basal-1.0-1.5B (calibrates at 0.930) to basal-1.5-mini (0.955)
+    // `auto` still meant 0.93 — a weaker guarantee than the model
+    // documents. The threshold has to come from the service's own body.
+    //
+    // An earlier version of this test compared the cached value with a
+    // second /health read, so a broken parse that fell back to 0.93
+    // passed both sides and the test proved nothing; it stayed green
+    // while the loaded model calibrated at 0.955. It then needed a live
+    // daemon, which CI has no way to provide, so it was `#[ignore]`d —
+    // which meant CI stopped catching the regression entirely. The parse
+    // is now `parse_basal_threshold`, a pure function, so the shape of
+    // the reply is asserted directly with no service in the loop.
     #[test]
-    #[ignore = "needs a running BASAL service on 127.0.0.1:8000"]
-    fn basal_threshold_follows_the_loaded_model_not_a_hardcoded_constant() {
-        // The bug: 0.93 was a constant, so after switching from
-        // basal-1.0-1.5B (calibrates at 0.930) to basal-1.5-mini (0.955)
-        // `auto` still meant 0.93 — a weaker guarantee than the model
-        // documents. The threshold has to come from the service.
-        //
-        // The first version compared the cached value with a second
-        // /health read, so a broken parse that fell back to 0.93 passed
-        // both sides and the test proved nothing. It stayed green while
-        // the loaded model calibrated at 0.955. Asserted instead against
-        // the value the service reports, read independently — and the
-        // test now fails if the read stops working, rather than quietly
-        // accepting the fallback.
-        let from_service = basal_threshold_from_service();
-        let live = ureq::get(BASAL_HEALTH_URL)
-            .timeout(std::time::Duration::from_secs(5))
-            .call()
-            .ok()
-            .and_then(|r| r.into_json::<Value>().ok())
-            .and_then(|b| {
-                b.get("thresholds")?
-                    .get("0.01")?
-                    .get("confidence")?
-                    .as_f64()
-            })
-            .expect("test needs a reachable BASAL service reporting thresholds");
-        assert!(
-            (0.5..1.0).contains(&from_service),
-            "threshold outside the plausible band: {from_service}"
-        );
+    fn parse_basal_threshold_reads_the_one_percent_point_from_a_health_body() {
+        // A real /health from the dev box (basal-1.0-1.5B, measured).
+        let body = json!({
+            "ok": true,
+            "model": "basal-1.0-1.5B",
+            "thresholds": {
+                "0.01": {
+                    "confidence": 0.9546241492914076,
+                    "method": "bound-controlled (one-sided 95% Clopper-Pearson on FIT)",
+                    "cert_coverage": 0.49265381083562904,
+                },
+                "0.05": { "confidence": 0.7629656203142733 },
+            },
+        });
         assert_eq!(
-            from_service, live,
-            "cached threshold must be what /health reports, not a fallback"
+            parse_basal_threshold(&body),
+            Some(0.9546241492914076),
+            "the 0.01 band, not 0.05, is the 1%-error calibration point"
         );
+    }
+
+    #[test]
+    fn parse_basal_threshold_follows_the_loaded_model_not_a_hardcoded_constant() {
+        // The whole point: two different models, two different numbers, one
+        // parser. A constant 0.93 cannot produce the second value, so a
+        // mutation that reintroduces the constant fails here.
+        let one_5b = json!({ "thresholds": { "0.01": { "confidence": 0.930 } } });
+        let one_5_mini = json!({ "thresholds": { "0.01": { "confidence": 0.9546 } } });
+        assert_eq!(parse_basal_threshold(&one_5b), Some(0.930));
+        assert_eq!(parse_basal_threshold(&one_5_mini), Some(0.9546));
+        assert_ne!(
+            parse_basal_threshold(&one_5_mini),
+            parse_basal_threshold(&one_5b),
+            "if both models read the same, the parser is not reading the model"
+        );
+    }
+
+    #[test]
+    fn parse_basal_threshold_rejects_a_reply_with_no_calibration() {
+        // Every one of these makes the service "unreachable" as far as the
+        // threshold is concerned, so the caller falls back to
+        // BASAL_DEFAULT_THRESHOLD rather than adopting a broken number.
+        let bodies = [
+            json!({}),                                  // no thresholds
+            json!({ "thresholds": {} }),                // empty bands
+            json!({ "thresholds": { "0.05": { "confidence": 0.76 } } }), // wrong band
+            json!({ "thresholds": { "0.01": {} } }),     // no confidence
+            json!({ "thresholds": { "0.01": { "confidence": "0.95" } } }), // not a number
+            json!({ "thresholds": { "0.01": { "confidence": 0.2 } } }),   // below band
+            json!({ "thresholds": { "0.01": { "confidence": 1.5 } } }),   // above band
+        ];
+        for (index, body) in bodies.iter().enumerate() {
+            assert_eq!(
+                parse_basal_threshold(body),
+                None,
+                "body {index} must not yield a threshold: {body}"
+            );
+        }
     }
 
     #[test]
