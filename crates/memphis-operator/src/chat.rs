@@ -5793,7 +5793,12 @@ mod tests {
         );
         assert_eq!(kept[0].role, "assistant");
     }
+    // Live probe against the running BASAL service. `#[ignore]`d because it
+    // asserts `cached threshold == value /health reports right now` — the
+    // very contract under test means a real service must be reachable.
+    // Run with `cargo test -p memphis-operator -- --ignored` to execute.
     #[test]
+    #[ignore = "needs a running BASAL service on 127.0.0.1:8000"]
     fn basal_threshold_follows_the_loaded_model_not_a_hardcoded_constant() {
         // The bug: 0.93 was a constant, so after switching from
         // basal-1.0-1.5B (calibrates at 0.930) to basal-1.5-mini (0.955)
