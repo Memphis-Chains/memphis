@@ -38,7 +38,8 @@ torch.set_num_threads(max(1, (os.cpu_count() or 4) - 1))
 
 from basal.engine import EagerBackend
 from basal.prompt import render, letter_ids
-from fastapi import FastAPI, Request
+from basal.prompt import MAX_OPTIONS
+from fastapi import FastAPI, HTTPException, Request
 import uvicorn
 
 MODEL = os.environ.get(
@@ -125,7 +126,16 @@ def _load():
             print(f"[basal] gguf backend unavailable ({exc}); falling back to torch", flush=True)
             eng = None
     if eng is None:
-        eng = EagerBackend(MODEL, dtype=DTYPE, device="cpu")
+        try:
+            eng = EagerBackend(MODEL, dtype=DTYPE, device="cpu")
+        except Exception as exc:  # noqa: BLE001 - degrade, do not kill the loader
+            # Unguarded, a failed torch fallback kills the loader thread:
+            # _state["eng"] is never set and the unit stays `active` for ever
+            # reporting ready:false with nothing in the log saying why. Print
+            # it and let /health answer false so memphis_classify returns its
+            # structured "unreachable" error with the start command.
+            print(f"[basal] torch backend unavailable ({exc}); service degraded to ready=false", flush=True)
+            return
     cal_path = os.path.join(MODEL, "CALIBRATION.json")
     if os.path.exists(cal_path):
         with open(cal_path) as f:
@@ -219,8 +229,32 @@ async def systemone(req: Request):
         else:
             options = crit
             keys = options
-        probs = _decide(eng, state, q.get("instructions", ""), options,
-                        orders=body.get("orders", 2), lang=lang, qtype=typ)
+        # Validate ahead of the model, not after. Their prompt.py raises a
+        # bare IndexError on the 11th option, which is indistinguishable from
+        # an unrelated IndexError raised by render itself — catching it would
+        # swallow real faults. Counting here also avoids spending 70-140 s of
+        # CPU inference only to report that the input was never valid.
+        #
+        # The same guard exists on our side (src/mcp/tools/classify.ts,
+        # crates/memphis-operator/src/chat.rs); this one covers the endpoint
+        # being reachable by anything that speaks HTTP, curl included.
+        if len(options) > MAX_OPTIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"basal-1.0 supports at most {MAX_OPTIONS} options, got "
+                    f"{len(options)}. The models are calibrated on the A-J "
+                    "lettered format; extra options cost accuracy rather than "
+                    "adding discriminating power."
+                ),
+            )
+        try:
+            probs = _decide(eng, state, q.get("instructions", ""), options,
+                            orders=body.get("orders", 2), lang=lang, qtype=typ)
+        except ValueError as exc:
+            # letter_ids() raises ValueError when an option letter is not a
+            # single token at the answer position — also a caller error.
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         pm = {keys[i]: probs[i] for i in range(len(keys))}
         if typ == "choice":
             best = max(range(len(keys)), key=lambda i: probs[i])
