@@ -986,6 +986,10 @@ fn peer_storage_ready(database_path: &Path) -> bool {
     let Ok(conn) = Connection::open(database_path) else {
         return false;
     };
+    // Best-effort busy_timeout so a concurrent writer doesn't return false
+    // merely because the probe read hit a transient lock. 5000ms matches
+    // open_sqlite() and the node-side createSqliteClient.
+    let _ = conn.pragma_update(None, "busy_timeout", 5000i64);
 
     conn.query_row(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'agent_peers' LIMIT 1",
@@ -997,7 +1001,15 @@ fn peer_storage_ready(database_path: &Path) -> bool {
 }
 
 fn open_sqlite(path: &Path) -> Result<Connection, OperatorError> {
-    Connection::open(path).map_err(|error| OperatorError::Sqlite(error.to_string()))
+    let conn = Connection::open(path).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+    // Match node-side createSqliteClient in src/infra/storage/sqlite/client.ts:
+    // rusqlite default busy_timeout is 0 (= immediate SQLITE_BUSY), and the
+    // rust side opens the same memphis.db the node writers use. Without this
+    // PRAGMA, any write transaction holding a lock would surface as a hard
+    // "database is locked" instead of waiting up to 5s like the TS adapter.
+    conn.pragma_update(None, "busy_timeout", 5000i64).map_err(|e| OperatorError::Sqlite(e.to_string()))?;
+    conn.pragma_update(None, "journal_mode", "WAL").map_err(|e| OperatorError::Sqlite(e.to_string()))?;
+    Ok(conn)
 }
 
 fn is_missing_table_error(error: &rusqlite::Error) -> bool {
