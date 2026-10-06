@@ -29,4 +29,5 @@ npm run -s ops:ga-smoke
 bash ./scripts/install.sh --check-only --json >/dev/null
 npm run -s ops:rc-drill:fresh-env
 ./scripts/secret-scan.sh
+./scripts/pii-scan.sh
 echo "release-smoke: PASS"
