@@ -137,9 +137,14 @@ run_check "Typecheck" npm run -s typecheck
 
 if [[ "$SKIP_SECURITY" -eq 1 ]]; then
   skip_check "Secret scan" "disabled by --skip-security"
+  skip_check "PII scan" "disabled by --skip-security"
   skip_check "Dependency audit (npm prod/high)" "disabled by --skip-security"
 else
   run_check "Secret scan" ./scripts/secret-scan.sh
+  # 2026-10-06: the secret scan matches credential prefixes only, so it
+  # reported OK while the operator's real chat id sat on the public default
+  # branch in ten test fixtures. See scripts/pii-scan.sh for the full account.
+  run_check "PII scan" ./scripts/pii-scan.sh
   run_check "Dependency audit (npm prod/high)" npm audit --omit=dev --audit-level=high
 fi
 
