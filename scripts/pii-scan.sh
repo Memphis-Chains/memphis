@@ -72,7 +72,13 @@ OPERATOR_PII='99999999'
 
 # Named third parties: people the operator works for, not the operator.
 # Advisory by default -- see "TWO TIERS" above.
-CLIENT_PII='dsmxshop|Szczepan'
+#
+# `dsmx` and `dsmxshop` are listed separately on purpose. They are the
+# same client's brand and shop domain, but they appear in different
+# places, and one pattern does not cover both: `dsmxshop` never matched
+# the `dsmx-usa-assets/` directory, so the gate reported OK while 3.8 MB
+# of that client's promo video sat on the public default branch.
+CLIENT_PII='dsmxshop|dsmx|Szczepan'
 
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
   echo "[pii-scan] not a git repository - nothing tracked to scan" >&2
@@ -92,8 +98,30 @@ hits() {
   tracked | xargs -0 grep -IlE "$1" 2>/dev/null || true
 }
 
+# Content-only scanning is half a gate. Measured on 2026-10-06:
+# `dsmx-usa-assets/dsmx-usa-promo-30s-canam-polaris.mp4` — 3.8 MB of a
+# named client's promo video — sat on the public default branch for seven
+# months while this script reported OK, because the identifier lived in
+# the *filename* and the scanner only ever read file bodies.
+#
+# The 2026-09-29 lesson was that path-matching guards fail when a value
+# arrives in a new file. The complementary failure is that content
+# matching fails when the value arrives in a new *name*. Both are needed.
+path_hits() {
+  tracked | tr '\0' '\n' | grep -IE "$1" || true
+}
+
 operator_files="$(hits "$OPERATOR_PII")"
 client_files="$(hits "$CLIENT_PII")"
+
+# Paths are checked against the operator tier (an account id in a filename
+# is as identifying as in a body) and the client tier (a business name in a
+# directory name is as exposing as in prose).
+operator_paths="$(path_hits "$OPERATOR_PII")"
+client_paths="$(path_hits "$CLIENT_PII")"
+
+operator_files="$(printf '%s\n%s' "$operator_files" "$operator_paths" | grep -v '^$' || true)"
+client_files="$(printf '%s\n%s' "$client_files" "$client_paths" | grep -v '^$' || true)"
 
 status=0
 

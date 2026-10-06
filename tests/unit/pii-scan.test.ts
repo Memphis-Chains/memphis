@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -68,6 +68,10 @@ describe('scripts/pii-scan.sh — operator identifier detection', () => {
   });
 
   function commitLeak(name: string, body: string): ScanResult {
+    // mkdir the parent: two tests plant nested paths, and a missing
+    // directory surfaces as ENOENT, which reads like a scanner failure
+    // and is not one.
+    mkdirSync(dirname(join(dir, name)), { recursive: true });
     writeFileSync(join(dir, name), body, 'utf8');
     commitAll(dir);
     return runScan(dir);
@@ -90,7 +94,6 @@ describe('scripts/pii-scan.sh — operator identifier detection', () => {
   // fixture whose name no .gitignore rule mentions. If this passes only
   // for a path the scanner special-cases, it is not measuring the guard.
   it('blocks the identifier in a test fixture under an unrelated name', () => {
-    spawnSync('mkdir', ['-p', join(dir, 'tests/unit')], { cwd: dir });
     const result = commitLeak(
       'tests/unit/mcp-send-chatid.test.ts',
       `const CHAT_ID = '${OPERATOR_ID}';\n`,
@@ -129,6 +132,27 @@ describe('scripts/pii-scan.sh — operator identifier detection', () => {
   // implementation flags its own source. Copying it into a tmpdir keeps the
   // assertion honest without scanning the real 2000-file repo, which costs
   // ~17s and pushes this file against the 30s suite timeout.
+  // The gate's first version read file bodies only. Measured consequence:
+  // `dsmx-usa-assets/dsmx-usa-promo-30s-canam-polaris.mp4` — 3.8 MB of a
+  // named client's promo video — sat on the public default branch for
+  // seven months while the scan reported OK, because the identifier was
+  // in the *filename*. Path scanning is the other half of the contract.
+  it('blocks an operator identifier in a tracked filename', () => {
+    const result = commitLeak(`account/session-${OPERATOR_ID}.json`, '{ "redacted": true }\n');
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('BLOCK');
+  });
+
+  it('reports a third-party identifier in a filename as advisory', () => {
+    // Must use a name the script actually denies. An invented
+    // 'client-brand' directory asserted nothing — the scan correctly did
+    // not flag a string it has no rule for, and the test failed for a
+    // reason unrelated to the guard.
+    const result = commitLeak('dsmx-brand/logo.png', 'not really a png\n');
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain('ADVISORY');
+  });
+
   it('does not flag itself, whose header names the patterns it searches for', () => {
     spawnSync('mkdir', ['-p', join(dir, 'scripts')], { cwd: dir });
     copyFileSync(SCRIPT_PATH, join(dir, 'scripts/pii-scan.sh'));
