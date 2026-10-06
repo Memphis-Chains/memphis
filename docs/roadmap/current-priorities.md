@@ -1,6 +1,6 @@
-# Priorytety — tydzień 2026-09-29 (auto, generowane z realnego stanu)
+# Priorytety — tydzień 2026-10-06 (auto, generowane z realnego stanu)
 
-Źródło: `cron tuesday-code.sh` · issue 36 otwartych · PR 3 · gałęzię 4
+Źródło: `cron tuesday-code.sh` · issue 36 otwartych · PR 0 · gałęzię 5
 
 > **Ten plik jest źródłem prawdy dla sesji kodowania.** Generowany wtorek 13:00
 > z realnego stanu (issue, PR, gałęzie, CI). Nie edytuj ręcznie.
@@ -10,10 +10,6 @@
 > Po zrobieniu: odznacz checkbox, dopisz co zrobiłeś pod daną pozycją.
 
 ## A. Do zrobienia TERAZ (bez pytania, odwracalne)
-
-- [x] ~~Zamknąć issue z fixem już w main~~ — #628 #629 #646 zamknięte 2026-09-29
-- [x] ~~Przejrzeć PR-y czekające na review~~ — #641 #643 #644 #649 scalone, repo czyste
-- [ ] **Reset runtime** (`memphis reset --runtime`) — następny krok po zielonym CI na main
 
 - [ ] Zamknąć issue z fixem już w main (patrz sekcja B)
 - [ ] Przejrzeć PR-y czekające na review (sekcja C)
@@ -25,22 +21,21 @@ Brak — albo wszystko zrobione, albo fixy nie mają `#NNN` w commicie.
 
 ## C. PR do review
 
-- [ ] **#644** [CONFLICTING] feat(tui): Phase G-minimal Tauri desktop scaffold (apps/memphis-
-- [ ] **#643** [CONFLICTING] test(adr-009): cross-process writeBlockAtomic race regression (i
-- [ ] **#641** [CONFLICTING] release: v1.13.4 — CI portability + weekly-runtime-kpi PAT fix +
+Brak otwartych PR.
 
 ## D. Gałęzie poza main
 
 | gałąź | commity | ostatni | stan |
 |---|---|---|---|
-| `chore/sync-ci-bot-token-script` | +2 | 2026-09-21 | CONFLICT x1 → .gitignore |
-| `feat/can-self-modify-computed` | +39 | 2026-09-19 | CONFLICT x8 → .gitignore, README.md, docs/releases/v1.13-final.md |
-| `feat/phase-G-tauri-minimal-scaffold` | +3 | 2026-09-21 | CONFLICT x4 → .github/workflows/chain-invariant.yml, .gitignore |
-| `fix/adr-009-writeblock-process-race` | +2 | 2026-09-21 | CONFLICT x4 → .github/workflows/chain-invariant.yml, .gitignore |
+| `fix/minimax-m3-family-capabilities` | +1 | 2026-10-01 | MERGEABLE |
+| `fix/persist-reply-limit-4000` | +1 | 2026-10-01 | MERGEABLE |
+| `fix/provider-credential-state-and-tui-error-log` | +1 | 2026-10-01 | MERGEABLE |
+| `fix/soul-write-clobber` | +4 | 2026-09-30 | CONFLICT x1 → crates/memphis-operator/src/chat.rs |
+| `fix/tui-worker-panic-surfacing` | +1 | 2026-10-01 | MERGEABLE |
 
 ## E. CI — czerwone
 
-- **11×** `ci`
+- **3×** `ci`
 - **1×** `nightly-crystal`
 
 ## F. DO WERYFIKACJI PRZEZ OPERATORA
