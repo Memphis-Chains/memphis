@@ -1467,6 +1467,15 @@ fn execute_native_tool(
                 )));
             }
 
+            // Being under ~/memphis/ is not the same as safe to read: the
+            // operator's own .env and vault state live in that directory.
+            // The TypeScript surface has refused these since code_read
+            // landed (ALWAYS_BLOCKED_READ_PATTERNS); without this the native
+            // tool was a way around the boundary it was supposed to enforce.
+            if let Err(reason) = assert_path_not_secret_material(&resolved_path) {
+                return Err(OperatorError::Message(reason));
+            }
+
             let content = fs::read_to_string(resolved)
                 .map_err(|e| OperatorError::Message(format!("Failed to read file: {}", e)))?;
 
@@ -3224,6 +3233,42 @@ fn secret_exfiltration_patterns() -> impl Iterator<Item = (&'static str, regex::
         ),
     ]
     .into_iter()
+}
+
+/// Paths the native `memphis_code_read` must refuse.
+///
+/// The TypeScript surface has refused these since the tool landed
+/// (ALWAYS_BLOCKED_READ_PATTERNS in src/mcp/tools/code-read.ts). The native
+/// tool checked only that the path sat under ~/memphis/, so `memphis_code_read`
+/// on the authoritative surface would happily return `.env`, `vault-state.json`
+/// and `vault-entries.json` -- the exact files the boundary exists to protect,
+/// in the directory where they live.
+///
+/// Returned as Err with an operator-facing reason rather than silently
+/// skipping, so the refusal is legible in the TUI.
+fn assert_path_not_secret_material(resolved: &str) -> Result<(), String> {
+    const BLOCKED: &[(&str, fn(&str) -> bool)] = &[
+        (".env", |p: &str| p == ".env" || p.starts_with(".env.")),
+        ("vault-state.json", |p: &str| p == "vault-state.json"),
+        ("vault-entries.json", |p: &str| p == "vault-entries.json"),
+        (".git/", |p: &str| p == ".git" || p.starts_with(".git/")),
+        ("node_modules/", |p: &str| p.starts_with("node_modules/")),
+    ];
+
+    // Match on any path segment, so `src/.env` is refused like `.env`.
+    for segment in resolved.split('/') {
+        if segment.is_empty() || segment == "." {
+            continue;
+        }
+        for (label, matches) in BLOCKED {
+            if matches(segment) {
+                return Err(format!(
+                    "Path '{resolved}' is blocked because it matches {label} and may contain secrets or generated state"
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Scan content about to be written to a file, mirroring
@@ -6187,5 +6232,47 @@ mod tests {
         let result = execute_native_tool(&runtime, &call, 2);
         let _ = std::fs::remove_file(&target);
         result.expect("ordinary content must be written");
+    }
+    /// The native code_read used to check only that the path sat under
+    /// ~/memphis/ -- which is exactly where the operator's own `.env` and
+    /// vault state live. The TypeScript surface has refused those since the
+    /// tool landed; the native one returned them.
+    #[test]
+    fn native_code_read_refuses_secret_material_inside_the_repo() {
+        let root = temp_runtime_root("native-code-read-guard");
+        let runtime = runtime_for(root.as_path());
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
+
+        for relative in [
+            ".env",
+            ".env.bak-pre-tuneup",
+            "vault-state.json",
+            "vault-entries.json",
+            "src/.env",
+        ] {
+            let call = ChatToolCall {
+                id: "read-call".to_string(),
+                name: "memphis_code_read".to_string(),
+                arguments: json!({
+                    "path": format!("{home}/memphis/{relative}"),
+                }),
+            };
+
+            let error = execute_native_tool(&runtime, &call, 2)
+                .expect_err(&format!("{relative} must be refused"));
+            assert!(
+                error.to_string().contains("blocked because it matches"),
+                "unexpected error for {relative}: {error}"
+            );
+        }
+    }
+
+    /// The guard above must not block ordinary source files, or the tool
+    /// stops being usable and the block becomes invisible to everyone.
+    #[test]
+    fn native_code_read_still_reads_ordinary_source_files() {
+        assert!(assert_path_not_secret_material("/home/memphis/memphis/src/index.ts").is_ok());
+        assert!(assert_path_not_secret_material("/home/memphis/memphis/crates/x.rs").is_ok());
+        assert!(assert_path_not_secret_material("/home/memphis/memphis/environment.rs").is_ok());
     }
 }
