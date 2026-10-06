@@ -790,8 +790,13 @@ fn tool_tier(name: &str) -> u8 {
         | "memphis_test"
         | "memphis_cron"
         | "memphis_classify" => 2,
-        "memphis_code_read" | "memphis_web_fetch" | "memphis_grep" | "memphis_glob"
-        | "memphis_git" => 1,
+        // memphis_code_read is tier 2, not 1: the TypeScript registry
+        // declares it tier 2 (src/gateway/tool-registry/development.ts:8) and
+        // reading source is the same class of capability as writing it. A
+        // surface pinned to tier 1 — the Telegram baseline — is allowed to
+        // search and glob but not to read file bodies.
+        "memphis_web_fetch" | "memphis_grep" | "memphis_glob" | "memphis_git" => 1,
+        "memphis_code_read" => 2,
         _ => 0,
     }
 }
@@ -6274,5 +6279,46 @@ mod tests {
         assert!(assert_path_not_secret_material("/home/memphis/memphis/src/index.ts").is_ok());
         assert!(assert_path_not_secret_material("/home/memphis/memphis/crates/x.rs").is_ok());
         assert!(assert_path_not_secret_material("/home/memphis/memphis/environment.rs").is_ok());
+    }
+    /// The two layers assign tiers independently, and they disagreed.
+    ///
+    /// `memphis_code_read` is tier 2 in src/gateway/tool-registry/
+    /// development.ts and tier 1 in `tool_tier` here. On a surface pinned to
+    /// MEMPHIS_OPERATOR_MAX_TOOL_TIER=1 — the Telegram baseline — the
+    /// TypeScript gateway refuses the call and the native operator allowed
+    /// it. Reading source is a stronger capability than the surface policy
+    /// granted, and the gap only shows on the surface that is authoritative.
+    ///
+    /// The tier list is the authority for the native surface; this test pins
+    /// the values that the TypeScript registry also declares, so the two
+    /// cannot drift apart again silently.
+    #[test]
+    fn native_tiers_match_the_typescript_registry_for_shared_tools() {
+        // (tool, tier in src/gateway/tool-registry/*.ts)
+        let shared: &[(&str, u8)] = &[("memphis_code_read", 2), ("memphis_journal", 0)];
+        for (tool, expected) in shared {
+            assert_eq!(
+                tool_tier(tool),
+                *expected,
+                "{tool} is tier {expected} in the TypeScript registry but {} natively",
+                tool_tier(tool)
+            );
+        }
+    }
+
+    #[test]
+    fn native_code_read_is_refused_on_a_tier_1_surface() {
+        let root = temp_runtime_root("native-code-read-tier");
+        let runtime = runtime_for(root.as_path());
+        let call = ChatToolCall {
+            id: "read-call".to_string(),
+            name: "memphis_code_read".to_string(),
+            arguments: json!({ "path": "/home/memphis/memphis/README.md" }),
+        };
+
+        let error = execute_native_tool(&runtime, &call, 1)
+            .expect_err("tier 1 surface must not reach a tier 2 read tool")
+            .to_string();
+        assert!(error.contains("requires tier 2"), "unexpected: {error}");
     }
 }
