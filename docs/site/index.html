@@ -35,7 +35,7 @@
       "name": "Memphis v5",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "Linux, macOS, Windows via WSL2",
-      "softwareVersion": "1.13.3",
+      "softwareVersion": "1.13.5",
       "license": "https://www.apache.org/licenses/LICENSE-2.0",
       "url": "https://memphis-v5.pl/",
       "codeRepository": "https://github.com/Memphis-Chains/memphis",
@@ -177,7 +177,7 @@
 
 <section class="hero">
   <div class="wrap hero-in">
-    <p class="eyebrow">Open-source · Apache-2.0 · v1.13.3</p>
+    <p class="eyebrow">Open-source · Apache-2.0 · v1.13.5</p>
     <h1>Runtime dla agentów AI,<br>który <em>pamięta</em> i <em>nie kłamie</em>.</h1>
     <p class="lede">
       Memphis trzyma pamięć agenta w podpisanych łańcuchach, sekrety w szyfrowanym
@@ -220,7 +220,7 @@
   <div class="wrap">
     <p class="metrics-note">
       <span class="live" aria-hidden="true"></span>
-      Liczby z uruchomionej instancji. Runtime generuje je przy każdym załadowaniu strony.
+      Liczby z uruchomionej instancji, odświeżone ręcznie przy zmianie wersji.
     </p>
     <div class="metric-grid">
       <div class="metric">
@@ -264,12 +264,12 @@
         <span class="term-title">memphis@zawaja:~/memphis</span>
         <span class="term-badge">live</span>
       </div>
-      <pre class="term-body" id="term-body"><code><span data-line><span class="t-cmd">$</span> memphis health</span><span data-line>status          <span class="t-ok">ok</span>  (v1.13.3)</span><span data-line>chain blocks    <span class="t-val">13 332</span></span><span data-line>chains          <span class="t-val">12</span> active, <span class="t-val">0</span> corrupt</span><span data-line>vault           <span class="t-ok">ok</span>  12 entries, integrity verified</span><span data-line>provider        minimax + cascade → ollama → local-fallback</span><span data-line>embedding       <span class="t-ok">ok</span>  ollama, 7 ms</span><span data-line>telemetry       <span class="t-val">0</span> outbound calls</span><span data-line><span class="t-ok">✓</span> wszystko w porządku</span></code></pre>
+      <pre class="term-body" id="term-body"><code><span data-line><span class="t-cmd">$</span> memphis health</span><span data-line>status          <span class="t-ok">ok</span>  (v1.13.5)</span><span data-line>chain blocks    <span class="t-val">13 332</span></span><span data-line>chains          <span class="t-val">12</span> active, <span class="t-val">0</span> corrupt</span><span data-line>vault           <span class="t-ok">ok</span>  12 entries, integrity verified</span><span data-line>provider        minimax + cascade → ollama → local-fallback</span><span data-line>embedding       <span class="t-ok">ok</span>  ollama, 7 ms</span><span data-line>telemetry       <span class="t-val">0</span> outbound calls</span><span data-line><span class="t-ok">✓</span> wszystko w porządku</span></code></pre>
     </div>
 
     <noscript>
       <p class="term-static">
-        <code>memphis health</code> → status ok (v1.13.3) · 13 332 bloków w 12 łańcuchach,
+        <code>memphis health</code> → status ok (v1.13.5) · 13 332 bloków w 12 łańcuchach,
         0 uszkodzonych · vault ok, 12 wpisów, integralność zweryfikowana ·
         0 wywołań na zewnątrz
       </p>
@@ -293,18 +293,22 @@
         <span class="card-num" aria-hidden="true">01</span>
         <h3>Pamięć, której nie da się podważyć</h3>
         <p>
-          Siedem łańcuchów, każdy blok z hashem poprzedniego. Wstrzyknij cokolwiek
-          w środek — łańcuch się rozjedzie i Memphis to zauważy przy następnym starcie.
+          Siedem łańcuchów kanonicznych, każdy blok z hashem poprzedniego. Wstrzyknij
+          cokolwiek w środek — łańcuch się rozjedzie i Memphis to zauważy przy następnym
+          starcie. Podpisywanie bloków (Ed25519) jest dostępne opcjonalnie, przez
+          <code>RUST_CHAIN_REQUIRE_SIGNATURES=true</code>; domyślnie liczy się sam hash.
         </p>
-        <pre class="mini"><code>memphis chain-verify</code></pre>
+        <pre class="mini"><code>memphis chain verify</code></pre>
       </article>
 
       <article class="card">
         <span class="card-num" aria-hidden="true">02</span>
         <h3>Sekrety w szyfrowanym sejfie</h3>
         <p>
-          AES-256 z pepperem i rotacją klucza głównego. Każdy odczyt zostawia ślad
-          w łańcuchu. Klucze nigdy nie lądują w pliku <code>.env</code>.
+          AES-256-GCM z pepperem Argon2id i rotacją klucza głównego. Klucze nigdy nie
+          lądują w pliku <code>.env</code>. Operacje zmieniające sejf — inicjalizacja,
+          reset, rotacja — zostawiają wpis w dzienniku audytu; samo odszyfrowanie
+          sekretu celowo go nie loguje, bo log stałby się drugim miejscem z sekretem.
         </p>
         <pre class="mini"><code>memphis vault list</code></pre>
       </article>
@@ -313,11 +317,13 @@
         <span class="card-num" aria-hidden="true">03</span>
         <h3>Guard przed destrukcją</h3>
         <p>
-          Każde <code>rm</code>, <code>mv</code> i <code>git rm</code> przechodzi przez
-          rejestr HALT. Zatrzymany zasób blokuje operację <em>zanim</em> ją wykona —
-          także gdy wykonuje ją inny agent.
+          Rejestr HALT zatrzymuje <code>rm</code>, <code>mv</code> i <code>git rm</code>
+          na wskazanych zasobach. Działa jako skill do zainstalowania: hak w
+          <code>~/.bashrc</code> albo jawne sprawdzenie przed operacją. To dodatek
+          do świadomości, nie sandbox — runtime sam z siebie nie weryfikuje
+          destrukcyjnych wywołań.
         </p>
-        <pre class="mini"><code>memphis halt check &lt;ścieżka&gt;</code></pre>
+        <pre class="mini"><code>bash skills/halt-aware-destructive-ops/check.sh &lt;ścieżka&gt;</code></pre>
       </article>
     </div>
   </div>
@@ -386,7 +392,7 @@
     <div class="sec-head">
       <p class="sec-label">Zastosowania</p>
       <h2>Do czego to się nadaje</h2>
-      <p class="sec-sub">Przełącz zakładkę. Każda odpowiada realnej możliwości v1.13.3, nie planowi na 2027.</p>
+      <p class="sec-sub">Przełącz zakładkę. Każda odpowiada realnej możliwości v1.13.5, nie planowi na 2027.</p>
     </div>
 
     <div class="tabs" role="tablist" aria-label="Zastosowania">
@@ -656,7 +662,7 @@
       <div>
         <h3>Uczciwie: co jest</h3>
         <ul class="ticks">
-          <li>Działający runtime v1.13.3, używany produkcyjnie</li>
+          <li>Działający runtime v1.13.5, używany produkcyjnie</li>
           <li>7 łańcuchów z automatycznym sprzężeniem hashy</li>
           <li>57 narzędzi w domyślnej instalacji, 60 z flagami eksperymentalnymi</li>
           <li>3 publiczne skille i 3 publiczne postmortemy</li>
@@ -706,7 +712,7 @@
     </div>
     <div class="foot-bottom">
       <p>Zero telemetrii w runtime. Ta strona liczy odwiedziny bez cookies — <a href="/privacy/">szczegóły</a>.</p>
-      <p><a href="https://github.com/Memphis-Chains/memphis" rel="noopener">Memphis-Chains</a> · v1.13.3 · <span id="foot-year">2026</span></p>
+      <p><a href="https://github.com/Memphis-Chains/memphis" rel="noopener">Memphis-Chains</a> · v1.13.5 · <span id="foot-year">2026</span></p>
     </div>
   </div>
 </footer>
