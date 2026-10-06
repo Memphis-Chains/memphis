@@ -199,11 +199,36 @@ def _decide(eng, state, question, options, orders=2, lang=None, qtype="choice"):
     return probs
 
 
+def _model_label():
+    """Name of the weights actually loaded, from the snapshot directory.
+
+    Reported verbatim by /health and /v1/systemone. Both used to answer with
+    the literal "basal-1.0-1.5B" — the default in MODEL — while BASAL_MODEL
+    pointed at a different snapshot, so the calibration table in the same
+    reply belonged to a model the reply did not name. Anyone auditing a
+    confidence value against thresholds.0.01 would be comparing across two
+    different models.
+
+    HuggingFace snapshot paths are .../models--<org>--<name>/snapshots/<sha>,
+    so the name is the middle component; fall back to the directory basename
+    for a plain local path.
+    """
+    parts = os.path.normpath(MODEL).split(os.sep)
+    for i, part in enumerate(parts):
+        # HF layout: .../hub/models--<org>--<name>/snapshots/<sha>
+        if part == "snapshots" and i >= 1:
+            owner = parts[i - 1]
+            if owner.startswith("models--") and "--" in owner[8:]:
+                return owner[8:].split("--", 1)[1]
+            return parts[i + 1] if i + 1 < len(parts) else "unknown"
+    return parts[-1] if parts else "unknown"
+
+
 @app.get("/health")
 def health():
     eng = _state.get("eng")
     ready = eng is not None
-    return {"ok": True, "ready": ready, "model": "basal-1.0-1.5B",
+    return {"ok": True, "ready": ready, "model": _model_label(),
             "backend": "gguf" if isinstance(eng, GgufBackend) else ("torch" if ready else "none"),
             "device": "cpu", "dtype": DTYPE, "temperatures": _temps,
             "thresholds": CAL.get("thresholds", {})}
@@ -267,7 +292,7 @@ async def systemone(req: Request):
             exp = sum(i * probs[i] for i in range(len(keys)))
             answers[name] = {"type": "score", "score": exp,
                              "probabilities": pm, "confidence": max(probs)}
-    return {"model": "basal-1.0-1.5B", "answers": answers,
+    return {"model": _model_label(), "answers": answers,
             "usage": {"questions": len(questions), "output_tokens": 0,
                       "backend": "gguf" if isinstance(eng, GgufBackend) else "torch",
                       "latency_ms": int((time.time() - t0) * 1000), "device": "cpu"}}
