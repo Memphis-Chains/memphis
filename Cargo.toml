@@ -18,9 +18,6 @@ exclude = [
   # nothing to do with the crates that were being tested.
   #
   # To build it: install the system deps first, then
-  #   cargo check --manifest-path apps/memphis-gui/src-tauri/Cargo.toml
-  # See docs/adr/010-tauri-build-status.md.
-  "apps/memphis-gui/src-tauri",
   # apps/memphis-chain-draft is the operator-local Phase 1 chain MVP
   # workspace. Excluded so `cargo check --workspace` from the host
   # repo doesn't pick it up. After passphrase-gate commit + ADR-010

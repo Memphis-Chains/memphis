@@ -17,7 +17,6 @@
     "scripts/public-chat-gateway.mjs"
   ],
   "ignore": [
-    "apps/memphis-gui/frontend/main.js",
     "benchmark-search.ts",
     "benchmarks/performance-suite.ts",
     "docs/site/assets/app.js",
