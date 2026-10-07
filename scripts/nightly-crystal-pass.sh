@@ -145,7 +145,13 @@ else
   # reported OK while the operator's real chat id sat on the public default
   # branch in ten test fixtures. See scripts/pii-scan.sh for the full account.
   run_check "PII scan" ./scripts/pii-scan.sh
-  run_check "Dependency audit (npm prod/high)" npm audit --omit=dev --audit-level=high
+  # 2026-10-07: this was a bare `npm audit --omit=dev --audit-level=high`,
+  # while ci.yml ran an audited jq filter with a one-advisory allowlist. The
+  # two disagreed, so nightly failed every night while ci stayed green — and
+  # pii-scan.sh and secret-scan.sh lived inside that permanently red check.
+  # Both callers now share scripts/dep-audit.sh so an allowlist entry cannot
+  # exist in one and not the other.
+  run_check "Dependency audit (npm prod/high)" ./scripts/dep-audit.sh
 fi
 
 if [[ "$SKIP_TESTS" -eq 1 ]]; then
