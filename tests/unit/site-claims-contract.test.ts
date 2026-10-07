@@ -65,7 +65,12 @@ describe('docs/site/index.html — claims match the code', () => {
     // `"softwareVersion": "1.13.3"` — the copy most search engines read —
     // drifted to 1.13.3 while the test stayed green. Mutation-verified.
     const declared = [...html.matchAll(/v?(\d+\.\d+\.\d+)/g)].map((m) => m[1]);
-    const versions = [...new Set(declared)].filter((v) => v.startsWith('1.'));
+    // No `startsWith('1.')` filter here. That filter was added to skip
+    // unrelated numbers on the page, and it quietly gave the page a free
+    // pass: a wrong major — 0.0.1, 2.0.0 — would have been dropped from the
+    // comparison instead of failing. Found by the mutation gate, not by
+    // reading the test.
+    const versions = [...new Set(declared)];
     expect(versions.length, 'no version found on landing page').toBeGreaterThan(0);
     for (const v of versions) {
       expect(v, `landing page declares v${v}, package.json says v${pkg.version}`).toBe(pkg.version);
