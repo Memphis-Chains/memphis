@@ -84,6 +84,16 @@ jobs:
         # not pay for it — see .githooks/pre-commit for the same scoping.
         run: npm run -s ops:mutation-gate
 
+      - name: Native scanner covers the TypeScript threat profile
+        # The memory scanner exists twice — MEMORY_PATTERNS in TypeScript and
+        # scan_memory_content in the native operator — and they were
+        # hand-maintained in both. Measured 2026-10-07: the native copy
+        # guarded 4 of 11, so exfiltration-shaped and SSH-persistence content
+        # was refused over MCP and accepted on the surface that writes.
+        # Adding the seven missing arms fixed the instance; this check is what
+        # stops the class from recurring.
+        run: npm run -s ops:check-scan-parity
+
       - name: TypeScript coverage baseline
         run: npm run test:coverage
 
