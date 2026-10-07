@@ -10,6 +10,7 @@ const COGNITIVE_COMMANDS = [
   'connections',
   'suggest',
   'categorize',
+  'classify',
 ] as const;
 
 export const cognitiveCommandHandler: CommandHandler = {

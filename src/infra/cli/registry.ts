@@ -170,7 +170,7 @@ export const CLI_COMMAND_REGISTRY = [
   ),
   createCommandRegistration(
     'cognitive',
-    ['reflect', 'learn', 'insight', 'insights', 'connections', 'suggest', 'categorize'],
+    ['reflect', 'learn', 'insight', 'insights', 'connections', 'suggest', 'categorize', 'classify'],
     createLazyHandlerLoader(
       () => import('./handlers/cognitive.handler.js'),
       'cognitiveCommandHandler',
@@ -319,6 +319,7 @@ export const CLI_COMPLETION_COMMANDS = [
   'ask',
   'ask-session',
   'categorize',
+  'classify',
   'decide',
   'infer',
   'predict',
