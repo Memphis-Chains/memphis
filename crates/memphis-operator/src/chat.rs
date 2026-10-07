@@ -783,20 +783,36 @@ fn classify_reply_to_json(
     }))
 }
 
+/// Tier for every tool the native surface exposes.
+///
+/// GENERATED — do not edit by hand. Source of truth is
+/// src/gateway/tool-registry.ts (`TOOL_REGISTRY`), which the MCP server,
+/// the JSON-schema exporter and the confabulation detector all read.
+///
+/// Regenerate with `npm run -s ops:sync-native-tiers`, and check drift with
+/// `npm run -s ops:sync-native-tiers -- --check` (exit 1 when out of sync).
+///
+/// These two used to disagree, and nothing compared them:
+/// `memphis_code_read` was tier 2 in TypeScript and tier 1 here, so a
+/// surface pinned to tier 1 had the gateway refuse the call while the native
+/// operator served the file body. `memphis_grep`, `memphis_glob`,
+/// `memphis_git` and `memphis_web_fetch` were also one tier lower natively.
+///
+/// A tool not listed here is tier 0 — no authorization required. The native
+/// surface exposes only the 10 above; anything else never
+/// reaches this match.
 fn tool_tier(name: &str) -> u8 {
     match name {
         "memphis_exec"
         | "memphis_self_modify"
         | "memphis_test"
         | "memphis_cron"
-        | "memphis_classify" => 2,
-        // memphis_code_read is tier 2, not 1: the TypeScript registry
-        // declares it tier 2 (src/gateway/tool-registry/development.ts:8) and
-        // reading source is the same class of capability as writing it. A
-        // surface pinned to tier 1 — the Telegram baseline — is allowed to
-        // search and glob but not to read file bodies.
-        "memphis_web_fetch" | "memphis_grep" | "memphis_glob" | "memphis_git" => 1,
-        "memphis_code_read" => 2,
+        | "memphis_classify"
+        | "memphis_code_read"
+        | "memphis_web_fetch"
+        | "memphis_grep"
+        | "memphis_glob"
+        | "memphis_git" => 2,
         _ => 0,
     }
 }
@@ -6302,6 +6318,30 @@ mod tests {
                 *expected,
                 "{tool} is tier {expected} in the TypeScript registry but {} natively",
                 tool_tier(tool)
+            );
+        }
+
+        // Every capability tool the native surface exposes requires the vault
+        // passphrase. `memphis_grep`, `memphis_glob`, `memphis_git` and
+        // `memphis_web_fetch` were all tier 1 here while the registry said 2 --
+        // the same class of gap as memphis_code_read, in the same commit family,
+        // found by diffing the full table rather than one tool at a time.
+        for tool in [
+            "memphis_exec",
+            "memphis_self_modify",
+            "memphis_test",
+            "memphis_cron",
+            "memphis_classify",
+            "memphis_code_read",
+            "memphis_web_fetch",
+            "memphis_grep",
+            "memphis_glob",
+            "memphis_git",
+        ] {
+            assert_eq!(
+                tool_tier(tool),
+                2,
+                "{tool} must require the vault passphrase"
             );
         }
     }
