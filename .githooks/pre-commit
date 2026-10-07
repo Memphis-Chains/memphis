@@ -1,3 +1,33 @@
 #!/usr/bin/env sh
+# Managed via core.hooksPath — see scripts/setup-githooks.mjs.
+#
+# lint is unconditional; it is fast enough to always pay for.
+#
+# The mutation gate is conditional on the files it actually mutates. Running
+# it on every commit would tax unrelated work for nothing — it spawns vitest
+# and tsx, and its mutations only mean something when one of those files is
+# in the diff.
+set -e
 
 npm run lint
+
+STAGED="$(git diff --cached --name-only)"
+
+GUARDED='scripts/pii-scan.sh
+scripts/sync-site-metrics.mts
+scripts/sync-native-tiers.mts
+tests/unit/site-claims-contract.test.ts
+crates/memphis-operator/src/chat.rs
+docs/site/index.html'
+
+NEEDS_MUTATION_GATE=0
+for file in $GUARDED; do
+  if printf '%s\n' "$STAGED" | grep -qx "$file"; then
+    NEEDS_MUTATION_GATE=1
+    break
+  fi
+done
+
+if [ "$NEEDS_MUTATION_GATE" -eq 1 ]; then
+  npm run -s ops:mutation-gate
+fi
