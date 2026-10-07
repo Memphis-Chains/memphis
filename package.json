@@ -41,6 +41,7 @@
     "build:release": "npm run build:rust:release && tsc -p tsconfig.json",
     "ops:rust-core:safety": "./scripts/rust-core-safety-check.sh",
     "ops:sync-native-tiers": "tsx scripts/sync-native-tiers.mts",
+    "ops:sync-site-metrics": "tsx scripts/sync-site-metrics.mts",
     "prepack": "npm run build:release",
     "pack:dry-run": "npm pack --dry-run",
     "predev": "node -e \"try{require('fs').accessSync('crates/memphis-napi/index.node')}catch{console.log('\\n  .node binary missing — building Rust crates...\\n');require('child_process').execSync('npm run build:rust',{stdio:'inherit'})}\"",

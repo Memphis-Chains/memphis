@@ -80,6 +80,14 @@ jobs:
         # reads the gateway refused. Regenerate, never hand-edit.
         run: npm run -s ops:sync-native-tiers -- --check
 
+      - name: Landing page metrics match measured values
+        # The metric strip, the typed terminal and the noscript fallback all
+        # quote one operator instance's block and chain counts. They were
+        # hand-maintained and had drifted by months (13 332 vs 15 046 blocks,
+        # 57 tools vs 61, and the strip and terminal disagreeing with each
+        # other). Regenerate; never hand-edit a number.
+        run: npm run -s ops:sync-site-metrics -- --check
+
       - name: TypeScript coverage baseline
         run: npm run test:coverage
 
