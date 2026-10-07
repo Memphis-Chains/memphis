@@ -73,6 +73,13 @@ jobs:
       - name: Dead-code gate
         run: npm run deadcode:check
 
+      - name: Native tool tiers match the TypeScript registry
+        # tool_tier in crates/memphis-operator/src/chat.rs is generated from
+        # TOOL_REGISTRY. Five tools were one tier lower natively than in the
+        # registry with nothing detecting it, so a tier-1 surface got file
+        # reads the gateway refused. Regenerate, never hand-edit.
+        run: npm run -s ops:sync-native-tiers -- --check
+
       - name: TypeScript coverage baseline
         run: npm run test:coverage
 
