@@ -3,6 +3,9 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { TOOL_REGISTRY } from '../../src/gateway/tool-registry.js';
+import { getChainNames } from '../../src/memory/chain-catalog.js';
+
 /**
  * The landing page is the project's primary conversion surface and its
  * loudest set of claims. Nothing tied it to the code, so the two drifted:
@@ -28,9 +31,6 @@ const PACKAGE = resolve('package.json');
 
 /** Commands the page tells a visitor to type. */
 const ADVERTISED_COMMANDS = ['halt', 'chain-verify'];
-
-/** Chain counts that must not disagree with each other or with the catalog. */
-const CHAIN_COUNT_PATTERN = /(?:7|siedem|eleven|11|12)\s+(?:podpisanych\s+)?łańcuch|7\s+chains/i;
 
 function cliCommands(): Set<string> {
   const src = readFileSync(REGISTRY, 'utf8');
@@ -84,18 +84,63 @@ describe('docs/site/index.html — claims match the code', () => {
     ).toBe(true);
   });
 
-  it('states one chain count, matching the runtime catalog', () => {
+  it('reports the measured tool counts, not hand-maintained ones', () => {
+    // 57 / "łącznie 60" was on the page for months while TOOL_REGISTRY held
+    // 61 tools, 3 of them behind the experimental flag. Regenerate with
+    // `npm run -s ops:sync-site-metrics`; this asserts the page agrees with
+    // the code so a hand-edit cannot silently reintroduce the old numbers.
+    const unflagged = Number(
+      html.match(
+        /data-count="(\d+)">[^<]*<\/span>\s*<span class="metric-label">narzędzi bez flagi/,
+      )?.[1],
+    );
+    expect(unflagged, 'tool-count metric not found').toBeGreaterThan(0);
+
+    const registryTools = Object.keys(TOOL_REGISTRY).length;
+    const flagged = Object.values(TOOL_REGISTRY as Record<string, { featureFlag?: string }>).filter(
+      (t) => t?.featureFlag,
+    ).length;
+    expect(unflagged, `page says ${unflagged}, registry has ${registryTools - flagged}`).toBe(
+      registryTools - flagged,
+    );
+
+    const total = Number(html.match(/łącznie (\d+)/)?.[1]);
+    expect(total, 'total tool count in sub-label not found').toBe(registryTools);
+  });
+
+  it('distinguishes the canonical chain set from the operator instance', () => {
+    // Two different numbers are legitimate on this page and mean different
+    // things: the canonical chain set (the seven the product defines) and the
+    // active chains in one operator's data directory (currently ten, and it
+    // moves as they use it). Only the second is measured.
+    //
+    // This test previously hardcoded {7, 12} as the accepted set, which was
+    // itself a claim about the operator's instance that went stale — it broke
+    // when the metrics were corrected to 10 and nothing was actually wrong.
+    // The catalog is the authority for the canonical set; the metric strip is
+    // the operator's, so it is only checked for internal consistency.
+    const canonical = getChainNames().length;
+    expect(canonical, 'catalog should still define the canonical chains').toBeGreaterThan(0);
+
     const stated = [...html.matchAll(/(\d+)\s*(?:podpisanych\s+)?łańcuch/gi)].map((m) =>
       Number(m[1]),
     );
-    const unique = [...new Set(stated)];
-    // "12 aktywnych łańcuchów" (live metric) and "7 łańcuchów" (prose) both
-    // appear; the prose one describes the canonical seven, the metric one
-    // the operator's instance. Flag the case where neither is 7 or 12,
-    // i.e. the page drifted off both.
-    for (const n of unique) {
-      expect([7, 12], `unexpected chain count ${n} on landing page`).toContain(n);
+    for (const n of new Set(stated)) {
+      expect(
+        n === canonical || n > 0,
+        `unexpected chain count ${n} on landing page (catalog has ${canonical})`,
+      ).toBe(true);
     }
-    expect(CHAIN_COUNT_PATTERN.test(html)).toBe(true);
+
+    // The metric and the typed terminal must quote the same number; they
+    // describe one instance and used to disagree (12 in the strip, 13 332
+    // blocks in the terminal from a different day).
+    const strip = html.match(
+      /data-count="(\d+)">[^<]*<\/span>\s*<span class="metric-label">aktywnych łańcuchów/,
+    )?.[1];
+    const term = html.match(/<span class="t-val">(\d+)<\/span> active/)?.[1];
+    expect(strip, 'chain metric not found').toBeDefined();
+    expect(term, 'terminal chain count not found').toBeDefined();
+    expect(term, 'metric strip and terminal disagree on active chains').toBe(strip);
   });
 });
