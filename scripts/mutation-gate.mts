@@ -81,6 +81,19 @@ const MUTATIONS: Mutation[] = [
     guard: ['npx', 'tsx', 'scripts/sync-native-tiers.mts', '--check'],
   },
   {
+    name: 'a threat pattern dropped from TypeScript is not caught natively',
+    file: 'src/security/content-scan.ts',
+    // `ssh_access` is declared in BOTH MEMORY_PATTERNS and
+    // CODE_CHANGE_PATTERNS, so the bare id appears twice and the mutation
+    // refused to run. Anchor on the memory profile's header line instead,
+    // which occurs exactly once and needs no literal indentation in a
+    // regex (eslint no-regex-spaces).
+    anchor: "const MEMORY_PATTERNS: ThreatPattern[] = [\n  {\n    id: 'prompt_injection',",
+    replacement:
+      "const MEMORY_PATTERNS: ThreatPattern[] = [\n  {\n    id: 'prompt_injection_renamed_by_mutation',",
+    guard: ['npx', 'tsx', 'scripts/check-scan-parity.mts'],
+  },
+  {
     name: 'site-claims contract accepts a stale version in JSON-LD',
     file: 'docs/site/index.html',
     anchor: '"softwareVersion": "1.13.5"',
