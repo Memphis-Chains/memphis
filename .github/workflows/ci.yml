@@ -88,6 +88,25 @@ jobs:
         # other). Regenerate; never hand-edit a number.
         run: npm run -s ops:sync-site-metrics -- --check
 
+      - name: Operator PII scan
+        # secret-scan.sh matches credential prefixes (ghp_, sk-ant-, AKIA,
+        # PEM) and reports OK on a tree carrying an account identifier,
+        # because an id matches none of those arms. That is how the real
+        # Telegram chat id sat on the public default branch in ten test
+        # fixtures while the scan was green. Both scans also ran only in the
+        # nightly job — which is red — so a failure here would have been
+        # noticed days later. Runs on every push instead.
+        run: ./scripts/pii-scan.sh
+
+      - name: Credential scan
+        run: ./scripts/secret-scan.sh
+
+      - name: Guards still catch the defects they were written for
+        # Four guards were once shipped green and wrong; this is what tells
+        # the two apart. Scoped to the guarded files so unrelated commits do
+        # not pay for it — see .githooks/pre-commit for the same scoping.
+        run: npm run -s ops:mutation-gate
+
       - name: TypeScript coverage baseline
         run: npm run test:coverage
 
