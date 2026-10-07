@@ -1369,7 +1369,9 @@
       }
     },
     "node_modules/@modelcontextprotocol/sdk": {
-      "version": "1.29.0",
+      "version": "1.31.0",
+    "integrity": "sha512-UvTMgnNlnIBO/22ob2RcVGDlcvOslQs8T59+FTGdA0L27a39fdGF/EDETNtDVK4DZGpwomlsYpRdA8UXcVL/pw==",
+    "resolved": "https://registry.npmjs.org/@modelcontextprotocol/sdk/-/sdk-1.31.0.tgz",
       "license": "MIT",
       "dependencies": {
         "@hono/node-server": "^1.19.9",
@@ -7379,9 +7381,9 @@
       "license": "ISC"
     },
     "node_modules/sharp": {
-      "version": "0.35.4",
-      "resolved": "https://registry.npmjs.org/sharp/-/sharp-0.35.4.tgz",
-      "integrity": "sha512-n++8XWcj+jCOr2IOl7h8LbKnGBDY4aPbmprMONBNFdn0ImXqpGVv5zliDs0V9HbmbCQLpbuo2ej9rAoOQTvMDA==",
+      "version": "0.35.5",
+      "resolved": "https://registry.npmjs.org/sharp/-/sharp-0.35.5.tgz",
+      "integrity": "sha512-Ywn4OnzGukp7CDMrp08RQ50YKmuwG47brZgIVPTvBaaAfQlRlygrRqSrxdCiL9M+LlzLBiJ68IR1QqvzHyjC7g==",
       "license": "Apache-2.0",
       "dependencies": {
         "@img/colour": "^1.1.0",
