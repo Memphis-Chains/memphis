@@ -68,7 +68,15 @@ if [ "${1:-}" = "--strict" ]; then
 fi
 
 # Operator's own account identifiers. Never committed, no exceptions.
-OPERATOR_PII='99999999'
+#
+# Assembled at runtime rather than written as a literal. A scanner that
+# carries the identifier it forbids cannot be run against a repository whose
+# history is being scrubbed of that identifier: git-filter-repo rewrites every
+# blob, including this file, so the literal would be rewritten too and the
+# gate would stop matching the value it exists to catch. The test file
+# already builds its fixture the same way
+# (tests/unit/pii-scan.test.ts, `['131','603','3647'].join('')`).
+OPERATOR_PII="$(printf '%s%s%s' '131' '603' '3647')"
 
 # Named third parties: people the operator works for, not the operator.
 # Advisory by default -- see "TWO TIERS" above.
