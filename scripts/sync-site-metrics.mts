@@ -12,17 +12,16 @@
  * experimental flag. The page captions itself "Dowód · nie obietnica", so
  * stale numbers there are worse than no numbers.
  *
- * The first version of this script only rewrote the metric strip, which left
- * the typed terminal free to drift again — mutating it proved exactly that:
- * `npm run -s ops:sync-site-metrics` "fixed" the block count and silently
- * left the chain count wrong, because the test that caught it was the only
- * thing noticing. All three surfaces are rewritten here.
+ * The first version only rewrote the metric strip, which left the typed
+ * terminal free to drift again — mutating it proved exactly that: the
+ * generator "fixed" the block count and silently left the chain count wrong,
+ * because only a test noticed. All three surfaces are rewritten here.
  *
  * Run: `npm run -s ops:sync-site-metrics`
  * Check: `npm run -s ops:sync-site-metrics -- --check` (exit 1 on drift)
  */
 
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -42,15 +41,23 @@ const unflaggedTools = totalTools - flaggedTools;
 /**
  * Block and chain counts come from ~/.memphis/chains.
  *
- * CAVEAT: this is the *operator's* private instance, not a public figure.
- * Publishing "15 046 blocks" says something about one machine's usage, which
- * is arguably the kind of telemetry the project declares it does not do. It
- * is kept because the operator asked for real numbers and because a page
- * nobody can regenerate goes stale. If that trade is wrong the fix is to drop
- * these two metrics from the strip, not to freeze them by hand.
+ * Returns null when there is no data directory. That is the normal state on
+ * CI, on a contributor's clone, and on any machine that has not run
+ * `memphis init` — and it is why this script must not throw there. A missing
+ * directory means "no operator instance to measure", not "zero blocks".
+ *
+ * CAVEAT: when present, these are the *operator's* private numbers, not a
+ * public figure. Publishing "15 046 blocks" says something about one
+ * machine's usage, which is arguably the kind of telemetry the project
+ * declares it does not do. Kept because the operator asked for real numbers
+ * and because a page nobody can regenerate goes stale. If that trade is
+ * wrong the fix is to drop these two metrics from the strip, not to freeze
+ * them by hand.
  */
-function chainCounts(): { blocks: number; chains: number } {
+function chainCounts(): { blocks: number; chains: number } | null {
   const dir = join(homedir(), '.memphis', 'chains');
+  if (!existsSync(dir)) return null;
+
   let blocks = 0;
   let chains = 0;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -74,13 +81,13 @@ function swap(src: string, pattern: RegExp, replacement: string, what: string): 
   return src.replace(pattern, replacement);
 }
 
-function render(): { src: string; blocks: number; chains: number } {
-  const { blocks, chains } = chainCounts();
-  const blockText = fmt(blocks);
+function render(): { src: string; checked: string[] } {
+  const counts = chainCounts();
+  const checked: string[] = ['tool counts'];
   let src = readFileSync(SITE, 'utf8');
 
-  // --- metric strip -------------------------------------------------------
-  const strip = (label: string, count: number, text: string): string => {
+  // --- tool counts: derivable from the repo, checked everywhere ----------
+  const strip = (label: string, count: number, text: string): void => {
     const labelIdx = src.indexOf(`>${label}</span>`);
     if (labelIdx === -1) throw new Error(`metric label not found: ${label}`);
     const open = src.lastIndexOf('<span class="metric-num"', labelIdx);
@@ -92,12 +99,24 @@ function render(): { src: string; blocks: number; chains: number } {
       src.slice(close);
   };
 
-  strip('bloków w łańcuchach', blocks, blockText);
   strip('narzędzi bez flagi', unflaggedTools, String(unflaggedTools));
   strip('wywołań na zewnątrz', 0, '0');
+  checked.push('version');
+
+  // --- instance counts: only where an operator instance exists ----------
+  if (!counts) {
+    console.log(
+      '[sync-site-metrics] no ~/.memphis/chains — checked tool counts only, left instance metrics alone',
+    );
+    return { src, checked };
+  }
+
+  const { blocks, chains } = counts;
+  const blockText = fmt(blocks);
+
+  strip('bloków w łańcuchach', blocks, blockText);
   strip('aktywnych łańcuchów', chains, String(chains));
 
-  // --- typed terminal -----------------------------------------------------
   src = swap(
     src,
     /<span data-line>chain blocks {4}<span class="t-val">[^<]*<\/span>/,
@@ -110,23 +129,22 @@ function render(): { src: string; blocks: number; chains: number } {
     `<span data-line>chains          <span class="t-val">${chains}</span> active`,
     'terminal active chains',
   );
-
-  // --- noscript fallback --------------------------------------------------
   src = swap(
     src,
     /status ok \(v[\d.]+\) · [\d\s]+ bloków w \d+ łańcuchach/,
     `status ok (v${VERSION}) · ${blockText} bloków w ${chains} łańcuchach`,
     'noscript summary',
   );
+  checked.push('block count', 'chain count');
 
-  return { src, blocks, chains };
+  return { src, checked };
 }
 
 const current = readFileSync(SITE, 'utf8');
-const { src: next, blocks, chains } = render();
+const { src: next, checked } = render();
 
 if (next === current) {
-  console.log('[sync-site-metrics] up to date');
+  console.log(`[sync-site-metrics] up to date (${checked.join(', ')})`);
   process.exit(0);
 }
 
@@ -144,5 +162,5 @@ if (process.argv.includes('--check')) {
 
 writeFileSync(SITE, next, 'utf8');
 console.log(
-  `[sync-site-metrics] updated (${unflaggedTools}/${totalTools} tools unflagged, ${flaggedTools} flagged, ${blocks} blocks in ${chains} chains)`,
+  `[sync-site-metrics] updated (${unflaggedTools}/${totalTools} tools unflagged, ${flaggedTools} flagged, ${checked.join(', ')})`,
 );
