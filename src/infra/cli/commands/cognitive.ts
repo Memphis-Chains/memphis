@@ -5,6 +5,7 @@ import { KnowledgeSynthesizer } from '../../../cognitive/knowledge-synthesizer.j
 import { getLearningStorage } from '../../../cognitive/learning.js';
 import { ProactiveSuggestionEngine } from '../../../cognitive/proactive-suggestions.js';
 import { loadCognitiveBlocks } from '../../../cognitive/runtime-support.js';
+import { runMemphisClassify, type MemphisClassifyInput } from '../../../mcp/tools/classify.js';
 import { ReflectionEngine } from '../../../reflection/engine.js';
 import type { Reflection } from '../../../reflection/types.js';
 import { appendBlock, type AppendBlockResult } from '../../storage/chain-adapter.js';
@@ -204,6 +205,7 @@ export async function handleCognitiveCommand(context: CliContext): Promise<boole
     connections: handleConnectionsCommand,
     suggest: handleSuggestCommand,
     categorize: handleCategorizeCommand,
+    classify: handleClassifyCommand,
     reflect: handleReflectCommand,
   };
   const handler = command ? handlers[command] : undefined;
@@ -309,6 +311,70 @@ async function handleCategorizeCommand(context: CliContext): Promise<boolean> {
     json,
   );
   return true;
+}
+
+/**
+ * `memphis classify` — CLI surface over `memphis_classify` (BASAL typed
+ * decisions). The tool existed only on the MCP/native surfaces, so
+ * `memphis classify --state ...` printed help (journal-670, 2026-10-03):
+ * registry `cliFlags` are not CLI arguments.
+ *
+ * Criteria arrive as one string so the command stays shell-friendly:
+ *   --criteria 'karta:Rzeki kredytowe,kredyt:Pożyczki gotówkowe'
+ * A bare `karta,kredyt` is accepted too and the options double as keys.
+ *
+ * SLOW on this host (~70 s at orders=1, ~140 s at orders=2) — it blocks on
+ * the BASAL service, not on local CPU work.
+ */
+async function handleClassifyCommand(context: CliContext): Promise<boolean> {
+  const { json } = context.args;
+  const raw = readClassifyFlag(context.argv, '--state');
+  const question = readClassifyFlag(context.argv, '--question');
+  const criteriaRaw = readClassifyFlag(context.argv, '--criteria');
+  const type = readClassifyFlag(context.argv, '--type');
+  const ordersRaw = readClassifyFlag(context.argv, '--orders');
+  const thresholdRaw = readClassifyFlag(context.argv, '--threshold');
+
+  if (!raw) throw new Error('classify requires --state "text to classify"');
+  if (!question) throw new Error('classify requires --question "what to decide"');
+  if (!criteriaRaw)
+    throw new Error('classify requires --criteria "key:description,key2:description2"');
+
+  const criteria: Record<string, string> = {};
+  for (const pair of criteriaRaw.split(',')) {
+    const trimmed = pair.trim();
+    if (!trimmed) continue;
+    const sep = trimmed.indexOf(':');
+    if (sep === -1) criteria[trimmed] = trimmed;
+    else {
+      const key = trimmed.slice(0, sep).trim();
+      if (key) criteria[key] = trimmed.slice(sep + 1).trim() || key;
+    }
+  }
+  const optionCount = Object.keys(criteria).length;
+  if (optionCount < 2)
+    throw new Error(`classify requires at least two criteria options; got ${optionCount}`);
+  if (optionCount > 10) throw new Error(`classify supports at most 10 options, got ${optionCount}`);
+
+  const input: MemphisClassifyInput = {
+    state: raw,
+    question,
+    criteria,
+    type: type === 'noul' || type === 'score' || type === 'choice' ? type : undefined,
+    orders: ordersRaw === '2' ? 2 : ordersRaw === '1' ? 1 : undefined,
+    threshold: thresholdRaw ? Number(thresholdRaw) : undefined,
+  };
+
+  print({ ok: true, mode: 'classify', input, result: await runMemphisClassify(input) }, json);
+  return true;
+}
+
+/** Read `--flag value` straight off argv: classify args are not CliArgs fields. */
+function readClassifyFlag(argv: readonly string[], flag: string): string | undefined {
+  const index = argv.indexOf(flag);
+  if (index === -1) return undefined;
+  const value = argv[index + 1];
+  return value === undefined || value.startsWith('--') ? undefined : value;
 }
 
 async function handleReflectCommand(context: CliContext): Promise<boolean> {
