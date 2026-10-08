@@ -61,7 +61,7 @@ describe('lr-dashboard.service — log directory contract', () => {
     expect(unitSection).toMatch(/^StartLimitBurst=\d+$/m);
   });
 
-  it('parses as a valid unit', () => {
+  it('parses as a valid unit (syntax, not the local filesystem layout)', () => {
     const tmp = mkdtempSync(path.join(tmpdir(), 'unit-verify-'));
     try {
       const copy = path.join(tmp, 'lr-dashboard.service');
@@ -70,12 +70,21 @@ describe('lr-dashboard.service — log directory contract', () => {
         encoding: 'utf8',
         timeout: 30_000,
       });
-      // Only lines about this unit matter; systemd-analyze reports unrelated
-      // host units on some setups.
-      const noise = (result.stderr ?? '')
+      // Filter out complaints about files that do not exist ON THIS HOST.
+      // On the operator's machine /usr/bin/node is present; on a GitHub
+      // runner node lives under /opt/hostedtoolcache, so `systemd-analyze`
+      // reports "Command /usr/bin/node is not executable" there while the
+      // unit file is perfectly valid. Measured: this assertion failed CI on
+      // run 37768963724 for exactly that reason.
+      //
+      // What must stay is the class of error that means the FILE is wrong:
+      // unknown/duplicate directives, misplaced StartLimit*, syntax.
+      const fatal = (result.stderr ?? '')
         .split('\n')
-        .filter((line) => line.trim() && line.includes('lr-dashboard'));
-      expect(noise).toEqual([]);
+        .map((line) => line.trim())
+        .filter((line) => line.includes('lr-dashboard'))
+        .filter((line) => !/is not executable|not found|No such file or directory/i.test(line));
+      expect(fatal).toEqual([]);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
