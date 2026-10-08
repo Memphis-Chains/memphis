@@ -22,7 +22,27 @@ Other `.service` files in this directory (`memphis-camera-preview.service`,
 `memphis-whisper-stt.service`, `memphis-piper-tts.service`,
 `lr-dashboard.service`) are operator-machine media/UI captures, also
 codified here so a reinstall doesn't lose them. They are NOT installed by
-default — see per-service README below if you want them.
+default — to get `lr-dashboard.service` installed and running, run
+`scripts/systemd/install-managed-app-units.sh` (see below). The other three
+have no installer yet and are copied by hand.
+
+### Managed app units (`lr-dashboard.service`)
+
+```bash
+bash scripts/systemd/install-managed-app-units.sh
+```
+
+This creates the state directory the unit logs into, copies the unit only if
+it differs, and enables/starts it. Idempotent — a second run reports
+`unchanged`.
+
+The state directory is not optional decoration: `StandardOutput=append:` does
+not create missing parent directories, and systemd opens stdout **before**
+running `ExecStartPre`. A missing directory therefore fails the unit at step
+STDOUT with `209/STDOUT` before `ExecStart` is ever reached, and with
+`Restart=on-failure` the unit loops. Measured 2026-10-08: 325 restarts in
+12 hours. Do not try to fix this with an `ExecStartPre=mkdir` — that process
+dies at STDOUT too.
 
 ## Install (Linux / WSL)
 

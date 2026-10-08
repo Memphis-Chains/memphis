@@ -2,6 +2,8 @@
 Description=LR Dashboard managed app (port 3001)
 After=network-online.target memphis.service
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -24,9 +26,20 @@ Environment=LR_BACKUP_DIR=/home/memphis/.memphis/apps/lr-dashboard/state/backups
 Environment=LR_PID_FILE=/home/memphis/.memphis/apps/lr-dashboard/state/lr-dashboard.pid
 Environment=LR_LOG_FILE=/home/memphis/.memphis/apps/lr-dashboard/state/lr-dashboard.log
 Environment=LR_LOG_REQUESTS=0
+# `StandardOutput=append:` does not create missing parent directories, and
+# systemd opens stdout BEFORE running ExecStartPre — so an ExecStartPre mkdir
+# dies at step STDOUT itself with 209/STDOUT (measured 2026-10-08; that was
+# my first attempt and it did not work). The directory has to exist before
+# the unit is started; `scripts/systemd/install-managed-app-units.sh`
+# creates it, and StartLimitBurst now caps the failure instead of looping.
+#
+# Observed cost of leaving it out: 325 restarts in 12 h, each writing the
+# same 209/STDOUT line every 5 s.
 ExecStart=/usr/bin/node /home/memphis/projects/lr-dashboard/src/server.js
 Restart=on-failure
-RestartSec=5
+# Stop hammering the journal when the failure is structural (bad ExecStart,
+# missing .env) rather than transient.
+RestartSec=15
 StandardOutput=append:/home/memphis/.memphis/apps/lr-dashboard/state/lr-dashboard.systemd.log
 StandardError=append:/home/memphis/.memphis/apps/lr-dashboard/state/lr-dashboard.systemd.log
 
