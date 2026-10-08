@@ -14,9 +14,23 @@ name: chain-invariant
 # sneak in via a silently-skipped step inside the main quality-gate
 # matrix.
 #
+# The shape suite is the second half of the contract. `chains_scanned`
+# counts directories, so a chain that lost every block used to lower a
+# counter and still exit 0. Real instance: 2026-10-07 19:00 logged
+# chains_scanned 3 / blocks_ok 7 / ok true, against 14 in all 176 other
+# runs that week — a silent data-loss signal reading like a health line.
+#
+# `push` was added 2026-10-08. Measured before that: every run of this
+# workflow in the previous six days had `event=schedule`. A push landing
+# on main ran no chain gate at all — the 2026-10-07 sweep fix (b57c96dd)
+# and this one both reached main with the gate never having seen them.
+# PR-only coverage cannot catch a regression that only exists on main.
+#
 # Cost: under 5 seconds wall time, zero network, zero secrets.
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -41,8 +55,28 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Run chain-invariant integration test
-        run: npx vitest run tests/integration/chain-invariant.test.ts
+      # Both files, in one step: chain-sweep-shape.test.ts covers the
+      # exit-3 branch (empty / vanished chain directory) that the 2026-10-07
+      # 19:00 sweep reported as `ok: true`. That regression is invisible to
+      # a fixtures-only pass, so the shape suite has to run here too.
+      - name: Run chain-invariant integration tests
+        run: |
+          npx vitest run \
+            tests/integration/chain-invariant.test.ts \
+            tests/integration/chain-sweep-shape.test.ts
+
+      # Measured 2026-10-08: `npm run test:ops-artifacts` was referenced by
+      # no workflow at all, so 23 contract tests — release preflight, branch
+      # protection, incident handoff, and the two CI contracts added today
+      # — never ran on any run. A contract no job invokes protects nothing.
+      #
+      # Not in ci.yml: `strict-handoff-workflow-contract.test.ts` lists
+      # `npm run -s test:ops-artifacts` as a forbidden snippet there
+      # (workflowContracts[0].forbiddenSnippets), so adding it would have
+      # failed that gate. Running it here keeps it enforced without
+      # touching a decision the repo already made deliberately.
+      - name: Ops artifact contracts
+        run: npm run -s test:ops-artifacts
 
       - name: Upload sandbox dir on failure
         if: failure()
