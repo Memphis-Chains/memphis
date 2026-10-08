@@ -34,11 +34,16 @@ describe('scripts/backup-to-usb.sh — USB mount detection contract', () => {
   });
 
   it('probes the systemd automount location', () => {
-    expect(source).toContain('/run/media/$USER/memphis-usb-back');
+    // `$USER` expanded to a `local user="${USER:-$(id -un)}"` local on
+    // 2026-10-08: under `set -u` an unset USER aborted the whole script
+    // with rc=1 before the probe could report its own "no mount" code 2.
+    // The path shape is the contract; the variable name is not.
+    expect(source).toMatch(/local user="\$\{USER:-\$\(id -un\)\}"/);
+    expect(source).toContain('/run/media/$user/memphis-usb-back');
   });
 
   it('probes the legacy udisks2 locations too', () => {
-    expect(source).toContain('/media/$USER/usb-backup');
+    expect(source).toContain('/media/$user/usb-backup');
     expect(source).toContain('/media/memphis/usb-backup');
   });
 
@@ -50,7 +55,7 @@ describe('scripts/backup-to-usb.sh — USB mount detection contract', () => {
     // Compare CODE positions. The prose comment above the function
     // also names the variable, so a plain indexOf finds the wrong spot.
     const overrideAppend = source.indexOf('candidates+=("$MEMPHIS_USB_DIR")');
-    const firstBuiltin = source.indexOf('/run/media/$USER/memphis-usb-back');
+    const firstBuiltin = source.indexOf('/run/media/$user/memphis-usb-back');
     expect(overrideAppend).toBeGreaterThan(-1);
     expect(firstBuiltin).toBeGreaterThan(-1);
     expect(overrideAppend).toBeLessThan(firstBuiltin);
@@ -101,14 +106,17 @@ describe('scripts/backup-to-usb.sh — runtime', () => {
       // no real mount on this host can satisfy the probe.
       const result = spawnSync(
         'bash',
-        ['-c', `
+        [
+          '-c',
+          `
           set -e
           mount() { return 1; }   # every path is a non-mount
           export -f mount 2>/dev/null || true
           MEMPHIS_USB_DIR=${JSON.stringify(fakeUsb)} \\
             HOME=${JSON.stringify(fakeRoot)} \\
             bash ${JSON.stringify(scriptPath)}
-        `],
+        `,
+        ],
         {
           cwd: repoRoot,
           encoding: 'utf8',
@@ -122,9 +130,7 @@ describe('scripts/backup-to-usb.sh — runtime', () => {
       // for a genuinely absent USB, but the stderr must be explicit
       // about which paths were tried.
       expect([1, 2]).toContain(result.status);
-      expect(result.stdout + result.stderr).toMatch(
-        /no USB mount found|USB mount|not-a-mount/,
-      );
+      expect(result.stdout + result.stderr).toMatch(/no USB mount found|USB mount|not-a-mount/);
     } finally {
       rmSync(fakeRoot, { recursive: true, force: true });
     }

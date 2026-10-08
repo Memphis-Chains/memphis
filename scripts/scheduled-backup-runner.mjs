@@ -5,7 +5,7 @@
 // file-level error reporting).
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const DATA_DIR = '/home/memphis/.memphis';
@@ -54,6 +54,10 @@ function cleanupOldBackups(keepN) {
   for (const f of toDelete) {
     try {
       unlinkSync(join(BACKUPS_DIR, f));
+      // The sidecar is what makes the archive verifiable; leaving it behind
+      // would accumulate orphan .sha256 files that look like live backups.
+      const sidecar = join(BACKUPS_DIR, `${f}.sha256`);
+      if (existsSync(sidecar)) unlinkSync(sidecar);
     } catch (e) {
       console.error(`cleanup failed: ${f}: ${e.message}`);
     }
@@ -97,6 +101,13 @@ function main() {
 
   const size = statSync(backupPath).size;
   const checksum = sha256(backupPath);
+  // Sidecar `.sha256` is what `memphis backup verify` reads as the expected
+  // value (backup.ts readChecksumHex -> `${archive}${CHECKSUM_SUFFIX}`).
+  // The CLI path createBackup() writes it; this runner computed the very same
+  // digest and only printed it to stdout, so every nightly archive was
+  // unverifiable by contract and backup-to-usb.sh refused to copy it
+  // (observed 2026-10-08: 58 refusals / 0 successful copies in 14 days).
+  writeFileSync(`${backupPath}.sha256`, `${checksum}  ${fileName}\n`, 'utf8');
   const deleted = cleanupOldBackups(keep);
 
   let drillOk = false;
