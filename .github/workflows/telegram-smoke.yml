@@ -35,6 +35,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Every real step below is guarded by this flag, so when secrets are
+      # absent the job ran ZERO steps and still reported `success`. That
+      # reads as "Telegram works" on the run list when nothing was
+      # exercised. 2026-10-07: run 37735415527 = success with no coverage,
+      # while the operator's own box had `telegram: state=missing-token`.
+      #
+      # The last step turns `skipped` into the job's real outcome, so a
+      # green row means the smoke test actually sent a message.
       - name: Short-circuit when secrets are not configured
         id: check-secrets
         run: |
@@ -45,6 +53,17 @@ jobs:
           else
             echo "skipped=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Report coverage (skipped is not success)
+        if: always()
+        env:
+          SKIPPED: ${{ steps.check-secrets.outputs.skipped }}
+        run: |
+          if [ "$SKIPPED" = "true" ]; then
+            echo "::notice title=Telegram smoke skipped::Secrets not configured — no Telegram path was exercised."
+            exit 78
+          fi
+          echo "Telegram smoke test executed against the live API."
 
       - uses: actions/setup-node@v5
         if: steps.check-secrets.outputs.skipped != 'true'
