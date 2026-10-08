@@ -75,6 +75,15 @@ jobs:
       # (workflowContracts[0].forbiddenSnippets), so adding it would have
       # failed that gate. Running it here keeps it enforced without
       # touching a decision the repo already made deliberately.
+      # The build is required, not optional: incident-bundle-exporter,
+      # cognitive-report-query and the two napi/package contracts read the
+      # compiled Rust bridge. Without it they fail on `paths bridge
+      # unavailable — crates/memphis-napi ...` while passing on the
+      # operator's machine, where the bridge is already built. ci.yml gets
+      # this for free from its own build step; this workflow has none.
+      - name: Build (Rust bridge for ops contracts)
+        run: npm run build
+
       - name: Ops artifact contracts
         run: npm run -s test:ops-artifacts
 
