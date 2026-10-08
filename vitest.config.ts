@@ -11,7 +11,23 @@ export default defineConfig({
     // leaving room for slower GitHub Actions runners (2 vCPU).
     testTimeout: 30000,
     include: ['tests/**/*.test.ts'],
-    exclude: ['.memphis-intake/**', 'reference/**', 'node_modules/**', 'dist/**'],
+    exclude: [
+      '.memphis-intake/**',
+      'reference/**',
+      'node_modules/**',
+      'dist/**',
+      // Packs the whole repo with `npm pack` and unpacks it again, then
+      // probes the packaged CLI. Measured 83 s on the operator's Linux box
+      // and over the 240 s ceiling on a GitHub macos runner, which turned
+      // `cross-arch (macos-latest)` red for a path we do not work on.
+      // This suite proves the distribution artifact, not the code. It stays
+      // reachable on demand:
+      //   npm run -s ops:validate-package-artifact
+      // and it is still exercised by the release path —
+      // scripts/rc-drill.sh:324 runs it as the "bounded package proof",
+      // wired into scripts/release-smoke.sh and offline-acceptance.yml.
+      'tests/ops/package-artifact-validator.test.ts',
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json-summary', 'html'],
