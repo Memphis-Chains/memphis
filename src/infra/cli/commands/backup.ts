@@ -1238,6 +1238,15 @@ export async function handleBackupCommand(context: CliContext): Promise<boolean>
       { ok: verified.valid, mode: 'verify', ...verified, sizeHuman: humanSize(verified.size) },
       args.json,
     );
+    // Exit code is the contract shell callers gate on. `scripts/backup-to-usb.sh`
+    // does `if ! memphis backup verify "$latest"; then refuse to copy`. Before
+    // this, verify printed `valid: false` and still exited 0, so the USB copy
+    // gate could never fire and a genuinely corrupt archive would have been
+    // copied anyway (observed 2026-10-08: rc=0 on a 100 KB /dev/urandom file).
+    // `memphis backup list --verify` already set exitCode 1 the same way.
+    if (!verified.valid) {
+      process.exitCode = 1;
+    }
     return true;
   }
 

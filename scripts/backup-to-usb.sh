@@ -31,10 +31,15 @@ MIN_FREE_MB=200  # refuse copy if less than 200 MB free on USB
 #    different mount layout is handled without a code change.
 resolve_usb_dir() {
     local candidates=()
+    # `set -u` is active and systemd does export USER on this host, but any
+    # context that does not (cron, a bare `env -i`, some containers) aborted
+    # the whole script with "USER: unbound variable" before the probe ran —
+    # a crash masquerading as "no mountpoint" (measured rc=1, not 2).
+    local user="${USER:-$(id -un)}"
     [ -n "${MEMPHIS_USB_DIR:-}" ] && candidates+=("$MEMPHIS_USB_DIR")
     candidates+=(
-        "/run/media/$USER/memphis-usb-back"
-        "/media/$USER/usb-backup"
+        "/run/media/$user/memphis-usb-back"
+        "/media/$user/usb-backup"
         "/media/memphis/usb-backup"
     )
     local d
@@ -48,7 +53,7 @@ resolve_usb_dir() {
 }
 
 if ! USB_DIR=$(resolve_usb_dir); then
-    echo "[backup-to-usb] ERROR: no USB mount found (tried MEMPHIS_USB_DIR, /run/media/$USER/memphis-usb-back, /media/$USER/usb-backup, /media/memphis/usb-backup)" >&2
+    echo "[backup-to-usb] ERROR: no USB mount found (tried MEMPHIS_USB_DIR, /run/media/$(id -un)/memphis-usb-back, /media/$(id -un)/usb-backup, /media/memphis/usb-backup)" >&2
     exit 2
 fi
 
@@ -76,8 +81,32 @@ if [ -z "$latest" ]; then
     exit 1
 fi
 
-if ! memphis backup verify "$latest" >/dev/null 2>&1; then
-    echo "[backup-to-usb] ERROR: latest archive $latest failed verify, refusing to copy" >&2
+# Resolve the CLI to an absolute path before calling it. This script runs from
+# a systemd timer, whose PATH is
+#   /home/memphis/.cargo/bin:/home/memphis/.local/bin:/home/memphis/bin:/usr/...:/bin
+# and does NOT contain ~/.local/share/npm-global/bin, where the `memphis`
+# symlink lives. `memphis backup verify` therefore exited 127 (command not
+# found), `if ! memphis ...` treated that as "verification failed", and the
+# script reported every archive as corrupt. Same false-green as a real
+# corruption, opposite direction: measured 58 refusals / 0 copies in 14 days
+# against archives that `tar tzf` read fine.
+MEMPHIS_BIN="${MEMPHIS_BIN:-$HOME/memphis/bin/memphis.js}"
+if [ ! -f "$MEMPHIS_BIN" ]; then
+    MEMPHIS_BIN="$(command -v memphis 2>/dev/null || true)"
+fi
+if [ -z "$MEMPHIS_BIN" ] || [ ! -f "$MEMPHIS_BIN" ]; then
+    echo "[backup-to-usb] ERROR: memphis CLI not found (set MEMPHIS_BIN)" >&2
+    exit 1
+fi
+
+# `set -e` is active: a bare `out=$(cmd)` on the next line aborts the script
+# before the status is ever read, so the diagnostic never printed (measured:
+# rc=1 with empty stderr). Appending `|| true` is NOT the fix — it replaces
+# `$?` with true's own 0. The status has to be captured inside the same
+# `&&`/`||` list, where `set -e` does not trigger.
+verify_out=$("${MEMPHIS_BIN}" backup verify "$latest" 2>&1) && verify_rc=0 || verify_rc=$?
+if [ "$verify_rc" -ne 0 ]; then
+    echo "[backup-to-usb] ERROR: latest archive $latest failed verify (rc=$verify_rc): $verify_out" >&2
     exit 1
 fi
 
