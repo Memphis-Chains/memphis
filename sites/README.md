@@ -78,12 +78,12 @@ last thing written and always backed up first.
 `memphis-v5.pl` also hosts live applications that are **not** in the repo and
 must never be synced over:
 
-| Path | What |
-|---|---|
+| Path         | What                                               |
+| ------------ | -------------------------------------------------- |
 | `panel-app/` | Laravel + Filament application, database, env file |
-| `panel/` | webroot of that application |
-| `docs/` | generated documentation site |
-| `data/` | SQLite analytics database and the HMAC salt |
+| `panel/`     | webroot of that application                        |
+| `docs/`      | generated documentation site                       |
+| `data/`      | SQLite analytics database and the HMAC salt        |
 
 `api/` was on this list until 2026-10-09 and is now **repo-owned**: the only git
 copy of the PHP backend lives in `sites/memphis-v5/api/`, and one `git clean` used
@@ -126,16 +126,16 @@ served verbatim, and only probing both URL shapes found it.
 
 ## Anti-confab
 
-| Rule | Why |
-|---|---|
-| Back up before writing, outside the docroot | No git on the server. The backup is the only way back. |
-| Never leave a backup inside the docroot | It is public. Five old page versions were readable by anyone. |
-| One file at a time, verify between | Otherwise you cannot tell which change broke it. |
-| `.htaccess` last, always | A syntax error takes down every page on the site. |
-| Only touch `public_html/<site>/` for your site | Other people's projects share the account. |
-| Never `rsync --delete` a docroot | It would delete the server-owned applications above. |
-| Never judge a failure from one request | A checker of mine reported a live page as 404; 20 sequential requests all returned 200. The bug was in my loop. |
-| Measure before tuning a timeout | A short timeout looked like flakiness. Measured: a trivial command passed, a directory listing failed. The timeout was reporting command length, not reachability. |
+| Rule                                           | Why                                                                                                                                                                |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Back up before writing, outside the docroot    | No git on the server. The backup is the only way back.                                                                                                             |
+| Never leave a backup inside the docroot        | It is public. Five old page versions were readable by anyone.                                                                                                      |
+| One file at a time, verify between             | Otherwise you cannot tell which change broke it.                                                                                                                   |
+| `.htaccess` last, always                       | A syntax error takes down every page on the site.                                                                                                                  |
+| Only touch `public_html/<site>/` for your site | Other people's projects share the account.                                                                                                                         |
+| Never `rsync --delete` a docroot               | It would delete the server-owned applications above.                                                                                                               |
+| Never judge a failure from one request         | A checker of mine reported a live page as 404; 20 sequential requests all returned 200. The bug was in my loop.                                                    |
+| Measure before tuning a timeout                | A short timeout looked like flakiness. Measured: a trivial command passed, a directory listing failed. The timeout was reporting command length, not reachability. |
 
 ## Notes
 
