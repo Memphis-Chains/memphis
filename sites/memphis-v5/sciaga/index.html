@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ściąga — Oswobodzeni 2026 · Prezentacja 1.5h</title>
+  <meta name="description" content="Ściągawka dla prezentacji Oswobodzeni 2026. Memphis jako narzędzie samooświaty i obrony cywilnej." />
+  <style>
+    :root {
+      --bg: #040509;
+      --bg-2: #0a0d14;
+      --bg-3: #0f1318;
+      --fg: #edf2f7;
+      --muted: #97a3b3;
+      --accent: #ff6b35;
+      --accent-2: #2dd4bf;
+      --accent-3: #9ae6d8;
+      --good: #22c55e;
+      --danger: #ef4444;
+      --line: rgba(255,255,255,0.07);
+      --line-2: rgba(255,255,255,0.12);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+    }
+    *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    ::selection { background: rgba(45,212,191,0.25); color: var(--accent-3); }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--accent-2); border-radius: 3px; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--fg);
+      min-height: 100vh;
+      line-height: 1.65;
+    }
+
+    /* ── HEADER ── */
+    header {
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .header-left .doc-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.25rem;
+    }
+    .header-left h1 {
+      font-size: 1.3rem;
+      font-weight: 800;
+    }
+    .header-left h1 .a { color: var(--accent); }
+    .header-left h1 .b { color: var(--accent-2); }
+    .header-right {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+    .time-badge {
+      background: rgba(45,212,191,0.1);
+      border: 1px solid rgba(45,212,191,0.3);
+      color: var(--accent-2);
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 0.35rem 1rem;
+      border-radius: 100px;
+    }
+    .nav-links {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .nav-links a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.85rem;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--accent-2); }
+
+    /* ── TIMER ── */
+    .timer-bar {
+      background: var(--bg-2);
+      border-bottom: 1px solid var(--line);
+      padding: 0.75rem 2rem;
+      display: flex;
+      gap: 2rem;
+      align-items: center;
+      flex-wrap: wrap;
+      font-size: 0.8rem;
+    }
+    .timer-item {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .timer-item .label { color: var(--muted); }
+    .timer-item .value { color: var(--fg); font-weight: 600; }
+    .timer-item .value.accent { color: var(--accent); }
+    .timer-item .value.teal { color: var(--accent-2); }
+    .timer-item .value.good { color: var(--good); }
+
+    /* ── SLIDES CONTAINER ── */
+    .slides {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem 2rem 4rem;
+    }
+
+    /* ── SLIDE ── */
+    .slide {
+      background: var(--bg-2);
+      border: 1px solid var(--line-2);
+      border-radius: 20px;
+      margin-bottom: 2rem;
+      overflow: hidden;
+    }
+    .slide-header {
+      padding: 1.25rem 1.75rem;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .slide-num {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: rgba(255,107,53,0.1);
+      border: 1px solid rgba(255,107,53,0.25);
+      padding: 0.25rem 0.75rem;
+      border-radius: 100px;
+    }
+    .slide-time {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .slide-title {
+      padding: 1.25rem 1.75rem 0.75rem;
+      font-size: 1.4rem;
+      font-weight: 800;
+    }
+    .slide-title .hi { color: var(--accent); }
+    .slide-title .teal { color: var(--accent-2); }
+    .slide-body {
+      padding: 0 1.75rem 1.5rem;
+    }
+
+    /* Slide body elements */
+    .clue-block {
+      background: linear-gradient(135deg, rgba(255,107,53,0.08), rgba(45,212,191,0.05));
+      border-left: 3px solid var(--accent);
+      border-radius: 0 12px 12px 0;
+      padding: 1rem 1.25rem;
+      margin: 1rem 0;
+    }
+    .clue-block p {
+      color: var(--fg);
+      font-size: 1rem;
+      font-weight: 500;
+    }
+    .clue-block em { color: var(--accent-2); font-style: normal; }
+
+    p { color: var(--muted); margin-bottom: 0.75rem; }
+    p:last-child { margin-bottom: 0; }
+
+    h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--fg);
+      margin: 1.25rem 0 0.5rem;
+    }
+    h3:first-child { margin-top: 0; }
+
+    ul, ol {
+      padding-left: 1.25rem;
+      margin: 0.75rem 0;
+    }
+    li { color: var(--muted); margin-bottom: 0.4rem; }
+    li strong { color: var(--fg); font-weight: 600; }
+    li em { color: var(--accent-2); font-style: normal; }
+
+    .quote-block {
+      background: var(--bg-3);
+      border: 1px solid var(--line-2);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      margin: 1rem 0;
+      font-style: italic;
+      color: var(--fg);
+      position: relative;
+      padding-left: 2rem;
+    }
+    .quote-block::before {
+      content: """;
+      color: var(--accent);
+      font-size: 2rem;
+      position: absolute;
+      top: -0.25rem;
+      left: 0.75rem;
+      line-height: 1;
+    }
+
+    /* Stats / numbers */
+    .stat-row {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      margin: 1rem 0;
+    }
+    .stat {
+      background: var(--bg-3);
+      border: 1px solid var(--line-2);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      min-width: 120px;
+    }
+    .stat .num {
+      font-size: 1.75rem;
+      font-weight: 800;
+      color: var(--accent);
+      line-height: 1;
+    }
+    .stat .desc {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 0.25rem;
+    }
+
+    /* Feature list */
+    .feature-list {
+      list-style: none;
+      padding: 0;
+      margin: 0.75rem 0;
+    }
+    .feature-list li {
+      display: flex;
+      gap: 0.75rem;
+      align-items: flex-start;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .feature-list li:last-child { border-bottom: none; }
+    .feature-list .bullet {
+      color: var(--accent-2);
+      font-weight: 700;
+      min-width: 1.2rem;
+      margin-top: 0.05rem;
+    }
+
+    /* Comparison */
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    .comp-col {
+      background: var(--bg-3);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+    }
+    .comp-col.bad { border-left: 3px solid var(--danger); }
+    .comp-col.good { border-left: 3px solid var(--good); }
+    .comp-col h4 {
+      font-size: 0.85rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+    .comp-col.bad h4 { color: var(--danger); }
+    .comp-col.good h4 { color: var(--good); }
+    .comp-col ul { margin: 0; padding-left: 1rem; }
+    .comp-col li { font-size: 0.9rem; }
+
+    /* Audience grid */
+    .audience-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.75rem;
+      margin: 1rem 0;
+    }
+    .audience-item {
+      background: var(--bg-3);
+      border: 1px solid var(--line-2);
+      border-radius: 10px;
+      padding: 0.75rem 1rem;
+      font-size: 0.9rem;
+      color: var(--fg);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .audience-item::before { content: "→"; color: var(--accent-2); font-weight: 700; }
+
+    /* Timeline */
+    .timeline {
+      margin: 1rem 0;
+      position: relative;
+      padding-left: 1.5rem;
+    }
+    .timeline::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--line-2);
+    }
+    .timeline-item {
+      position: relative;
+      margin-bottom: 1.25rem;
+    }
+    .timeline-item::before {
+      content: "";
+      position: absolute;
+      left: calc(-1.5rem + -4px);
+      top: 0.4rem;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-2);
+    }
+    .timeline-item .time {
+      font-size: 0.75rem;
+      color: var(--accent);
+      font-weight: 600;
+      margin-bottom: 0.2rem;
+    }
+    .timeline-item .event { font-size: 0.95rem; color: var(--fg); font-weight: 500; }
+    .timeline-item .desc { font-size: 0.85rem; color: var(--muted); margin-top: 0.15rem; }
+
+    /* Demo checklist */
+    .demo-list {
+      list-style: none;
+      padding: 0;
+      margin: 0.75rem 0;
+      background: var(--bg-3);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .demo-list li {
+      padding: 0.6rem 1.25rem;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+    }
+    .demo-list li:last-child { border-bottom: none; }
+    .demo-list .check { color: var(--good); font-weight: 700; }
+    .demo-list .cmd { font-family: var(--mono); font-size: 0.85rem; color: var(--accent-2); flex: 1; }
+
+    /* Highlight box */
+    .highlight-box {
+      background: linear-gradient(135deg, rgba(45,212,191,0.08), rgba(255,107,53,0.05));
+      border: 1px solid var(--line-2);
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin: 1rem 0;
+    }
+    .highlight-box h4 {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--accent-2);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.5rem;
+    }
+    .highlight-box p { margin-bottom: 0.5rem; }
+    .highlight-box p:last-child { margin-bottom: 0; }
+
+    /* Section divider */
+    .section-label {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--accent-2);
+      margin: 1.5rem 0 0.75rem;
+    }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+      .comparison { grid-template-columns: 1fr; }
+      .stat-row { gap: 0.75rem; }
+      .timer-bar { gap: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="doc-label">Prezentacja Oswobodzeni 2026 · Memphis-v5.pl/sciaga</div>
+    <h1><span class="a">Ściąga</span> — <span class="b">1.5h</span></h1>
+  </div>
+  <div class="header-right">
+    <span class="time-badge">90 min</span>
+    <div class="nav-links">
+      <a href="/zaproszenie">Zaproszenie</a>
+      <a href="/">Memphis-v5</a>
+    </div>
+  </div>
+</header>
+
+<!-- TIMING BAR -->
+<div class="timer-bar">
+  <div class="timer-item"><span class="label">00:00–00:10</span><span class="value teal">Otwarcie + CLUE</span></div>
+  <div class="timer-item"><span class="label">00:10–00:30</span><span class="value">Problem + Memphis</span></div>
+  <div class="timer-item"><span class="label">00:30–00:50</span><span class="value">Demo na żywo</span></div>
+  <div class="timer-item"><span class="label">00:50–01:10</span><span class="value">Zastosowania + Obrona cywilna</span></div>
+  <div class="timer-item"><span class="label">01:10–01:20</span><span class="value accent">CTA + Q&A</span></div>
+  <div class="timer-item"><span class="label">01:20–01:30</span><span class="value good">Networking</span></div>
+</div>
+
+<div class="slides">
+
+  <!-- ── SLIDE 1 ── -->
+  <div class="slide" id="s1">
+    <div class="slide-header">
+      <span class="slide-num">SLIDE 1</span>
+      <span class="slide-time">00:00 — 00:10 · CLUE</span>
+    </div>
+    <div class="slide-title">Zaczynamy od sedna: <span class="hi">nie czekaj</span></div>
+    <div class="slide-body">
+      <div class="clue-block">
+        <p><strong>Nie czekaj aż ktoś cię oswobodzi.</strong><br/>
+        <em>Weź sprawy w swoje ręce.</em></p>
+      </div>
+      <p>Oswobodzeni to nie partia, nie sekta i nie teoria. To prosta postawa: jak dach przecieka, to nie piszesz eseju o deszczu — bierzesz drabinę i naprawiasz.</p>
+      <p>Tak samo jest z technologią. Jeśli wszystkie narzędzia są u obcych firm, to jesteśmy jak gospodarz, który oddał klucze do stodoły komuś z drugiego końca świata.</p>
+      <div class="audience-grid">
+        <div class="audience-item">Rolnik i gospodarz</div>
+        <div class="audience-item">Sołtys, wójt, radny</div>
+        <div class="audience-item">Przedsiębiorca</div>
+        <div class="audience-item">Nauczyciel</div>
+        <div class="audience-item">OSP i stowarzyszenia</div>
+        <div class="audience-item">Koła gospodyń</div>
+        <div class="audience-item">Rzemieślnicy</div>
+        <div class="audience-item">Każdy, kto chce działać</div>
+      </div>
+      <div class="highlight-box">
+        <h4>Jak mówić</h4>
+        <p>Mów prosto. Nie „runtime”, tylko „własny pomocnik komputerowy”. Nie „vault”, tylko „sejf”. Nie „chain memory”, tylko „zeszyt z ponumerowanymi kartkami, którego nie da się po cichu podmienić”.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 2 ── -->
+  <div class="slide" id="s2">
+    <div class="slide-header">
+      <span class="slide-num">SLIDE 2</span>
+      <span class="slide-time">00:10 — 00:20 · Problem</span>
+    </div>
+    <div class="slide-title">Dzisiaj cudze firmy trzymają nasze <span class="hi">klucze</span></div>
+    <div class="slide-body">
+      <p>Telefon, poczta, dokumenty, rozmowy, zdjęcia, księgowość, mapa, sklep — prawie wszystko działa przez wielkie firmy. Wygodne? Tak. Bezpieczne dla lokalnej wspólnoty? Niekoniecznie.</p>
+      <div class="comparison">
+        <div class="comp-col bad">
+          <h4>❌ Jak jest dziś</h4>
+          <ul>
+            <li>Twoje dane leżą na cudzych serwerach.</li>
+            <li>Nie wiesz, kto je czyta i do czego używa.</li>
+            <li>Jak internet padnie — często stoisz.</li>
+            <li>Jak firma zmieni zasady — musisz się dostosować.</li>
+            <li>Mała gmina i mała firma nie mają własnego AI.</li>
+          </ul>
+        </div>
+        <div class="comp-col good">
+          <h4>✓ Do czego dążymy</h4>
+          <ul>
+            <li>Dane zostają na miejscu — jak dokumenty w urzędzie.</li>
+            <li>System działa u nas, nie „gdzieś w chmurze”.</li>
+            <li>Można go sprawdzić, naprawić i rozbudować.</li>
+            <li>Nie trzeba co miesiąc płacić haraczu za sam dostęp.</li>
+            <li>Wspólnota ma swoje narzędzie, a nie cudzą smycz.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="quote-block">
+        Chmura jest jak wynajęta piwnica w obcym mieście. Memphis ma być jak własna izba w domu — wiadomo kto ma klucz i gdzie leżą dokumenty.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 3 ── -->
+  <div class="slide" id="s3">
+    <div class="slide-header">
+      <span class="slide-num">SLIDE 3</span>
+      <span class="slide-time">00:20 — 00:30 · Memphis prosto</span>
+    </div>
+    <div class="slide-title">Czym jest <span class="teal">Memphis</span>?</div>
+    <div class="slide-body">
+      <p>Memphis to własny pomocnik AI, którego można postawić na swoim komputerze. Nie jest tylko czatem. To raczej połączenie pomocnika, zeszytu, sejfu i warsztatu.</p>
+      <div class="section-label">Najprostsze porównanie</div>
+      <ul class="feature-list">
+        <li><span class="bullet">1</span> <strong>Pomocnik</strong> — rozmawiasz z nim normalnym językiem.</li>
+        <li><span class="bullet">2</span> <strong>Zeszyt</strong> — pamięta ustalenia, decyzje i historię pracy.</li>
+        <li><span class="bullet">3</span> <strong>Sejf</strong> — trzyma hasła i klucze w szyfrowanym miejscu.</li>
+        <li><span class="bullet">4</span> <strong>Warsztat</strong> — może używać narzędzi: plików, internetu, terminala, stron, API.</li>
+        <li><span class="bullet">5</span> <strong>Domowy agregat</strong> — gdy jedna droga nie działa, próbuje drugiej; może korzystać z lokalnego modelu.</li>
+      </ul>
+      <div class="stat-row">
+        <div class="stat"><div class="num">v1.8</div><div class="desc">obecna wersja</div></div>
+        <div class="stat"><div class="num">1984</div><div class="desc">testy przechodzą</div></div>
+        <div class="stat"><div class="num">8 min</div><div class="desc">instalacja z internetu</div></div>
+        <div class="stat"><div class="num">0</div><div class="desc">telemetrii</div></div>
+      </div>
+      <div class="highlight-box">
+        <h4>Zdanie do zapamiętania</h4>
+        <p><strong>Memphis to AI, które mieszka u ciebie, pamięta u ciebie i odpowiada przed tobą.</strong></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 4 ── -->
+  <div class="slide" id="s4">
+    <div class="slide-header">
+      <span class="slide-num">SLIDE 4</span>
+      <span class="slide-time">00:30 — 00:45 · Jak to działa</span>
+    </div>
+    <div class="slide-title">Trzy rzeczy: <span class="hi">pamięć, sejf, narzędzia</span></div>
+    <div class="slide-body">
+      <h3>🧾 1. Pamięć jak księga w remizie</h3>
+      <p>Każdy wpis jest dopisany na końcu. Kartki są ponumerowane i podpisane. Jak ktoś coś wyrwie albo podmieni — widać. To jest pamięć łańcuchowa Memphis.</p>
+      <h3>🔐 2. Sejf na sekrety</h3>
+      <p>Hasła, tokeny i klucze nie leżą luzem w pliku. Są w szyfrowanym sejfie. Bez passphrase nie ma wejścia.</p>
+      <h3>🛠️ 3. Narzędzia pod twoją kontrolą</h3>
+      <p>Memphis może dostać narzędzia, ale nie powinien robić wszystkiego samowolnie. Tak jak pracownik w gospodarstwie: może pomagać, ale gospodarz decyduje.</p>
+      <div class="highlight-box">
+        <h4>Najważniejsze</h4>
+        <p>To nie jest magia. To dobrze poukładany system: pamięta, chroni, wykonuje zadania i zostawia ślad po decyzjach.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 5 ── -->
+  <div class="slide" id="s5">
+    <div class="slide-header">
+      <span class="slide-num">SLIDE 5 · DEMO</span>
+      <span class="slide-time">00:45 — 01:00 · Pokaz</span>
+    </div>
+    <div class="slide-title">Demo: pokaż, nie tłumacz za długo</div>
+    <div class="slide-body">
+      <p>Ludzie uwierzą, gdy zobaczą. Najpierw pokaż ekran. Dopiero potem tłumacz.</p>
+      <div class="section-label">Kolejność pokazu</div>
+      <ul class="demo-list">
+        <li><span class="check">▶</span><span class="cmd">memphis health</span> — pokaż, że system żyje</li>
+        <li><span class="check">▶</span><span class="cmd">memphis tui</span> — pokaż kokpit operatora</li>
+        <li><span class="check">▶</span><span class="cmd">zadaj proste pytanie</span> — „Jak uporządkować notatki ze spotkania?”</li>
+        <li><span class="check">▶</span><span class="cmd">zapisz ustalenie</span> — pokaż, że pamięta jak zeszyt</li>
+        <li><span class="check">▶</span><span class="cmd">memphis vault list</span> — pokaż sejf, bez ujawniania sekretów</li>
+        <li><span class="check">▶</span><span class="cmd">pokaż stronę memphis-v5.pl</span> — że to nie teoria, tylko działa</li>
+      </ul>
+      <div class="highlight-box">
+        <h4>Demo trick</h4>
+        <p>Zapisz zdanie: „Na spotkaniu w Zawoi padł pomysł lokalnego archiwum wiedzy”. Potem zapytaj: „Co ustaliliśmy w Zawoi?”. Ludzie natychmiast łapią, że to nie zwykły czat z amnezją.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 6 ── -->
+  <div class="slide" id="s6">
+    <div class="slide-header">
+      <span class="slide-num">SLIDE 6</span>
+      <span class="slide-time">01:00 — 01:10 · Zastosowania</span>
+    </div>
+    <div class="slide-title">Po co to komu w <span class="teal">normalnym życiu</span>?</div>
+    <div class="slide-body">
+      <h3>👨‍🌾 Rolnik</h3>
+      <ul>
+        <li>Pamięta historię pola: co było siane, kiedy pryskane, co zadziałało.</li>
+        <li>Pomaga porównać ceny, dopłaty, dokumenty i terminy.</li>
+        <li>Robi porządek w papierach, zamiast szukać po segregatorach.</li>
+      </ul>
+      <h3>🏛️ Gmina, sołtys, urząd</h3>
+      <ul>
+        <li>Szybciej znajduje informacje w uchwałach, pismach i protokołach.</li>
+        <li>Pomaga przygotować odpowiedź, streszczenie albo plan działania.</li>
+        <li>Może stać się lokalną pamięcią: kto co zgłosił, co ustalono, co trzeba zrobić.</li>
+      </ul>
+      <h3>🏪 Firma i rzemieślnik</h3>
+      <ul>
+        <li>Pomaga pisać oferty, opisy usług, wiadomości do klientów.</li>
+        <li>Pilnuje wiedzy o produktach i zamówieniach.</li>
+        <li>Nie trzeba oddawać danych klientów do cudzej chmury.</li>
+      </ul>
+      <h3>🤝 Stowarzyszenie, OSP, KGW</h3>
+      <ul>
+        <li>Archiwum wydarzeń, decyzji i kontaktów.</li>
+        <li>Pomoc przy wnioskach, dotacjach, plakatach, zaproszeniach.</li>
+        <li>Wiedza zostaje w organizacji, nawet gdy zmienią się ludzie.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 7 ── -->
+  <div class="slide" id="s7">
+    <div class="slide-header">
+      <span class="slide-num">SLIDE 7</span>
+      <span class="slide-time">01:10 — 01:20 · Obrona cywilna</span>
+    </div>
+    <div class="slide-title">Obrona cywilna to nie tylko <span class="hi">hełm i apteczka</span></div>
+    <div class="slide-body">
+      <p>Obrona cywilna to także wiedza: kto ma agregat, kto ma busa, kto zna lekarza, gdzie jest woda, kto umie naprawić dach, kto ma piłę, kto zna teren.</p>
+      <p>Jeśli ta wiedza jest tylko „w głowach ludzi”, to znika razem z nimi. Memphis może pomóc zrobić z niej lokalną mapę pamięci.</p>
+      <ul class="feature-list">
+        <li><span class="bullet">→</span> <strong>Lokalna pamięć</strong> — ustalenia, kontakty, procedury, doświadczenia.</li>
+        <li><span class="bullet">→</span> <strong>Szybkie szukanie</strong> — zamiast dzwonić do pięciu osób, pytasz system.</li>
+        <li><span class="bullet">→</span> <strong>Planowanie</strong> — wydarzenia, dyżury, zapasy, lista spraw.</li>
+        <li><span class="bullet">→</span> <strong>Niezależność</strong> — własne narzędzie, własne dane, własna odpowiedzialność.</li>
+      </ul>
+      <div class="quote-block">
+        Jak wieś ma własną remizę, świetlicę i ludzi do roboty, tak może mieć też własną pamięć cyfrową.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 8 ── -->
+  <div class="slide" id="s8">
+    <div class="slide-header">
+      <span class="slide-num">SLIDE 8</span>
+      <span class="slide-time">01:20 — 01:30 · Co dalej</span>
+    </div>
+    <div class="slide-title">Co robimy <span class="teal">po spotkaniu</span>?</div>
+    <div class="slide-body">
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="time">Dziś</div>
+          <div class="event">Zrozumieć ideę</div>
+          <div class="desc">Nie trzeba być informatykiem. Wystarczy zrozumieć: dane mają zostać u nas.</div>
+        </div>
+        <div class="timeline-item">
+          <div class="time">Ten tydzień</div>
+          <div class="event">Zebrać pierwsze potrzeby</div>
+          <div class="desc">Gmina, OSP, rolnicy, firmy — co najbardziej boli?</div>
+        </div>
+        <div class="timeline-item">
+          <div class="time">Czerwiec</div>
+          <div class="event">Mały pilotaż</div>
+          <div class="desc">Jedno konkretne zastosowanie: archiwum, dokumenty, wydarzenie, wiedza lokalna.</div>
+        </div>
+        <div class="timeline-item">
+          <div class="time">Lipiec</div>
+          <div class="event">Skowronkowy Jarzmin X</div>
+          <div class="desc">23–26.07, Hala Barankowa — test w żywej społeczności.</div>
+        </div>
+      </div>
+      <div class="highlight-box">
+        <h4>Prośba na koniec</h4>
+        <p>Nie pytaj: „czy AI jest dla mnie?”. Zapytaj: „jaką jedną rzecz w mojej pracy AI mogłoby mi odciążyć, ale bez oddawania danych obcym?”. Od tego zaczynamy.</p>
+        <p><strong>Kontakt:</strong> elathoxu@gmail.com · <a href="https://memphis-v5.pl" style="color: var(--accent-2);">memphis-v5.pl</a></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 9 ── -->
+  <div class="slide" id="s9">
+    <div class="slide-header">
+      <span class="slide-num">DLA DARCZYŃCY / INWESTORA</span>
+      <span class="slide-time">Jeśli ktoś pyta o pieniądze</span>
+    </div>
+    <div class="slide-title">Dlaczego warto to <span class="hi">wesprzeć</span>?</div>
+    <div class="slide-body">
+      <h3>Problem</h3>
+      <p>Polska lokalna — gminy, wsie, małe firmy — dostaje technologię ostatnia. Najpierw biorą ją korporacje, potem duże miasta, a na końcu reszta. Memphis odwraca kolejność.</p>
+      <h3>Rozwiązanie</h3>
+      <p>Dajemy ludziom narzędzie, które można postawić lokalnie, nauczyć pod własne potrzeby i rozwijać bez proszenia wielkich firm o zgodę.</p>
+      <h3>Model</h3>
+      <div class="stat-row">
+        <div class="stat"><div class="num">Wdrożenia</div><div class="desc">dla gmin, OSP, NGO, firm</div></div>
+        <div class="stat"><div class="num">Szkolenia</div><div class="desc">prosty język, praktyka</div></div>
+        <div class="stat"><div class="num">Opieka</div><div class="desc">utrzymanie i rozwój</div></div>
+        <div class="stat"><div class="num">Wspólnota</div><div class="desc">ludzie uczą ludzi</div></div>
+      </div>
+      <div class="highlight-box">
+        <h4>Jedno zdanie</h4>
+        <p><strong>Wspierasz nie kolejną apkę, tylko próbę odzyskania narzędzi cyfrowych dla zwykłych ludzi.</strong></p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer style="text-align:center; padding:2rem; color:var(--muted); font-size:0.8rem; border-top: 1px solid var(--line);">
+  Oswobodzeni 2026 &nbsp;·&nbsp; Memphis sovereign AI runtime &nbsp;·&nbsp; <a href="https://memphis-v5.pl" style="color:var(--accent-2)">memphis-v5.pl</a><br/>
+  Hotel & SPA Jawor, Zawoja &nbsp;·&nbsp; 6 maja 2026 &nbsp;·&nbsp; godz. 19:00
+</footer>
+
+</body>
+</html>

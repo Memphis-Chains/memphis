@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dawid Skruch — Fotografia</title>
+  <meta name="description" content="Dawid Skruch — fotograf z Jonin. Dokumentuje życie lokalne, OSP Joniny, wydarzenia w regionie Ryglic." />
+  <style>
+    :root {
+      --bg: #040509;
+      --bg-2: #0a0d14;
+      --fg: #edf2f7;
+      --muted: #97a3b3;
+      --accent: #ff6b35;
+      --accent-2: #2dd4bf;
+      --accent-3: #9ae6d8;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+    }
+    *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--fg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      line-height: 1.7;
+    }
+    .card {
+      background: var(--bg-2);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 16px;
+      padding: 3rem;
+      max-width: 680px;
+      width: 100%;
+    }
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+      color: var(--accent);
+    }
+    .subtitle {
+      color: var(--accent-2);
+      font-size: 0.95rem;
+      margin-bottom: 2rem;
+      letter-spacing: 0.03em;
+    }
+    .bio p {
+      color: var(--muted);
+      margin-bottom: 1rem;
+      font-size: 1rem;
+    }
+    .bio p strong { color: var(--fg); }
+    h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 1.25rem;
+      margin-top: 2rem;
+    }
+    h2:first-of-type { margin-top: 0; }
+    .facts {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .fact {
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .fact-icon { color: var(--accent-2); font-size: 1.1rem; min-width: 1.5rem; }
+    .gallery-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(45,212,191,0.1);
+      border: 1px solid rgba(45,212,191,0.3);
+      color: var(--accent-2);
+      text-decoration: none;
+      padding: 0.6rem 1.25rem;
+      border-radius: 100px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-top: 0.5rem;
+      transition: all 0.2s;
+    }
+    .gallery-link:hover {
+      background: rgba(45,212,191,0.2);
+      border-color: rgba(45,212,191,0.5);
+    }
+    .footer {
+      margin-top: 2.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(255,255,255,0.07);
+      text-align: center;
+    }
+    .footer a {
+      color: var(--accent-2);
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+    .footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Dawid Skruch</h1>
+    <p class="subtitle">Fotograf · Joniny, gmina Ryglicy</p>
+
+    <div class="bio">
+      <p>
+        <strong>Fotograf z Jonin</strong> — dokumentuje życie lokalne regionu tarnowskiego od lat.
+        Jego obiektyw utrwala to, co dzieje się wokół: strażackie akcje, uroczystości, ludzi, którzy budują swoją społeczność.
+      </p>
+      <p>
+        Zdjęcia publikowane były na łamach <strong>Gazety Krakowskiej</strong> oraz w lokalnych mediach internetowych.
+        Regularnie współpracuje z OSP Joniny — dokumentując ich działalność, nowy wóz strażacki, akcje ratunkowe i uroczystości.
+      </p>
+    </div>
+
+    <h2>Co dokumentuje</h2>
+    <ul class="facts">
+      <li class="fact"><span class="fact-icon">🚒</span> OSP Joniny — akcje, sprzęt, uroczystości</li>
+      <li class="fact"><span class="fact-icon">🏘️</span> Życie lokalne gminy Ryglicy i okolic</li>
+      <li class="fact"><span class="fact-icon">🎶</span> Wydarzenia kulturalne i koncerty (m.in. PECTUS, wydarzenia charytatywne)</li>
+      <li class="fact"><span class="fact-icon">📰</span> Relacje prasowe — Gazeta Krakowska</li>
+      <li class="fact"><span class="fact-icon">⚡</span> Pożary, wypadki, gradobicia — sytuacje kryzysowe regionu</li>
+    </ul>
+
+    <h2>Galeria</h2>
+    <a href="https://dawidskruch.blogspot.com" target="_blank" rel="noopener" class="gallery-link">
+      📷 dawidskruch.blogspot.com
+    </a>
+
+    <div class="footer">
+      <a href="https://memphis-v5.pl">memphis-v5.pl</a> — Oswobodzeni
+    </div>
+  </div>
+</body>
+</html>

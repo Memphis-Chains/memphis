@@ -1,0 +1,3 @@
+# Allow directory listing disabled, but index.html rendered
+Options -Indexes
+DirectoryIndex index.html

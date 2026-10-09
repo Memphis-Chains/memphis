@@ -1,0 +1,232 @@
+[
+  {
+    "number": 161,
+    "title": "phase 4.5: Agora adversarial simulation — gate BEFORE Phase 5 marketplace UX ship",
+    "labels": [],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/161",
+    "created_at": "2026-04-17T23:41:55Z",
+    "comments": 0
+  },
+  {
+    "number": 160,
+    "title": "phase 3-spike: memphis-ml viability — 1-week TIMEBOX before Phase 3a starts",
+    "labels": [],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/160",
+    "created_at": "2026-04-17T23:41:25Z",
+    "comments": 0
+  },
+  {
+    "number": 158,
+    "title": "phase 5: Agora Marketplace UX in Tauri GUI",
+    "labels": [],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/158",
+    "created_at": "2026-04-17T22:06:02Z",
+    "comments": 1
+  },
+  {
+    "number": 157,
+    "title": "phase 4: Agora L4 Discovery (DHT / gossip + ranked offer feed)",
+    "labels": [],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/157",
+    "created_at": "2026-04-17T22:05:48Z",
+    "comments": 0
+  },
+  {
+    "number": 156,
+    "title": "phase 3: Agora L2 Stake + ML contracts + payment adapter (MAJOR SCOPE)",
+    "labels": [],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/156",
+    "created_at": "2026-04-17T22:05:39Z",
+    "comments": 1
+  },
+  {
+    "number": 155,
+    "title": "phase 2: Agora L3 Reviews + weighted reputation (PageRank-style)",
+    "labels": [],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/155",
+    "created_at": "2026-04-17T22:05:12Z",
+    "comments": 0
+  },
+  {
+    "number": 154,
+    "title": "phase 1: Agora L1 Attestations + trust-graph BFS",
+    "labels": [],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/154",
+    "created_at": "2026-04-17T22:05:04Z",
+    "comments": 0
+  },
+  {
+    "number": 153,
+    "title": "phase 0: Agora design doc (docs/AGORA-DESIGN.md — schemas, thresholds, protocols)",
+    "labels": [],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/153",
+    "created_at": "2026-04-17T22:04:52Z",
+    "comments": 0
+  },
+  {
+    "number": 152,
+    "title": "phase G: Tauri GUI skeleton (apps/memphis-gui — Chat + Memory + Agents views)",
+    "labels": [],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/152",
+    "created_at": "2026-04-17T22:04:37Z",
+    "comments": 1
+  },
+  {
+    "number": 151,
+    "title": "phase T: Trust chains (trust.chain current + trusted.chain forensic audit)",
+    "labels": [],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/151",
+    "created_at": "2026-04-17T22:04:09Z",
+    "comments": 1
+  },
+  {
+    "number": 150,
+    "title": "phase B: Blueprint Config System (Zod → GUI form + TS validator + MCP tool + docs)",
+    "labels": [],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/150",
+    "created_at": "2026-04-17T22:03:50Z",
+    "comments": 0
+  },
+  {
+    "number": 148,
+    "title": "phase P: Private tier hardening (mutual auth, revocation, rate limits, QR bootstrap)",
+    "labels": [],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/148",
+    "created_at": "2026-04-17T22:03:20Z",
+    "comments": 0
+  },
+  {
+    "number": 147,
+    "title": "roadmap: Memphis architectural plan — Private tier → GUI → Agora",
+    "labels": [],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/147",
+    "created_at": "2026-04-17T22:02:43Z",
+    "comments": 0
+  },
+  {
+    "number": 117,
+    "title": "[CHORE] Stale TODO in soul/memory.ts: vault-encrypt + archive to vault",
+    "labels": [
+      "good first issue"
+    ],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/117",
+    "created_at": "2026-04-14T13:01:00Z",
+    "comments": 0
+  },
+  {
+    "number": 116,
+    "title": "[ENHANCEMENT] Conventional commits + automated changelog generation",
+    "labels": [
+      "enhancement"
+    ],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/116",
+    "created_at": "2026-04-14T12:58:19Z",
+    "comments": 0
+  },
+  {
+    "number": 115,
+    "title": "[ENHANCEMENT] Snapshot testing + coverage thresholds in memphis_test tier-2 tool",
+    "labels": [
+      "enhancement"
+    ],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/115",
+    "created_at": "2026-04-14T12:58:00Z",
+    "comments": 0
+  },
+  {
+    "number": 114,
+    "title": "[ENHANCEMENT] Adopt OTel withSpan wrappers at turn/provider/tool/vault boundaries",
+    "labels": [
+      "enhancement"
+    ],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/114",
+    "created_at": "2026-04-14T12:57:42Z",
+    "comments": 0
+  },
+  {
+    "number": 113,
+    "title": "[ENHANCEMENT] GPG-sign release artifacts in CI release workflow",
+    "labels": [
+      "enhancement"
+    ],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/113",
+    "created_at": "2026-04-14T12:57:23Z",
+    "comments": 0
+  },
+  {
+    "number": 62,
+    "title": "[MED] CLI has no centralized command registry with lazy loading",
+    "labels": [
+      "enhancement"
+    ],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/62",
+    "created_at": "2026-04-02T08:22:16Z",
+    "comments": 0
+  },
+  {
+    "number": 57,
+    "title": "[MED] No automatic learning extraction or self-reflection loop",
+    "labels": [],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/57",
+    "created_at": "2026-04-01T17:27:51Z",
+    "comments": 0
+  },
+  {
+    "number": 56,
+    "title": "[MED] Skills system underutilized — no skill marketplace or creator",
+    "labels": [],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/56",
+    "created_at": "2026-04-01T17:27:28Z",
+    "comments": 0
+  },
+  {
+    "number": 50,
+    "title": "Phase 5: Skill Engine — skill DSL, AI composer, self-modification, workflow runtime",
+    "labels": [
+      "enhancement"
+    ],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/50",
+    "created_at": "2026-04-01T17:04:13Z",
+    "comments": 0
+  },
+  {
+    "number": 49,
+    "title": "Phase 4: Offensive Security — pentest, credential attacks, persistence, privesc",
+    "labels": [
+      "enhancement"
+    ],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/49",
+    "created_at": "2026-04-01T17:03:41Z",
+    "comments": 0
+  },
+  {
+    "number": 48,
+    "title": "Phase 3: Network + Security — nmap, tcpdump, Vault, Prometheus, DNS, proxy",
+    "labels": [
+      "enhancement"
+    ],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/48",
+    "created_at": "2026-04-01T17:03:08Z",
+    "comments": 0
+  },
+  {
+    "number": 47,
+    "title": "Phase 2: Cloud + IaC — AWS SDK, GCP, Azure, Terraform, Ansible, Kubernetes",
+    "labels": [
+      "enhancement"
+    ],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/47",
+    "created_at": "2026-04-01T17:02:44Z",
+    "comments": 0
+  },
+  {
+    "number": 44,
+    "title": "MAXIMUM-TOOLKIT: Research — 500+ tools across 12 categories for self-evolving AI runtime",
+    "labels": [
+      "enhancement"
+    ],
+    "url": "https://github.com/Memphis-Chains/memphis/issues/44",
+    "created_at": "2026-04-01T17:01:26Z",
+    "comments": 0
+  }
+]

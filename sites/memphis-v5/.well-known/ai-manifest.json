@@ -1,0 +1,6 @@
+{
+  "name": "Memphis v5",
+  "manifest": "https://memphis-v5.pl/agents.json",
+  "llms": "https://memphis-v5.pl/llms.txt",
+  "agent_login": "https://memphis-v5.pl/docs/agents/"
+}

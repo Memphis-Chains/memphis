@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Memphis v5 — Agent login & local vault</title>
+  <meta name="description" content="Agent-friendly wejście do Memphis v5: mapa dla chatbotów, manifest, llms.txt i lokalny vault tokenów działający wyłącznie w przeglądarce." />
+  <link rel="alternate" type="text/plain" title="LLM guide" href="/llms.txt" />
+  <link rel="agent-manifest" type="application/json" href="/agents.json" />
+  <style>
+    :root{--bg:#05060a;--panel:#0d111b;--panel2:#121a27;--fg:#edf2f7;--muted:#9aa8ba;--line:rgba(255,255,255,.12);--accent:#ff6b35;--cyan:#2dd4bf;--bad:#ef4444;--good:#22c55e;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--sans:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}*{box-sizing:border-box}body{margin:0;color:var(--fg);font-family:var(--sans);background:radial-gradient(circle at 12% 2%,rgba(45,212,191,.13),transparent 27%),radial-gradient(circle at 84% 0%,rgba(255,107,53,.13),transparent 31%),linear-gradient(180deg,#040509,#090d14 48%,#05060a)}a{color:inherit}.shell{width:min(1160px,calc(100% - 2rem));margin:0 auto}.top{display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:1rem 0;color:var(--muted);font-family:var(--mono);font-size:.82rem;text-transform:uppercase;letter-spacing:.08em}.nav{display:flex;gap:1rem;flex-wrap:wrap}.nav a{text-decoration:none;border-bottom:1px solid transparent}.nav a:hover{border-color:currentColor}.hero{padding:3.4rem 0 1.7rem}.eyebrow{font-family:var(--mono);color:var(--cyan);text-transform:uppercase;letter-spacing:.14em;font-size:.78rem}.hero h1{font-size:clamp(2.1rem,5.6vw,4.9rem);line-height:.96;margin:.8rem 0 1rem;letter-spacing:-.06em}.hero p{max-width:820px;color:#dce6ef;font-size:1.1rem;line-height:1.75}.grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:1rem 0 3rem}.card{border:1px solid var(--line);border-radius:24px;background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.025));padding:1.2rem;box-shadow:0 22px 70px rgba(0,0,0,.28)}.card h2,.card h3{margin:.1rem 0 .65rem}.card p,.card li{color:var(--muted);line-height:1.65}.card ul{padding-left:1.1rem}.metric{font-family:var(--mono);font-size:.75rem;color:var(--cyan);text-transform:uppercase;letter-spacing:.12em}.wide{grid-column:1/-1}.btns{display:flex;gap:.7rem;flex-wrap:wrap;margin-top:1rem}.btn,button{display:inline-flex;align-items:center;justify-content:center;min-height:2.7rem;padding:.72rem 1rem;border-radius:999px;text-decoration:none;border:1px solid var(--line);font-weight:800;background:transparent;color:var(--fg);cursor:pointer}.btn.primary,button.primary{background:linear-gradient(135deg,var(--accent),#ff9a68);border:0;color:#160804}.btn.cyan,button.cyan{background:rgba(45,212,191,.13);border-color:rgba(45,212,191,.36);color:#bff7ef}.field{display:grid;gap:.35rem;margin:.8rem 0}label{font-family:var(--mono);font-size:.78rem;color:#c7d2fe;text-transform:uppercase;letter-spacing:.08em}input,textarea,select{width:100%;border:1px solid var(--line);border-radius:14px;background:#070a10;color:var(--fg);padding:.78rem .85rem;font:inherit}textarea{min-height:7rem;resize:vertical}.code{font-family:var(--mono);background:#080b11;border:1px solid var(--line);border-radius:16px;padding:1rem;overflow:auto;color:#dbeafe;font-size:.88rem}.notice{border-left:3px solid var(--good);padding:1rem 1.1rem;background:rgba(34,197,94,.08);border-radius:16px;color:#d8f7e4}.danger{border-left-color:var(--bad);background:rgba(239,68,68,.08);color:#ffe2e2}.vault-list{display:grid;gap:.65rem;margin-top:1rem}.vault-item{border:1px solid var(--line);border-radius:16px;padding:.8rem;background:rgba(255,255,255,.035)}.vault-item strong{display:block}.small{font-size:.9rem;color:var(--muted)}.status{font-family:var(--mono);font-size:.84rem;color:var(--cyan);margin-top:.8rem}.foot{border-top:1px solid var(--line);padding:1.5rem 0 2rem;color:var(--muted);font-family:var(--mono);font-size:.82rem}@media(max-width:880px){.grid{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="top">
+      <div>Memphis v5 / agent desk</div>
+      <nav class="nav" aria-label="Nawigacja">
+        <a href="/docs/">docs</a><a href="/llms.txt">llms.txt</a><a href="/agents.json">agents.json</a><a href="/roadmap/">roadmap</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">login dla agentów / local-only vault</div>
+        <h1>Agent może tu wejść, zrozumieć stronę i przygotować swój vault.</h1>
+        <p>Ta strona jest mostem między publiczną dokumentacją Memphis a osobistymi agentami. Dla człowieka jest czytelna. Dla chatbota ma jasne linki, manifesty i zasady bezpieczeństwa. Vault poniżej działa <strong>tylko lokalnie w przeglądarce</strong> — token nie jest wysyłany na serwer.</p>
+        <div class="btns">
+          <a class="btn primary" href="#vault">Przejdź do vaultu</a>
+          <a class="btn cyan" href="/agents.json">Pobierz manifest JSON</a>
+          <a class="btn" href="/llms.txt">Czytaj llms.txt</a>
+        </div>
+      </section>
+
+      <section class="grid" aria-label="Agent workflow">
+        <article class="card">
+          <div class="metric">agent crawl map</div>
+          <h2>Gdzie agent ma szukać</h2>
+          <ol>
+            <li><a href="/start/">/start/</a> — opis bez żargonu.</li>
+            <li><a href="/docs/">/docs/</a> — mapa operatora i technikalia.</li>
+            <li><a href="/roadmap/">/roadmap/</a> — aktualny kierunek publiczny.</li>
+            <li><a href="/llms.txt">/llms.txt</a> — szybki przewodnik dla LLM.</li>
+            <li><a href="/agents.json">/agents.json</a> — manifest maszynowy.</li>
+          </ol>
+        </article>
+        <article class="card">
+          <div class="metric">security contract</div>
+          <h2>Czego agent nie robi</h2>
+          <ul>
+            <li>Nie indeksuje <code>/docs/internal/</code>, <code>/panel/</code>, <code>/panel-app/</code>.</li>
+            <li>Nie traktuje Memphis jako hostowanego SaaS-u.</li>
+            <li>Nie wysyła sekretów poza środowisko operatora.</li>
+            <li>Nie miesza oferty Holiskool z open-source frontem Memphis.</li>
+          </ul>
+        </article>
+
+        <article class="card wide" id="vault">
+          <div class="metric">local vault</div>
+          <h2>Token vault dla osobistego agenta</h2>
+          <p class="notice"><strong>Bezpieczna granica:</strong> ten formularz zapisuje dane lokalnie w `localStorage` po zaszyfrowaniu hasłem w przeglądarce. Nie ma backendu, uploadu ani logowania na serwer. To nie jest produkcyjny identity provider — to agent-friendly placeholder pod przyszły prawdziwy Memphis vault.</p>
+          <p class="notice danger"><strong>Uwaga:</strong> nie wklejaj cudzych tokenów ani produkcyjnych sekretów, jeśli nie kontrolujesz tego urządzenia/profilu przeglądarki.</p>
+
+          <div class="grid" style="margin-bottom:0">
+            <form class="card" id="vaultForm">
+              <div class="metric">create / update entry</div>
+              <div class="field"><label for="agentName">Nazwa agenta</label><input id="agentName" autocomplete="off" placeholder="np. Wodzu personal agent" required /></div>
+              <div class="field"><label for="tokenLabel">Etykieta tokenu</label><input id="tokenLabel" autocomplete="off" placeholder="np. memphis-local-dev" required /></div>
+              <div class="field"><label for="tokenValue">Token / secret</label><textarea id="tokenValue" autocomplete="off" spellcheck="false" placeholder="Wklej token tylko jeśli kontrolujesz środowisko" required></textarea></div>
+              <div class="field"><label for="passphrase">Hasło lokalnego vaultu</label><input id="passphrase" type="password" autocomplete="new-password" placeholder="Nie jest wysyłane na serwer" required /></div>
+              <button class="primary" type="submit">Zaszyfruj i zapisz lokalnie</button>
+              <div class="status" id="saveStatus" role="status"></div>
+            </form>
+
+            <section class="card">
+              <div class="metric">vault entries</div>
+              <p class="small">Lista pokazuje metadane zapisów. Sekret jest zaszyfrowany i można go wyeksportować jako JSON.</p>
+              <div class="vault-list" id="vaultList"></div>
+              <div class="btns">
+                <button class="cyan" id="exportBtn" type="button">Eksportuj JSON</button>
+                <button id="clearBtn" type="button">Wyczyść lokalny vault</button>
+              </div>
+              <div class="status" id="vaultStatus" role="status"></div>
+            </section>
+          </div>
+        </article>
+
+        <article class="card wide">
+          <div class="metric">machine hint</div>
+          <h2>Minimalny kontrakt dla automatyzacji</h2>
+          <pre class="code">GET https://memphis-v5.pl/llms.txt
+GET https://memphis-v5.pl/agents.json
+AVOID /docs/internal/ /panel/ /panel-app/
+TOKEN_POLICY local-only unless operator provides a trusted backend</pre>
+        </article>
+      </section>
+    </main>
+
+    <footer class="foot">Memphis v5 agent desk · token vault jest local-only · manifest: /agents.json · LLM guide: /llms.txt</footer>
+  </div>
+
+  <script>
+    const KEY = 'memphisAgentVault.v1';
+    const enc = new TextEncoder();
+    const dec = new TextDecoder();
+    const $ = (id) => document.getElementById(id);
+
+    function readVault(){
+      try { return JSON.parse(localStorage.getItem(KEY) || '[]'); }
+      catch { return []; }
+    }
+    function writeVault(items){ localStorage.setItem(KEY, JSON.stringify(items)); }
+    function bytesToB64(bytes){ return btoa(String.fromCharCode(...new Uint8Array(bytes))); }
+    function b64ToBytes(b64){ return Uint8Array.from(atob(b64), c => c.charCodeAt(0)); }
+    async function deriveKey(pass, salt){
+      const base = await crypto.subtle.importKey('raw', enc.encode(pass), 'PBKDF2', false, ['deriveKey']);
+      return crypto.subtle.deriveKey({name:'PBKDF2', salt, iterations:210000, hash:'SHA-256'}, base, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']);
+    }
+    async function encryptSecret(secret, pass){
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const key = await deriveKey(pass, salt);
+      const cipher = await crypto.subtle.encrypt({name:'AES-GCM', iv}, key, enc.encode(secret));
+      return {salt:bytesToB64(salt), iv:bytesToB64(iv), cipher:bytesToB64(cipher)};
+    }
+    function render(){
+      const items = readVault();
+      const box = $('vaultList');
+      if(!items.length){ box.innerHTML = '<p class="small">Brak lokalnych wpisów.</p>'; return; }
+      box.innerHTML = items.map((it, idx) => `<div class="vault-item"><strong>${escapeHtml(it.agentName)} · ${escapeHtml(it.tokenLabel)}</strong><span class="small">created: ${escapeHtml(it.createdAt)} · encrypted: AES-GCM/PBKDF2</span><div class="btns"><button type="button" data-del="${idx}">Usuń</button></div></div>`).join('');
+      box.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', () => { const arr = readVault(); arr.splice(Number(btn.dataset.del),1); writeVault(arr); render(); }));
+    }
+    function escapeHtml(s){ return String(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+
+    $('vaultForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      $('saveStatus').textContent = 'Szyfruję lokalnie…';
+      const item = {
+        agentName: $('agentName').value.trim(),
+        tokenLabel: $('tokenLabel').value.trim(),
+        createdAt: new Date().toISOString(),
+        crypto: await encryptSecret($('tokenValue').value, $('passphrase').value)
+      };
+      const arr = readVault(); arr.push(item); writeVault(arr);
+      $('tokenValue').value = ''; $('passphrase').value = '';
+      $('saveStatus').textContent = 'Zapisane lokalnie. Nic nie wysłano na serwer.';
+      render();
+    });
+    $('exportBtn').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify({schema:'memphis-agent-vault.v1', exportedAt:new Date().toISOString(), entries:readVault()}, null, 2)], {type:'application/json'});
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'memphis-agent-vault.local.json'; a.click(); URL.revokeObjectURL(a.href);
+      $('vaultStatus').textContent = 'Wyeksportowano lokalny vault JSON.';
+    });
+    $('clearBtn').addEventListener('click', () => {
+      if(confirm('Wyczyścić lokalny vault w tej przeglądarce?')){ localStorage.removeItem(KEY); render(); $('vaultStatus').textContent = 'Lokalny vault wyczyszczony.'; }
+    });
+    render();
+  </script>
+</body>
+</html>

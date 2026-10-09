@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Oswobodzeni — Spotkanie 6 maja 2026, Hotel Jawor Zawoja</title>
+  <meta name="description" content="Zaproszenie na spotkanie Oswobodzeni. 6 maja 2026, Hotel Jawor, Zawoja. Memphis jako narzędzie samooświaty i obrony cywilnej." />
+  <style>
+    :root {
+      --bg: #040509;
+      --bg-2: #0a0d14;
+      --bg-3: #0f1318;
+      --fg: #edf2f7;
+      --muted: #97a3b3;
+      --accent: #ff6b35;
+      --accent-2: #2dd4bf;
+      --accent-3: #9ae6d8;
+      --good: #22c55e;
+      --danger: #ef4444;
+      --line: rgba(255,255,255,0.07);
+      --line-2: rgba(255,255,255,0.12);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+    }
+    *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    ::selection { background: rgba(45,212,191,0.25); color: var(--accent-3); }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--accent-2); border-radius: 3px; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--fg);
+      min-height: 100vh;
+      line-height: 1.7;
+    }
+
+    /* ── HEADER ── */
+    header {
+      padding: 2rem 2rem 1rem;
+      text-align: center;
+      border-bottom: 1px solid var(--line);
+    }
+    .event-label {
+      display: inline-block;
+      background: rgba(255,107,53,0.12);
+      border: 1px solid rgba(255,107,53,0.3);
+      color: var(--accent);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      padding: 0.35rem 1rem;
+      border-radius: 100px;
+      margin-bottom: 1.5rem;
+    }
+    h1 {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 0.5rem;
+    }
+    h1 .accent { color: var(--accent); }
+    h1 .teal { color: var(--accent-2); }
+    .subtitle {
+      color: var(--muted);
+      font-size: 1.1rem;
+      max-width: 600px;
+      margin: 0.75rem auto 0;
+    }
+
+    /* ── WHEN WHERE ── */
+    .venue-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      max-width: 900px;
+      margin: 2.5rem auto;
+      padding: 0 2rem;
+    }
+    .venue-card {
+      background: var(--bg-2);
+      border: 1px solid var(--line-2);
+      border-radius: 16px;
+      padding: 1.75rem;
+    }
+    .venue-card .label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--accent-2);
+      margin-bottom: 0.75rem;
+    }
+    .venue-card .value {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--fg);
+      margin-bottom: 0.25rem;
+    }
+    .venue-card .detail {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .map-container {
+      background: var(--bg-2);
+      border: 1px solid var(--line-2);
+      border-radius: 16px;
+      overflow: hidden;
+      height: 100%;
+      min-height: 200px;
+    }
+    .map-container iframe {
+      width: 100%;
+      height: 100%;
+      min-height: 200px;
+      border: none;
+      filter: invert(90%) hue-rotate(180deg) saturate(0.6);
+    }
+
+    /* ── DIVIDER ── */
+    .divider {
+      max-width: 900px;
+      margin: 0.5rem auto;
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .divider::before, .divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--line-2);
+    }
+    .divider span {
+      color: var(--accent);
+      font-size: 1.5rem;
+    }
+
+    /* ── MAIN CONTENT ── */
+    .content {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2.5rem 2rem 3rem;
+    }
+
+    /* Clue block */
+    .clue-block {
+      background: linear-gradient(135deg, rgba(255,107,53,0.08), rgba(45,212,191,0.05));
+      border-left: 3px solid var(--accent);
+      border-radius: 0 12px 12px 0;
+      padding: 1.5rem 2rem;
+      margin-bottom: 2.5rem;
+    }
+    .clue-block .clue-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+    .clue-block p {
+      font-size: 1.05rem;
+      color: var(--fg);
+      font-weight: 500;
+    }
+    .clue-block em {
+      color: var(--accent-2);
+      font-style: normal;
+    }
+
+    /* Sections */
+    .section-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--accent-2);
+      margin-bottom: 1rem;
+      margin-top: 2.5rem;
+    }
+    .section-title:first-of-type { margin-top: 0; }
+
+    h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      color: var(--fg);
+    }
+    h2 .hi { color: var(--accent); }
+
+    p {
+      color: var(--muted);
+      margin-bottom: 1rem;
+      font-size: 1rem;
+    }
+    p:last-child { margin-bottom: 0; }
+
+    /* For whom */
+    .audience-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+    .audience-item {
+      background: var(--bg-2);
+      border: 1px solid var(--line-2);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .audience-item .icon { font-size: 1.3rem; }
+    .audience-item .text { font-size: 0.9rem; color: var(--fg); font-weight: 500; }
+
+    /* Memphis feature list */
+    .feature-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin: 1.25rem 0;
+    }
+    .feature-list li {
+      display: flex;
+      gap: 0.75rem;
+      align-items: flex-start;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .feature-list li .bullet {
+      color: var(--accent-2);
+      font-weight: 700;
+      min-width: 1rem;
+      margin-top: 0.1rem;
+    }
+
+    /* Quote */
+    .quote-block {
+      background: var(--bg-2);
+      border: 1px solid var(--line-2);
+      border-radius: 16px;
+      padding: 1.75rem 2rem;
+      margin: 2rem 0;
+      font-style: italic;
+      color: var(--fg);
+      font-size: 1.05rem;
+      position: relative;
+    }
+    .quote-block::before {
+      content: """;
+      font-size: 4rem;
+      color: var(--accent);
+      position: absolute;
+      top: -0.5rem;
+      left: 1rem;
+      line-height: 1;
+      opacity: 0.5;
+    }
+    .quote-block cite {
+      display: block;
+      margin-top: 1rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      font-style: normal;
+    }
+
+    /* CTA */
+    .cta-section {
+      text-align: center;
+      margin-top: 3rem;
+      padding-top: 2.5rem;
+      border-top: 1px solid var(--line);
+    }
+    .cta-section h3 {
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+    .cta-section p {
+      color: var(--muted);
+      margin-bottom: 1.5rem;
+    }
+    .cta-contacts {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      flex-wrap: wrap;
+    }
+    .cta-contact {
+      background: var(--bg-2);
+      border: 1px solid var(--line-2);
+      border-radius: 12px;
+      padding: 1rem 1.5rem;
+      text-align: center;
+    }
+    .cta-contact .label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.25rem;
+    }
+    .cta-contact .value {
+      color: var(--accent-2);
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 2rem;
+      color: var(--muted);
+      font-size: 0.8rem;
+      border-top: 1px solid var(--line);
+      margin-top: 3rem;
+    }
+    footer a { color: var(--accent-2); text-decoration: none; }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      .venue-section { grid-template-columns: 1fr; }
+      .audience-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="event-label">📍 Spotkanie otwarte · Zaproszenie</div>
+  <h1><span class="accent">Oswobodzeni</span><br/><span class="teal">2026</span></h1>
+  <p class="subtitle">Samooświata przez technologię. Obrona cywilna przez działanie.</p>
+</header>
+
+<!-- WHEN & WHERE + MAP -->
+<section class="venue-section">
+  <div>
+    <div class="venue-card">
+      <div class="label">Kiedy</div>
+      <div class="value">6 maja 2026, godz. 19:00</div>
+      <div class="detail">Wtorek · spotkanie otwarte</div>
+    </div>
+    <div class="venue-card" style="margin-top:1rem;">
+      <div class="label">Gdzie</div>
+      <div class="value">Hotel & SPA Jawor</div>
+      <div class="detail">ul. Wilczna 1847<br/>34-223 Zawoja</div>
+      <div class="detail" style="margin-top:0.5rem; color: var(--accent-2); font-size: 0.85rem;">
+        +48 33 87 75 198 · recepcja@hotel-jawor.pl
+      </div>
+    </div>
+  </div>
+  <div class="map-container">
+    <iframe
+      title="Hotel Jawor, Zawoja — mapa"
+      src="https://www.openstreetmap.org/export/embed.html?bbox=19.50%2C49.60%2C19.55%2C49.67&layer=mapnik&marker=49.63109%2C19.52172"
+      loading="lazy">
+    </iframe>
+  </div>
+</section>
+
+<div class="divider"><span>◆</span></div>
+
+<div class="content">
+
+  <!-- CLUE -->
+  <div class="clue-block">
+    <div class="clue-title">Clue</div>
+    <p>Nie czekaj aż ktoś cię oswobodzi. <em>Weź sprawy w swoje ręce.</em> Oswobodzeni to nie ruch — to postawa. Działanie zamiast czekania. Technologia, która służy człowiekowi, nie odwrotnie.</p>
+  </div>
+
+  <!-- O SPOŁECZNOŚCI -->
+  <div class="section-title">Oswobodzeni — co to jest</div>
+  <h2>To nie <span class="hi">partia</span> i nie <span class="hi">sektа</span></h2>
+  <p>To sposób myślenia. Kto chce żyć w świecie, gdzie decyzje o jego życiu podejmują inni — wielkie korporacje, obce algorytmy, urzędnicy bez twarzy — ten trwa w uwięzieniu. Kto chce być panem własnego losu — ten jest Oswobodzonym.</p>
+
+  <p>Oswobodzeni to: mieszkańcy wsi i miasteczek, rolnicy, przedsiębiorcy, rzemieślnicy, nauczyciele, sołtysi, radni, wójtowie — zwykli ludzie, którzy postanowili wziąć odpowiedzialność za siebie i swoje otoczenie.</p>
+
+  <p>Nie potrzebujesz dyplomu ani kontaktów. Potrzebujesz woli.</p>
+
+  <!-- DLA KOGO -->
+  <div class="section-title">Dla kogo</div>
+  <div class="audience-grid">
+    <div class="audience-item"><span class="icon">🌾</span><span class="text">Rolnicy i gospodarze</span></div>
+    <div class="audience-item"><span class="icon">🏡</span><span class="text">Mieszkańcy wsi i osiedli</span></div>
+    <div class="audience-item"><span class="icon">🏪</span><span class="text">Przedsiębiorcy lokalni</span></div>
+    <div class="audience-item"><span class="icon">🧑‍⚖️</span><span class="text">Samorządowcy, wójtowie</span></div>
+    <div class="audience-item"><span class="icon">🏛️</span><span class="text">Radni i sołtysi</span></div>
+    <div class="audience-item"><span class="icon">🤝</span><span class="text">Stowarzyszenia i fundacje</span></div>
+    <div class="audience-item"><span class="icon">🧠</span><span class="text">Pasjonaci i badacze</span></div>
+    <div class="audience-item"><span class="icon">🏘️</span><span class="text">Koła gospodyń, organizacje</span></div>
+  </div>
+
+  <!-- MEMPHIS -->
+  <div class="section-title">Memphis — nasze narzędzie</div>
+  <h2><span class="hi">Suwerenna AI</span> na wyciągnięcie ręki</h2>
+  <p>Memphis to otwarte oprogramowanie — "suwerenny runtime AI" — które działa na twoim komputerze, na twoim serwerze, w twojej gminie. Nikt cię nie szpieguje. Nikt nie blokuje. Nikt nie wyłączy ci dostępu gdy ci się to nie spodoba.</p>
+
+  <p>Technologia, która wcześniej była zarezerwowana dla wielkich korporacji i bogatych państw — teraz trafia w ręce zwykłych ludzi. Tak samo jak druk 3D zdemokratyzował produkcję, tak Memphis demokratyzuje sztuczną inteligencję.</p>
+
+  <div class="quote-block">
+    Chcemy żeby każda gmina, każde stowarzyszenie, każdy rolnik z dostępem do komputera mógł korzystać z AI — nie jako konsument korporacyjnego produktu, ale jako pan swojego narzędzia.
+    <cite>— Marcin Kukla, twórca Memphis</cite>
+  </div>
+
+  <ul class="feature-list">
+    <li><span class="bullet">✓</span> <strong>Pamięć łańcuchowa</strong> — Memphis zapamiętuje wszystko, co chcesz zachować. Decyzje, ustalenia, kontekst — bez LLM-owej amnezji.</li>
+    <li><span class="bullet">✓</span> <strong>Vault (skarbiec)</strong> — bezpieczne przechowywanie haseł, kluczy API, dokumentów. Szyfrowane lokalnie.</li>
+    <li><span class="bullet">✓</span> <strong>Działa offline</strong> — na twoim sprzęcie, bez internetu, bez chmury. Twoje dane nie opuszczają twojej maszyny.</li>
+    <li><span class="bullet">✓</span> <strong>Własne modele</strong> — możesz podłączyć dowolny model (lokalny Ollama, OpenAI, Anthropic i inne) albo uruchomić własny na słabszym sprzęcie.</li>
+    <li><span class="bullet">✓</span> <strong>Open source</strong> — w pełni otwarte źródło. Możesz sprawdzić, zmodyfikować, wdrożyć sam. Bez vendor lock-in.</li>
+  </ul>
+
+  <!-- OBrona cywilna -->
+  <div class="section-title">Obrona cywilna — dlaczego teraz</div>
+  <h2>Cywilizacja to <span class="hi">działanie</span>, nie teoria</h2>
+  <p>Jesteśmy przyzwyczajeni że państwo zapewni bezpieczeństwo, służby zdrowia zadbają o zdrowie, a algorytmy zadecydują co jest prawdą. Coraz wyraźniej widać, że te założenia są złudne.</p>
+
+  <p>Oswobodzeni nie znaczy anty-państwowi. Znaczy: <em>nie czekaj aż ktoś za ciebie rozwiąże twój problem</em>. Budujemy lokalne struktury: sieci wymiany informacji, narzędzia komunikacji, systemy wsparcia — oparte na otwartych technologiach, nie na kaprysach korporacji.</p>
+
+  <p>Memphis może być sercem takiej struktury: agregatorem wiedzy, archiwum lokalnej historii, systemem alertowym, narzędziem planowania. Dla każdego — nie tylko dla informatyków.</p>
+
+  <!-- Spotkanie -->
+  <div class="section-title">O spotkaniu</div>
+  <h2>6 maja, <span class="hi">Jawor</span>, Zawoja</h2>
+  <p>Przyjdź jeśli chcesz poznać Memphis w działaniu, porozmawiać o tym jak AI może służyć lokalnym społecznościom, i spotkać ludzi którzy już działają — nie czekają aż ktoś im pozwoli.</p>
+
+  <p>Spotkanie jest otwarte. Bez kamer, bez rejestracji, bez legitymacji. Wystarczy że jesteś.</p>
+
+  <p><strong>Agenda:</strong> demo Memphis na żywo · dyskusja o zastosowaniach w gminie · networking w luźnej atmosferze Beskidów.</p>
+
+  <!-- CTA -->
+  <div class="cta-section">
+    <h3>Przyjdź. Zabierz kogoś.</h3>
+    <p>6 maja 2026, godz. 19:00<br/>Hotel & SPA Jawor, Zawoja</p>
+    <div class="cta-contacts">
+      <div class="cta-contact">
+        <div class="label">Kontakt organizacyjny</div>
+        <div class="value">elathoxu@gmail.com</div>
+      </div>
+      <div class="cta-contact">
+        <div class="label">Hotel Jawor</div>
+        <div class="value">+48 33 87 75 198</div>
+      </div>
+    </div>
+    <p style="margin-top:1.5rem; font-size:0.85rem;">
+      Więcej o Memphis: <a href="https://memphis-v5.pl" style="color:var(--accent-2);">memphis-v5.pl</a><br/>
+      Więcej o Oswobodzeniach: <a href="https://marcin-kukla.pl" style="color:var(--accent-2);">marcin-kukla.pl</a>
+    </p>
+  </div>
+
+</div>
+
+<footer>
+  Oswobodzeni 2026 &nbsp;·&nbsp; Memphis sovereign AI runtime &nbsp;·&nbsp; Hotel & SPA Jawor, Zawoja<br/>
+  <a href="https://memphis-v5.pl">memphis-v5.pl</a> &nbsp;·&nbsp; <a href="https://marcin-kukla.pl">marcin-kukla.pl</a>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,1112 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Skowronkowy Jarzmin 2026 — Festiwal Kultur Niezależnych · Zawoja</title>
+  <meta name="description" content="Skowronkowy Jarzmin to kameralny festiwal kultur niezależnych pod Babią Górą. 23–26 lipca 2026, Hala Barankowa, Zawoja. Jubileuszowa 10. edycja." />
+  <meta property="og:title" content="Skowronkowy Jarzmin 2026 · Zawoja" />
+  <meta property="og:description" content="Festiwal kultur niezależnych. 23–26 lipca, Hala Barankowa, Zawoja." />
+  <meta property="og:type" content="website" />
+  <link rel="canonical" href="https://memphis-v5.pl/skowronkowy-jarzmin/" />
+  <style>
+    :root {
+      --bg: #040509;
+      --bg-2: #0a0d14;
+      --bg-3: #0f1318;
+      --bg-4: #151a22;
+      --fg: #edf2f7;
+      --muted: #97a3b3;
+      --accent: #ff6b35;
+      --accent-2: #2dd4bf;
+      --accent-3: #9ae6d8;
+      --accent-glow: rgba(255,107,53,0.15);
+      --teal-glow: rgba(45,212,191,0.1);
+      --line: rgba(255,255,255,0.07);
+      --line-2: rgba(255,255,255,0.12);
+      --good: #22c55e;
+      --warn: #f59e0b;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+    }
+    *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    ::selection { background: rgba(45,212,191,0.25); color: var(--accent-3); }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--accent-2); border-radius: 3px; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--fg);
+      min-height: 100vh;
+      line-height: 1.65;
+    }
+
+    /* ── HEADER ── */
+    header {
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .header-left .doc-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.25rem;
+    }
+    .header-left h1 {
+      font-size: 1.3rem;
+      font-weight: 800;
+      line-height: 1.2;
+    }
+    .header-left h1 .a { color: var(--accent); }
+    .header-left h1 .b { color: var(--accent-2); }
+    .header-right {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .nav-links {
+      display: flex;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+    }
+    .nav-links a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.85rem;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--accent-2); }
+
+    /* ── HERO ── */
+    .hero {
+      position: relative;
+      padding: 5rem 2rem 4rem;
+      text-align: center;
+      overflow: hidden;
+      background: var(--bg-2);
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 70% 60% at 50% 0%, rgba(255,107,53,0.08) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 40% at 80% 100%, rgba(45,212,191,0.06) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .hero-eyebrow {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--accent);
+      border: 1px solid rgba(255,107,53,0.35);
+      padding: 0.3rem 1rem;
+      border-radius: 100px;
+      margin-bottom: 1.5rem;
+      background: rgba(255,107,53,0.07);
+    }
+    .hero h2 {
+      font-size: clamp(2.4rem, 6vw, 4.5rem);
+      font-weight: 900;
+      line-height: 1.05;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.02em;
+    }
+    .hero h2 .name { color: var(--accent); }
+    .hero h2 .year { color: var(--accent-2); }
+    .hero-sub {
+      font-size: 1.15rem;
+      color: var(--muted);
+      margin-bottom: 2rem;
+      max-width: 560px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .hero-meta {
+      display: flex;
+      gap: 1.5rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 2rem;
+    }
+    .meta-chip {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--fg);
+      background: var(--bg-4);
+      border: 1px solid var(--line-2);
+      padding: 0.4rem 1rem;
+      border-radius: 100px;
+    }
+    .meta-chip .icon { font-size: 0.9rem; }
+    .meta-chip.accent { border-color: rgba(255,107,53,0.3); background: rgba(255,107,53,0.08); }
+    .meta-chip.teal { border-color: rgba(45,212,191,0.3); background: rgba(45,212,191,0.08); }
+    .hero-live {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(239,68,68,0.15);
+      border: 1px solid rgba(239,68,68,0.4);
+      color: #f87171;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 0.35rem 1rem;
+      border-radius: 100px;
+      margin-bottom: 1.5rem;
+    }
+    .hero-live .dot {
+      width: 8px; height: 8px;
+      background: #f87171;
+      border-radius: 50%;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* ── LAYOUT ── */
+    .container { max-width: 960px; margin: 0 auto; padding: 0 2rem; }
+    .container.wide { max-width: 1100px; }
+
+    /* ── SECTION ── */
+    section { padding: 3.5rem 0; border-bottom: 1px solid var(--line); }
+    section:last-child { border-bottom: none; }
+    .section-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+    .section-title {
+      font-size: 1.6rem;
+      font-weight: 800;
+      margin-bottom: 1rem;
+      line-height: 1.2;
+    }
+    .section-title .hi { color: var(--accent-2); }
+    .section-intro {
+      font-size: 1rem;
+      color: var(--muted);
+      margin-bottom: 2rem;
+      max-width: 680px;
+      line-height: 1.75;
+    }
+
+    /* ── MANIFESTO ── */
+    .manifesto {
+      background: var(--bg-2);
+      border: 1px solid var(--line-2);
+      border-radius: 16px;
+      padding: 2rem 2.5rem;
+      margin: 2rem 0;
+    }
+    .manifesto p {
+      font-size: 1.05rem;
+      line-height: 1.8;
+      color: var(--fg);
+    }
+    .manifesto p + p { margin-top: 1rem; }
+    .manifesto em { color: var(--accent-2); font-style: normal; font-weight: 600; }
+    .manifesto blockquote {
+      font-size: 1.15rem;
+      color: var(--muted);
+      border-left: 3px solid var(--accent);
+      padding-left: 1.5rem;
+      margin: 1.5rem 0 0;
+      font-style: italic;
+    }
+    .manifesto blockquote cite {
+      display: block;
+      font-size: 0.8rem;
+      margin-top: 0.75rem;
+      color: var(--muted);
+      font-style: normal;
+    }
+
+    /* ── TAGS / PILLS ── */
+    .tag-row {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+    }
+    .tag {
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.3rem 0.85rem;
+      border-radius: 100px;
+      background: var(--bg-3);
+      border: 1px solid var(--line-2);
+      color: var(--muted);
+    }
+    .tag.accent { background: rgba(255,107,53,0.1); border-color: rgba(255,107,53,0.3); color: var(--accent); }
+    .tag.teal { background: rgba(45,212,191,0.1); border-color: rgba(45,212,191,0.3); color: var(--accent-2); }
+
+    /* ── INFO GRID ── */
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1rem;
+      margin: 2rem 0;
+    }
+    .info-card {
+      background: var(--bg-2);
+      border: 1px solid var(--line-2);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+    }
+    .info-card .label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.4rem;
+    }
+    .info-card .value {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--fg);
+    }
+    .info-card .value.accent { color: var(--accent); }
+    .info-card .value.teal { color: var(--accent-2); }
+    .info-card .value.muted { color: var(--muted); font-weight: 400; font-size: 0.85rem; }
+
+    /* ── LINEUP ── */
+    .stage-block {
+      background: var(--bg-2);
+      border: 1px solid var(--line-2);
+      border-radius: 16px;
+      overflow: hidden;
+      margin-bottom: 1.5rem;
+    }
+    .stage-header {
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .stage-name {
+      font-size: 0.9rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .stage-name.main { color: var(--accent); }
+    .stage-name.dolna { color: var(--accent-2); }
+    .stage-note {
+      font-size: 0.75rem;
+      color: var(--muted);
+      background: var(--bg-4);
+      padding: 0.25rem 0.75rem;
+      border-radius: 100px;
+    }
+    .artist-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 0;
+      padding: 0.5rem 0;
+    }
+    .artist-item {
+      padding: 0.6rem 1.5rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .artist-item:nth-child(odd) { background: rgba(255,255,255,0.01); }
+    .artist-name {
+      font-weight: 700;
+      font-size: 0.9rem;
+      margin-bottom: 0.15rem;
+    }
+    .artist-genre {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    /* ── WORKSHOPS ── */
+    .workshop-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+    .ws-card {
+      background: var(--bg-2);
+      border: 1px solid var(--line-2);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+    }
+    .ws-name { font-weight: 700; font-size: 0.9rem; margin-bottom: 0.2rem; }
+    .ws-host { font-size: 0.75rem; color: var(--accent-2); margin-bottom: 0.3rem; }
+    .ws-desc { font-size: 0.78rem; color: var(--muted); line-height: 1.5; }
+
+    /* ── PRACTICAL ── */
+    .prac-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+    .prac-card {
+      background: var(--bg-2);
+      border: 1px solid var(--line-2);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+    }
+    .prac-card h3 {
+      font-size: 0.85rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.75rem;
+      color: var(--accent);
+    }
+    .prac-card ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .prac-card li {
+      font-size: 0.85rem;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .prac-card li .price { color: var(--fg); font-weight: 600; }
+    .prac-card li .note { color: var(--warn); font-size: 0.75rem; }
+
+    /* ── LINKS ── */
+    .link-row {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin: 1.5rem 0;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.6rem 1.4rem;
+      border-radius: 100px;
+      font-size: 0.875rem;
+      font-weight: 700;
+      text-decoration: none;
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border: 1px solid var(--accent);
+    }
+    .btn-primary:hover { background: #ff8147; }
+    .btn-outline {
+      background: transparent;
+      color: var(--fg);
+      border: 1px solid var(--line-2);
+    }
+    .btn-outline:hover { border-color: var(--accent-2); color: var(--accent-2); }
+    .btn-teal {
+      background: rgba(45,212,191,0.15);
+      color: var(--accent-2);
+      border: 1px solid rgba(45,212,191,0.35);
+    }
+    .btn-teal:hover { background: rgba(45,212,191,0.25); }
+
+    /* ── ATMOSPHERE ── */
+    .atmosphere-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 0.75rem;
+      margin: 1.5rem 0;
+    }
+    .atmo-item {
+      background: var(--bg-2);
+      border: 1px solid var(--line-2);
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      text-align: center;
+    }
+    .atmo-item .icon { font-size: 1.4rem; margin-bottom: 0.4rem; }
+    .atmo-item .label { font-size: 0.75rem; color: var(--muted); }
+
+    /* ── HISTORY ── */
+    .history-item {
+      display: flex;
+      gap: 1.25rem;
+      padding: 1rem 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .history-item:last-child { border-bottom: none; }
+    .history-year {
+      font-size: 0.8rem;
+      font-weight: 800;
+      color: var(--accent);
+      min-width: 50px;
+      padding-top: 0.1rem;
+    }
+    .history-text { font-size: 0.875rem; color: var(--muted); line-height: 1.6; }
+
+    /* ── QUOTE ── */
+    .pullquote {
+      background: var(--bg-2);
+      border: 1px solid var(--line-2);
+      border-left: 4px solid var(--accent);
+      border-radius: 0 12px 12px 0;
+      padding: 1.5rem 2rem;
+      margin: 2rem 0;
+    }
+    .pullquote p {
+      font-size: 1.05rem;
+      color: var(--fg);
+      font-style: italic;
+      line-height: 1.7;
+    }
+    .pullquote cite {
+      display: block;
+      margin-top: 0.75rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-style: normal;
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      padding: 2.5rem 2rem;
+      border-top: 1px solid var(--line);
+      text-align: center;
+    }
+    footer p {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+    footer a { color: var(--accent-2); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* ── DIVIDER ── */
+    .divider {
+      border: none;
+      border-top: 1px solid var(--line);
+      margin: 0;
+    }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 600px) {
+      header { padding: 1rem 1.25rem; }
+      .hero { padding: 3rem 1.25rem 2.5rem; }
+      .container { padding: 0 1.25rem; }
+      .manifesto { padding: 1.5rem; }
+      .info-grid { grid-template-columns: 1fr 1fr; }
+      .artist-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══ HEADER ═══ -->
+<header>
+  <div class="header-left">
+    <div class="doc-label">memphis-v5.pl</div>
+    <h1><span class="a">Skowronkowy</span> <span class="b">Jarzmin</span> 2026</h1>
+  </div>
+  <nav class="header-right">
+    <div class="nav-links">
+      <a href="#o-festiwalu">O festiwalu</a>
+      <a href="#lineup">Line-up</a>
+      <a href="#warsztaty">Warsztaty</a>
+      <a href="#praktyczne">Info</a>
+      <a href="#historia">Historia</a>
+    </div>
+  </nav>
+</header>
+
+<!-- ═══ HERO ═══ -->
+<section class="hero">
+  <div class="hero-eyebrow">Festiwal Kultur Niezależnych · Jubileuszowa 10. edycja</div>
+
+  <div class="hero-live">
+    <span class="dot"></span>
+    Trwa teraz — 24–26 lipca 2026
+  </div>
+
+  <h2>
+    <span class="name">Skowronkowy</span><br>
+    <span class="year">Jarzmin</span>
+  </h2>
+
+  <p class="hero-sub">
+    Kameralny festiwal pod Babią Górą. Muzyka etno, dub, folk, DJ sety, warsztaty zielarskie,
+    bębny, ognisko, kino plenerowe i wspólnota ludzi, którzy wolą rozmawiać niż scrollować.
+  </p>
+
+  <div class="hero-meta">
+    <div class="meta-chip accent">
+      <span class="icon">📍</span> Hala Barankowa, Zawoja
+    </div>
+    <div class="meta-chip teal">
+      <span class="icon">📅</span> 23–26 lipca 2026
+    </div>
+    <div class="meta-chip">
+      <span class="icon">🎵</span> 2 sceny · 32+ artystów
+    </div>
+    <div class="meta-chip">
+      <span class="icon">🏕️</span> Pole namiotowe w cenie
+    </div>
+  </div>
+
+  <div class="link-row" style="justify-content: center;">
+    <a href="https://stage24.pl/wydarzenia/skowronkowy-jarzmin-7001" class="btn btn-primary" target="_blank" rel="noopener">
+      🎟️ Bilety — Stage24
+    </a>
+    <a href="https://www.facebook.com/skowronkowyjarzmin/" class="btn btn-outline" target="_blank" rel="noopener">
+      📘 Facebook
+    </a>
+    <a href="https://www.instagram.com/skowronkowy_jarzmin/" class="btn btn-teal" target="_blank" rel="noopener">
+      📸 Instagram
+    </a>
+  </div>
+</section>
+
+<!-- ═══ O FESTIWALU ═══ -->
+<section id="o-festiwale">
+  <div class="container">
+    <div class="section-label">01 — O festiwalu</div>
+    <h2 class="section-title">Czym jest <span class="hi">Skowronkowy Jarzmin?</span></h2>
+
+    <div class="tag-row">
+      <span class="tag accent">DIY / kultura niezależna</span>
+      <span class="tag teal">etno / dub / folk</span>
+      <span class="tag">Beskidy · Babia Góra</span>
+      <span class="tag">Hala Barankowa, 850 m n.p.m.</span>
+      <span class="tag">10. edycja (od 2016)</span>
+      <span class="tag">kameralny festiwal</span>
+    </div>
+
+    <div class="manifesto">
+      <p>
+        Skowronkowy Jarzmin to festiwal <em>kultur niezależnych</em> — wydarzenie, które
+        celowo unika korporacyjnego szumu i social media polishu. Organizatorzy proszą,
+        żeby nie nazywać ich po prostu "festiwalem". To <em>spotkanie</em>,
+        <em>wydarzenie</em>, przestrzeń do bycia z ludźmi i z naturą.
+      </p>
+      <p>
+        Nazwa pochodzi od dwóch roślin i stworzeń Babiej Góry:
+        <em>jarzmianu</em> (Astrantia major) —端庄 bylina łąk górskich —
+        i <em>skowronka</em> — ptaka łąkowego, którego śpiew bierze się słuchać,
+        zamiast sprawdzać powiadomienia.
+      </p>
+      <blockquote>
+        "Tam chrupek i chipsów nie było, nie widziałem też ludzi wpatrzonych w swoje smartfony.
+        Można było rozmawiać na poważne lub mniej tematy, można było brać udział w ciekawych warsztatach.
+        Można też było nie robić nic i wylegiwać się na pięknej polanie."
+        <cite>— Relacja uczestnika, muzyczny-krakow.eu</cite>
+      </blockquote>
+    </div>
+
+    <div class="atmosphere-grid">
+      <div class="atmo-item">
+        <div class="icon">🎵</div>
+        <div class="label">Koncerty LIVE</div>
+      </div>
+      <div class="atmo-item">
+        <div class="icon">🥁</div>
+        <div class="label">Strefa bębniarska</div>
+      </div>
+      <div class="atmo-item">
+        <div class="icon">🔥</div>
+        <div class="label">Ognisko</div>
+      </div>
+      <div class="atmo-item">
+        <div class="icon">🎬</div>
+        <div class="label">Kino plenerowe</div>
+      </div>
+      <div class="atmo-item">
+        <div class="icon">🌿</div>
+        <div class="label">Warsztaty zielarskie</div>
+      </div>
+      <div class="atmo-item">
+        <div class="icon">🧵</div>
+        <div class="label">Rękodzieło</div>
+      </div>
+      <div class="atmo-item">
+        <div class="icon">🍲</div>
+        <div class="label">Gastro</div>
+      </div>
+      <div class="atmo-item">
+        <div class="icon">🏕️</div>
+        <div class="label">Pole namiotowe</div>
+      </div>
+      <div class="atmo-item">
+        <div class="icon">👶</div>
+        <div class="label">Dla dzieci</div>
+      </div>
+      <div class="atmo-item">
+        <div class="icon">🌙</div>
+        <div class="label">Nocne DJ sety</div>
+      </div>
+    </div>
+
+    <p class="section-intro">
+      Festiwal odbywa się na Hali Barankowej — hali pasterskiej na wysokości ok. 850 m n.p.m.,
+      z widokiem prosto na Babią Górę (1725 m). Organizatorzy od lat budują społeczność wokół
+      muzyki etno, tańca, sztuki i życia w zgodzie z naturą. Wstęp dla dzieci do 15. roku życia — free.
+    </p>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ═══ LINE-UP 2026 ═══ -->
+<section id="lineup">
+  <div class="container wide">
+    <div class="section-label">02 — Line-up 2026</div>
+    <h2 class="section-title">Dwie sceny · 32+ artystów</h2>
+    <p class="section-intro">
+      Jubileuszowa edycja stawia na klimat etno i plemienną atmosferę. Scena Główna —
+      koncerty akustyczne i live. Scena Dolna — napędzana przez SubCarpathian Soundsystem,
+      DJ sety i live sety do rana.
+    </p>
+
+    <!-- SCENA GŁÓWNA -->
+    <div class="stage-block">
+      <div class="stage-header">
+        <span class="stage-name main">🎤 Scena Główna</span>
+        <span class="stage-note">Koncerty live · folk, etno, rock, ambient</span>
+      </div>
+      <div class="artist-grid">
+        <div class="artist-item">
+          <div class="artist-name">Moribaya</div>
+          <div class="artist-genre">Muzyka afrykańska · Warszawa</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Prababa</div>
+          <div class="artist-genre">Folk · Zielona Góra</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Aldaron</div>
+          <div class="artist-genre">Piosenki bardowskie · Bieszczady</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Świt</div>
+          <div class="artist-genre">Folk/rock/poezja śpiewana · Kraków</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Czeslowe</div>
+          <div class="artist-genre">Dub/funk · Warszawa</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Klint</div>
+          <div class="artist-genre">Rock/psychodeliczny · Trójmiasto</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">żakiety</div>
+          <div class="artist-genre">Alt/ambient · Katowice</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">UKOJA</div>
+          <div class="artist-genre">Folk · Kraków</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Kapela z Krainy Dziwów</div>
+          <div class="artist-genre">Folk · Katowice</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Spirit of the City</div>
+          <div class="artist-genre">Dub/trip-hop/shoegaze · Kraków</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Bezdroża</div>
+          <div class="artist-genre">Folk · Kraków</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Neal</div>
+          <div class="artist-genre">Indie folk · Kraków</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Skowronkowy Jam Session</div>
+          <div class="artist-genre">Improwizacja · open stage</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCENA DOLNA -->
+    <div class="stage-block">
+      <div class="stage-header">
+        <span class="stage-name dolna">🎧 Scena Dolna</span>
+        <span class="stage-note">powered by SubCarpathian Soundsystem · DJ / live sets do rana</span>
+      </div>
+      <div class="artist-grid">
+        <div class="artist-item">
+          <div class="artist-name">Moony & Itaya</div>
+          <div class="artist-genre">Dub live set ze skrzypcami</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">ArchiTech</div>
+          <div class="artist-genre">Deep organic house · PT</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Roots Digital</div>
+          <div class="artist-genre">Dub/steppa/dub&amp;bass</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Tommy Halik</div>
+          <div class="artist-genre">Downtempo/organic house</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">BBR</div>
+          <div class="artist-genre">Dub/roots/jungle</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Habibi</div>
+          <div class="artist-genre">Dub etno/dub steppa/dub techno</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">VAD!M</div>
+          <div class="artist-genre">Etno drum&amp;bass</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Cieśla</div>
+          <div class="artist-genre">Dub/steppa</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Mandŏk</div>
+          <div class="artist-genre">Deep trance/atmospheric techno</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Friki Dadi</div>
+          <div class="artist-genre">Dub</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Jaromira</div>
+          <div class="artist-genre">Etno house</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Vibe Cartel</div>
+          <div class="artist-genre">Cumbia</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Transmantra</div>
+          <div class="artist-genre">Ambient</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Bboy Lebson</div>
+          <div class="artist-genre">Funk/d'n'b/techno</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Greggor</div>
+          <div class="artist-genre">Roots/dub · CZ</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Dragons Dose</div>
+          <div class="artist-genre">Hightech/dark minimal</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">sssowiński</div>
+          <div class="artist-genre">Minimal house/dub techno</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">DX//</div>
+          <div class="artist-genre">Organic/deep house</div>
+        </div>
+        <div class="artist-item">
+          <div class="artist-name">Kwiat Cebuli</div>
+          <div class="artist-genre">Etno/deep house</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KINO PLENEROWE -->
+    <div class="stage-block">
+      <div class="stage-header">
+        <span class="stage-name" style="color: var(--warn);">🎬 Kino plenerowe</span>
+        <span class="stage-note">prowadzenie: Estera Gałuszka</span>
+      </div>
+      <div class="artist-grid">
+        <div class="artist-item">
+          <div class="artist-name">"Żwirek kręci z muchomorkiem"</div>
+          <div class="artist-genre">Przegląd kina niezależnego · kino plenerowe na świeżym powietrzu</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ═══ WARSZTATY ═══ -->
+<section id="warsztaty">
+  <div class="container">
+    <div class="section-label">03 — Warsztaty 2026</div>
+    <h2 class="section-title">Strefa warsztatowa · <span class="hi">14 warsztatów</span></h2>
+    <p class="section-intro">
+      Od śpiewu babiogórskiego i łemkowskiego, przez bębny i taniec z ogniem,
+      po jogę, zielarskie spacery i lasoterapię. Cztery dni — ponad tuzin sposobów,
+      żeby nie siedzieć bezczynnie (albo właśnie tak — też jest OK).
+    </p>
+
+    <div class="workshop-grid">
+      <div class="ws-card">
+        <div class="ws-name">🎤 Śpiew Babiogórski</div>
+        <div class="ws-host">Kinga Ruszkiewicz, Kasia Mętel</div>
+        <div class="ws-desc">Tradycyjne pieśni babiogórskie — śpiew związany z regionem i jego kulturą pasterską.</div>
+      </div>
+      <div class="ws-card">
+        <div class="ws-name">🌿 Spacer zielarsko-botaniczny</div>
+        <div class="ws-host">Adrian Gałązka</div>
+        <div class="ws-desc">Rozpoznawanie roślin Babiej Góry z elementami lasoterapii i spacery sensoryczne.</div>
+      </div>
+      <div class="ws-card">
+        <div class="ws-name">🪘 Strefa bębniarska</div>
+        <div class="ws-host">Karol "KarWil" Wilkoszewski</div>
+        <div class="ws-desc">Bębny, rytm, ruch — otwarta przestrzeń bębniarska dla wszystkich poziomów.</div>
+      </div>
+      <div class="ws-card">
+        <div class="ws-name">🛤️ Śpiew Łemkowski</div>
+        <div class="ws-host">Jaromira i Seman</div>
+        <div class="ws-desc">Pieśni łemkowskie — tradycja muzyczna Łemkowszczyzny, regionu Beskidów.</div>
+      </div>
+      <div class="ws-card">
+        <div class="ws-name">🔥 Taniec z ogniem</div>
+        <div class="ws-host">Leo Cis</div>
+        <div class="ws-desc">Warsztat tańca z ogniem — poezja ruchu, liny, pianki i ogień.</div>
+      </div>
+      <div class="ws-card">
+        <div class="ws-name">🎵 Śpiew Gardłowy</div>
+        <div class="ws-host">Michał i Irmina Mysza — Myszterium</div>
+        <div class="ws-desc">Śpiew gardłowy (overtone singing) — techniki i warsztat praktyczny.</div>
+      </div>
+      <div class="ws-card">
+        <div class="ws-name">🧘 AcroJoga</div>
+        <div class="ws-host">Marcel Drwięga, Ala i Iwona</div>
+        <div class="ws-desc">Połączenie akrobatyki i jogi — dla początkujących i zaawansowanych.</div>
+      </div>
+      <div class="ws-card">
+        <div class="ws-name">🌺 Afrodance</div>
+        <div class="ws-host">Anika Kamińska &amp; Moribaya</div>
+        <div class="ws-desc">Warsztat tańca afrykańskiego — energia, ruch, współpraca z live muzyką.</div>
+      </div>
+      <div class="ws-card">
+        <div class="ws-name">🌀 Spacer sensoryczny "STRESS W LASS"</div>
+        <div class="ws-host">Patrycja / Czuję Las</div>
+        <div class="ws-desc">Lasoterapii, mindfulness w lesie, odcięcie od bodźców cyfrowych.</div>
+      </div>
+      <div class="ws-card">
+        <div class="ws-name">☯️ Move. Release. Rise</div>
+        <div class="ws-host">Antonina Aondo</div>
+        <div class="ws-desc">Warsztat ruchowo-oddechowy — integracja ciała i oddechu.</div>
+      </div>
+      <div class="ws-card">
+        <div class="ws-name">🍵 Tea time</div>
+        <div class="ws-host">Marya Basalai</div>
+        <div class="ws-desc">Ceremonia herbaciana — wspólne parzenie i picie, rozmowa, cisza.</div>
+      </div>
+      <div class="ws-card">
+        <div class="ws-name">🎶 Krąg muzyczny</div>
+        <div class="ws-host">Marcin Pika</div>
+        <div class="ws-desc">Jam session w kręgu — improwizacja muzyczna, otwarta dla wszystkich instrumentów.</div>
+      </div>
+      <div class="ws-card">
+        <div class="ws-name">🪗 Śpiew Białoruski</div>
+        <div class="ws-host">Nastassia Chmiel</div>
+        <div class="ws-desc">Tradycyjne pieśni białoruskie — głęboka tradycja wokalna Europy Wschodniej.</div>
+      </div>
+      <div class="ws-card">
+        <div class="ws-name">🎐 Warsztaty z szarf powietrznych</div>
+        <div class="ws-host">Polina</div>
+        <div class="ws-desc">Taniec z szarfami powietrznymi — połączenie ruchu, oddechu i wizualnej sztuki.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ═══ PRAKTYCZNE ═══ -->
+<section id="praktyczne">
+  <div class="container">
+    <div class="section-label">04 — Info praktyczne</div>
+    <h2 class="section-title">Bilety, dojazd, <span class="hi">kontakt</span></h2>
+
+    <div class="info-grid">
+      <div class="info-card">
+        <div class="label">Termin</div>
+        <div class="value">23–26 lipca 2026</div>
+        <div class="value muted" style="margin-top:0.3rem;">Czw (start) → Ndz (finał)</div>
+      </div>
+      <div class="info-card">
+        <div class="label">Miejsce</div>
+        <div class="value">Hala Barankowa</div>
+        <div class="value muted">Zawoja, pow. suski, woj. małopolskie</div>
+      </div>
+      <div class="info-card">
+        <div class="label">Wysokość</div>
+        <div class="value teal">~850 m n.p.m.</div>
+        <div class="value muted">Widok na Babią Górę (1725 m)</div>
+      </div>
+      <div class="info-card">
+        <div class="label">Wiek</div>
+        <div class="value">Wszystkie grupy</div>
+        <div class="value muted">Dzieci do 15 lat — free</div>
+      </div>
+    </div>
+
+    <div class="prac-grid">
+      <div class="prac-card">
+        <h3>🎟️ Bilety 2026</h3>
+        <ul>
+          <li><span>III pula (do 22.07)</span> <span class="price">365 zł</span></li>
+          <li><span>Bramka</span> <span class="price">400 zł</span></li>
+          <li><span>Karnet 15–18 lat</span> <span class="price">150 zł</span></li>
+          <li><span class="note">⚠ Na bramce: tylko gotówka/kartą</span></li>
+          <li><span>Czwartek (1 dzień)</span> <span class="price">50 zł</span></li>
+          <li><span>Piątek / Sobota</span> <span class="price">200 zł</span></li>
+          <li><span>Niedziela</span> <span class="price">50 zł</span></li>
+        </ul>
+      </div>
+
+      <div class="prac-card">
+        <h3>🚗 Parking</h3>
+        <ul>
+          <li><span>Parking na Hali Barankowej</span> <span class="price">106 zł</span></li>
+          <li><span class="note">⚠ Ostatnie sztuki — wg dostępności</span></li>
+          <li><span>Pozostali uczestnicy — parkingi u sąsiadów</span></li>
+        </ul>
+      </div>
+
+      <div class="prac-card">
+        <h3>📍 W cenie biletu</h3>
+        <ul>
+          <li>✅ Wstęp na wszystkie sceny</li>
+          <li>✅ Warsztaty</li>
+          <li>✅ Kino plenerowe</li>
+          <li>✅ Pole namiotowe na terenie festiwalu</li>
+          <li>✅ Miejsca parkingowe (przy zakupie)</li>
+          <li>✅ Dzieci do 15 lat — free</li>
+        </ul>
+      </div>
+
+      <div class="prac-card">
+        <h3>🌲 Co zabrać</h3>
+        <ul>
+          <li>🏕️ Namiot + śpiwór</li>
+          <li>🌧️ Kielich / polar (góry = zimne noce)</li>
+          <li>🔦 Latarka</li>
+          <li>🥾 Buty trekkingowe</li>
+          <li>☔ Pogoda: piątek kapryśny, sob-ndz słonecznie</li>
+          <li>💧 Woda wielokrotnego użytku</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="link-row">
+      <a href="https://stage24.pl/wydarzenia/skowronkowy-jarzmin-7001" class="btn btn-primary" target="_blank" rel="noopener">
+        🎟️ Kup bilet — Stage24
+      </a>
+      <a href="https://www.facebook.com/groups/734570303989479/" class="btn btn-outline" target="_blank" rel="noopener">
+        🔄 Wymiana biletów / wspólne dojazdy
+      </a>
+      <a href="https://www.facebook.com/events/825473347178907/" class="btn btn-teal" target="_blank" rel="noopener">
+        📅 Wydarzenie na Facebooku
+      </a>
+    </div>
+
+    <div class="pullquote">
+      <p>
+        "Wydarzenie dla koneserów. Spanie pod namiotem, zimny prysznic i latryna.
+        Ale ludzie, którzy tam byli dokonali świadomego wyboru.
+        Fantastyczne miejsce, wspaniali ludzie i doskonała muzyka."
+      </p>
+      <cite>— andrzejfotografia.pl, relacja z edycji 2022</cite>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ═══ HISTORIA ═══ -->
+<section id="historia">
+  <div class="container">
+    <div class="section-label">05 — Historia</div>
+    <h2 class="section-title">10 lat <span class="hi">niezależnej kultury</span></h2>
+    <p class="section-intro">
+      Skowronkowy Jarzmin wystartował w 2016 roku jako kameralne spotkanie artystów
+      i przyjaciół pod Babią Górą. Z roku na rok rósł — ale zachował DNA:
+      niezależność, DIY, naturę i wspólnotę zamiast corporate polish.
+    </p>
+
+    <div class="history-item">
+      <div class="history-year">2016</div>
+      <div class="history-text">Pierwsza edycja — początek "lotu" (według organizatorów: "ponad dekadę lotu").</div>
+    </div>
+    <div class="history-item">
+      <div class="history-year">2018</div>
+      <div class="history-text">Edycja w Zawoi-Czatoża, czerwiec. Dokumentacja na Last.fm, Facebook.</div>
+    </div>
+    <div class="history-item">
+      <div class="history-year">2020</div>
+      <div class="history-text">Edycja w sierpniu, nowe miejsce (Zawoja). 100 zł / 3 dni, 50 zł / 1 dzień. Wystąpili: Aldaron, Fren, Mentalny Remont, Rajka, Riders Of Deserted Seas i inni. Opisane jako "najpiękniejszy festiwal końca wakacji" przez AxunArts.</div>
+    </div>
+    <div class="history-item">
+      <div class="history-year">2022</div>
+      <div class="history-text">Powrót po pandemicznej przerwie. Na scenie: Aldaron, formacje krakowskie i z całej Polski. Relacje z uczestników mówią o "pięknej polanie 850 m n.p.m."</div>
+    </div>
+    <div class="history-item">
+      <div class="history-year">2025</div>
+      <div class="history-text">9. edycja — opisana przez Stage24 jako "one of a kind DIY musical artistic festival taking place high in the beautiful Carpathian mountains".</div>
+    </div>
+    <div class="history-item">
+      <div class="history-year">2026</div>
+      <div class="history-text">
+        <strong>Jubileuszowa 10. edycja</strong> — 23–26 lipca, Hala Barankowa.
+        W tym roku: powrót do korzeni, klimat etno, plemienna atmosfera,
+        dwie sceny, 32+ artystów, 14 warsztatów, kino plenerowe.
+        <span style="color: var(--accent); font-weight: 700;">Trwa właśnie teraz.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ FOOTER ═══ -->
+<footer>
+  <p>
+    Strona przygotowana na bazie publicznych informacji festiwalu ·
+    <a href="https://memphis-v5.pl/" target="_blank">memphis-v5.pl</a>
+  </p>
+  <p>
+   Oficjalne źródła: <a href="https://www.facebook.com/skowronkowyjarzmin/" target="_blank">Facebook</a> ·
+    <a href="https://www.instagram.com/skowronkowy_jarzmin/" target="_blank">Instagram</a> ·
+    <a href="https://stage24.pl/wydarzenia/skowronkowy-jarzmin-7001" target="_blank">Stage24 (bilety)</a> ·
+    <a href="https://cowbeskidach.pl/powiat-suski/gmina-zawoja/zawoja/skowronkowy-jarzmin-2026-jubileuszowy-festiwal-etno-w-zawoi" target="_blank">Co w Beskidach</a>
+  </p>
+  <p style="margin-top: 1rem; color: var(--accent-3); font-size: 0.75rem;">
+    🌿 Jarzmian i skowronek — Babia Góra, Beskidy, kultura niezależna
+  </p>
+</footer>
+
+</body>
+</html>
