@@ -12,6 +12,7 @@ import {
 } from '../../onboarding/first-run.js';
 import type { AppConfig } from '../config/schema.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
+import { probeOllamaReadiness, type OllamaReadiness } from './ollama-readiness.js';
 
 // Sprint 0.5 G2: these lists used to be three separate hard-coded arrays
 // here; each missed `insights` + `soul` and carried `proactive` which
@@ -32,10 +33,7 @@ import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 //     reason; we preserve it.
 const CANONICAL_CHAIN_NAMES = getChainNames();
 const SEARCHABLE_CHAIN_NAMES = getSearchableChainNames();
-const DERIVED_CHAIN_NAMES: ReadonlySet<string> = new Set([
-  'patterns',
-  'insights',
-]);
+const DERIVED_CHAIN_NAMES: ReadonlySet<string> = new Set(['patterns', 'insights']);
 const CANONICAL_MEMORY_CHAIN_NAMES = CANONICAL_CHAIN_NAMES.filter(
   (name) => name !== 'system' && name !== 'soul' && !DERIVED_CHAIN_NAMES.has(name),
 );
@@ -69,6 +67,10 @@ export type RuntimeHealthSnapshot = {
     localFallbackEnabled: boolean;
     ollamaUrl: string;
     ollamaReachable: boolean;
+    /** Optional for compatibility with stored snapshots from older releases. */
+    ollamaGeneration?: OllamaReadiness;
+    /** Local fallback is a deterministic echo, not generative inference. */
+    localFallbackKind?: 'echo';
     supportedModes: Array<'local-fallback' | 'ollama-local'>;
     ready: boolean;
   };
@@ -374,18 +376,6 @@ function collectExactSearchSnapshot(
   }
 }
 
-async function pingOllama(url: string): Promise<boolean> {
-  try {
-    const response = await fetch(`${url.replace(/\/$/, '')}/api/tags`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(400),
-    });
-    return response.ok || response.status < 500;
-  } catch {
-    return false;
-  }
-}
-
 function resolveOfflineMode(
   config: Pick<AppConfig, 'DEFAULT_PROVIDER' | 'LOCAL_FALLBACK_ENABLED'>,
 ): OfflineRuntimeMode {
@@ -632,13 +622,17 @@ export async function buildRuntimeHealthSnapshot(
 ): Promise<RuntimeHealthSnapshot> {
   const offlineMode = resolveOfflineMode(config);
   const ollamaUrl = rawEnv.OLLAMA_URL?.trim() || 'http://127.0.0.1:11434';
-  const ollamaReachable = await pingOllama(ollamaUrl);
+  const ollamaGeneration = await probeOllamaReadiness(
+    ollamaUrl,
+    rawEnv.OLLAMA_MODEL?.trim() || 'qwen2.5-coder:3b',
+  );
+  const ollamaReachable = ollamaGeneration.reachable;
   const supportedModes: Array<'local-fallback' | 'ollama-local'> = [];
 
   if (config.LOCAL_FALLBACK_ENABLED) {
     supportedModes.push('local-fallback');
   }
-  if (ollamaReachable) {
+  if (ollamaGeneration.canGenerate) {
     supportedModes.push('ollama-local');
   }
 
@@ -658,13 +652,15 @@ export async function buildRuntimeHealthSnapshot(
       localFallbackEnabled: config.LOCAL_FALLBACK_ENABLED,
       ollamaUrl,
       ollamaReachable,
+      ollamaGeneration,
+      localFallbackKind: 'echo',
       supportedModes,
       ready:
         offlineMode === 'local-fallback'
           ? config.LOCAL_FALLBACK_ENABLED
           : offlineMode === 'ollama-local'
-            ? ollamaReachable
-            : config.LOCAL_FALLBACK_ENABLED || ollamaReachable,
+            ? ollamaGeneration.canGenerate
+            : config.LOCAL_FALLBACK_ENABLED || ollamaGeneration.canGenerate,
     },
     chainMemory,
     exactSearch,
