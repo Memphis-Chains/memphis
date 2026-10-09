@@ -201,11 +201,89 @@ drift() {
   reposz="-"; mastersz="-"
   [[ -f "$REPO_ROOT/$dir/index.html" ]] && reposz="$(stat -c %s "$REPO_ROOT/$dir/index.html")"
   [[ -f "$SITES_DIR/$key/index.html" ]] && mastersz="$(stat -c %s "$SITES_DIR/$key/index.html")"
-  rep info "$key" "index.html" "$key index.html live=${live}B repo=${reposz}B master=${mastersz}B" "sizes live=$live repo=$reposz master=$mastersz"
+  # `repo` here is the estate master (sites/<site>/), not a sibling copy. If a
+  # second tree also holds the site, that is an ambiguity worth reporting rather
+  # than a fact to print — two masters means one of them will be published by
+  # someone who picked wrong.
+  rep info "$key" "index.html" "$key index.html live=${live}B master=${mastersz}B" "sizes live=$live master=$mastersz"
+  # The master is the source of truth. When it differs from production the
+  # useful question is which way: an unpublished local edit (fine, publish it)
+  # or a production change nobody pulled yet (dangerous, would be reverted).
+  # Reporting both as "drift" leaves the operator to guess which one it is.
   if [[ "$mastersz" != "-" && "$mastersz" != "$live" ]]; then
-    rep warn "$key" "index.html" "$key master ($mastersz B) differs from live ($live B) — deploying it would overwrite production" "master!=live ($mastersz vs $live)"
+    rep warn "$key" "index.html" "$key master ($mastersz B) differs from live ($live B) — run --diff and decide whether to publish or pull" "master!=live ($mastersz vs $live)"
+  elif [[ "$mastersz" == "$live" ]]; then
+    rep info "$key" "index.html" "$key master matches production ($mastersz B) — nothing unpublished" "master==live"
   fi
-  [[ "$reposz" == "-" ]] && rep warn "$key" "index.html" "$key has no repo copy of the master" "no repo copy"
+  [[ "$reposz" == "-" ]] && rep warn "$key" "index.html" "$key has no estate.json master" "no estate master"
+  # A second tree holding the same site means two sources of truth. Say so.
+  local dupes
+  dupes="$(python3 - "$REPO_ROOT" "$key" <<'PY2'
+import sys, pathlib
+root, key = pathlib.Path(sys.argv[1]), sys.argv[2]
+master = (root / "sites" / key).resolve()
+hits = []
+
+# A second copy of a site is a real problem: two masters for one domain is how
+# a stale file gets published. But it has to be attributed to the right site.
+#
+# The earlier version compared a candidate index.html against the master of
+# whatever site was being audited, so `docs/site/` - a stale snapshot of
+# memphis-v5 - came back as a "duplicate" of marcin-kukla and holiskool too,
+# because it differs from all three. Three findings, one real problem.
+#
+# Attribute by similarity across all masters instead: a candidate is a copy of
+# the site whose master it most resembles.
+def read(pth):
+    try:
+        return pth.read_bytes()
+    except OSError:
+        return b""
+
+masters = {}
+for other_key in ("memphis-v5", "marcin-kukla", "holiskool"):
+    mb = read(root / "sites" / other_key / "index.html")
+    if mb:
+        masters[other_key] = mb
+
+def closest(cand_bytes):
+    """Which master's page does this candidate most resemble?"""
+    cl = set(cand_bytes.splitlines())
+    best, best_score = None, -1.0
+    for mk, mb in masters.items():
+        ml = set(mb.splitlines())
+        inter = len(cl & ml)
+        union = len(cl | ml) or 1
+        score = inter / union
+        if score > best_score:
+            best, best_score = mk, score
+    return best, best_score
+
+for cand in ("docs/site", "public/sites-deploy", "sites-discovery"):
+    p = (root / cand).resolve()
+    if not p.is_dir() or p == master:
+        continue
+    q = p / key
+    if q.is_dir() and (q / "index.html").is_file():
+        q = q
+    elif not (p / "index.html").is_file():
+        continue
+    else:
+        q = p
+    body = read(q / "index.html")
+    if not body:
+        continue
+    owner, score = closest(body)
+    # Same site, and not byte-identical: a genuine second copy.
+    if owner == key and score > 0.5:
+        hits.append(f"{q.relative_to(root)}/")
+
+print(" ".join(hits))
+PY2
+)"
+  if [[ -n "$dupes" ]]; then
+    rep warn "$key" "index.html" "$key also has a copy under: $dupes — the estate master is sites/$key/; consolidate before the next publish" "duplicate trees: $dupes"
+  fi
   [[ "$mastersz" == "-" ]] && rep warn "$key" "index.html" "$key has no sites/$key master" "no sites/ master"
   return 0
 }

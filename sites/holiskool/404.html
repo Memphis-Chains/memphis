@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>404 — nie ma takiej strony | Holiskool</title>
+<meta name="description" content="Ta strona nie istnieje. Wróć na stronę główną Holiskool albo zajrzyj do portfolio." />
+<meta name="robots" content="noindex, follow" />
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<link rel="icon" type="image/png" href="/favicon.png" sizes="256x256" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<style>
+:root{--bg-base:#0f0d0b;--bg-card:#161310;--copper:#d4a15e;--copper-light:#e8c28a;--moss:#7aa492;--text-primary:#f5f0e8;--text-secondary:#b8a99a;--text-muted:#7a6a5a;--border:rgba(212,161,94,.15);--serif:Georgia,"Times New Roman",serif;--sans:system-ui,-apple-system,"Segoe UI",sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{min-height:100vh;display:grid;place-items:center;background:var(--bg-base);color:var(--text-primary);font-family:var(--sans);line-height:1.7;padding:2rem}
+main{width:min(680px,100%);text-align:center}
+.code{font-family:var(--mono);font-size:.76rem;letter-spacing:.24em;text-transform:uppercase;color:var(--copper);margin-bottom:1rem}
+h1{font-family:var(--serif);font-weight:400;font-size:clamp(1.9rem,5.5vw,3.2rem);line-height:1.14;letter-spacing:-.02em;margin-bottom:1rem}
+h1 em{font-style:italic;color:var(--copper-light)}
+p{color:var(--text-secondary);max-width:46ch;margin:0 auto 2.2rem;font-size:1.02rem}
+nav{display:flex;gap:.7rem;justify-content:center;flex-wrap:wrap}
+a{display:inline-flex;padding:.78rem 1.35rem;border-radius:4px;text-decoration:none;font-weight:600;font-size:.93rem;border:1px solid var(--border);transition:all .2s}
+.primary{background:var(--copper);color:var(--bg-base);border-color:var(--copper)}
+.primary:hover{background:var(--copper-light);border-color:var(--copper-light)}
+.ghost{color:var(--text-primary)}
+.ghost:hover{border-color:var(--copper);color:var(--copper-light)}
+footer{margin-top:2.6rem;font-family:var(--mono);font-size:.74rem;color:var(--text-muted);letter-spacing:.1em}
+</style>
+</head>
+<body>
+<main>
+  <div class="code">Błąd 404</div>
+  <h1>Tego adresu <em>u nas nie ma</em></h1>
+  <p>Mógł się zmienić albo zawierał literówkę. Wróć na stronę główną albo zobacz, co już robiliśmy.</p>
+  <nav>
+    <a class="primary" href="/">Strona główna</a>
+    <a class="ghost" href="/portfolio/">Portfolio</a>
+    <a class="ghost" href="/energolead/">EnergoLead</a>
+  </nav>
+  <footer>holiskool.pl</footer>
+</main>
+</body>
+</html>
