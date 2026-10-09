@@ -13,14 +13,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET') {
     respond(['ok' => false, 'error' => 'method_not_allowed'], 405);
 }
 
-$token = getenv('MEMPHIS_STATS_TOKEN');
-if (!is_string($token) || $token === '') {
-    $token = 'memphis-local-stats-2026';
-}
-$given = $_SERVER['HTTP_X_CRON_TOKEN'] ?? ($_SERVER['HTTP_X_STATS_TOKEN'] ?? '');
-if (!hash_equals($token, (string) $given)) {
-    respond(['ok' => false, 'error' => 'unauthorized'], 401);
-}
+// Shared secret from the host environment; no default, see require_token().
+require_token('HTTP_X_CRON_TOKEN');
 
 $retentionDays = 90;
 $cutoff        = gmdate('Y-m-d', time() - ($retentionDays * 86400));

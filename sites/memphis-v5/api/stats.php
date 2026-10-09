@@ -13,17 +13,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET') {
 }
 
 // Operator-only. Without this the funnel is public: anyone could read
-// visitor counts and lead totals. Token is a constant-time comparison.
-// getenv() is not allowed in a const expression, so resolve it at runtime.
-$token = getenv('MEMPHIS_STATS_TOKEN');
-if (!is_string($token) || $token === '') {
-    $token = 'memphis-local-stats-2026';
-}
-$given = $_SERVER['HTTP_X_STATS_TOKEN'] ?? ($_GET['token'] ?? '');
-if (!hash_equals($token, (string) $given)) {
-    header('WWW-Authenticate: Bearer realm="memphis-stats"');
-    respond(['ok' => false, 'error' => 'unauthorized'], 401);
-}
+// visitor counts and lead totals. The shared secret lives in the host
+// environment; see require_token() in _boot.php for why there is no default.
+require_token('HTTP_X_STATS_TOKEN');
 
 $days = (int) ($_GET['days'] ?? 30);
 $days = max(1, min($days, 365));

@@ -40,6 +40,7 @@
     "build": "npm run build:rust && tsc -p tsconfig.json",
     "build:release": "npm run build:rust:release && tsc -p tsconfig.json",
     "ops:rust-core:safety": "./scripts/rust-core-safety-check.sh",
+    "ops:default-secret-scan": "./scripts/default-secret-scan.sh",
     "ops:sync-native-tiers": "tsx scripts/sync-native-tiers.mts",
     "ops:sync-site-metrics": "tsx scripts/sync-site-metrics.mts",
     "ops:mutation-gate": "tsx scripts/mutation-gate.mts",
