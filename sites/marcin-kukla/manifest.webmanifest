@@ -1,0 +1,15 @@
+{
+  "name": "Załatwianie Spraw Marcin Kukla",
+  "short_name": "M. Kukla",
+  "description": "Planowana JDG Marcin Kukla — marketing eksportowy, budowlanka, konserwacja zabytków, doradztwo, IT i hosting.",
+  "lang": "pl-PL",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#040509",
+  "theme_color": "#040509",
+  "icons": [
+    { "src": "/favicon.ico", "sizes": "16x16 32x32 48x48 64x64 128x128 256x256", "type": "image/x-icon" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
+  ]
+}

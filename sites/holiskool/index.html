@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Holiskool — Strategia i wdrożenia AI bez akademickiej ściemy</title>
+  <meta name="description" content="Holiskool to praktyczne konsultacje AI dla firm i instytucji. Blueprint, wdrożenia, szkolenia. Bez teoretykowania.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,300;1,9..144,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #0f0d0b;
+      --bg-dark: #040509;
+      --bg-card: #161310;
+      --bg-card-hover: #1e1a15;
+      --copper: #d4a15e;
+      --copper-light: #e8c28a;
+      --copper-dark: #a87540;
+      --moss: #7aa492;
+      --moss-light: #9fc0b0;
+      --moss-dark: #5c8570;
+      --text-primary: #f5f0e8;
+      --text-secondary: #b8a99a;
+      --text-muted: #7a6a5a;
+      --border: rgba(212, 161, 94, 0.15);
+      --border-hover: rgba(212, 161, 94, 0.35);
+      --glow-copper: rgba(212, 161, 94, 0.12);
+      --glow-moss: rgba(122, 164, 146, 0.12);
+      --nav-height: 72px;
+      --font-heading: 'Fraunces', Georgia, serif;
+      --font-body: 'Inter', system-ui, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; font-size: 16px; }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      font-weight: 400;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* Grid overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(212, 161, 94, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(212, 161, 94, 0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ─── NAV ─── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: var(--nav-height);
+      z-index: 1000;
+      background: rgba(15, 13, 11, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 2rem;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-logo {
+      font-family: var(--font-heading);
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--copper);
+      text-decoration: none;
+      letter-spacing: -0.02em;
+    }
+    .nav-logo span { color: var(--moss); }
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+      list-style: none;
+      align-items: center;
+    }
+    .nav-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.2s;
+      letter-spacing: 0.01em;
+    }
+    .nav-links a:hover { color: var(--copper); }
+    .nav-cta {
+      background: var(--copper) !important;
+      color: var(--bg-base) !important;
+      padding: 0.5rem 1.25rem;
+      border-radius: 6px;
+      font-weight: 600 !important;
+      transition: background 0.2s, transform 0.15s !important;
+    }
+    .nav-cta:hover {
+      background: var(--copper-light) !important;
+      transform: translateY(-1px);
+    }
+    .nav-hamburger {
+      display: none;
+      flex-direction: column;
+      gap: 5px;
+      cursor: pointer;
+      padding: 4px;
+      background: none;
+      border: none;
+    }
+    .nav-hamburger span {
+      display: block;
+      width: 24px;
+      height: 2px;
+      background: var(--text-primary);
+      border-radius: 2px;
+      transition: all 0.3s;
+    }
+
+    /* ─── HERO ─── */
+    .hero {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+    }
+    .hero-bg {
+      position: absolute;
+      inset: 0;
+      background-image: url('hero_cosmic.png');
+      background-size: cover;
+      background-position: center 30%;
+      filter: brightness(0.4) saturate(0.7);
+    }
+    .hero-gradient {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        135deg,
+        rgba(15, 13, 11, 0.92) 0%,
+        rgba(4, 5, 9, 0.75) 50%,
+        rgba(15, 13, 11, 0.88) 100%
+      );
+    }
+    .hero-grid-glow {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(212, 161, 94, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(212, 161, 94, 0.06) 1px, transparent 1px);
+      background-size: 80px 80px;
+      mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+    }
+    .hero-content {
+      position: relative;
+      z-index: 2;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: calc(var(--nav-height) + 4rem) 2rem 6rem;
+      width: 100%;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--glow-copper);
+      border: 1px solid var(--border-hover);
+      color: var(--copper-light);
+      font-size: 0.8rem;
+      font-weight: 500;
+      padding: 0.4rem 1rem;
+      border-radius: 100px;
+      margin-bottom: 2rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .hero-badge::before {
+      content: '';
+      width: 6px; height: 6px;
+      background: var(--moss);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.8); }
+    }
+    .hero h1 {
+      font-family: var(--font-heading);
+      font-size: clamp(2.5rem, 6vw, 4.5rem);
+      font-weight: 700;
+      line-height: 1.1;
+      color: var(--text-primary);
+      max-width: 800px;
+      margin-bottom: 1.5rem;
+      letter-spacing: -0.02em;
+    }
+    .hero h1 em {
+      font-style: italic;
+      color: var(--copper);
+      font-weight: 300;
+    }
+    .hero-sub {
+      font-size: clamp(1rem, 2vw, 1.25rem);
+      color: var(--text-secondary);
+      max-width: 560px;
+      margin-bottom: 2.5rem;
+      line-height: 1.7;
+      font-weight: 300;
+    }
+    .hero-actions {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--copper);
+      color: var(--bg-base);
+      font-weight: 600;
+      font-size: 1rem;
+      padding: 0.875rem 2rem;
+      border-radius: 8px;
+      text-decoration: none;
+      transition: all 0.2s;
+      border: none;
+      cursor: pointer;
+      font-family: var(--font-body);
+    }
+    .btn-primary:hover {
+      background: var(--copper-light);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(212, 161, 94, 0.25);
+    }
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: transparent;
+      color: var(--text-primary);
+      font-weight: 500;
+      font-size: 1rem;
+      padding: 0.875rem 2rem;
+      border-radius: 8px;
+      text-decoration: none;
+      border: 1px solid var(--border-hover);
+      transition: all 0.2s;
+      font-family: var(--font-body);
+    }
+    .btn-secondary:hover {
+      border-color: var(--copper);
+      color: var(--copper);
+      background: var(--glow-copper);
+    }
+    .hero-scroll-hint {
+      position: absolute;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%);
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      animation: bounce 2s infinite;
+    }
+    .hero-scroll-hint::after {
+      content: '';
+      width: 1px;
+      height: 40px;
+      background: linear-gradient(to bottom, var(--copper), transparent);
+    }
+    @keyframes bounce {
+      0%, 100% { transform: translateX(-50%) translateY(0); }
+      50% { transform: translateX(-50%) translateY(8px); }
+    }
+
+    /* ─── SECTION COMMON ─── */
+    section { position: relative; z-index: 1; }
+    .section-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 6rem 2rem;
+    }
+    .section-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--moss);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .section-label::before {
+      content: '';
+      width: 24px; height: 1px;
+      background: var(--moss);
+    }
+    .section-title {
+      font-family: var(--font-heading);
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 600;
+      color: var(--text-primary);
+      line-height: 1.15;
+      margin-bottom: 1rem;
+      letter-spacing: -0.02em;
+    }
+    .section-sub {
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      max-width: 600px;
+      line-height: 1.7;
+      font-weight: 300;
+      margin-bottom: 3rem;
+    }
+
+    /* ─── CO ROBIMY ─── */
+    .services { background: var(--bg-dark); }
+    .services-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+    .service-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2.5rem 2rem;
+      transition: all 0.3s;
+      position: relative;
+      overflow: hidden;
+    }
+    .service-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--copper), var(--moss));
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .service-card:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-hover);
+      transform: translateY(-4px);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    }
+    .service-card:hover::before { opacity: 1; }
+    .service-icon {
+      width: 56px; height: 56px;
+      background: var(--glow-copper);
+      border: 1px solid var(--border-hover);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.5rem;
+      font-size: 1.5rem;
+    }
+    .service-card h3 {
+      font-family: var(--font-heading);
+      font-size: 1.35rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.75rem;
+    }
+    .service-card p {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      line-height: 1.7;
+      font-weight: 300;
+    }
+    .service-card ul {
+      list-style: none;
+      margin-top: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .service-card li {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      padding-left: 1.25rem;
+      position: relative;
+    }
+    .service-card li::before {
+      content: '→';
+      position: absolute;
+      left: 0;
+      color: var(--moss);
+      font-size: 0.8rem;
+    }
+
+    /* ─── CENNIK ─── */
+    .pricing { background: var(--bg-base); }
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      align-items: start;
+    }
+    .pricing-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 2.5rem 2rem;
+      position: relative;
+      transition: all 0.3s;
+    }
+    .pricing-card.featured {
+      border-color: var(--copper);
+      background: linear-gradient(160deg, rgba(212,161,94,0.08), var(--bg-card));
+      box-shadow: 0 0 60px rgba(212,161,94,0.1);
+      transform: scale(1.03);
+    }
+    .pricing-card:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-4px);
+    }
+    .pricing-card.featured:hover {
+      transform: scale(1.03) translateY(-4px);
+    }
+    .pricing-badge {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--copper);
+      color: var(--bg-base);
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.3rem 1rem;
+      border-radius: 100px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .pricing-tier {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--moss);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.5rem;
+    }
+    .pricing-name {
+      font-family: var(--font-heading);
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+    .pricing-desc {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      font-weight: 300;
+      margin-bottom: 1.5rem;
+      line-height: 1.6;
+    }
+    .pricing-price {
+      margin-bottom: 1.5rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .pricing-price .amount {
+      font-family: var(--font-heading);
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--copper);
+      letter-spacing: -0.02em;
+    }
+    .pricing-price .unit {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-left: 0.25rem;
+    }
+    .pricing-price .note {
+      display: block;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      margin-top: 0.25rem;
+    }
+    .pricing-features {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      margin-bottom: 2rem;
+    }
+    .pricing-features li {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      padding-left: 1.5rem;
+      position: relative;
+      font-weight: 300;
+    }
+    .pricing-features li::before {
+      content: '✓';
+      position: absolute;
+      left: 0;
+      color: var(--moss);
+      font-size: 0.85rem;
+    }
+    .pricing-cta {
+      display: block;
+      text-align: center;
+      padding: 0.875rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      text-decoration: none;
+      transition: all 0.2s;
+      font-family: var(--font-body);
+    }
+    .pricing-card.featured .pricing-cta {
+      background: var(--copper);
+      color: var(--bg-base);
+    }
+    .pricing-card.featured .pricing-cta:hover {
+      background: var(--copper-light);
+      box-shadow: 0 4px 20px rgba(212,161,94,0.3);
+    }
+    .pricing-card:not(.featured) .pricing-cta {
+      background: transparent;
+      color: var(--copper);
+      border: 1px solid var(--copper);
+    }
+    .pricing-card:not(.featured) .pricing-cta:hover {
+      background: var(--glow-copper);
+    }
+
+    /* ─── PROCES ─── */
+    .process { background: var(--bg-dark); }
+    .process-steps {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 2rem;
+      position: relative;
+    }
+    .process-steps::before {
+      content: '';
+      position: absolute;
+      top: 36px;
+      left: calc(12.5% + 20px);
+      right: calc(12.5% + 20px);
+      height: 1px;
+      background: linear-gradient(90deg, var(--copper), var(--moss), var(--copper));
+      opacity: 0.3;
+    }
+    .process-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 1rem;
+    }
+    .step-number {
+      width: 72px; height: 72px;
+      border-radius: 50%;
+      background: var(--bg-card);
+      border: 2px solid var(--copper);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-heading);
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--copper);
+      position: relative;
+      z-index: 2;
+      flex-shrink: 0;
+    }
+    .process-step h3 {
+      font-family: var(--font-heading);
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .process-step p {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      font-weight: 300;
+      line-height: 1.6;
+    }
+
+    /* ─── DLA KOGO ─── */
+    .audience { background: var(--bg-base); }
+    .audience-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.5rem;
+    }
+    .audience-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2rem 1.5rem;
+      text-align: center;
+      transition: all 0.3s;
+    }
+    .audience-card:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-4px);
+      background: var(--bg-card-hover);
+    }
+    .audience-emoji {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      display: block;
+    }
+    .audience-card h3 {
+      font-family: var(--font-heading);
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+    .audience-card p {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      font-weight: 300;
+      line-height: 1.6;
+    }
+
+    /* ─── BIO ─── */
+    .bio { background: var(--bg-dark); }
+    .bio-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 6rem 2rem;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 4rem;
+      align-items: start;
+    }
+    .bio-photo-wrap {
+      position: relative;
+    }
+    .bio-photo-wrap::before {
+      content: '';
+      position: absolute;
+      inset: -3px;
+      border-radius: 20px;
+      background: linear-gradient(135deg, var(--copper), var(--moss));
+      z-index: -1;
+    }
+    .bio-photo {
+      width: 100%;
+      aspect-ratio: 3/4;
+      object-fit: cover;
+      border-radius: 18px;
+      display: block;
+      filter: grayscale(20%);
+    }
+    .bio-content .section-label { margin-bottom: 0.75rem; }
+    .bio-content .section-title { margin-bottom: 1.5rem; }
+    .bio-text {
+      color: var(--text-secondary);
+      font-size: 1rem;
+      line-height: 1.8;
+      font-weight: 300;
+      margin-bottom: 2rem;
+    }
+    .bio-text p + p { margin-top: 1rem; }
+    .bio-certs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 2rem;
+    }
+    .cert-tag {
+      background: var(--glow-copper);
+      border: 1px solid var(--border-hover);
+      color: var(--copper-light);
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.3rem 0.75rem;
+      border-radius: 100px;
+      letter-spacing: 0.03em;
+    }
+    .bio-links {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .bio-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--moss);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+    .bio-link:hover { color: var(--moss-light); }
+
+    /* ─── FAQ ─── */
+    .faq { background: var(--bg-base); }
+    .faq-list { max-width: 720px; }
+    .faq-item {
+      border-bottom: 1px solid var(--border);
+    }
+    .faq-question {
+      width: 100%;
+      background: none;
+      border: none;
+      color: var(--text-primary);
+      font-family: var(--font-heading);
+      font-size: 1.1rem;
+      font-weight: 400;
+      padding: 1.5rem 3rem 1.5rem 0;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      transition: color 0.2s;
+    }
+    .faq-question:hover { color: var(--copper); }
+    .faq-question::after {
+      content: '+';
+      font-size: 1.5rem;
+      color: var(--copper);
+      font-weight: 300;
+      flex-shrink: 0;
+      transition: transform 0.3s;
+    }
+    .faq-item.open .faq-question::after { transform: rotate(45deg); }
+    .faq-answer {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.4s ease, padding 0.3s;
+    }
+    .faq-item.open .faq-answer {
+      max-height: 400px;
+      padding-bottom: 1.5rem;
+    }
+    .faq-answer p {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      font-weight: 300;
+      line-height: 1.8;
+    }
+
+    /* ─── KONTAKT ─── */
+    .contact { background: var(--bg-dark); }
+    .contact-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 6rem 2rem;
+      text-align: center;
+    }
+    .contact-inner .section-label { justify-content: center; }
+    .contact-inner .section-label::before { display: none; }
+    .contact-inner .section-title { margin: 0 auto 1rem; }
+    .contact-inner .section-sub { margin: 0 auto 3rem; }
+    .contact-methods {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      flex-wrap: wrap;
+      margin-bottom: 3rem;
+    }
+    .contact-method {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: var(--text-primary);
+      padding: 2rem 2.5rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      min-width: 240px;
+      transition: all 0.3s;
+    }
+    .contact-method:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+    }
+    .contact-method-icon {
+      font-size: 2rem;
+      margin-bottom: 0.25rem;
+    }
+    .contact-method-title {
+      font-family: var(--font-heading);
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+    .contact-method-desc {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      font-weight: 300;
+    }
+
+    /* ─── FOOTER ─── */
+    footer {
+      background: var(--bg-dark);
+      border-top: 1px solid var(--border);
+      padding: 2rem;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+    }
+    footer p {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      font-weight: 300;
+    }
+    footer a {
+      color: var(--copper);
+      text-decoration: none;
+    }
+    footer a:hover { color: var(--copper-light); }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 1024px) {
+      .services-grid { grid-template-columns: repeat(2, 1fr); }
+      .pricing-grid { grid-template-columns: 1fr; max-width: 480px; margin: 0 auto; }
+      .pricing-card.featured { transform: none; }
+      .pricing-card.featured:hover { transform: translateY(-4px); }
+      .process-steps { grid-template-columns: repeat(2, 1fr); }
+      .process-steps::before { display: none; }
+      .audience-grid { grid-template-columns: repeat(2, 1fr); }
+      .bio-inner { grid-template-columns: 1fr; gap: 2rem; max-width: 480px; margin: 0 auto; }
+      .bio-photo-wrap { max-width: 280px; margin: 0 auto; }
+    }
+
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .nav-links.open {
+        display: flex;
+        flex-direction: column;
+        position: fixed;
+        top: var(--nav-height);
+        left: 0; right: 0;
+        background: rgba(15,13,11,0.97);
+        backdrop-filter: blur(20px);
+        padding: 2rem;
+        gap: 1.5rem;
+        border-bottom: 1px solid var(--border);
+      }
+      .nav-links.open a { font-size: 1.1rem; }
+      .nav-hamburger { display: flex; }
+      .services-grid { grid-template-columns: 1fr; }
+      .process-steps { grid-template-columns: 1fr; gap: 2rem; }
+      .audience-grid { grid-template-columns: 1fr; }
+      .hero-content { padding: calc(var(--nav-height) + 2rem) 2rem 4rem; }
+      .contact-methods { flex-direction: column; align-items: center; }
+    }
+
+    @media (max-width: 480px) {
+      .hero h1 { font-size: 2.2rem; }
+      .section-inner { padding: 4rem 1.25rem; }
+      .contact-inner { padding: 4rem 1.25rem; }
+      .bio-inner { padding: 4rem 1.25rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <div class="nav-inner">
+      <a href="#" class="nav-logo">holis<span>kool</span></a>
+      <ul class="nav-links" id="navLinks">
+        <li><a href="#uslugi">Co robimy</a></li>
+        <li><a href="/portfolio/">Portfolio</a></li>
+        <li><a href="/sklepik/">Hotelowy Kącik</a></li>
+        <li><a href="/potoczk/">Zespół Potock</a></li>
+        <li><a href="#cennik">Cennik</a></li>
+        <li><a href="#proces">Proces</a></li>
+        <li><a href="#dla-kogo">Dla kogo</a></li>
+        <li><a href="#faq">FAQ</a></li>
+        <li><a href="#kontakt" class="nav-cta">Kontakt</a></li>
+      </ul>
+      <button class="nav-hamburger" id="hamburger" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero" id="start">
+    <div class="hero-bg"></div>
+    <div class="hero-gradient"></div>
+    <div class="hero-grid-glow"></div>
+    <div class="hero-content">
+      <div class="hero-badge">AI Strategy &amp; Implementation</div>
+      <h1>Strategia i wdrożenia AI <em>bez akademickiej ściemy</em></h1>
+      <p class="hero-sub">Holiskool to praktyczne konsultacje, które łączą wiedzę strategiczną z konkretnymi wdrożeniami. Certyfikowany partner. Zero theory theater.</p>
+      <div class="hero-actions">
+        <a href="#kontakt" class="btn-primary">Umów bezpłatną rozmowę →</a>
+        <a href="#uslugi" class="btn-secondary">Zobacz ofertę</a>
+      </div>
+    </div>
+    <div class="hero-scroll-hint">Przewiń</div>
+  </section>
+
+  <!-- CO ROBIMY -->
+  <section class="services" id="uslugi">
+    <div class="section-inner">
+      <div class="section-label">Co robimy</div>
+      <h2 class="section-title">Trzy ścieżki, jedna strategia:<br>realne wdrożenia</h2>
+      <p class="section-sub">Od analizy potrzeb po działający system — to nie są prezentacje PowerPoint. To projekty z terminami i odpowiedzialnością.</p>
+      <div class="services-grid">
+        <div class="service-card">
+          <div class="service-icon">🎯</div>
+          <h3>Strategia AI</h3>
+          <p>Audyt procesów, identyfikacja punktów wdrożenia AI, roadmap technologiczny i biznesowy. Bez buzzwordów — tylko to, co realnie da ROI.</p>
+          <ul>
+            <li>Audyt gotowości AI organizacji</li>
+            <li>Mapowanie procesów do automatyzacji</li>
+            <li>Blueprint transformacji (12k)</li>
+            <li>Wybór stacku technologicznego</li>
+          </ul>
+        </div>
+        <div class="service-card">
+          <div class="service-icon">⚙️</div>
+          <h3>Wdrożenia</h3>
+          <p>Budujemy lub integrujemy rozwiązania AI z istniejącym środowiskiem. RAG, fine-tuning, pipeline'y danych, API — cokolwiek potrzeba.</p>
+          <ul>
+            <li>Systemy RAG i bazy wiedzy</li>
+            <li>Integracje z systemami firmowymi</li>
+            <li>Automatyzacja procesów (RPA+AI)</li>
+            <li>Monitoring i ewaluacja jakości</li>
+          </ul>
+        </div>
+        <div class="service-card">
+          <div class="service-icon">📚</div>
+          <h3>Edukacja i mentoring</h3>
+          <p>Szkolimy zespoły i prowadzimy projekty wdrożeniowe w roli chief AI officer. Od podstaw po zaawansowane architectury.</p>
+          <ul>
+            <li>Warsztaty dla zespołów (full-day)</li>
+            <li>Program mentoringowy (CAIO-ready)</li>
+            <li>Mini-kurs AI dla kadry</li>
+            <li>Support przy vendor selection</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CENNIK -->
+  <section class="pricing" id="cennik">
+    <div class="section-inner">
+      <div class="section-label">Cennik</div>
+      <h2 class="section-title">Prosty model rozliczeń</h2>
+      <p class="section-sub">Trzy pakiety. Każdy z konkretnym zakresem i deliverable. Żadnych ukrytych kosztów.</p>
+      <div class="pricing-grid">
+        <div class="pricing-card">
+          <div class="pricing-tier">Pakiet A</div>
+          <div class="pricing-name">Za godzinę</div>
+          <div class="pricing-desc">Konsultacje eksperckie na żądanie. Angażujesz tylko wtedy, gdy potrzebujesz.</div>
+          <div class="pricing-price">
+            <span class="amount">500 zł</span><span class="unit">/ godz.</span>
+            
+          </div>
+          <ul class="pricing-features">
+            <li>Konsultacja strategiczna lub techniczna</li>
+            <li>Review kodu / architektury</li>
+            <li>Sparowanie z dostawcą lub zespołem</li>
+            <li>Dostęp async via Slack (3 dni)</li>
+            <li>Raport podsumowujący</li>
+          </ul>
+          <a href="#kontakt" class="pricing-cta">Zapytaj o termin</a>
+        </div>
+        <div class="pricing-card featured">
+          <div class="pricing-badge">Najczęściej wybierany</div>
+          <div class="pricing-tier">Pakiet B</div>
+          <div class="pricing-name">Blueprint</div>
+          <div class="pricing-desc">Pełny plan wdrożenia AI w organizacji. Dokument, który można pokazać zarządowi i dostawcom.</div>
+          <div class="pricing-price">
+            <span class="amount">12 000 zł</span>
+            <span class="note">jednorazowo / rozliczenie projektowe</span>
+          </div>
+          <ul class="pricing-features">
+            <li>Audyt gotowości AI (3–5 dni)</li>
+            <li>Roadmap wdrożenia (6–18 mies.)</li>
+            <li>Wybór technologii i vendorów</li>
+            <li>Estimate kosztów i ROI</li>
+            <li>3 sesje strategiczne (po 2h)</li>
+            <li>Priorytetowy dostęp 30 dni</li>
+          </ul>
+          <a href="#kontakt" class="pricing-cta">Rozpocznij blueprint</a>
+        </div>
+        <div class="pricing-card">
+          <div class="pricing-tier">Pakiet C</div>
+          <div class="pricing-name">Roczny partner</div>
+          <div class="pricing-desc">Stała współpraca z Holiskool jako external AI office. Ciągłość, priorytet, kontekst.</div>
+          <div class="pricing-price">
+            <span class="amount">36 000 zł</span><span class="unit">/ rok</span>
+            <span class="note">lub 4 × 9 500 zł</span>
+          </div>
+          <ul class="pricing-features">
+            <li>Wszystko z Pakietu B w cenie</li>
+            <li>12h konsultacji miesięcznie</li>
+            <li>External CAIO — miesięczny raport</li>
+            <li>Priorytetowy dostęp &lt;24h</li>
+            <li>Wsparcie przy vendor negotiations</li>
+            <li>Dedykowany Slack / kanał</li>
+          </ul>
+          <a href="#kontakt" class="pricing-cta">Porozmawiajmy</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROCES -->
+  <section class="process" id="proces">
+    <div class="section-inner">
+      <div class="section-label">Proces</div>
+      <h2 class="section-title">Cztery kroki od pomysłu do działania</h2>
+      <p class="section-sub">Ustalony workflow, przejrzyste etapy, realne kamienie milowe. Żadnego znikającego konsultanta.</p>
+      <div class="process-steps">
+        <div class="process-step">
+          <div class="step-number">01</div>
+          <h3>Discovery</h3>
+          <p>Sesja wstępna (1–2h). Poznajemy kontekst, cele, ograniczenia. Ustalamy zakres iformat pracy.</p>
+        </div>
+        <div class="process-step">
+          <div class="step-number">02</div>
+          <h3>Analiza</h3>
+          <p>Audyt istniejących procesów i stacku. Identyfikujemy quick wins i długofalową strategię.</p>
+        </div>
+        <div class="process-step">
+          <div class="step-number">03</div>
+          <h3>Blueprint</h3>
+          <p>Dokument strategiczny z roadmapą, kosztorysem i rekomendacjami technologicznymi.</p>
+        </div>
+        <div class="process-step">
+          <div class="step-number">04</div>
+          <h3>Wdrożenie</h3>
+          <p>Nadzór lub realizacja. Mentoring zespołu, integracje, monitoring jakości outputów.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DLA KOGO -->
+  <section class="audience" id="dla-kogo">
+    <div class="section-inner">
+      <div class="section-label">Dla kogo</div>
+      <h2 class="section-title">Nie każdy potrzebuje wszystkiego.<br>Ale każdy potrzebuje strategii.</h2>
+      <p class="section-sub">Holiskool współpracuje z firmami na różnych etapach dojrzałości AI — od zera po zaawansowane organizacje.</p>
+      <div class="audience-grid">
+        <div class="audience-card">
+          <span class="audience-emoji">🏢</span>
+          <h3>Średnie firmy</h3>
+          <p>Firmy 50–500 osób, które wiedzą że AI jest ważne, ale nie wiedzą od czego zacząć i jak mierzyć sukces.</p>
+        </div>
+        <div class="audience-card">
+          <span class="audience-emoji">🏛️</span>
+          <h3>Jednostki publiczne</h3>
+          <p>Samorządy, instytucje, agencje szukające partnera do Pilotażowych wdrożeń AI zgodnych z regulacjami.</p>
+        </div>
+        <div class="audience-card">
+          <span class="audience-emoji">🛠️</span>
+          <h3>Zespoły IT</h3>
+          <p>Drużyny developerskie potrzebujące chief AI officer na czas projektu — architecture review, stack selection.</p>
+        </div>
+        <div class="audience-card">
+          <span class="audience-emoji">📈</span>
+          <h3>Startupy i scaleupy</h3>
+          <p>Młode firmy, które chcą wbudować AI w produkt od day one, bez legacy debt i z właściwą architekturą.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BIO -->
+  <section class="bio" id="kto">
+    <div class="bio-inner">
+      <div class="bio-photo-wrap">
+        <img src="wodzu.jpg" alt="Marcin Kukla" class="bio-photo" loading="lazy">
+      </div>
+      <div class="bio-content">
+        <div class="section-label">Kto prowadzi</div>
+        <h2 class="section-title">Marcin Kukla</h2>
+        <div class="bio-text">
+          <p>Praktyk, nie teoretyk. Od 2019 buduje i wdraża systemy AI w organizacjach różnej wielkości — od startupów po instytucje publiczne. Specjalizacja: strategic architecture AI, RAG systems, agent pipelines.</p>
+          <p>Twórca <strong>Memphis</strong> — suwerennego AI runtime open-source. Na co dzień łączę myślenie biznesowe z inżynierią, wdrożeniami i pracą z realnymi ograniczeniami organizacji — bez akademickiej ściemy.</p>
+          <p>Holiskool to odpowiedź na pytanie, które słyszę od trzech lat: "Mamy buzzword AI, ale nie wiemy co z tym zrobić w praktyce."</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="faq" id="faq">
+    <div class="section-inner">
+      <div class="section-label">FAQ</div>
+      <h2 class="section-title">Częste pytania</h2>
+      <p class="section-sub">Nie ma głupich pytań. Oto co warto wiedzieć przed rozmową.</p>
+      <div class="faq-list">
+        <div class="faq-item">
+          <button class="faq-question">Czy Holiskool to firma czy osoba prywatna?</button>
+          <div class="faq-answer"><p>Działalność nierejestrowana pod marką Holiskool. Wszystkie umowy, faktury i rozliczenia idą przez podmiot zgodny z polskim prawem. Nie ma żadnego problemu z formalną stroną współpracy.</p></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question">Od czego zacząć jeśli nie mamy żadnej strategii AI?</button>
+          <div class="faq-answer"><p>Zaczynamy od Pakietu A — jedna lub dwie sesje discovery. To wystarczy żeby zrozumieć gdzie jesteśmy i co jest realnie możliwe. Blueprint (Pakiet B) to naturalny kolejny krok, ale nie musisz go brać od razu.</p></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question">Jakie są typowe timeline'y wdrożenia?</button>
+          <div class="faq-answer"><p>Zależy od skali. Prosty RAG z bazą wiedzy — 2–4 tygodnie. Pełna transformacja AI w średniej firmie — 6–18 miesięcy. Blueprint (Pakiet B) powstaje w 3–5 dni roboczych od dostarczenia materiałów.</p></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question">Czy pracujesz zdalnie czy na miejscu?</button>
+          <div class="faq-answer"><p>95% pracy jest zdalne (video, async). Warsztaty i intensywne sesje możliwe na miejscu w Warszawie lub okolicach — w ramach Pakietu B i C. Travel na terenie Polski w cenie pakietu rocznego.</p></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question">Czym Holiskool różni się od dużej firmy consultingowej?</button>
+          <div class="faq-answer"><p>Jeden ekspert zamiast zespołu juniorów. Zero overheadu, zero PowerPointów bez akcji. Konkretne terminy, konkretne deliverables. Certyfikaty mam realne (nie z github copilota), a nie certyfikaty firmowe z 2005.</p></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question">Co jeśli nie będziemy zadowoleni z blueprintu?</button>
+          <div class="faq-answer"><p>Blueprint (Pakiet B) zawiera 2 rundy rewizji w cenie. Jeśli po pierwszym wydaniu nie chcesz kontynuować — nie musisz. Płać tylko za to co dostałeś i działa.</p></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question">Czy można zacząć od jednej godziny konsultacji?</button>
+          <div class="faq-answer"><p>Tak. Pakiet A to minimum 2h na projekt, ale można zacząć od jednej sesji i zobaczyć czy ma to sens. Łatwiej ocenić współpracę po pierwszej godzinie niż po mailu.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- KONTAKT -->
+  <section class="contact" id="kontakt">
+    <div class="contact-inner">
+      <div class="section-label">Kontakt</div>
+      <h2 class="section-title">Porozmawiajmy bez zobowiązań</h2>
+      <p class="section-sub">Odpowiadam <48h. Rezerwacja na 45 min.. Zorientujemy się czy i jak możemy pomóc.</p>
+      <div class="contact-methods">
+        <a href="mailto:elathoxu@gmail.com" class="contact-method">
+          <span class="contact-method-icon">✉️</span>
+          <span class="contact-method-title">elathoxu@gmail.com</span>
+          <span class="contact-method-desc">Napisz — odpowiadam &lt;48h</span>
+        </a>
+        <a href="https://calendly.com/marcingrzegorzkukla" target="_blank" rel="noopener" class="contact-method">
+          <span class="contact-method-icon">📅</span>
+          <span class="contact-method-title">Calendly</span>
+          <span class="contact-method-desc">Zarezerwuj 45-min rozmowę</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <p>© 2025–2026 Holiskool — działalność nierejestrowa. Wszystkie prawa zastrzeżone. | <a href="https://github.com/Memphis-Chains/memphis" target="_blank" rel="noopener">Memphis</a> runtime inside</p>
+  </footer>
+
+  <script>
+    // Hamburger menu
+    const hamburger = document.getElementById('hamburger');
+    const navLinks = document.getElementById('navLinks');
+    hamburger.addEventListener('click', () => {
+      navLinks.classList.toggle('open');
+    });
+    navLinks.querySelectorAll('a').forEach(a => {
+      a.addEventListener('click', () => navLinks.classList.remove('open'));
+    });
+
+    // FAQ accordion
+    document.querySelectorAll('.faq-question').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const item = btn.parentElement;
+        const isOpen = item.classList.contains('open');
+        document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
+        if (!isOpen) item.classList.add('open');
+      });
+    });
+
+    // Scroll hint hide on scroll
+    const scrollHint = document.querySelector('.hero-scroll-hint');
+    window.addEventListener('scroll', () => {
+      if (window.scrollY > 100) scrollHint.style.opacity = '0';
+    }, { passive: true });
+  </script>
+</body>
+</html>

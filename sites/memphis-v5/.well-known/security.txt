@@ -1,0 +1,5 @@
+Contact: mailto:memphis.kuklow@gmail.com
+Preferred-Languages: pl, en
+Expires: 2027-09-28T00:00:00.000Z
+Policy: https://memphis-v5.pl/privacy/
+Canonical: https://memphis-v5.pl/.well-known/security.txt

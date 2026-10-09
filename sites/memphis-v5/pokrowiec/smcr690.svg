@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+  <!-- Podgląd na czarnym tle -->
+  <rect width="800" height="800" fill="#000000"/>
+
+  <!-- ====== PŁOMIENIE w tle ====== -->
+  <!-- Czerwony zewnętrzny -->
+  <path d="M 400 130
+           C 320 200, 240 280, 230 400
+           C 220 520, 290 620, 400 670
+           C 510 620, 580 520, 570 400
+           C 560 280, 480 200, 400 130 Z"
+        fill="#c81d11"/>
+
+  <!-- Pomarańczowy środkowy -->
+  <path d="M 400 200
+           C 340 250, 290 320, 285 410
+           C 280 510, 330 590, 400 620
+           C 470 590, 520 510, 515 410
+           C 510 320, 460 250, 400 200 Z"
+        fill="#f17a0a"/>
+
+  <!-- Żółty wewnętrzny -->
+  <path d="M 400 270
+           C 360 310, 330 360, 330 420
+           C 330 490, 360 550, 400 570
+           C 440 550, 470 490, 470 420
+           C 470 360, 440 310, 400 270 Z"
+        fill="#fac80a"/>
+
+  <!-- ====== WĄŻ - tylny segment (wystaje za płomieniami z lewej dolnej) ====== -->
+  <path d="M 200 600
+           C 160 580, 140 540, 170 510
+           C 200 500, 240 520, 260 560
+           C 270 590, 240 610, 200 600 Z"
+        fill="#5a5a5a" stroke="#1a1a1a" stroke-width="4"/>
+
+  <!-- ====== WĄŻ - górny owinięcie wokół tekstu ====== -->
+  <!-- Górna pętla idąca z lewej w prawo nad tekstem -->
+  <path d="M 180 280
+           C 220 220, 290 200, 360 220
+           C 380 230, 380 270, 350 280
+           C 320 285, 280 280, 250 290
+           C 220 300, 210 320, 230 340
+           C 250 360, 280 360, 320 350
+           C 360 340, 410 340, 460 360
+           C 510 380, 540 360, 540 320
+           C 540 280, 510 250, 480 240
+           C 460 235, 460 215, 480 210
+           C 540 195, 600 220, 620 270
+           C 640 320, 620 360, 580 380
+           C 540 395, 480 400, 420 395
+           C 360 390, 290 395, 240 380
+           C 190 365, 160 330, 180 280 Z"
+        fill="#5a5a5a" stroke="#1a1a1a" stroke-width="4"/>
+
+  <!-- Łuski na ciele -->
+  <g fill="#9a9a9a">
+    <ellipse cx="280" cy="260" rx="14" ry="6"/>
+    <ellipse cx="320" cy="260" rx="14" ry="6"/>
+    <ellipse cx="380" cy="265" rx="14" ry="6"/>
+    <ellipse cx="430" cy="270" rx="14" ry="6"/>
+    <ellipse cx="490" cy="270" rx="14" ry="6"/>
+    <ellipse cx="540" cy="290" rx="12" ry="5"/>
+    <ellipse cx="280" cy="370" rx="14" ry="6"/>
+    <ellipse cx="340" cy="375" rx="14" ry="6"/>
+    <ellipse cx="400" cy="378" rx="14" ry="6"/>
+    <ellipse cx="460" cy="375" rx="14" ry="6"/>
+    <ellipse cx="520" cy="370" rx="14" ry="6"/>
+  </g>
+
+  <!-- ====== KAPTUR KOBRY (rozszerzenie za głową) ====== -->
+  <path d="M 90 240
+           Q 120 160, 200 150
+           Q 280 145, 280 200
+           Q 280 250, 220 260
+           Q 160 265, 130 280
+           Q 95 280, 90 240 Z"
+        fill="#5a5a5a" stroke="#1a1a1a" stroke-width="4"/>
+
+  <!-- Wzór na kapturze -->
+  <ellipse cx="180" cy="210" rx="40" ry="22" fill="#3a3a3a"/>
+  <ellipse cx="180" cy="210" rx="20" ry="10" fill="#9a9a9a"/>
+
+  <!-- ====== GŁOWA WĘŻA ====== -->
+  <path d="M 60 200
+           Q 90 160, 160 165
+           Q 220 175, 230 215
+           Q 220 235, 160 235
+           Q 100 235, 60 220
+           Q 50 210, 60 200 Z"
+        fill="#5a5a5a" stroke="#1a1a1a" stroke-width="4"/>
+
+  <!-- Oczy -->
+  <ellipse cx="150" cy="195" rx="14" ry="11" fill="#fac80a" stroke="#1a1a1a" stroke-width="2"/>
+  <ellipse cx="150" cy="195" rx="5" ry="9" fill="#1a1a1a"/>
+
+  <!-- Otwarta paszcza -->
+  <path d="M 60 220
+           Q 50 245, 75 260
+           Q 110 270, 145 260
+           Q 170 250, 175 230
+           Q 130 240, 80 230
+           Q 65 225, 60 220 Z"
+        fill="#a01818"/>
+
+  <!-- Kły -->
+  <polygon points="80,235 84,260 88,235" fill="#ffffff" stroke="#1a1a1a" stroke-width="1.5"/>
+  <polygon points="130,240 134,265 138,240" fill="#ffffff" stroke="#1a1a1a" stroke-width="1.5"/>
+
+  <!-- Język rozdwojony -->
+  <path d="M 50 230
+           L 20 240
+           L 30 245
+           L 25 250
+           L 35 248
+           L 40 240
+           Z"
+        fill="#c81d11"/>
+
+  <!-- ====== OGON wystający w prawym dolnym ====== -->
+  <path d="M 580 580
+           Q 640 600, 700 590
+           Q 750 580, 760 620
+           Q 750 660, 700 660
+           Q 660 660, 620 640
+           Q 590 620, 580 580 Z"
+        fill="#5a5a5a" stroke="#1a1a1a" stroke-width="4"/>
+
+  <!-- Końcówka ogona zwężająca się -->
+  <path d="M 740 620
+           Q 770 615, 780 640
+           Q 770 660, 750 655
+           Q 740 645, 740 620 Z"
+        fill="#5a5a5a" stroke="#1a1a1a" stroke-width="3"/>
+
+  <!-- ====== TEKST SMCR 690 ====== -->
+  <text x="400" y="440"
+        font-family="Impact, 'Arial Black', sans-serif"
+        font-weight="900"
+        font-size="115"
+        fill="#fac80a"
+        stroke="#c81d11"
+        stroke-width="6"
+        text-anchor="middle"
+        paint-order="stroke fill">SMCR</text>
+
+  <text x="400" y="545"
+        font-family="Impact, 'Arial Black', sans-serif"
+        font-weight="900"
+        font-size="115"
+        fill="#fac80a"
+        stroke="#c81d11"
+        stroke-width="6"
+        text-anchor="middle"
+        paint-order="stroke fill">690</text>
+</svg>

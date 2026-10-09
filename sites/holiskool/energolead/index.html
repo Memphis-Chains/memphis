@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EnergoLead Engine — oferta dla NiceProEnergy i OptimEn | Holiskool</title>
+  <meta name="description" content="EnergoLead Engine: system, który zamienia zimne kontakty firmowe w kwalifikowane leady energetyczne gotowe do rozmowy handlowej." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f0d0b;
+      --bg-2: #17130f;
+      --panel: #1f1913;
+      --panel-2: #261f17;
+      --paper: #f7efe3;
+      --ink: #f8efe4;
+      --muted: #d0c0ad;
+      --soft: #a99580;
+      --copper: #d4a15e;
+      --copper-2: #f0c989;
+      --moss: #88b59f;
+      --teal: #28d7c5;
+      --danger: #ff6b35;
+      --line: rgba(212,161,94,.22);
+      --line-2: rgba(255,255,255,.1);
+      --shadow: 0 30px 80px rgba(0,0,0,.35);
+      --font-h: 'Fraunces', Georgia, serif;
+      --font-b: 'Inter', system-ui, -apple-system, Segoe UI, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 15% 8%, rgba(212,161,94,.17), transparent 30rem),
+        radial-gradient(circle at 88% 12%, rgba(40,215,197,.12), transparent 26rem),
+        linear-gradient(180deg, #0f0d0b 0%, #0a0908 100%);
+      color: var(--ink);
+      font-family: var(--font-b);
+      line-height: 1.64;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(212,161,94,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(212,161,94,.035) 1px, transparent 1px);
+      background-size: 54px 54px;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    a { color: inherit; }
+    .wrap { width: min(1160px, calc(100% - 40px)); margin: 0 auto; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      backdrop-filter: blur(18px);
+      background: rgba(15,13,11,.78);
+      border-bottom: 1px solid var(--line);
+    }
+    .topbar .inner {
+      width: min(1160px, calc(100% - 40px));
+      margin: 0 auto;
+      height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      font-weight: 800;
+      letter-spacing: .02em;
+    }
+    .brand-mark {
+      width: 38px; height: 38px;
+      display: grid; place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(212,161,94,.2), rgba(136,181,159,.12));
+      color: var(--copper-2);
+      box-shadow: 0 0 0 6px rgba(212,161,94,.04);
+    }
+    .navlinks { display: flex; gap: 1rem; align-items: center; color: var(--muted); font-size: .88rem; }
+    .navlinks a { text-decoration: none; }
+    .navlinks a:hover { color: var(--copper-2); }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: .55rem;
+      min-height: 44px;
+      padding: .75rem 1.1rem;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.04);
+      color: var(--ink);
+      text-decoration: none;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn.primary {
+      background: linear-gradient(135deg, var(--copper), var(--copper-2));
+      color: #19100a;
+      border-color: transparent;
+    }
+    .btn:hover { transform: translateY(-1px); }
+
+    .hero { padding: 86px 0 54px; }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: .55rem;
+      color: var(--copper-2);
+      border: 1px solid var(--line);
+      background: rgba(212,161,94,.08);
+      padding: .5rem .85rem;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: .82rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    h1, h2, h3 { font-family: var(--font-h); line-height: 1.02; margin: 0; }
+    h1 {
+      margin-top: 1.35rem;
+      font-size: clamp(3.1rem, 8vw, 7.4rem);
+      max-width: 980px;
+      letter-spacing: -.055em;
+    }
+    .hero-sub {
+      margin: 1.5rem 0 0;
+      max-width: 780px;
+      font-size: clamp(1.08rem, 2vw, 1.35rem);
+      color: var(--muted);
+      line-height: 1.72;
+    }
+    .hero-sub strong { color: var(--ink); }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 2rem; }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin-top: 3rem;
+    }
+    .trust-strip {
+      margin-top: 1rem;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+    .trust-strip div {
+      border: 1px solid rgba(136,181,159,.22);
+      background: rgba(136,181,159,.055);
+      border-radius: 20px;
+      padding: 1rem;
+    }
+    .trust-strip strong { display: block; color: var(--moss); margin-bottom: .25rem; }
+    .trust-strip span { color: var(--muted); font-size: .92rem; }
+    .metric, .card, .step, .price, .bio-card, .quote-card {
+      background: linear-gradient(180deg, rgba(31,25,19,.92), rgba(22,18,14,.92));
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+    }
+    .metric { padding: 1.2rem; min-height: 138px; }
+    .metric strong { display: block; font-size: 2rem; line-height: 1; color: var(--copper-2); font-family: var(--font-h); }
+    .metric span { display: block; margin-top: .55rem; color: var(--muted); font-size: .92rem; }
+
+    section { padding: 62px 0; }
+    .section-head { margin-bottom: 2rem; display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(320px, .92fr); gap: 2.2rem; align-items: end; }
+    h2 { font-size: clamp(2rem, 4.8vw, 4.3rem); letter-spacing: -.035em; }
+    .lead { color: var(--muted); font-size: 1.05rem; margin: 0; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+    .card { padding: 1.35rem; }
+    .card h3 { font-size: 1.45rem; margin-bottom: .75rem; color: var(--copper-2); }
+    .card p, .card li { color: var(--muted); }
+    .card ul { padding-left: 1.1rem; margin: .8rem 0 0; }
+
+    .problem-list { list-style: none; padding: 0; margin: 0; display: grid; gap: .65rem; }
+    .problem-list li {
+      display: flex; gap: .75rem; align-items: flex-start;
+      padding: .85rem .95rem;
+      border-radius: 16px;
+      background: rgba(255,255,255,.035);
+      color: var(--muted);
+      border: 1px solid var(--line-2);
+    }
+    .problem-list b { color: var(--danger); }
+
+    .process { display: grid; gap: 1rem; counter-reset: step; }
+    .step { display: grid; grid-template-columns: 82px 1fr; gap: 1rem; padding: 1.2rem; position: relative; overflow: hidden; }
+    .step::before {
+      counter-increment: step;
+      content: counter(step, decimal-leading-zero);
+      width: 60px; height: 60px;
+      display: grid; place-items: center;
+      border-radius: 18px;
+      background: rgba(212,161,94,.12);
+      border: 1px solid var(--line);
+      color: var(--copper-2);
+      font-family: var(--font-h);
+      font-size: 1.45rem;
+      font-weight: 700;
+    }
+    .step h3 { font-size: 1.45rem; margin-bottom: .35rem; }
+    .step p { margin: 0; color: var(--muted); }
+    .tagrow { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .8rem; }
+    .tag { border: 1px solid var(--line); color: var(--copper-2); padding: .38rem .62rem; border-radius: 999px; font-size: .82rem; background: rgba(212,161,94,.06); }
+    .tag.green { color: var(--moss); border-color: rgba(136,181,159,.25); background: rgba(136,181,159,.06); }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: .8rem;
+      margin-top: 1.2rem;
+    }
+    .flow div {
+      padding: 1rem;
+      border-radius: 18px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      min-height: 92px;
+    }
+    .flow strong { display: block; color: var(--ink); margin-bottom: .25rem; }
+
+    .lead-card {
+      background: #100d0a;
+      border: 1px solid rgba(136,181,159,.28);
+      border-radius: 24px;
+      padding: 1.2rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color: #d8eadf;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.04), var(--shadow);
+      overflow: auto;
+      white-space: pre-wrap;
+      font-size: .88rem;
+    }
+
+    .quote-card { padding: 2rem; position: relative; overflow: hidden; }
+    .quote-card::before { content: '“'; position: absolute; right: 1.5rem; top: -1rem; font-family: var(--font-h); font-size: 8rem; color: rgba(212,161,94,.13); }
+    .quote-card p { margin: 0; font-size: clamp(1.35rem, 2.4vw, 2.1rem); font-family: var(--font-h); line-height: 1.18; }
+    .quote-card small { display: block; margin-top: 1rem; color: var(--muted); }
+
+    .bio-card { padding: 2rem; }
+    .bio-layout { display: grid; grid-template-columns: .8fr 1.2fr; gap: 1.2rem; align-items: start; }
+    .portrait {
+      aspect-ratio: 1/1;
+      border-radius: 28px;
+      border: 1px solid var(--line);
+      background:
+        radial-gradient(circle at 40% 30%, rgba(240,201,137,.22), transparent 30%),
+        linear-gradient(135deg, rgba(212,161,94,.14), rgba(136,181,159,.09));
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 1.3rem;
+      color: var(--muted);
+      overflow: hidden;
+      position: relative;
+    }
+    .portrait img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.82; filter:saturate(.9) contrast(1.05); }
+    .portrait .portrait-caption { position:relative; z-index:1; align-self:end; width:100%; padding:1rem; border-radius:20px; background:linear-gradient(180deg, rgba(15,13,11,.2), rgba(15,13,11,.84)); }
+    .portrait strong { display: block; font-family: var(--font-h); font-size: 2rem; color: var(--ink); line-height: 1.05; margin-bottom: .5rem; }
+    .bio-card h3 { font-size: 2rem; color: var(--copper-2); margin-bottom: .8rem; }
+    .bio-card p { color: var(--muted); margin-top: 0; }
+    .proofs { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+    .proof { padding: .42rem .65rem; border-radius: 999px; border: 1px solid var(--line); color: var(--ink); background: rgba(255,255,255,.035); font-size: .82rem; }
+
+    .pricing { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+    .price { padding: 1.2rem; }
+    .price h3 { color: var(--copper-2); font-size: 1.35rem; margin-bottom: .6rem; }
+    .price .amount { font-family: var(--font-h); color: var(--ink); font-size: 2rem; line-height: 1; margin-bottom: .5rem; }
+    .price p { color: var(--muted); margin: 0; font-size: .95rem; }
+
+    .pilot {
+      border: 1px solid rgba(40,215,197,.28);
+      background: linear-gradient(135deg, rgba(40,215,197,.1), rgba(212,161,94,.08));
+      border-radius: 30px;
+      padding: 2rem;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 1rem;
+      align-items: center;
+    }
+    .pilot h2 { font-size: clamp(2rem, 4vw, 3.5rem); }
+    .pilot p { color: var(--muted); max-width: 760px; }
+
+    footer { padding: 42px 0; color: var(--soft); border-top: 1px solid var(--line); }
+    .footer-inner { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+
+    .print-note { color: var(--soft); font-size: .85rem; margin-top: .7rem; }
+
+    @media (max-width: 920px) {
+      .navlinks { display: none; }
+      .metrics, .grid-3, .pricing, .trust-strip { grid-template-columns: 1fr 1fr; }
+      .grid-2, .section-head, .bio-layout, .pilot { grid-template-columns: 1fr; }
+      .flow { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 620px) {
+      .metrics, .grid-3, .pricing, .flow, .trust-strip { grid-template-columns: 1fr; }
+      .step { grid-template-columns: 1fr; }
+      .hero { padding-top: 54px; }
+    }
+
+    @media print {
+      @page { size: A4; margin: 13mm; }
+      * { box-shadow: none !important; }
+      body { background: #fff !important; color: #1b140e !important; font-size: 10.5pt; }
+      body::before, .topbar, .hero-actions, .print-note { display: none !important; }
+      .wrap { width: 100%; }
+      .hero, section, footer { padding: 18px 0; break-inside: avoid; }
+      h1 { font-size: 38pt; color: #1b140e !important; }
+      h2 { font-size: 24pt; color: #1b140e !important; }
+      h3, .card h3, .bio-card h3, .price h3 { color: #7b4c17 !important; }
+      .hero-sub, .lead, .card p, .card li, .problem-list li, .step p, .bio-card p, .price p, .quote-card small, footer { color: #4e4338 !important; }
+      .metric, .card, .step, .price, .bio-card, .quote-card, .pilot, .lead-card {
+        background: #fff !important;
+        border: 1px solid #dac7ad !important;
+        color: #1b140e !important;
+      }
+      .metric strong, .eyebrow, .tag, .tag.green, .amount { color: #7b4c17 !important; }
+      .metrics, .grid-3, .pricing, .trust-strip { grid-template-columns: repeat(2, 1fr); }
+      .grid-2, .bio-layout, .section-head { grid-template-columns: 1fr 1fr; }
+      .flow { grid-template-columns: repeat(5, 1fr); }
+      .lead-card { color: #1b140e !important; white-space: pre-wrap; font-size: 8pt; }
+      a { text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="inner">
+      <div class="brand"><span class="brand-mark">H</span><span>Holiskool × Memphis</span></div>
+      <nav class="navlinks" aria-label="Nawigacja">
+        <a href="#problem">Problem</a>
+        <a href="#system">System</a>
+        <a href="#bio">Dlaczego my</a>
+        <a href="#pilot">Pilotaż</a>
+      </nav>
+      <button class="btn" onclick="window.print()">Eksportuj PDF</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="wrap">
+        <span class="eyebrow">Oferta partnerska dla NiceProEnergy i OptimEn</span>
+        <h1>EnergoLead Engine</h1>
+        <p class="hero-sub"><strong>Proponowany system, który zamienia zimne kontakty firmowe w gorące leady energetyczne</strong> Nie kolejny raport z faktury. Pipeline od pierwszego kontaktu do rozmowy handlowej z konkretnym powodem.</p>
+        <div class="hero-actions">
+          <a class="btn primary" href="#pilot">Zacznijmy od 30-dniowego pilotażu</a>
+          <a class="btn" href="#system">Zobacz, jak działa system</a>
+        </div>
+        <div class="print-note">Wersja HTML przygotowana do eksportu PDF: przycisk „Eksportuj PDF” albo Ctrl/Cmd+P.</div>
+        <div class="print-note"><strong>Truth note:</strong> to oferta pilotażowa i projekt systemu. Część automatyzacji powstaje w ramach pilotażu; na start zakładamy kontrolę człowieka nad analizą faktur i kwalifikacją leadów.</div>
+
+        <div class="metrics" aria-label="Najważniejsze liczby oferty">
+          <div class="metric"><strong>30 dni</strong><span>pilotaż na jednym segmencie firm, bez budowania dużego SaaS-a na start</span></div>
+          <div class="metric"><strong>10 kroków</strong><span>od cold leadu do rozmowy z firmą, która ma powód do kontaktu</span></div>
+          <div class="metric"><strong>AI + człowiek</strong><span>Memphis ma analizować, człowiek zatwierdza i odpowiada za jakość</span></div>
+          <div class="metric"><strong>HOT lead</strong><span>kontakt z fakturą, zgodą, kontekstem i argumentem dla handlowca</span></div>
+        </div>
+
+        <div class="trust-strip" aria-label="Zasady współpracy">
+          <div><strong>Bez spamu.</strong><span>Kontakt tylko z segmentami, gdzie istnieje logiczna hipoteza kosztowa.</span></div>
+          <div><strong>Bez czarnej skrzynki.</strong><span>Każdy lead ma powód kwalifikacji i jasny następny krok.</span></div>
+          <div><strong>Bez oddawania danych na ślepo.</strong><span>Faktura służy analizie i kwalifikacji, z czytelną zgodą klienta.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="problem">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>Problemem nie jest tylko cena prądu. Problemem jest zaufanie.</h2>
+          <p class="lead">Firmy nie chcą kolejnego telefonu od kogoś, kto obiecuje „tańszy prąd”. Chcą zrozumieć, czy ich faktura ma sens i czy rozmowa z doradcą w ogóle jest warta czasu.</p>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Co blokuje sprzedaż?</h3>
+            <ul class="problem-list">
+              <li><b>×</b> przedsiębiorca nie rozumie faktury i boi się haczyków</li>
+              <li><b>×</b> handlowiec często dzwoni bez danych i bez pretekstu</li>
+              <li><b>×</b> cold lead nie wie, dlaczego miałby rozmawiać właśnie teraz</li>
+              <li><b>×</b> brokerzy energetyczni mają problem reputacyjny po latach agresywnej sprzedaży</li>
+              <li><b>×</b> lista kontaktów bez kwalifikacji marnuje czas zespołu sprzedaży</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Co zmieniamy?</h3>
+            <ul class="problem-list">
+              <li><b style="color:var(--moss)">✓</b> kontakt zaczyna się od pomocy, nie od wciskania umowy</li>
+              <li><b style="color:var(--moss)">✓</b> klient dostaje prostą diagnozę faktury</li>
+              <li><b style="color:var(--moss)">✓</b> handlowiec dostaje argumenty z danych, nie skrypt z call center</li>
+              <li><b style="color:var(--moss)">✓</b> NiceProEnergy rozmawia tylko z leadami, które mają potencjał</li>
+              <li><b style="color:var(--moss)">✓</b> OptimEn dostaje lepiej przygotowany rynek i mniej losowych zapytań</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="system">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>Jak ma działać EnergoLead Engine?</h2>
+          <p class="lead">Prosty pilotaż: wybieramy segment, zbieramy faktury, kwalifikujemy leady i przekazujemy handlowcom tylko rozmowy z sensem.</p>
+        </div>
+
+        <div class="process">
+          <article class="step"><div><h3>Segment</h3><p>Wybieramy jedną branżę z realnym zużyciem energii: piekarnie, chłodnie, warsztaty, SPA, gastronomię albo małą produkcję.</p><div class="tagrow"><span class="tag">branża</span><span class="tag">hipoteza kosztowa</span></div></div></article>
+          <article class="step"><div><h3>Kontakt z powodem</h3><p>Zamiast „tańszego prądu” wysyłamy krótki komunikat: sprawdzimy, czy faktura ma ukryty koszt w taryfie, mocy umownej albo energii biernej.</p><div class="tagrow"><span class="tag green">pomoc przed sprzedażą</span></div></div></article>
+          <article class="step"><div><h3>Faktura i zgoda</h3><p>Klient trafia na landing, przesyła fakturę i daje jasną zgodę na analizę oraz ewentualny kontakt doradcy.</p><div class="tagrow"><span class="tag">upload PDF</span><span class="tag">RODO</span></div></div></article>
+          <article class="step"><div><h3>Analiza Memphis + kontrola człowieka</h3><p>W pilotażu Memphis ma odczytywać kluczowe dane z faktury, a człowiek zatwierdza diagnozę przed przekazaniem leadu.</p><div class="tagrow"><span class="tag">taryfa</span><span class="tag">OSD</span><span class="tag">opłaty</span><span class="tag">energia bierna</span></div></div></article>
+          <article class="step"><div><h3>Scoring HOT / nie-HOT</h3><p>Lead dostaje status i uzasadnienie. Do NiceProEnergy trafiają tylko firmy, gdzie jest powód do rozmowy i zgoda na kontakt.</p><div class="tagrow"><span class="tag green">mniej śmieci</span><span class="tag green">więcej jakości</span></div></div></article>
+          <article class="step"><div><h3>Karta rozmowy dla handlowca</h3><p>Handlowiec dostaje firmę, problem z faktury, argument otwarcia, rekomendowany kierunek oferty i następny krok.</p><div class="tagrow"><span class="tag green">gotowy kontekst</span><span class="tag green">krótsza ścieżka do oferty</span></div></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="section-head">
+          <h2>Co dokładnie dostaje NiceProEnergy?</h2>
+          <p class="lead">Nie „bazę kontaktów”. System sprzedażowy z wiedzą o tym, dlaczego dana firma powinna rozmawiać właśnie teraz.</p>
+        </div>
+        <div class="grid-3">
+          <div class="card"><h3>Landing i kampania</h3><p>Strona audytu faktury, komunikaty branżowe, formularz, zgody i ścieżka klienta od pierwszego kliknięcia do rozmowy.</p></div>
+          <div class="card"><h3>Analiza faktury</h3><p>Memphis ma wyciągać dane z dokumentu, wykrywać potencjalne problemy i przygotowywać ocenę wartości leada — najpierw półautomatycznie, potem coraz bardziej automatycznie.</p></div>
+          <div class="card"><h3>Karta HOT leadu</h3><p>Handlowiec dostaje argumenty, nie zgadywankę: co powiedzieć, jaki problem poruszyć i jaki produkt OptimEn pasuje.</p></div>
+        </div>
+
+        <div class="flow" aria-label="Pipeline leadów">
+          <div><strong>Cold</strong>firma znaleziona w segmencie</div>
+          <div><strong>Warm</strong>klik / odpowiedź / zainteresowanie</div>
+          <div><strong>Invoice</strong>przesłana faktura lub dane</div>
+          <div><strong>Qualified</strong>Memphis ocenia potencjał</div>
+          <div><strong>HOT</strong>gotowe dla handlowca</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="section-head">
+          <h2>Przykład karty leada</h2>
+          <p class="lead">To jest różnica między cold callingiem a rozmową opartą o dane. Sprzedawca wie, o czym mówi, zanim podniesie telefon.</p>
+        </div>
+        <pre class="lead-card">Firma: XYZ Sp. z o.o.
+Branża: piekarnia / produkcja spożywcza
+Lokalizacja: Małopolska
+Status: HOT
+
+Powód kwalifikacji:
+- wysokie miesięczne zużycie energii
+- cena energii czynnej powyżej ustalonego progu
+- wysoka opłata handlowa
+- możliwa nieoptymalna grupa taryfowa
+- klient przesłał fakturę i zgodził się na kontakt
+
+Szacowany potencjał:
+wysoki potencjał roczny
+
+Rekomendowany kierunek rozmowy:
+Porównanie obecnej umowy z ofertą OptimEn przez NiceProEnergy.
+
+Najlepszy argument otwarcia:
+„Na fakturze widać, że największy koszt robi cena energii czynnej i opłata handlowa. Możemy sprawdzić, czy da się to obniżyć bez ryzyka przerw w dostawie.”
+
+Następny krok:
+Telefon doradcy w ciągu 24h.</pre>
+      </div>
+    </section>
+
+    <section id="bio">
+      <div class="wrap">
+        <div class="quote-card">
+          <p>People don’t care how much you know until they know how much you care.</p>
+          <small>Dlatego ta oferta zaczyna się od pomocy przedsiębiorcy w zrozumieniu faktury — dopiero potem przechodzi do sprzedaży.</small>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="bio-card">
+          <div class="bio-layout">
+            <div class="portrait">
+              <img src="../wodzu.jpg" alt="Marcin Kukla — Holiskool / Memphis" loading="lazy">
+              <div class="portrait-caption">
+                <strong>Marcin Kukla</strong>
+                Holiskool / Memphis<br />AI, procesy, wdrożenia — człowiek przed technologią
+              </div>
+            </div>
+            <div>
+              <h3>Dlaczego ja?</h3>
+              <p>Buduję systemy, które mają działać w prawdziwym terenie: dla ludzi, firm, gmin, zespołów sprzedaży i procesów, które codziennie zderzają się z chaosem.</p>
+              <p>Od 2019 roku projektuję i wdrażam rozwiązania AI: architekturę strategiczną, systemy RAG, pipeline’y agentowe, automatyzacje i workflowy. Jestem twórcą Memphis — suwerennego runtime’u dla agentów AI — oraz prowadzę Holiskool, gdzie technologia ma służyć praktycznym decyzjom, nie prezentacjom dla samego wrażenia.</p>
+              <p>Moje zaplecze jest nietypowe: UJ, rzemiosło, technika konserwacji, instruktorstwo, edukacja i wdrożenia. Przewaga jest prosta: najpierw rozumiem ludzi, potem buduję im system.</p>
+              <div class="proofs" aria-label="Lokalne potwierdzenia, kwalifikacje i doświadczenia">
+                <span class="proof">Uniwersytet Jagielloński — Zarządzanie</span>
+                <span class="proof">Uniwersytet Jagielloński — Kulturoznawstwo</span>
+                <span class="proof">Memphis — sovereign AI runtime (projekt własny)</span>
+                <span class="proof">RAG systems / architektura AI</span>
+                <span class="proof">Agent pipelines / workflowy agentowe</span>
+                <span class="proof">University of Reason</span>
+                <span class="proof">NLP Practitioner</span>
+                <span class="proof">CIEH</span>
+                <span class="proof">Ecolab</span>
+                <span class="proof">KSZ International</span>
+                <span class="proof">Civil Defence</span>
+                <span class="proof">SITS — Instruktor Snowboardu</span>
+                <span class="proof">IMBiGS — Koparkoładowarka</span>
+                <span class="proof">Rzemieślnik budowlany</span>
+                <span class="proof">Technik konserwacji zabytków</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="section-head">
+          <h2>Dlaczego ta oferta jest dobra dla NiceProEnergy i OptimEn?</h2>
+          <p class="lead">Bo łączy trzy rzeczy, które rzadko występują razem: zaufanie klienta, jakość danych i gotowość sprzedażową.</p>
+        </div>
+        <div class="grid-3">
+          <div class="card">
+            <h3>Dla NiceProEnergy</h3>
+            <p>Mniej pustych telefonów, więcej rozmów z konkretnym powodem. Handlowiec dostaje lead przygotowany przez analizę, a nie przypadkową osobę z bazy.</p>
+          </div>
+          <div class="card">
+            <h3>Dla OptimEn</h3>
+            <p>Lepsze dopasowanie klientów do realnej oferty: sprzedaż energii, indeks, transze, PPA, DSR albo po prostu brak sensu — zanim zespół traci czas.</p>
+          </div>
+          <div class="card">
+            <h3>Dla klienta końcowego</h3>
+            <p>Najpierw dostaje zrozumienie faktury i jasny obraz kosztów. Dopiero potem propozycję rozmowy. To obniża opór i zwiększa zaufanie.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="section-head">
+          <h2>Model współpracy</h2>
+          <p class="lead">Proponowany układ jest hybrydowy, ale bez sztywnego cennika na etapie pierwszej rozmowy: najpierw doprecyzowujemy zakres, segmenty, wolumen i odpowiedzialność za konwersję.</p>
+        </div>
+        <div class="pricing">
+          <div class="price"><h3>Setup</h3><div class="amount">Zakres</div><p>landing, formularz, workflow analizy, szablony raportów, scoring i arkusz/panel leadów — wyceniane po krótkim warsztacie.</p></div>
+          <div class="price"><h3>Stała obsługa</h3><div class="amount">Proces</div><p>kampanie, utrzymanie systemu, analiza, raportowanie i optymalizacja — dopasowane do liczby segmentów i wolumenu leadów.</p></div>
+          <div class="price"><h3>Qualified lead</h3><div class="amount">Jakość</div><p>rozliczenie może opierać się o lead spełniający uzgodnione kryteria jakości, zgody kontaktowej i potencjału sprzedażowego.</p></div>
+          <div class="price"><h3>Success fee</h3><div class="amount">Wynik</div><p>opcjonalny komponent od podpisanej umowy — do ustalenia po pilotażu i potwierdzeniu konwersji.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="pilot">
+      <div class="wrap">
+        <div class="pilot">
+          <div>
+            <h2>Proponowany start: 30-dniowy pilotaż</h2>
+            <p>Wybieramy jeden segment firm, tworzymy landing i komunikację, zbieramy pierwsze faktury, ręcznie kontrolujemy jakość raportów i mierzymy: odpowiedzi, uploady, HOT leady, rozmowy oraz oferty.</p>
+          </div>
+          <a class="btn primary" href="mailto:elathoxu@gmail.com?subject=Pilota%C5%BC%20EnergoLead%20Engine">Uruchom pilotaż</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap footer-inner">
+      <div>Holiskool × Memphis — EnergoLead Engine</div>
+      <div>Oferta dla NiceProEnergy i OptimEn · 2026</div>
+    </div>
+  </footer>
+</body>
+</html>

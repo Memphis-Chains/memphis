@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Babia Góra Trails — Mapa tras rowerowych</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-gpx@1.7.0/gpx.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #0f0d0b;
+      color: #f5f0e8;
+    }
+    header {
+      background: linear-gradient(135deg, #1a1510, #0f0d0b);
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid rgba(212, 161, 94, 0.2);
+    }
+    header h1 {
+      font-size: 1.8rem;
+      color: #d4a15e;
+      margin-bottom: 0.3rem;
+    }
+    header p {
+      color: #b8a99a;
+      font-size: 0.95rem;
+    }
+    #map {
+      height: calc(100vh - 180px);
+      width: 100%;
+    }
+    .legend {
+      position: absolute;
+      top: 90px;
+      right: 10px;
+      z-index: 1000;
+      background: rgba(15, 13, 11, 0.92);
+      border: 1px solid rgba(212, 161, 94, 0.25);
+      border-radius: 12px;
+      padding: 1rem;
+      font-size: 0.85rem;
+    }
+    .legend h3 {
+      color: #d4a15e;
+      margin-bottom: 0.6rem;
+      font-size: 0.95rem;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.4rem;
+    }
+    .legend-color {
+      width: 22px;
+      height: 5px;
+      border-radius: 3px;
+    }
+    .trail-stats {
+      position: absolute;
+      bottom: 30px;
+      left: 10px;
+      z-index: 1000;
+      background: rgba(15, 13, 11, 0.92);
+      border: 1px solid rgba(212, 161, 94, 0.25);
+      border-radius: 12px;
+      padding: 1rem;
+      font-size: 0.85rem;
+      max-width: 220px;
+      display: none;
+    }
+    .info-bar {
+      display: flex;
+      gap: 1.5rem;
+      padding: 1rem 2rem;
+      background: rgba(212, 161, 94, 0.08);
+      border-bottom: 1px solid rgba(212, 161, 94, 0.15);
+      flex-wrap: wrap;
+    }
+    .info-item {
+      display: flex;
+      flex-direction: column;
+    }
+    .info-item label {
+      font-size: 0.75rem;
+      color: #7a6a5a;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .info-item span {
+      color: #d4a15e;
+      font-weight: 600;
+    }
+    .trail-stats {
+      position: absolute;
+      bottom: 30px;
+      left: 10px;
+      z-index: 1000;
+      background: rgba(15, 13, 11, 0.92);
+      border: 1px solid rgba(212, 161, 94, 0.25);
+      border-radius: 12px;
+      padding: 1rem;
+      font-size: 0.85rem;
+      max-width: 220px;
+      display: none;
+    }
+    .trail-stats.visible { display: block; }
+    .trail-stats h4 { color: #d4a15e; margin-bottom: 0.5rem; }
+    .trail-stats p { color: #b8a99a; margin-bottom: 0.3rem; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🚴 Babia Góra Trails</h1>
+    <p>Mapa tras rowerowych — Zawoja Morgi, Mosorny Groń</p>
+  </header>
+
+  <div class="info-bar">
+    <div class="info-item">
+      <label>Łączna długość</label>
+      <span>17,3 km</span>
+    </div>
+    <div class="info-item">
+      <label>Trasy zjazdowe</label>
+      <span>6 kolorów</span>
+    </div>
+    <div class="info-item">
+      <label>Start</label>
+      <span>Zawoja Morgi</span>
+    </div>
+    <div class="info-item">
+      <label>Połączenie SK</label>
+      <span>5,2 km (Tabakowy)</span>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <div class="legend">
+    <h3>🗺️ Legenda tras</h3>
+    <div class="legend-item">
+      <div class="legend-color" style="background:#22c55e;"></div>
+      <span>Czubajka Kania — 2,5 km / łatka</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color" style="background:#16a34a;"></div>
+      <span>Rydzowy — 1 km / łatka</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color" style="background:#3b82f6;"></div>
+      <span>Sokolica — 4,75 km / średnio</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color" style="background:#ef4444;"></div>
+      <span>Wilcza Łapa — 0,9 km / zaawansowani</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color" style="background:#333333; border: 1px solid #666;"></div>
+      <span>Diablak — 1,7 km / eksperci</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color" style="background:#f59e0b;"></div>
+      <span>Tabakowy — 5,2 km / łącznik SK</span>
+    </div>
+  </div>
+
+  <div class="trail-stats" id="trailStats">
+    <h4 id="trailName">—</h4>
+    <p id="trailLength">Długość: —</p>
+    <p id="trailElevation">Przewyższenie: —</p>
+    <p id="trailDifficulty">Trudność: —</p>
+  </div>
+
+  <script>
+    const map = L.map('map').setView([49.573, 19.525], 14);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    const trails = [
+      { name: 'Czubajka Kania', file: 'gpx/Czubajka_Kania.gpx', color: '#22c55e', desc: '2,5 km / bardzo łatka, zjazd' },
+      { name: 'Rydzowy', file: 'gpx/Rydzowy.gpx', color: '#16a34a', desc: '1 km / łatka, zjazd' },
+      { name: 'Sokolica', file: 'gpx/Sokolica.gpx', color: '#3b82f6', desc: '4,75 km / średniozaawansowani' },
+      { name: 'Wilcza Łapa', file: 'gpx/Wilcza_Lapa.gpx', color: '#ef4444', desc: '0,9 km / zaawansowani (czerwona)' },
+      { name: 'Diablak', file: 'gpx/Diablak.gpx', color: '#333333', desc: '1,7 km / eksperci (czarna)' },
+      { name: 'Tabakowy', file: 'gpx/Tabakowy.gpx', color: '#f59e0b', desc: '5,2 km / łącznik do Słowacji' }
+    ];
+
+    let loadedCount = 0;
+    trails.forEach(trail => {
+      const gpxLayer = new L.GPX(trail.file, {
+        async: true,
+        marker_options: { startIconUrl: null, endIconUrl: null, shadowUrl: null },
+        polyline_options: { color: trail.color, weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }
+      });
+
+      gpxLayer.on('loaded', function(e) {
+        loadedCount++;
+        if (loadedCount === 1) map.fitBounds(gpxLayer.getBounds());
+        gpxLayer.bindPopup('<b>' + trail.name + '</b><br>' + trail.desc);
+        gpxLayer.addTo(map);
+      });
+
+      gpxLayer.on('error', function(e) {
+        console.warn('Błąd ładowania GPX:', trail.file, e.err);
+      });
+    });
+
+    // Add start marker
+    L.marker([49.573, 19.525])
+      .addTo(map)
+      .bindPopup('<b>Start: Zawoja Morgi</b><br>P parking, toalety, pumptrack');
+  </script>
+</body>
+</html>

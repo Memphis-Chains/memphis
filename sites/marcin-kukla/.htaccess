@@ -1,0 +1,101 @@
+# marcin-kukla.pl — root .htaccess
+# Managed from the repo (sites/marcin-kukla/.htaccess). Deploy via sites-sync.sh, never by hand.
+
+# ── HTTPS + HSTS ───────────────────────────────────────────────────────────
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTPS} off
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+</IfModule>
+
+# ── Custom error page ──────────────────────────────────────────────────────
+# Without this line the 404.html in the docroot is never served, no matter how
+# correct it is: Apache only uses it when ErrorDocument points at it.
+ErrorDocument 404 /404.html
+
+# ── Security headers ───────────────────────────────────────────────────────
+<IfModule mod_headers.c>
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
+
+    # HTML and metadata change often and are small — revalidate every time.
+    <FilesMatch "\.(html|json|txt|xml|webmanifest)$">
+        Header set Cache-Control "public, max-age=0, must-revalidate"
+    </FilesMatch>
+
+    # Assets are content-addressed by deploy or effectively stable — cache hard.
+    <FilesMatch "\.(svg|ico|jpg|jpeg|png|webp|gif|woff2?)$">
+        Header set Cache-Control "public, max-age=2592000, immutable"
+    </FilesMatch>
+</IfModule>
+
+# ── Compression ────────────────────────────────────────────────────────────
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/css text/xml
+    AddOutputFilterByType DEFLATE application/javascript application/json
+    AddOutputFilterByType DEFLATE application/manifest+json image/svg+xml
+</IfModule>
+
+# ── MIME types ─────────────────────────────────────────────────────────────
+<IfModule mod_mime.c>
+    AddType image/svg+xml .svg
+    AddType image/x-icon .ico
+    AddType application/manifest+json .webmanifest
+</IfModule>
+
+# ── Directory listings off ─────────────────────────────────────────────────
+# Note this hides the index of a directory, not its contents. The FilesMatch
+# rules below are what actually keep artifacts from being served.
+Options -Indexes
+DirectoryIndex index.html
+
+# ── Never serve a working artifact ─────────────────────────────────────────
+# Backups and editor droppings belong outside the docroot. They land here when a
+# snapshot is taken in place, and then anyone who guesses the filename reads it.
+<FilesMatch "\.(bak|backup|old|orig|save|swp|swo|tmp|temp|log|sql|sqlite|sqlite3|ini|env|key|pem|p12|pfx|crt|asc|gpg|pyc|map|lock|pid)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Tilde backups, and any name containing backup/bak in any extension
+<FilesMatch "(~|\.(backup|bak))">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Internal notes that have no business on the public web
+<FilesMatch "^(README|readme|CHANGELOG|LICENSE|CONTRIBUTING|Makefile|Dockerfile|composer\.(json|lock)|package(-lock)?\.json|ya?ml)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Any dotfile that is not .well-known — catches .env, .git*, .DS_Store,
+# and the dot-prefixed editor swaps that match no extension glob.
+<FilesMatch "^\.(?!well-known)">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>

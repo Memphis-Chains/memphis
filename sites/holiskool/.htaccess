@@ -1,0 +1,15 @@
+# holiskool.pl — root .htaccess
+# Wymuszenie HTTPS dla całej domeny (spójność z memphis-v5.pl i marcin-kukla.pl)
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # 301 redirect HTTP → HTTPS
+    RewriteCond %{HTTPS} off
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+</IfModule>

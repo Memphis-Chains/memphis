@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>mE/\/\phi$ | Memphis, sovereign AI runtime</title>
+  <meta name="description" content="Memphis is a sovereign AI runtime born from Oswobodzeni. Local-first, chain-backed memory, vault-sealed secrets, observability, and operator control." />
+  <meta property="og:title" content="Memphis, sovereign AI runtime" />
+  <meta property="og:description" content="Local-first runtime with chain-backed memory, vault-sealed secrets, and operator-grade control." />
+  <meta property="og:type" content="website" />
+  <style>
+    :root {
+      --bg: #05060a;
+      --bg-2: #0b0d12;
+      --fg: #edf2f7;
+      --muted: #97a3b3;
+      --line: rgba(255,255,255,0.08);
+      --line-2: rgba(255,255,255,0.14);
+      --accent: #ff6b35;
+      --accent-2: #2dd4bf;
+      --accent-3: #9ae6d8;
+      --good: #22c55e;
+      --danger: #ef4444;
+      --panel: rgba(10,12,18,0.88);
+      --shadow: 0 28px 90px rgba(0,0,0,0.44);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--fg);
+      font-family: var(--sans);
+      background:
+        radial-gradient(circle at 14% 0%, rgba(45,212,191,0.09), transparent 24%),
+        radial-gradient(circle at 85% 8%, rgba(255,107,53,0.12), transparent 30%),
+        linear-gradient(180deg, #040509 0%, #0a0d14 42%, #05060a 100%);
+      overflow-x: hidden;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px);
+      background-size: 34px 34px;
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,0.72), rgba(0,0,0,0.15));
+      pointer-events: none;
+    }
+    a { color: inherit; }
+    .shell {
+      width: min(1240px, calc(100% - 2rem));
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 0 0;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.83rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .brandline {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      min-width: 0;
+    }
+    .brandicon {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      object-fit: contain;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.08);
+      padding: 2px;
+      flex: 0 0 auto;
+    }
+    .branddot {
+      width: 0.72rem;
+      height: 0.72rem;
+      border-radius: 999px;
+      background: var(--muted);
+      box-shadow: 0 0 14px rgba(151,163,179,0.35);
+      flex: 0 0 auto;
+    }
+    .branddot.live-ok {
+      background: var(--good);
+      box-shadow: 0 0 18px rgba(34,197,94,0.7);
+    }
+    .branddot.live-bad {
+      background: var(--danger);
+      box-shadow: 0 0 18px rgba(239,68,68,0.72);
+    }
+    .nav {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .nav a {
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+    }
+    .nav a:hover { border-color: currentColor; }
+    .hero {
+      display: grid;
+      grid-template-columns: 1.08fr 0.92fr;
+      gap: 1.2rem;
+      align-items: center;
+      padding: 3.6rem 0 1.4rem;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      color: var(--accent-2);
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      margin-bottom: 1.15rem;
+    }
+    .eyebrow::before {
+      content: "";
+      width: 2.2rem;
+      height: 1px;
+      background: currentColor;
+    }
+    .wordmark {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: clamp(2.8rem, 7.4vw, 6.2rem);
+      line-height: 0.92;
+      letter-spacing: -0.1em;
+      word-break: break-word;
+      text-shadow: 0 0 26px rgba(45,212,191,0.08);
+    }
+    .wordmark .sigil-e { color: var(--accent-3); }
+    .wordmark .sigil-core { color: var(--fg); }
+    .wordmark .sigil-cash { color: var(--accent); }
+    .plainname {
+      margin-top: 0.95rem;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.93rem;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+    }
+    .hero-meta {
+      margin-top: 1rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+    }
+    .hero-copy {
+      margin-top: 1.5rem;
+      max-width: 47rem;
+      color: #d9e3ec;
+      font-size: 1.08rem;
+      line-height: 1.75;
+    }
+    .hero-copy strong { color: #fff; }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.85rem;
+      margin-top: 1.9rem;
+    }
+    .btn {
+      min-height: 3rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 1.15rem;
+      border-radius: 999px;
+      border: 1px solid var(--line-2);
+      text-decoration: none;
+      background: rgba(255,255,255,0.02);
+      font-weight: 600;
+      transition: 160ms ease;
+    }
+    .btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(255,255,255,0.28);
+      background: rgba(255,255,255,0.05);
+    }
+    .btn.primary {
+      color: #0a0d12;
+      border-color: transparent;
+      background: linear-gradient(135deg, var(--accent), #ff8c58);
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      margin-top: 1.05rem;
+    }
+    .chip {
+      padding: 0.42rem 0.72rem;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.03);
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: #dfe7ef;
+    }
+    .panel {
+      background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.015));
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .bar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.88rem 1rem;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.025);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.8rem;
+    }
+    .dot { width: 0.72rem; height: 0.72rem; border-radius: 50%; }
+    .red { background: #ef4444; }
+    .yellow { background: #f59e0b; }
+    .green { background: #22c55e; }
+    .title-right { margin-left: auto; }
+    .body {
+      padding: 1.08rem 1.08rem 1.25rem;
+      font-family: var(--mono);
+      font-size: 0.9rem;
+      color: #dce5ee;
+    }
+    .line { margin: 0 0 0.55rem; }
+    .prompt { color: var(--good); }
+    .key { color: var(--accent-2); }
+    .val { color: #f8fbff; }
+    .accent { color: var(--accent); }
+    .goodtext { color: var(--good); }
+    .proof {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0,1fr));
+      gap: 1rem;
+      margin-top: 0.8rem;
+    }
+    .proof-card, .card {
+      padding: 1.15rem;
+      border-radius: 24px;
+      background: var(--panel);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: var(--shadow);
+    }
+    .proof-card .metric, .card .metric {
+      font-family: var(--mono);
+      font-size: 1.35rem;
+      color: var(--accent);
+      letter-spacing: -0.05em;
+      margin-bottom: 0.45rem;
+    }
+    .proof-card strong, .card h3 {
+      display: block;
+      margin-bottom: 0.4rem;
+      font-family: var(--mono);
+    }
+    section { padding: 1.6rem 0; }
+    .section-head {
+      display: grid;
+      grid-template-columns: 0.9fr 1.1fr;
+      gap: 2rem;
+      align-items: start;
+      margin-bottom: 1.2rem;
+    }
+    .section-label {
+      color: var(--muted);
+      font-family: var(--mono);
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      font-size: 0.72rem;
+      margin-bottom: 0.45rem;
+    }
+    h2 {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: clamp(1.7rem, 4vw, 2.9rem);
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+    .section-copy {
+      color: #d0d9e2;
+      max-width: 50rem;
+      line-height: 1.75;
+    }
+    .grid-4, .grid-3 {
+      display: grid;
+      gap: 1rem;
+    }
+    .grid-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .install {
+      margin-top: 0.7rem;
+      padding: 1.1rem 1.15rem;
+      border-radius: 22px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      font-family: var(--mono);
+      overflow-x: auto;
+      color: #eff5fb;
+    }
+    .quote {
+      padding: 1.3rem 1.45rem;
+      border-left: 3px solid var(--accent);
+      border-radius: 18px;
+      background: rgba(255,107,53,0.08);
+      color: #f6f9fc;
+      max-width: 56rem;
+    }
+    footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      padding: 2rem 0 2.6rem;
+      margin-top: 2rem;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.82rem;
+    }
+    @media (max-width: 1120px) {
+      .hero, .section-head, .proof, .grid-4, .grid-3 { grid-template-columns: 1fr; }
+      .shell { width: min(100% - 1.2rem, 1240px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brandline">
+        <img class="brandicon" src="logo_oswobodzeni_icon.png" alt="Oswobodzeni logo" />
+        <span class="branddot" id="commitDot"></span>
+        <span id="commitStatusLabel">memphis-v5.pl / demo / checking commit status...</span>
+      </div>
+      <nav class="nav" aria-label="Główna nawigacja">
+        <a href="#why">Why</a>
+        <a href="#pillars">Pillars</a>
+        <a href="#surfaces">Surfaces</a>
+        <a href="#install">Install</a>
+        <a href="/docs/">Docs</a>
+        <a href="https://github.com/Memphis-Chains/memphis">GitHub</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <div class="eyebrow">Born from Oswobodzeni, built for operators</div>
+          <h1 class="wordmark"><span class="sigil-core">m</span><span class="sigil-e">E</span><span class="sigil-core">/\/\phi</span><span class="sigil-cash">$</span></h1>
+          <div class="plainname">Memphis, sovereign AI runtime</div>
+          <div class="hero-meta">
+            <span class="chip">wordmark / operator handle</span>
+            <span class="chip">brand layer for repo, docs, runtime</span>
+          </div>
+          <div class="hero-copy">
+            <strong>Memphis is a local-first runtime for operators</strong> who want their own memory, their own tools,
+            and their own chain of decisions. It combines <strong>chain-backed memory</strong>, <strong>vault-sealed secrets</strong>,
+            <strong>observability</strong>, and <strong>operator control</strong> into a system you can install, inspect, and evolve on your own machine.
+          </div>
+          <div class="actions">
+            <a class="btn primary" href="https://github.com/Memphis-Chains/memphis">Open repository</a>
+            <a class="btn" href="/docs/">Read installation docs</a>
+            <a class="btn" href="/roadmap/">See public roadmap</a>
+          </div>
+          <div class="chips">
+            <span class="chip">v1.4.0</span>
+            <span class="chip">production-ready for first install</span>
+            <span class="chip">local-first</span>
+            <span class="chip">chain-backed</span>
+            <span class="chip">poland</span>
+          </div>
+        </div>
+
+        <aside class="panel">
+          <div class="bar">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+            <span class="title-right">runtime/status</span>
+          </div>
+          <div class="body">
+            <p class="line"><span class="prompt">$</span> <span class="key">project</span>: <span class="val">@memphis-chains/memphis</span></p>
+            <p class="line"><span class="prompt">$</span> <span class="key">core</span>: <span class="val">rust napi + typescript orchestration</span></p>
+            <p class="line"><span class="prompt">$</span> <span class="key">memory</span>: <span class="accent">append-only sha-256 chain</span></p>
+            <p class="line"><span class="prompt">$</span> <span class="key">vault</span>: <span class="accent">aes-256-gcm + argon2id</span></p>
+            <p class="line"><span class="prompt">$</span> <span class="key">obs</span>: <span class="val">health, metrics, structured logs</span></p>
+            <p class="line"><span class="prompt">$</span> <span class="key">mode</span>: <span class="goodtext">operator-grade runtime</span></p>
+            <p class="line"><span class="prompt">$</span> <span class="key">origin</span>: <span class="val">poland / oswobodzeni</span></p>
+          </div>
+        </aside>
+      </section>
+
+      <section>
+        <div class="proof">
+          <article class="proof-card"><div class="metric">Rust + TS</div><strong>real core</strong><span>Not a thin wrapper over one model API.</span></article>
+          <article class="proof-card"><div class="metric">SHA-256</div><strong>chain-backed memory</strong><span>Continuity you can inspect and trust.</span></article>
+          <article class="proof-card"><div class="metric">AES + Argon2id</div><strong>sealed vault</strong><span>Secrets protected at rest with real crypto.</span></article>
+          <article class="proof-card"><div class="metric">Health / Logs</div><strong>observability</strong><span>Structured signals for real operation.</span></article>
+          <article class="proof-card"><div class="metric">Installable</div><strong>operator workflow</strong><span>CLI, TUI, docs, service, roadmap.</span></article>
+        </div>
+      </section>
+
+      <section id="why">
+        <div class="section-head">
+          <div>
+            <div class="section-label">Why Memphis exists</div>
+            <h2>sovereignty, translated into runtime control</h2>
+          </div>
+          <div class="section-copy">
+            Memphis was born from <strong>Oswobodzeni</strong>, but its public face should speak in operational terms.
+            Sovereignty here is not a slogan. It means control over infrastructure, data, secrets, boundaries, and the operator loop itself.
+            In a world of rented AI, Memphis is the stack you can actually own.
+          </div>
+        </div>
+        <div class="quote">
+          Your machine, your memory, your vault, your operator loop.
+        </div>
+      </section>
+
+      <section id="pillars">
+        <div class="section-head">
+          <div>
+            <div class="section-label">System pillars</div>
+            <h2>four things the site must prove fast</h2>
+          </div>
+          <div class="section-copy">
+            Homepage ma nie tylko brzmieć dobrze. Ma szybko pokazać, że pod spodem jest prawdziwy system: pamięć, bezpieczeństwo,
+            obserwowalność i kontrola operatora.
+          </div>
+        </div>
+        <div class="grid-4">
+          <article class="card"><div class="metric">memory</div><h3>append-only continuity</h3><p>Pamięć jest warstwą systemową, nie dodatkiem do promptu.</p></article>
+          <article class="card"><div class="metric">vault</div><h3>sealed secret discipline</h3><p>Klucze i tokeny żyją w vault, nie w chaosie skryptów i envów.</p></article>
+          <article class="card"><div class="metric">obs</div><h3>health and logs</h3><p>Memphis komunikuje stan przez health, metrics i structured logs.</p></article>
+          <article class="card"><div class="metric">operator</div><h3>tool use with control</h3><p>Runtime działa dla operatora, nie zamiast operatora.</p></article>
+        </div>
+      </section>
+
+      <section id="surfaces">
+        <div class="section-head">
+          <div>
+            <div class="section-label">Runtime surfaces</div>
+            <h2>multiple ways in, one system underneath</h2>
+          </div>
+          <div class="section-copy">
+            Memphis powinien być czytelny zarówno dla developera, jak i operatora. Dlatego publiczna strona musi jasno pokazywać,
+            że to nie tylko repo, ale cały runtime z różnymi surface’ami pracy.
+          </div>
+        </div>
+        <div class="grid-3">
+          <article class="card"><h3>TUI cockpit</h3><p>Natywny terminalowy cockpit do pracy z pamięcią, vaultem, sesjami i stanem systemu.</p></article>
+          <article class="card"><h3>HTTP + MCP</h3><p>Integracje przez API i transporty agentowe, bez zamykania się na jeden kanał pracy.</p></article>
+          <article class="card"><h3>Remote surfaces</h3><p>Telegram i inne powierzchnie jako wejścia do systemu, nie zamienniki samego runtime.</p></article>
+        </div>
+      </section>
+
+      <section id="install">
+        <div class="section-head">
+          <div>
+            <div class="section-label">Install</div>
+            <h2>fastest path from interest to operator</h2>
+          </div>
+          <div class="section-copy">
+            Tu strona ma zamieniać uwagę w działanie. Nie przez przesyt tekstu, tylko przez prostą ścieżkę: install, init, service, tui.
+          </div>
+        </div>
+        <div class="install">curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash
+
+memphis init
+memphis service install && memphis service restart
+memphis tui</div>
+        <div class="actions" style="margin-top:1rem;">
+          <a class="btn primary" href="/docs/">Open installation docs</a>
+          <a class="btn" href="https://github.com/Memphis-Chains/memphis">View repository</a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div>main-ready demo, researched + refactored</div>
+      <div>Memphis, sovereign AI runtime from Poland</div>
+    </footer>
+  </div>
+
+  <script>
+    (async function () {
+      const dot = document.getElementById('commitDot');
+      const label = document.getElementById('commitStatusLabel');
+      const owner = 'Memphis-Chains';
+      const repo = 'memphis';
+      const branch = 'main';
+      const deployedSha = 'faf5007effcf319ad91f851d5ac84e2ca37a8c64';
+      const deployedShort = deployedSha.slice(0, 7);
+
+      function setState(state, text) {
+        dot.classList.remove('live-ok', 'live-bad');
+        if (state === 'ok') dot.classList.add('live-ok');
+        if (state === 'bad') dot.classList.add('live-bad');
+        label.textContent = text;
+      }
+
+      try {
+        const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${branch}`);
+        if (!res.ok) throw new Error('GitHub API error');
+        const data = await res.json();
+        const latestSha = data.sha || '';
+        const latestShort = latestSha.slice(0, 7);
+        if (latestSha && latestSha === deployedSha) {
+          setState('ok', `memphis-v5.pl / demo / live on latest commit ${latestShort}`);
+        } else {
+          setState('bad', `memphis-v5.pl / demo / behind main, deployed ${deployedShort}, latest ${latestShort}`);
+        }
+      } catch (err) {
+        label.textContent = `memphis-v5.pl / demo / commit status unavailable, deployed ${deployedShort}`;
+      }
+    })();
+  </script>
+</body>
+</html>

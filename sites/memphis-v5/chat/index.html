@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Memphis Chat — suweronny AI runtime</title>
+  <meta name="description" content="Pogadaj z Memphis runtime. Powered by MiniMax-M3." />
+  <meta name="robots" content="index,follow" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+</head>
+<body>
+  <div class="bg-grid" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <a class="brand" href="https://memphis-v5.pl/" aria-label="Memphis home">
+      <span class="brand-mark" aria-hidden="true">⌬</span>
+      <span class="brand-text">
+        <span class="brand-name">Memphis</span>
+        <span class="brand-tag">runtime</span>
+      </span>
+    </a>
+    <nav class="topbar-nav">
+      <a href="https://memphis-v5.pl/" class="nav-link">home</a>
+      <a href="https://memphis-v5.pl/roadmap" class="nav-link">roadmap</a>
+      <a href="https://memphis-v5.pl/start" class="nav-link">start</a>
+    </nav>
+  </header>
+
+  <main class="chat-shell">
+    <section class="chat-intro" id="intro">
+      <h1 class="chat-title">
+        <span class="title-accent">Memphis</span> Chat
+      </h1>
+      <p class="chat-sub">
+        Rozmowa z <strong>Memphis runtime</strong> z modelem
+        <strong>MiniMax-M3</strong> jako silnikiem. Wersja demo.
+      </p>
+      <div class="chat-meta">
+        <span class="pill pill-ok">tier 0</span>
+        <span class="pill">no vault</span>
+        <span class="pill">no tools</span>
+        <span class="pill">no fs</span>
+        <span class="pill" id="rate-pill">rate limit: 10 / IP / godz</span>
+      </div>
+    </section>
+
+    <section class="chat-window" aria-live="polite" aria-label="Historia rozmowy">
+      <div class="chat-log" id="log">
+        <!-- wiadomości renderowane przez chat.js -->
+      </div>
+
+      <div class="chat-empty" id="empty">
+        <p class="empty-text">
+          Zacznij rozmowę. Pytaj o cokolwiek — Memphis odpowiada krótko i bez owijania.
+        </p>
+        <div class="empty-suggestions">
+          <button class="suggestion" data-suggest="Co to jest Memphis runtime?">Co to jest Memphis runtime?</button>
+          <button class="suggestion" data-suggest="Jak działa tier 0?">Jak działa tier 0?</button>
+          <button class="suggestion" data-suggest="Napisz haiku o suwerenności danych.">Napisz haiku o suwerenności danych.</button>
+          <button class="suggestion" data-suggest="Wymyśl 3 pomysły na mikro-aplikację w Pythonie.">Wymyśl 3 pomysły na mikro-aplikację w Pythonie.</button>
+        </div>
+      </div>
+    </section>
+
+    <form class="chat-form" id="form" autocomplete="off">
+      <div class="input-row">
+        <textarea
+          id="input"
+          class="chat-input"
+          rows="1"
+          maxlength="2000"
+          placeholder="Napisz wiadomość…"
+          aria-label="Twoja wiadomość"
+        ></textarea>
+        <button type="submit" class="send-btn" id="send" aria-label="Wyślij">
+          <span class="send-label">Wyślij</span>
+          <span class="send-arrow" aria-hidden="true">→</span>
+        </button>
+      </div>
+      <div class="form-foot">
+        <span class="form-hint" id="hint">Enter = wyślij · Shift+Enter = nowa linia</span>
+        <span class="form-status" id="status" aria-live="polite"></span>
+      </div>
+    </form>
+  </main>
+
+  <footer class="page-foot">
+    <div class="foot-grid">
+      <div class="foot-col">
+        <h3 class="foot-h">Stack</h3>
+        <p class="foot-p">Memphis runtime (localhost) · MiniMax-M3 · Cloudflare Tunnel · public-chat-gateway (tier 0)</p>
+      </div>
+      <div class="foot-col">
+        <h3 class="foot-h">Polityka publicznego chatu</h3>
+        <p class="foot-p">Brak vault · brak config · brak self-modify · brak filesystem · max tier 0 · rate limit 10/IP/godz</p>
+      </div>
+      <div class="foot-col">
+        <h3 class="foot-h">Kontakt</h3>
+        <p class="foot-p">elathoxu@gmail.com · <a href="https://memphis-v5.pl/">memphis-v5.pl</a></p>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 Marcin Kukla · Holiskool</span>
+      <span class="foot-meta">build: chat.memphis-v5.pl · runtime: 1.8.0 · model: MiniMax-M3</span>
+    </div>
+  </footer>
+
+  <script src="chat.js" defer></script>
+</body>
+</html>

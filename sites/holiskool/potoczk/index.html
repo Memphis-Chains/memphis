@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zespół Potoczk - Holiskool</title>
+  <meta name="description" content="Zespół Potoczk z Zawoi - rockowo-folkowy produkt regionalny, który łączy tradycję z nowoczesnością. Poznaj historię, członków, dyskografię i najnowsze wydarzenia.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;0,9..144,700;1,9..144,300&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #0f0d0b;
+      --bg-card: #17130f;
+      --copper: #d4a15e;
+      --copper-light: #e8c28a;
+      --moss: #7aa492;
+      --text-primary: #f5f0e8;
+      --text-secondary: #b8a99a;
+      --text-muted: #7a6a5a;
+      --border: rgba(212, 161, 94, 0.18);
+      --font-heading: 'Fraunces', Georgia, serif;
+      --font-body: 'Inter', system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: radial-gradient(circle at 20% 10%, rgba(212, 161, 94, 0.08), transparent 30rem),
+                  radial-gradient(circle at 80% 20%, rgba(122, 164, 146, 0.08), transparent 28rem),
+                  var(--bg-base);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      line-height: 1.6;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(212, 161, 94, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(212, 161, 94, 0.035) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: -1;
+    }
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid var(--border);
+      background: rgba(15, 13, 11, 0.86);
+      backdrop-filter: blur(16px);
+    }
+    .nav-inner, main, footer {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+    .nav-inner {
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .logo {
+      font-family: var(--font-heading);
+      color: var(--copper);
+      text-decoration: none;
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+    .logo span { color: var(--moss); }
+    .back {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .back:hover { color: var(--copper-light); }
+    .hero {
+      padding: 6rem 0 3rem;
+      text-align: center;
+    }
+    .eyebrow {
+      color: var(--copper-light);
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-size: 0.78rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+    }
+    h1 {
+      font-family: var(--font-heading);
+      font-size: clamp(2.6rem, 6vw, 4.8rem);
+      line-height: 1.05;
+      max-width: 900px;
+      margin: 0 auto 1.5rem;
+      letter-spacing: -0.02em;
+    }
+    h1 em {
+      color: var(--copper);
+      font-weight: 300;
+    }
+    .lead {
+      color: var(--text-secondary);
+      font-size: clamp(1.02rem, 2vw, 1.25rem);
+      max-width: 760px;
+      margin: 0 auto 2.5rem;
+    }
+    .section {
+      padding: 4rem 0;
+      border-top: 1px solid var(--border);
+    }
+    .section h2 {
+      font-family: var(--font-heading);
+      font-size: clamp(2rem, 4vw, 3rem);
+      text-align: center;
+      margin-bottom: 2rem;
+      color: var(--copper-light);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 2rem;
+      margin-top: 2rem;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 2rem;
+      background: var(--bg-card);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    }
+    .card h3 {
+      font-family: var(--font-heading);
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+      color: var(--copper);
+    }
+    .card p {
+      color: var(--text-secondary);
+      margin-bottom: 1.5rem;
+    }
+    .video-container {
+      position: relative;
+      padding-bottom: 56.25%; /* 16:9 */
+      height: 0;
+      overflow: hidden;
+      border-radius: 12px;
+      margin: 2rem 0;
+    }
+    .video-container iframe {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+    .gallery img {
+      width: 100%;
+      height: 220px;
+      object-fit: cover;
+      border-radius: 12px;
+      filter: saturate(1.05);
+    }
+    .gallery-caption {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-top: 0.5rem;
+    }
+    .members {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+    .member {
+      text-align: center;
+    }
+    .member img {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 3px solid var(--border);
+      margin-bottom: 1rem;
+    }
+    .member h4 {
+      font-family: var(--font-heading);
+      font-size: 1.1rem;
+      margin-bottom: 0.3rem;
+    }
+    .member p {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+    footer {
+      padding: 3rem 1.5rem 2rem;
+      text-align: center;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border);
+    }
+    @media (max-width: 768px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+      .members {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="nav-inner">
+      <a href="/" class="logo">holis<span>kool</span></a>
+      <a href="/" class="back">← wróć na główną</a>
+    </div>
+  </nav>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow">Zespół z Zawoi</p>
+      <h1>Potoczk - <em>rockowo-folkowy głos Beskidów</em></h1>
+      <p class="lead">Zespół Potoczk to unikalne połączenie rocka i folkloru karpackiego, które narodziło się w Zawoi - największej wsi w Polsce. Poznaj ich historię, muzykę i plany na przyszłość.</p>
+    </section>
+
+    <section class="section">
+      <h2>Kim są Potoczk?</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>🎸 Początki</h3>
+          <p>Zespół powstał w 2018 roku z połączenia dwóch kapel: <strong>Body Mind Relation</strong> i <strong>Juzyna</strong>. Inspiracją było widowisko teatralne "Pamiętnik Babiej Góry", do którego wspólnie tworzyli muzykę. To, co miało być jednorazowym projektem, przerodziło się w trwałą współpracę i przyjaźń.</p>
+        </div>
+
+        <div class="card">
+          <h3>🎤 Styl muzyczny</h3>
+          <p>Potoczk to <strong>rockowo-folkowy produkt regionalny</strong>, który łączy tradycyjne melodie karpackie z nowoczesnym brzmieniem. Ich muzyka to podróż po polskich, rumuńskich, węgierskich i słowackich halach i polanach - pełna energii, swobody i naturalności.</p>
+        </div>
+
+        <div class="card">
+          <h3>🏆 Osiągnięcia</h3>
+          <p>Zespół zdobył nagrodę publiczności na festiwalu "Mikołajki Folkowe" w Lublinie (2021) i doszedł do półfinałów programu "Mam Talent" (2022). Ich debiutancka płyta "Z prądem" ukazała się w 2020 roku, a obecnie pracują nad nowym materiałem.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Dyskografia</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>📀 "Z prądem" (2020)</h3>
+          <p>Debiutancki album zespołu, na którym znalazły się nowe interpretacje tradycyjnych pieśni regionu babiogórskiego oraz innych regionów Karpat: Słowacji, Węgier, Ukrainy, Łemkowszczyzny i Podhala. Płyta promowana była przez teledysk do utworu "Hej na ty Babi Górze".</p>
+          <div class="video-container">
+            <iframe src="https://www.youtube.com/embed/Wkr_sTKqGUo" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+          </div>
+          <p><em>Teledysk "Hej na ty Babi Górze" - wizytówka zespołu.</em></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Członkowie zespołu</h2>
+      <div class="members">
+        <div class="member">
+          <img src="./images/member1_first.jpg" alt="Julia Pacyga" loading="lazy">
+          <h4>Julia Pacyga</h4>
+          <p>Wokal</p>
+        </div>
+        <div class="member">
+          <img src="./images/member3_first.jpg" alt="Katarzyna Mętel" loading="lazy">
+          <h4>Katarzyna Mętel</h4>
+          <p>Wokal</p>
+        </div>
+        <div class="member">
+          <img src="./images/member4_first.jpg" alt="Magdalena Bania" loading="lazy">
+          <h4>Magdalena Bania</h4>
+          <p>Wokal</p>
+        </div>
+        <div class="member">
+          <img src="./images/member5_first.jpg" alt="Martyna Giertuga" loading="lazy">
+          <h4>Martyna Giertuga</h4>
+          <p>Wokal</p>
+        </div>
+        <div class="member">
+          <img src="./images/member4_second.jpg" alt="Adam Kukla" loading="lazy">
+          <h4>Adam Kukla</h4>
+          <p>Gitara rytmiczna, wokal</p>
+        </div>
+        <div class="member">
+          <img src="./images/member6_first.jpg" alt="Krzysztof Mędrala" loading="lazy">
+          <h4>Krzysztof „Biały" Mędrala</h4>
+          <p>Perkusja</p>
+        </div>
+        <div class="member">
+          <img src="./images/member7_first.jpg" alt="Krzysztof Kumorek" loading="lazy">
+          <h4>Krzysztof Kumorek</h4>
+          <p>Gitara elektryczna</p>
+        </div>
+        <div class="member">
+          <img src="./images/member8_first.jpg" alt="Marek Nitoń" loading="lazy">
+          <h4>Marek Nitoń</h4>
+          <p>Gitara basowa</p>
+        </div>
+        <div class="member">
+          <img src="./images/member9_first.jpg" alt="Mieszko Krzyś" loading="lazy">
+          <h4>Mieszko Krzyś</h4>
+          <p>Gitara elektryczna, wokal</p>
+        </div>
+      </div>
+      <p style="text-align: center; margin-top: 2rem; color: var(--text-secondary);">Zespół wspierają również: Arek Ziętek (reżyseria, pomysły), Łukasz Kulka (technika), Ania (menedżerka) i wielu innych.</p>
+    </section>
+
+    <section class="section">
+      <h2>Dlaczego warto ich poznać?</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>🌍 Promocja regionu</h3>
+          <p>Potoczk nie tylko grają muzykę, ale też promują Beskid Żywiecki i kulturę karpacką daleko poza granicami Polski. Ich nowatorskie podejście do folkloru przyciąga młodych słuchaczy i pokazuje, że tradycja może być żywa i nowoczesna.</p>
+        </div>
+
+        <div class="card">
+          <h3>🤝 Społeczność</h3>
+          <p>Zespół to nie tylko muzycy - to grupa przyjaciół, którzy wspierają się nawzajem i angażują lokalną społeczność. Współpracują z innymi artystami, technikami i grafikami, tworząc razem coś wyjątkowego.</p>
+        </div>
+
+        <div class="card">
+          <h3>🎶 Unikalne brzmienie</h3>
+          <p>Potoczk to nie kolejny zespół folkowy - to połączenie rocka, folku i swobodnej improwizacji. Ich muzyka jest pełna energii, pasji i naturalności, co sprawia, że trudno ich pomylić z kimkolwiek innym.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Najbliższe wydarzenia</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>📅 Koncerty</h3>
+          <p>Aktualnie zespół koncertuje w Polsce i za granicą. Śledź ich profile na <a href="https://www.facebook.com/ZespolPotock/" style="color: var(--copper-light);">Facebooku</a> i <a href="https://www.instagram.com/zespolpotock/" style="color: var(--copper-light);">Instagramie</a>, aby być na bieżąco z najnowszymi występami.</p>
+        </div>
+
+        <div class="card">
+          <h3>💿 Nowa płyta</h3>
+          <p>Potoczk pracują nad nowym materiałem. Premiera planowana jest na 2024 rok - zapowiadają kolejne dawki rockowo-folkowych hitów!</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Kontakt</h2>
+      <div style="text-align: center;">
+        <p style="color: var(--text-secondary); margin-bottom: 2rem;">Masz pytania, chcesz zaprosić zespół na wydarzenie lub po prostu porozmawiać o muzyce?</p>
+        <a href="mailto:kontakt@potock.pl" class="btn-primary">Napisz do zespołu</a>
+        <p style="margin-top: 1rem; color: var(--text-muted);">lub śledź ich na:</p>
+        <div style="display: flex; justify-content: center; gap: 1.5rem; margin-top: 1rem;">
+          <a href="https://www.facebook.com/ZespolPotock/" style="color: var(--copper-light);">Facebook</a>
+          <a href="https://www.instagram.com/zespolpotock/" style="color: var(--copper-light);">Instagram</a>
+          <a href="https://www.youtube.com/c/ZespolPotock" style="color: var(--copper-light);">YouTube</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Holiskool - wspieramy lokalne talenty i kulturę. Bez akademickiej ściemy.</p>
+  </footer>
+</body>
+</html>

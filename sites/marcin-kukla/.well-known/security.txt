@@ -1,0 +1,6 @@
+# security.txt — RFC 9116
+# https://marcin-kukla.pl/.well-known/security.txt
+Contact: https://marcin-kukla.pl/kontakt/
+Expires: 2027-10-09T00:00:00.000Z
+Preferred-Languages: pl, en
+Canonical: https://marcin-kukla.pl/.well-known/security.txt

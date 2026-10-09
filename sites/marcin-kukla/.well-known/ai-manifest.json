@@ -1,0 +1,6 @@
+{
+  "name": "Marcin Kukla",
+  "manifest": "https://marcin-kukla.pl/agents.json",
+  "llms": "https://marcin-kukla.pl/llms.txt",
+  "canonical": "https://marcin-kukla.pl/"
+}

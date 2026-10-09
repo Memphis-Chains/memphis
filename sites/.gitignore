@@ -1,0 +1,3 @@
+# superseded masters kept by sites-sync.sh --pull
+.superseded/
+__pycache__/

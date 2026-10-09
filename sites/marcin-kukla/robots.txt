@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://marcin-kukla.pl/sitemap.xml
+LLM-Guide: https://marcin-kukla.pl/llms.txt
+Agent-Manifest: https://marcin-kukla.pl/agents.json

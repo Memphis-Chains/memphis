@@ -1,0 +1,56 @@
+{
+  "$comment": "Single source of truth for the web estate. Every path under sites/ is the MASTER for that site and is deployable. sites-sync.sh imports production; sites-deploy.sh refuses to publish drift. Read sites/README.md before changing this file.",
+  "ssh": {
+    "host": "lhpl",
+    "remoteRoot": "public_html",
+    "configHint": "pass the -F path via SITES_SSH_CONFIG; do not hardcode a key path here"
+  },
+  "sites": [
+    {
+      "key": "memphis-v5",
+      "domain": "https://memphis-v5.pl",
+      "dir": "sites/memphis-v5",
+      "status": "KEEP",
+      "role": "product front door: landing, quickstart, chat, roadmap, privacy",
+      "notes": "server-managed bytres that are NOT in the repo and must never be rsynced over: panel-app/ (Laravel), panel/ (webroot), docs/ (docs build), api/ (PHP), data/ (sqlite), .memphis-snapshots/. The repo copy is public-static only."
+    },
+    {
+      "key": "marcin-kukla",
+      "domain": "https://marcin-kukla.pl",
+      "dir": "sites/marcin-kukla",
+      "status": "KEEP",
+      "role": "operator profile and JDG lead surface",
+      "notes": "no repo master existed before 2026-10-09; production was imported by sites-sync.sh --pull"
+    },
+    {
+      "key": "holiskool",
+      "domain": "https://holiskool.pl",
+      "dir": "sites/holiskool",
+      "status": "KEEP",
+      "role": "consulting offer landing",
+      "notes": "no repo master existed before 2026-10-09; production was imported by sites-sync.sh --pull"
+    }
+  ],
+  "serverOwnedNeverRsync": [
+    "memphis-v5/panel-app",
+    "memphis-v5/panel",
+    "memphis-v5/docs",
+    "memphis-v5/api",
+    "memphis-v5/data",
+    "memphis-v5/.memphis-snapshots"
+  ],
+  "checks": {
+    "textArtifactGlobs": [
+      "*.html", "*.htm", "*.json", "*.txt", "*.xml", "*.md", "*.csv",
+      "*.sql", "*.log", "*.env", "*bak*", "*backup*", "*.orig", "*.save",
+      "*~", "*.swp", "*.tmp", "*.yml", "*.yaml", "*.ini", "*.conf"
+    ],
+    "requiredPublicFiles": ["404.html", "favicon.ico", "manifest.webmanifest", "robots.txt", "sitemap.xml"],
+    "requiredHeaders": [
+      "strict-transport-security",
+      "x-content-type-options",
+      "x-frame-options",
+      "referrer-policy"
+    ]
+  }
+}

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SMCR 690 — przerobiony pod hafciarkę</title>
+<style>
+  :root{
+    --bg:#0b0b0b;
+    --panel:#141414;
+    --ink:#efe8d8;
+    --mute:#9b9587;
+    --accent:#fac80a;
+    --fire:#f17a0a;
+    --blood:#c81d11;
+    --line:#242424;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.55}
+  .wrap{max-width:980px;margin:0 auto;padding:48px 20px 80px}
+  header{border-bottom:1px solid var(--line);padding-bottom:24px;margin-bottom:32px}
+  h1{font-size:34px;margin:0 0 8px;letter-spacing:-.02em}
+  h1 em{color:var(--accent);font-style:normal}
+  .sub{color:var(--mute);font-size:15px}
+  h2{font-size:20px;margin:40px 0 14px;letter-spacing:-.01em}
+  p{margin:10px 0}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent)}
+  a:hover{border-bottom-style:solid}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:12px 0}
+  @media(max-width:720px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .card .img{background:#000;display:flex;align-items:center;justify-content:center;aspect-ratio:1/1}
+  .card img{max-width:100%;max-height:100%;display:block}
+  .card .meta{padding:12px 16px;font-size:13px;color:var(--mute);border-top:1px solid var(--line)}
+  .card .meta b{color:var(--ink)}
+  ul{padding-left:22px;margin:10px 0}
+  ul li{margin:4px 0}
+  .downloads{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+  .btn{display:inline-block;background:var(--accent);color:#121212;padding:10px 16px;
+    border-radius:999px;font-weight:700;border:none}
+  .btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+  .btn:hover{filter:brightness(1.1)}
+  .chip{display:inline-block;font-size:12px;padding:4px 10px;border-radius:999px;
+    border:1px solid var(--line);color:var(--mute);margin:0 6px 6px 0}
+  .chip.fire{color:var(--fire);border-color:rgba(241,122,10,.4)}
+  .chip.blood{color:var(--blood);border-color:rgba(200,29,17,.4)}
+  .chip.gold{color:var(--accent);border-color:rgba(250,200,10,.4)}
+  .chip.gray{color:#bdbdbd;border-color:#444}
+  .note{background:#0f0f0f;border:1px solid var(--line);border-radius:12px;padding:16px 18px;
+    font-size:14px;color:var(--mute)}
+  footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);
+    color:var(--mute);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Pokrowiec: logo <em>SMCR 690</em> przerobione pod hafciarkę</h1>
+  <p class="sub">Uproszczenie graficzne bogatego haftu motocyklowego do postaci czytelnej maszynowo — mniej kolorów, zwarte kształty, brak cieni i gradientów.</p>
+  <p class="sub" style="margin-top:12px;border-left:2px solid var(--accent);padding-left:12px;color:var(--ink);">
+    <b>Co Ci to załatwia.</b> Dla <b>pracowni hafciarskiej</b> — gotowy SVG do importu w Wilcom / Embrilliance / Hatch / PE-Design z paletą 5 kolorów nici. Dla <b>właściciela motoru SMCR 690</b> — wersja loga czytelna z daleka, bez szczegółów, które maszyna wycina źle. Porównanie oryginał vs wersja pod maszynę poniżej.
+  </p>
+</header>
+
+<div class="grid">
+  <div class="card">
+    <div class="img"><img src="oryginal.jpg" alt="Oryginał SMCR 690"></div>
+    <div class="meta"><b>Oryginał</b> — bogaty haft z cieniowaniem, gradientami i dziesiątkami odcieni. Długi czas pracy maszyny.</div>
+  </div>
+  <div class="card">
+    <div class="img"><img src="smcr690_preview.png" alt="SMCR 690 — uproszczony pod hafciarkę"></div>
+    <div class="meta"><b>Wersja pod hafciarkę</b> — 5 kolorów nici, płaskie pola, grube kontury, bez szczegółów poniżej ~1&nbsp;mm.</div>
+  </div>
+</div>
+
+<div class="downloads">
+  <a class="btn" href="smcr690.svg" download>Pobierz SVG</a>
+  <a class="btn ghost" href="smcr690_preview.png" download>Pobierz PNG podgląd</a>
+  <a class="btn ghost" href="oryginal.jpg" download>Oryginał JPG</a>
+</div>
+
+<h2>Paleta nici (5 kolorów)</h2>
+<div>
+  <span class="chip gray">● ciemny szary (węża korpus)</span>
+  <span class="chip gray">● jasny szary (łuski)</span>
+  <span class="chip blood">● czerwony (płomień / obrys tekstu)</span>
+  <span class="chip fire">● pomarańczowy (płomień środek)</span>
+  <span class="chip gold">● żółty (tekst / płomień rdzeń)</span>
+</div>
+<p class="sub">Tło = czarny materiał, nie haftowane. Biel używana tylko punktowo (oko, kły) — można pominąć.</p>
+
+<h2>Co uprościłem względem oryginału</h2>
+<ul>
+  <li>Usunięte gradienty i cienie — jednolite, płaskie pola koloru.</li>
+  <li>Wąż w 2 odcieniach szarości zamiast kilkunastu — zachowana sylwetka kobry (głowa z paszczą + kły, łuski redukowane do kropek).</li>
+  <li>Płomienie jako 3 warstwy (czerwony → pomarańczowy → żółty) — szybki przebieg igły.</li>
+  <li>Tekst <b>SMCR 690</b> pogrubiony, żółty z czerwonym konturem — czytelny z daleka, prosty w wyszyciu.</li>
+  <li>Brak detali cieńszych niż ok. 1&nbsp;mm w skali finalnej — żeby maszyna nie robiła dziur ani nie zrywała nici.</li>
+</ul>
+
+<h2>Plik SVG</h2>
+<p>Wektor — można przeskalować do dowolnego rozmiaru bez utraty jakości. Większość softu hafciarskiego (Wilcom, Embrilliance, Hatch, PE-Design) importuje SVG bezpośrednio lub przez konwersję do DST/PES.</p>
+
+<div class="note">
+  <b>Uwaga praktyczna:</b> przed wpuszczeniem na maszynę warto w softem hafciarskim dopasować gęstość ściegu (zwłaszcza dla drobnych łusek) i typy ściegu (satin dla liter, fill dla dużych pól płomienia).
+</div>
+
+<footer>
+  Wygenerowane na żądanie Wodzu · 2026-04-21 · Memphis AI
+</footer>
+
+</div>
+</body>
+</html>

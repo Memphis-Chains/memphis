@@ -1,0 +1,128 @@
+/* Memphis v5 — docs theme overrides
+   Matches landing stylistic palette from memphis-v5.pl:
+   mono UI, orange accent, near-black surfaces. */
+
+:root > * {
+  --md-primary-fg-color:           #0a0a0a;
+  --md-primary-fg-color--light:    #111111;
+  --md-primary-fg-color--dark:     #000000;
+  --md-accent-fg-color:            #ff6b35;
+  --md-accent-fg-color--transparent: rgba(255, 107, 53, 0.12);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color:           #0a0a0a;
+  --md-default-bg-color--light:    #111111;
+  --md-default-fg-color:           #e8e8e8;
+  --md-default-fg-color--light:    #a0a0a0;
+  --md-default-fg-color--lighter:  #6b6b6b;
+  --md-code-bg-color:               #111111;
+  --md-code-fg-color:               #e8e8e8;
+  --md-typeset-a-color:             #ff6b35;
+}
+
+.md-header {
+  background-color: #0a0a0a;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  box-shadow: none;
+}
+
+.md-header__title, .md-header__button {
+  color: #e8e8e8;
+}
+
+.md-tabs {
+  background-color: #0a0a0a;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.md-tabs__link--active,
+.md-tabs__link:hover {
+  color: #ff6b35;
+}
+
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  letter-spacing: -0.01em;
+}
+
+.md-typeset h1 {
+  font-weight: 700;
+}
+
+.md-typeset code {
+  border-radius: 4px;
+  padding: 2px 6px;
+  background: rgba(255,107,53,0.10);
+  color: #ff9d6b;
+}
+
+.md-typeset pre > code {
+  background: #111111;
+  color: #e8e8e8;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.md-nav__link--active,
+.md-nav__link:hover {
+  color: #ff6b35;
+}
+
+.md-footer {
+  background: #0a0a0a;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.md-footer-meta {
+  background: #000000;
+}
+
+.memphis-hero {
+  padding: 2rem 0 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  margin-bottom: 2rem;
+}
+
+.memphis-hero .tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 1px solid rgba(255,107,53,0.4);
+  color: #ff6b35;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+  border-radius: 999px;
+  margin-bottom: 1rem;
+}
+
+.memphis-hero h1 {
+  font-size: 2.2rem;
+  line-height: 1.1;
+  margin: 0 0 .5rem 0;
+}
+
+.memphis-hero p {
+  color: #a0a0a0;
+  max-width: 52rem;
+}
+
+.memphis-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-top: 1rem;
+}
+
+.memphis-pill {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: #e8e8e8;
+}
+
+.memphis-pill.ok     { border-color: rgba(74,222,128,0.4); color: #4ade80; }
+.memphis-pill.warn   { border-color: rgba(255,107,53,0.4); color: #ff6b35; }
+.memphis-pill.danger { border-color: rgba(248,113,113,0.4); color: #f87171; }

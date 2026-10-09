@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="pl" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Memphis v5 — lokalny runtime AI z pamięcią w łańcuchach</title>
+<meta name="description" content="Open-source runtime dla agentów AI. Pamięć w podpisanych łańcuchach, szyfrowany vault, guard przed destrukcją. Jedna komenda instalacji, Apache-2.0, zero telemetrii.">
+<link rel="canonical" href="https://memphis-v5.pl/">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<meta name="theme-color" content="#f4f1ea">
+<meta name="color-scheme" content="light">
+
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://memphis-v5.pl/">
+<meta property="og:site_name" content="Memphis v5">
+<meta property="og:locale" content="pl_PL">
+<meta property="og:title" content="Memphis v5 — lokalny runtime AI z pamięcią w łańcuchach">
+<meta property="og:description" content="Open-source runtime dla agentów AI. Pamięć w podpisanych łańcuchach, szyfrowany vault, guard przed destrukcją. Jedna komenda.">
+<meta property="og:image" content="https://memphis-v5.pl/memphis-os-social-preview.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/memphis-os-social-preview.jpg">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/assets/site.css">
+<script>document.documentElement.className = document.documentElement.className.replace('no-js', 'js');</script>
+
+<script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "name": "Memphis v5",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Linux, macOS, Windows via WSL2",
+      "softwareVersion": "1.13.3",
+      "license": "https://www.apache.org/licenses/LICENSE-2.0",
+      "url": "https://memphis-v5.pl/",
+      "codeRepository": "https://github.com/Memphis-Chains/memphis",
+      "programmingLanguage": [
+        "TypeScript",
+        "Rust"
+      ],
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "EUR"
+      },
+      "description": "Lokalny runtime dla agentów AI z pamięcią w content-addressed łańcuchach, szyfrowanym vaultem i ochroną przed destrukcyjnymi operacjami.",
+      "featureList": [
+        "Pamięć w 7 podpisanych łańcuchach",
+        "Szyfrowany vault AES-256 z rotacją klucza",
+        "HALT-aware guard przed destrukcją",
+        "Audyt każdego wywołania narzędzia",
+        "Offline z lokalnym modelem",
+        "Integracja agent-plugins-spec"
+      ]
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "name": "Memphis",
+      "codeRepository": "https://github.com/Memphis-Chains/memphis",
+      "programmingLanguage": "TypeScript",
+      "runtimePlatform": "Node.js 22",
+      "license": "https://www.apache.org/licenses/LICENSE-2.0"
+    },
+    {
+      "@type": "WebSite",
+      "url": "https://memphis-v5.pl/",
+      "name": "Memphis v5",
+      "inLanguage": "pl",
+      "publisher": {
+        "@id": "https://memphis-v5.pl/#org"
+      }
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://memphis-v5.pl/#org",
+      "name": "Memphis",
+      "url": "https://memphis-v5.pl/",
+      "email": "memphis.kuklow@gmail.com"
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Czy Memphis to SaaS?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Nie. Memphis to open-source runtime, który instalujesz lokalnie na Linux, macOS lub WSL2. Nie ma chmury, nie ma konta, nie ma telemetrii. Jedynym miejscem, gdzie dane opuszczają maszynę, jest wywołanie do wybranego providera modelu — i to robisz świadomie."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Jak zainstalować Memphis?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Jedna komenda: curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash. Potem memphis init i memphis tui. Wymagany Node 22 — instalator sprawdza i podpowiada. Reszta kroków w sekcji wyżej."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Jak podpiąć MiniMax albo Anthropic?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "memphis provider add minimax --api-key TWOJ_KLUCZ. Klucz trafia do zaszyfrowanego vaulta, nie do pliku .env. Providerzy działają w kaskadzie: jeśli jeden padnie, Memphis przechodzi do następnego, a na końcu do lokalnego fallbacku."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Gdzie są moje dane?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Wszystko lokalnie w ~/.memphis — łańcuchy, vault, stan runtime. Zero wywołań na zewnątrz w domyślnej instalacji, zero analytics, zero telemetrii. Katalog to zwykły katalog: możesz go skopiować i przenieść na inną maszynę."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Czy mogę pracować bez internetu?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Tak. Z lokalnym modelem przez Ollama Memphis działa w pełni offline. Tryb SAFE_MODE dodatkowo odmawia wszystkich wyjść sieciowych — testy CI sprawdzają, że runtime bootuje bez sieci."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Czy ta strona mierzy, co robię?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Tak, ale minimalnie i uczciwie: liczymy odwiedziny i zdarzenia na tej samej domenie, w bazie na serwerze. Bez cookies, bez fingerprintingu, bez identyfikacji osoby. Adres IP nigdy nie jest zapisywany — tylko jednorazowy skrót z kluczem, który zmienia się co 24 godziny. Szczegóły w polityce prywatności."
+          }
+        }
+      ]
+    }
+  ]
+}</script>
+</head>
+<body>
+<a class="skip" href="#main">Przejdź do treści</a>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="/" aria-label="Memphis — strona główna">
+      <span class="brand-mark" aria-hidden="true">M</span>
+      <span class="brand-name">Memphis<span class="brand-ver">v5</span></span>
+    </a>
+    <nav class="nav-links" aria-label="Nawigacja główna">
+      <a href="#dlaczego">Dlaczego</a>
+      <a href="#jak-dziala">Jak działa</a>
+      <a href="#zastosowania">Zastosowania</a>
+      <a href="#dokumentacja">Dokumentacja</a>
+      <a href="/start/">Start</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="btn btn-ghost" href="/docs/">Dokumentacja</a>
+      <a class="btn btn-primary" href="#zainstaluj" data-conversion="nav-install">Zainstaluj</a>
+    </div>
+    <button class="nav-burger" aria-label="Menu" aria-expanded="false" aria-controls="mobile-menu">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+  <div class="mobile-menu" id="mobile-menu" hidden>
+    <a href="#dlaczego">Dlaczego</a>
+    <a href="#jak-dziala">Jak działa</a>
+    <a href="#zastosowania">Zastosowania</a>
+    <a href="#dokumentacja">Dokumentacja</a>
+    <a href="/start/">Start</a>
+    <a href="/chat/">Chat</a>
+    <a class="mobile-install" href="#zainstaluj">Zainstaluj</a>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero">
+  <div class="wrap hero-in">
+    <p class="eyebrow">Open-source · Apache-2.0 · v1.13.3</p>
+    <h1>Runtime dla agentów AI,<br>który <em>pamięta</em> i <em>nie kłamie</em>.</h1>
+    <p class="lede">
+      Memphis trzyma pamięć agenta w podpisanych łańcuchach, sekrety w szyfrowanym
+      sejfie, a każdą destrukcyjną operację sprawdza zanim ją wykona.
+      Instalujesz jedną komendą, na swoim dysku, bez konta i bez chmury.
+    </p>
+
+    <div class="install-hero" id="zainstaluj">
+      <div class="install-label">
+        <span class="dot" aria-hidden="true"></span>
+        Jedna komenda. Linux, macOS, WSL2.
+      </div>
+      <div class="cmd-row">
+        <pre class="cmd"><code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash</code></pre>
+        <button class="copy-btn" data-copy="#install-cmd" data-copy-id="hero-install" aria-label="Kopiuj komendę instalacji">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+          <span data-copy-label>Kopiuj</span>
+        </button>
+      </div>
+      <p class="install-note">
+        Wymaga Node 22. Instalator sprawdza i podpowiada. Reszta — 5 minut.
+      </p>
+    </div>
+
+    <div class="hero-actions">
+      <a class="btn btn-primary btn-lg" href="#zainstaluj" data-conversion="hero-install">Zainstaluj w 5 minut</a>
+      <a class="btn btn-ghost btn-lg" href="#dowody" data-conversion="hero-proof">Zobacz jak działa</a>
+    </div>
+
+    <ul class="trust" role="list">
+      <li>Zero konta</li>
+      <li>Zero chmury</li>
+      <li>Zero telemetrii</li>
+      <li>Zero vendor-lock</li>
+    </ul>
+  </div>
+</section>
+
+<section class="metrics" aria-label="Stan projektu na żywo">
+  <div class="wrap">
+    <p class="metrics-note">
+      <span class="live" aria-hidden="true"></span>
+      Liczby z uruchomionej instancji. Runtime generuje je przy każdym załadowaniu strony.
+    </p>
+    <div class="metric-grid">
+      <div class="metric">
+        <span class="metric-num" data-count="13332">13 332</span>
+        <span class="metric-label">bloków w łańcuchach</span>
+        <span class="metric-sub">journal · decisions · system · reflections · cases · collective · patterns</span>
+      </div>
+      <div class="metric">
+        <span class="metric-num" data-count="57">57</span>
+        <span class="metric-label">narzędzi bez flagi</span>
+        <span class="metric-sub">3 kolejne za <code>MEMPHIS_FEATURES=experimental-tools</code> — łącznie 60</span>
+      </div>
+      <div class="metric">
+        <span class="metric-num" data-count="0">0</span>
+        <span class="metric-label">wywołań na zewnątrz</span>
+        <span class="metric-sub">telemetria w domyślnej instalacji</span>
+      </div>
+      <div class="metric">
+        <span class="metric-num" data-count="12">12</span>
+        <span class="metric-label">aktywnych łańcuchów</span>
+        <span class="metric-sub">0 uszkodzonych, weryfikacja hash co start</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="proof" id="dowody">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="sec-label">Dowód · nie obietnica</p>
+      <h2>Nie opisuję. Pokazuję wyjście.</h2>
+      <p class="sec-sub">
+        Poniżej — output z tej samej maszyny, na której działa ta strona.
+        Zero screenshotów stockowych, zero mockupów.
+      </p>
+    </div>
+
+    <div class="term" id="term">
+      <div class="term-bar">
+        <span class="term-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="term-title">memphis@zawaja:~/memphis</span>
+        <span class="term-badge">live</span>
+      </div>
+      <pre class="term-body" id="term-body"><code><span data-line><span class="t-cmd">$</span> memphis health</span><span data-line>status          <span class="t-ok">ok</span>  (v1.13.3)</span><span data-line>chain blocks    <span class="t-val">13 332</span></span><span data-line>chains          <span class="t-val">12</span> active, <span class="t-val">0</span> corrupt</span><span data-line>vault           <span class="t-ok">ok</span>  12 entries, integrity verified</span><span data-line>provider        minimax + cascade → ollama → local-fallback</span><span data-line>embedding       <span class="t-ok">ok</span>  ollama, 7 ms</span><span data-line>telemetry       <span class="t-val">0</span> outbound calls</span><span data-line><span class="t-ok">✓</span> wszystko w porządku</span></code></pre>
+    </div>
+
+    <noscript>
+      <p class="term-static">
+        <code>memphis health</code> → status ok (v1.13.3) · 13 332 bloków w 12 łańcuchach,
+        0 uszkodzonych · vault ok, 12 wpisów, integralność zweryfikowana ·
+        0 wywołań na zewnątrz
+      </p>
+    </noscript>
+  </div>
+</section>
+
+<section class="why" id="dlaczego">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="sec-label">Dlaczego to nie jest kolejny wrapper</p>
+      <h2>Trzy rzeczy, których nie da się podrobić</h2>
+      <p class="sec-sub">
+        Runtime dookoła modelu. Model możesz podmienić w minutę — pamięci, sekretów
+        i ochrony przed destrukcją nie da się wymienić tak po prostu.
+      </p>
+    </div>
+
+    <div class="cards">
+      <article class="card">
+        <span class="card-num" aria-hidden="true">01</span>
+        <h3>Pamięć, której nie da się podważyć</h3>
+        <p>
+          Siedem łańcuchów, każdy blok z hashem poprzedniego. Wstrzyknij cokolwiek
+          w środek — łańcuch się rozjedzie i Memphis to zauważy przy następnym starcie.
+        </p>
+        <pre class="mini"><code>memphis chain-verify</code></pre>
+      </article>
+
+      <article class="card">
+        <span class="card-num" aria-hidden="true">02</span>
+        <h3>Sekrety w szyfrowanym sejfie</h3>
+        <p>
+          AES-256 z pepperem i rotacją klucza głównego. Każdy odczyt zostawia ślad
+          w łańcuchu. Klucze nigdy nie lądują w pliku <code>.env</code>.
+        </p>
+        <pre class="mini"><code>memphis vault list</code></pre>
+      </article>
+
+      <article class="card">
+        <span class="card-num" aria-hidden="true">03</span>
+        <h3>Guard przed destrukcją</h3>
+        <p>
+          Każde <code>rm</code>, <code>mv</code> i <code>git rm</code> przechodzi przez
+          rejestr HALT. Zatrzymany zasób blokuje operację <em>zanim</em> ją wykona —
+          także gdy wykonuje ją inny agent.
+        </p>
+        <pre class="mini"><code>memphis halt check &lt;ścieżka&gt;</code></pre>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="how" id="jak-dziala">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="sec-label">Architektura</p>
+      <h2>Pięć kroków od zera do działającego agenta</h2>
+    </div>
+
+    <ol class="steps">
+      <li class="step">
+        <span class="step-n">1</span>
+        <div>
+          <h3>Instalacja</h3>
+          <p>Node 22, Rust, skille. Kod ląduje w <code>~/memphis</code>, pamięć w <code>~/.memphis</code>.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">2</span>
+        <div>
+          <h3>Tożsamość i sejf</h3>
+          <p>Passphrase operatora, hasło vault, pierwsze zapisy do łańcuchów. Wszystko lokalnie.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">3</span>
+        <div>
+          <h3>Provider modelu</h3>
+          <p>Klucz API ląduje w zaszyfrowanym vault, nie w <code>.env</code>. Klucz na platform.minimax.io.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">4</span>
+        <div>
+          <h3>Uruchomienie</h3>
+          <p>Usługa w tle i natywny kokpit. Albo <code>npm run dev</code> w terminalu.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">5</span>
+        <div>
+          <h3>Weryfikacja</h3>
+          <p><code>memphis health</code> mówi prawdę o stanie: łańcuchy, vault, provider, telemetria.</p>
+        </div>
+      </li>
+    </ol>
+
+    <div class="cascade">
+      <p class="cascade-label">Kaskada providerów działa automatycznie</p>
+      <p class="cascade-flow">
+        <span>ollama</span><span class="arrow" aria-hidden="true">→</span><span>anthropic</span><span class="arrow" aria-hidden="true">→</span><span>minimax</span><span class="arrow" aria-hidden="true">→</span><span>local-fallback</span>
+      </p>
+      <p class="cascade-note">
+        Jeśli jeden provider padnie, Memphis nie przestaje — idzie dalej po liście.
+        Ostatnia pozycja działa nawet bez internetu.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="uses" id="zastosowania">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="sec-label">Zastosowania</p>
+      <h2>Do czego to się nadaje</h2>
+      <p class="sec-sub">Przełącz zakładkę. Każda odpowiada realnej możliwości v1.13.3, nie planowi na 2027.</p>
+    </div>
+
+    <div class="tabs" role="tablist" aria-label="Zastosowania">
+      <button role="tab" id="tab-agent" aria-controls="panel-agent" aria-selected="true" class="is-active" data-tab="agent">Agenci autonomiczni</button>
+      <button role="tab" id="tab-audit" aria-controls="panel-audit" aria-selected="false" data-tab="audit">Audyt i zgodność</button>
+      <button role="tab" id="tab-offline" aria-controls="panel-offline" aria-selected="false" data-tab="offline">Praca offline</button>
+      <button role="tab" id="tab-team" aria-controls="panel-team" aria-selected="false" data-tab="team">Zespół i wiedza</button>
+    </div>
+
+    <div class="tabpanels">
+      <div role="tabpanel" id="panel-agent" aria-labelledby="tab-agent">
+        <h3>Agenci, którym ufasz z pamięcią</h3>
+        <p>
+          Agent potrzebuje trzech rzeczy: pamięci, sekretów i granic. Memphis daje
+          wszystkie trzy. Każde wywołanie narzędzia ląduje w łańcuchu, więc agent
+          nie zapomina co zrobił wczoraj i nie zgaduje co zrobił dzisiaj.
+        </p>
+        <ul class="ticks">
+          <li>Decyzje w łańcuchu, nie w kontekście, który wypada po 50 turach</li>
+          <li>Sekrety w vault, nie w prompcie i nie w pliku obok</li>
+          <li>Guard HALT blokuje destrukcję także wtedy, gdy agent się pomyli</li>
+        </ul>
+      </div>
+
+      <div role="tabpanel" id="panel-audit" aria-labelledby="tab-audit" hidden>
+        <h3>Co dokładnie zdarzyło się na tej maszynie</h3>
+        <p>
+          Każdy blok ma hash poprzedniego. Wstrzyknij w środek, zweryfikuj — łańcuch
+          się rozjedzie i pokaże dokładnie który blok. To nie jest log, który ktoś
+          może wyłączyć; to struktura, która albo się zgadza, albo nie.
+        </p>
+        <ul class="ticks">
+          <li>Weryfikacja integralności co start, wynik w <code>memphis health</code></li>
+          <li>Audyt JSONL każdego wywołania narzędzia, append-only</li>
+          <li>Brak zależności od zewnętrznego dostawcy logów</li>
+        </ul>
+      </div>
+
+      <div role="tabpanel" id="panel-offline" aria-labelledby="tab-offline" hidden>
+        <h3>Maszyna, która nie musi nikomu niczego wysyłać</h3>
+        <p>
+          Z lokalnym modelem przez Ollama Memphis bootuje i pracuje w pełni offline.
+          Tryb SAFE_MODE dodatkowo odmawia wszystkich wyjść sieciowych — testy CI
+          sprawdzają, że runtime startuje bez sieci w ogóle.
+        </p>
+        <ul class="ticks">
+          <li>Instalacja bez konta, bez e-maila, bez karty płatniczej</li>
+          <li><code>~/.memphis</code> to zwykły katalog — skopiuj i przenieś</li>
+          <li>Ostatnia pozycja kaskady działa bez internetu</li>
+        </ul>
+      </div>
+
+      <div role="tabpanel" id="panel-team" aria-labelledby="tab-team" hidden>
+        <h3>Wiedza, która zostaje w zespole</h3>
+        <p>
+          Siedem łańcuchów to siedem rodzajów wiedzy: dziennik, decyzje, system,
+          refleksje, sprawy, collective, wzorce. Każdy z nich ma własną rolę
+          i własny schemat. Możesz je czytać, eksportować i dyfrować bez narzędzia.
+        </p>
+        <ul class="ticks">
+          <li>Decyzje z kontekstem, nie same wnioski</li>
+          <li>Refleksje osobno od faktów, żeby się nie pomieszały</li>
+          <li>Format plików jawny — JSON, czytelny bez Memphis</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="video-sec">
+  <div class="wrap video-grid">
+    <div>
+      <p class="sec-label">30 sekund</p>
+      <h2>Cała instalacja na ekranie</h2>
+      <p class="sec-sub">
+        Te same komendy co w tej dokumentacji, w kolejności, którą faktycznie wykonujesz.
+        Bez dźwięku — czytelne przy odtwarzaniu bez głosu.
+      </p>
+      <ul class="ticks compact">
+        <li>Wymagania i instalacja zależności</li>
+        <li>Init, provider, uruchomienie</li>
+        <li>Weryfikacja stanu</li>
+      </ul>
+    </div>
+    <div class="video-frame">
+      <video controls preload="none" poster="/memphis-install-poster.jpg" width="1920" height="1080">
+        <source src="/memphis-install-30s.mp4" type="video/mp4">
+        Twoja przeglądarka nie odtwarza wideo. <a href="/memphis-install-30s.mp4">Pobierz plik MP4</a>.
+      </video>
+      <p class="video-meta">1920×1080 · 30 s · 350 KB · <a href="/memphis-install-30s.mp4" data-conversion="video-direct">bezpośredni link</a></p>
+    </div>
+  </div>
+</section>
+
+<section class="docs-sec" id="dokumentacja">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="sec-label">Dokumentacja</p>
+      <h2>Czytaj albo nie czytaj — kod jest otwarty</h2>
+      <p class="sec-sub">
+        Apache-2.0. Możesz czytać, forkować, modyfikować. Bez paywallu i bez „contact sales".
+      </p>
+    </div>
+
+    <div class="doc-grid">
+      <a class="doc-card" href="/docs/">
+        <span class="doc-kind">Indeks</span>
+        <h3>Dokumentacja</h3>
+        <p>Mapa wszystkich rozdziałów: instalacja, CLI, architektura, koncepcje.</p>
+      </a>
+      <a class="doc-card" href="/start/">
+        <span class="doc-kind">Pierwsze kroki</span>
+        <h3>Start</h3>
+        <p>Czym jest Memphis, bez żargonu. Dla kogo i kiedy nie warto.</p>
+      </a>
+      <a class="doc-card" href="/demo/">
+        <span class="doc-kind">Przykłady</span>
+        <h3>Demo</h3>
+        <p>Co potrafi, na konkretnych przypadkach użycia.</p>
+      </a>
+      <a class="doc-card" href="/roadmap/">
+        <span class="doc-kind">Kierunek</span>
+        <h3>Roadmap</h3>
+        <p>Co się dzieje i co świadomie odłożone. Z datami.</p>
+      </a>
+      <a class="doc-card" href="https://github.com/Memphis-Chains/memphis" rel="noopener">
+        <span class="doc-kind">Kod</span>
+        <h3>GitHub</h3>
+        <p>Cały kod, historia commitów, issues, dyskusje.</p>
+      </a>
+      <a class="doc-card" href="/llms.txt">
+        <span class="doc-kind">Dla agentów</span>
+        <h3>llms.txt</h3>
+        <p>Mapa strony dla modeli językowych. Zwykły tekst.</p>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section class="faq-sec">
+  <div class="wrap narrow">
+    <div class="sec-head">
+      <p class="sec-label">Pytania</p>
+      <h2>Najczęstsze, uczciwe odpowiedzi</h2>
+    </div>
+
+    <div class="faq">
+      <div class="faq-item">
+        <button aria-expanded="false" aria-controls="faq-1">
+          <span>Czy Memphis to SaaS?</span>
+          <svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-body" id="faq-1" hidden>
+          <p>Nie. Memphis to open-source runtime, który instalujesz lokalnie na Linux, macOS lub WSL2. Nie ma chmury, nie ma konta, nie ma telemetrii. Jedynym miejscem, gdzie dane opuszczają maszynę, jest wywołanie do wybranego providera modelu — i to robisz świadomie.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button aria-expanded="false" aria-controls="faq-2">
+          <span>Jak zainstalować Memphis?</span>
+          <svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-body" id="faq-2" hidden>
+          <p>Jedna komenda: <code>curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash</code>. Potem <code>memphis init</code> i <code>memphis tui</code>. Wymagany Node 22 — instalator sprawdza i podpowiada. Reszta kroków w sekcji wyżej.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button aria-expanded="false" aria-controls="faq-3">
+          <span>Jak podpiąć MiniMax albo Anthropic?</span>
+          <svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-body" id="faq-3" hidden>
+          <p><code>memphis provider add minimax --api-key TWOJ_KLUCZ</code>. Klucz trafia do zaszyfrowanego vaulta, nie do pliku <code>.env</code>. Providerzy działają w kaskadzie: jeśli jeden padnie, Memphis przechodzi do następnego, a na końcu do lokalnego fallbacku.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button aria-expanded="false" aria-controls="faq-4">
+          <span>Gdzie są moje dane?</span>
+          <svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-body" id="faq-4" hidden>
+          <p>Wszystko lokalnie w <code>~/.memphis</code> — łańcuchy, vault, stan runtime. Zero wywołań na zewnątrz w domyślnej instalacji, zero analytics, zero telemetrii. Katalog to zwykły katalog: możesz go skopiować i przenieść na inną maszynę.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button aria-expanded="false" aria-controls="faq-5">
+          <span>Czy mogę pracować bez internetu?</span>
+          <svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-body" id="faq-5" hidden>
+          <p>Tak. Z lokalnym modelem przez Ollama Memphis działa w pełni offline. Tryb <code>SAFE_MODE</code> dodatkowo odmawia wszystkich wyjść sieciowych — testy CI sprawdzają, że runtime bootuje bez sieci.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button aria-expanded="false" aria-controls="faq-6">
+          <span>Czy ta strona mierzy, co robię?</span>
+          <svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-body" id="faq-6" hidden>
+          <p>Tak, ale minimalnie i uczciwie: liczymy odwiedziny i zdarzenia na tej samej domenie, w bazie na serwerze. Bez cookies, bez fingerprintingu, bez identyfikacji osoby. Adres IP nigdy nie jest zapisywany — tylko jednorazowy skrót z kluczem, który zmienia się co 24 godziny. Szczegóły w <a href="/privacy/">polityce prywatności</a>.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta-sec">
+  <div class="wrap narrow cta-in">
+    <h2>Zainstaluj. Sprawdź. Zdecyduj sam.</h2>
+    <p>
+      Jedna komenda, pięć minut, zero zobowiązań. Jeśli nie pasuje — usuwasz katalog
+      i nic po sobie nie zostawia poza kodem, który i tak jest publiczny.
+    </p>
+
+    <div class="cmd-row cta-cmd">
+      <pre class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash</code></pre>
+      <button class="copy-btn" data-copy-text="curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash" data-copy-id="cta-install" aria-label="Kopiuj komendę instalacji">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+        <span data-copy-label>Kopiuj</span>
+      </button>
+    </div>
+
+    <div class="cta-actions">
+      <a class="btn btn-primary btn-lg" href="#zainstaluj">Zainstaluj teraz</a>
+      <a class="btn btn-outline btn-lg" href="https://calendly.com/marcingrzegorzkukla" data-conversion="cta-consult" rel="noopener">30 min rozmowy</a>
+    </div>
+    <p class="cta-note">Bez prezentacji, bez zobowiązań. Pytania o runtime, łańcuchy, vault — albo o cokolwiek innego.</p>
+  </div>
+</section>
+
+<section class="news-sec">
+  <div class="wrap narrow">
+    <div class="news">
+      <div class="news-copy">
+        <h2>Co miesiąc, nie częściej</h2>
+        <p>Wersje, postmortemy i zmiany, które realnie coś zmieniają. Bez webinarów i bez kodów rabatowych.</p>
+      </div>
+      <form class="news-form" id="nl-form" novalidate>
+        <label class="sr-only" for="nl-email">Adres e-mail</label>
+        <input id="nl-email" type="email" name="email" placeholder="twój@adres.pl" autocomplete="email" required>
+        <label class="consent">
+          <input type="checkbox" id="nl-consent" name="consent">
+          <span>Zgadzam się na przetwarzanie adresu e-mail w celu wysyłki newslettera.</span>
+        </label>
+        <button class="btn btn-primary" type="submit" id="nl-submit">Zapisz mnie</button>
+        <p class="nl-msg" id="nl-msg" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </div>
+</section>
+
+<section class="honest">
+  <div class="wrap">
+    <div class="honest-grid">
+      <div>
+        <h3>Uczciwie: czego jeszcze nie ma</h3>
+        <ul class="ticks strike">
+          <li>Użytkowników poza mną — projekt jest mój, nie społecznościowy</li>
+          <li>Usługi hostowanej — wszystko lokalne z założenia</li>
+          <li>Migracji z innych frameworków agentowych</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Uczciwie: co jest</h3>
+        <ul class="ticks">
+          <li>Działający runtime v1.13.3, używany produkcyjnie</li>
+          <li>7 łańcuchów z automatycznym sprzężeniem hashy</li>
+          <li>57 narzędzi w domyślnej instalacji, 60 z flagami eksperymentalnymi</li>
+          <li>3 publiczne skille i 3 publiczne postmortemy</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-top">
+      <div class="foot-brand">
+        <span class="brand-mark" aria-hidden="true">M</span>
+        <p>Memphis v5 · lokalny runtime AI<br>Zawoja, Małopolska · Apache-2.0</p>
+      </div>
+      <nav class="foot-cols" aria-label="Nawigacja stopki">
+        <div>
+          <h4>Produkt</h4>
+          <a href="/docs/">Dokumentacja</a>
+          <a href="/start/">Start</a>
+          <a href="/demo/">Demo</a>
+          <a href="/roadmap/">Roadmap</a>
+        </div>
+        <div>
+          <h4>Kod</h4>
+          <a href="https://github.com/Memphis-Chains/memphis" rel="noopener">GitHub</a>
+          <a href="https://github.com/Memphis-Chains/minimax-code" rel="noopener">Fork Mavis</a>
+          <a href="/agents.json">agents.json</a>
+          <a href="/llms.txt">llms.txt</a>
+        </div>
+        <div>
+          <h4>Kontakt</h4>
+          <a href="https://calendly.com/marcingrzegorzkukla" rel="noopener">Umów rozmowę</a>
+          <a href="mailto:memphis.kuklow@gmail.com">E-mail</a>
+          <a href="/panel/admin/login">Panel</a>
+        </div>
+        <div>
+          <h4>Prawnie</h4>
+          <a href="/privacy/">Prywatność</a>
+          <a href="/.well-known/security.txt">security.txt</a>
+          <a href="/sitemap.xml">Sitemap</a>
+        </div>
+      </nav>
+    </div>
+    <div class="foot-bottom">
+      <p>Zero telemetrii w runtime. Ta strona liczy odwiedziny bez cookies — <a href="/privacy/">szczegóły</a>.</p>
+      <p><a href="https://github.com/Memphis-Chains/memphis" rel="noopener">Memphis-Chains</a> · v1.13.3 · <span id="foot-year">2026</span></p>
+    </div>
+  </div>
+</footer>
+
+<script src="/assets/app.js" defer></script>
+</body>
+</html>

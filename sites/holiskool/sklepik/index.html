@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hotelowy Kącik Lokalny — Holiskool</title>
+  <meta name="description" content="Pomagamy hotelom i pensjonatom stworzyć własny mikrohandel z lokalnymi produktami — bez budowania sklepu internetowego.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;0,9..144,700;1,9..144,300&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #0f0d0b;
+      --bg-card: #17130f;
+      --copper: #d4a15e;
+      --copper-light: #e8c28a;
+      --moss: #7aa492;
+      --text-primary: #f5f0e8;
+      --text-secondary: #b8a99a;
+      --text-muted: #7a6a5a;
+      --border: rgba(212, 161, 94, 0.18);
+      --font-heading: 'Fraunces', Georgia, serif;
+      --font-body: 'Inter', system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: radial-gradient(circle at 20% 10%, rgba(212, 161, 94, 0.08), transparent 30rem),
+                  radial-gradient(circle at 80% 20%, rgba(122, 164, 146, 0.08), transparent 28rem),
+                  var(--bg-base);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      line-height: 1.6;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(212, 161, 94, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(212, 161, 94, 0.035) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: -1;
+    }
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid var(--border);
+      background: rgba(15, 13, 11, 0.86);
+      backdrop-filter: blur(16px);
+    }
+    .nav-inner, main, footer {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+    .nav-inner {
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .logo {
+      font-family: var(--font-heading);
+      color: var(--copper);
+      text-decoration: none;
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+    .logo span { color: var(--moss); }
+    .back {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .back:hover { color: var(--copper-light); }
+    .hero {
+      padding: 6rem 0 3rem;
+      text-align: center;
+    }
+    .eyebrow {
+      color: var(--copper-light);
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-size: 0.78rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+    }
+    h1 {
+      font-family: var(--font-heading);
+      font-size: clamp(2.6rem, 6vw, 4.8rem);
+      line-height: 1.05;
+      max-width: 900px;
+      margin: 0 auto 1.5rem;
+      letter-spacing: -0.02em;
+    }
+    h1 em {
+      color: var(--copper);
+      font-weight: 300;
+    }
+    .lead {
+      color: var(--text-secondary);
+      font-size: clamp(1.02rem, 2vw, 1.25rem);
+      max-width: 760px;
+      margin: 0 auto 2.5rem;
+    }
+    .cta-section {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-bottom: 4rem;
+    }
+    .btn-primary {
+      background: var(--copper);
+      color: var(--bg-base);
+      padding: 0.85rem 2rem;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      transition: background 0.2s, transform 0.15s;
+    }
+    .btn-primary:hover {
+      background: var(--copper-light);
+      transform: translateY(-1px);
+    }
+    .btn-secondary {
+      background: transparent;
+      color: var(--text-primary);
+      padding: 0.85rem 2rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 500;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .btn-secondary:hover {
+      border-color: var(--copper-light);
+      color: var(--copper-light);
+    }
+    .section {
+      padding: 4rem 0;
+      border-top: 1px solid var(--border);
+    }
+    .section h2 {
+      font-family: var(--font-heading);
+      font-size: clamp(2rem, 4vw, 3rem);
+      text-align: center;
+      margin-bottom: 2rem;
+      color: var(--copper-light);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 2rem;
+      margin-top: 2rem;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 2rem;
+      background: var(--bg-card);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 15px 40px rgba(0, 0, 0, 0.25);
+    }
+    .card h3 {
+      font-family: var(--font-heading);
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+      color: var(--copper);
+    }
+    .card p {
+      color: var(--text-secondary);
+      margin-bottom: 1.5rem;
+    }
+    .card .price {
+      color: var(--moss);
+      font-weight: 600;
+      font-size: 1.1rem;
+    }
+    .example {
+      background: rgba(212, 161, 94, 0.08);
+      border-left: 4px solid var(--copper);
+      padding: 1.5rem;
+      margin: 2rem 0;
+      border-radius: 0 8px 8px 0;
+    }
+    .example h4 {
+      color: var(--copper-light);
+      margin-bottom: 0.5rem;
+    }
+    .example p {
+      color: var(--text-secondary);
+    }
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+    .gallery img {
+      width: 100%;
+      height: 220px;
+      object-fit: cover;
+      border-radius: 12px;
+      filter: saturate(1.05);
+    }
+    .gallery-caption {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-top: 0.5rem;
+    }
+    footer {
+      padding: 3rem 1.5rem 2rem;
+      text-align: center;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border);
+    }
+    @media (max-width: 768px) {
+      .cta-section {
+        flex-direction: column;
+        align-items: center;
+      }
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="nav-inner">
+      <a href="/" class="logo">holis<span>kool</span></a>
+      <a href="/" class="back">← wróć na główną</a>
+    </div>
+  </nav>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow">Nowa oferta Holiskool</p>
+      <h1>Hotelowy Kącik Lokalny — <em>sprzedawaj lokalne produkty bez budowania sklepu</em></h1>
+      <p class="lead">Pomagamy hotelom, pensjonatom i agroturystykom stworzyć własny mikrohandel z lokalnymi produktami — szybko, bez technicznej ściemy i z gotowym systemem zamówień.</p>
+      
+      <div class="cta-section">
+        <a href="#kontakt" class="btn-primary">Zapytaj o szczegóły</a>
+        <a href="#jak-to-dziala" class="btn-secondary">Jak to działa?</a>
+      </div>
+    </section>
+
+    <section class="section" id="jak-to-dziala">
+      <h2>Jak to działa?</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>1. Wybieramy produkty</h3>
+          <p>Wspólnie z hotelem selekcjonujemy 10–20 lokalnych produktów: żywność, rękodzieło, pamiątki. Dbamy o storytelling — każdy produkt ma swoją historię.</p>
+          <div class="example">
+            <h4>Przykład:</h4>
+            <p><strong>Pstrąg Zawojski</strong> — „Wędzony pstrąg od lokalnego hodowcy, dostępny tylko w sezonie. Idealny na śniadanie lub pamiątkę do domu.”</p>
+          </div>
+        </div>
+        
+        <div class="card">
+          <h3>2. Tworzymy ofertę</h3>
+          <p>Przygotowujemy kartę oferty (fizyczną + QR do zamówień) i prostą stronę internetową z formularzem. Goście mogą zamawiać online lub przy recepcji.</p>
+          <div class="example">
+            <h4>Przykład:</h4>
+            <p><strong>Karta oferty w pokoju:</strong> „Zamów lokalne produkty przez QR — dostawa do pokoju w ciągu 2 godzin.”</p>
+          </div>
+        </div>
+        
+        <div class="card">
+          <h3>3. Uruchamiamy sprzedaż</h3>
+          <p>Hotel otrzymuje prowizję (10–20%) od każdej sprzedaży. My zajmujemy się logistyką (dostawy od producentów) i obsługą zamówień.</p>
+          <div class="example">
+            <h4>Przykład:</h4>
+            <p><strong>Model rozliczeń:</strong> Hotel płaci producentowi 80% ceny, 20% zatrzymuje jako prowizję.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Przykładowy Kącik Lokalny</h2>
+      <p style="text-align: center; color: var(--text-secondary); margin-bottom: 2rem;">Tak może wyglądać oferta w Twoim hotelu:</p>
+      
+      <div class="gallery">
+        <div>
+          <img src="https://i.imgur.com/8Qj8vL0.jpg" alt="Karta oferty w pokoju hotelowym" loading="lazy">
+          <p class="gallery-caption">Karta oferty w pokoju — fizyczna lub jako QR.</p>
+        </div>
+        <div>
+          <img src="https://i.imgur.com/5JzJq6Z.jpg" alt="Strona zamówień online" loading="lazy">
+          <p class="gallery-caption">Prosta strona zamówień — bez skomplikowanego sklepu.</p>
+        </div>
+        <div>
+          <img src="https://i.imgur.com/9n9x0aB.jpg" alt="Koszyk prezentowy" loading="lazy">
+          <p class="gallery-caption">Koszyk prezentowy — idealny na welcome pack.</p>
+        </div>
+        <div>
+          <img src="https://i.imgur.com/7g8f9hC.jpg" alt="Recepcja z produktami" loading="lazy">
+          <p class="gallery-caption">Produkty dostępne przy recepcji — szybki zakup.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Dla kogo?</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>🏨 Hotele i pensjonaty</h3>
+          <p>Nowy strumień przychodów bez dodatkowego wysiłku. Goście chętniej kupują lokalne produkty, a Ty zarabiasz na prowizji.</p>
+        </div>
+        
+        <div class="card">
+          <h3>🐟 Lokalni producenci</h3>
+          <p>Gotowy kanał sprzedaży bez budowania własnego e-commerce. Większa widoczność i nowe rynki zbytu.</p>
+        </div>
+        
+        <div class="card">
+          <h3>🏡 Agroturystyki</h3>
+          <p>Możliwość sprzedaży własnych produktów (np. jajka, miody, przetwory) bezpośrednio gościom — bez pośredników.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Co zyskujesz?</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>💰 Nowy strumień przychodów</h3>
+          <p>Prowizja 10–20% od każdej sprzedaży — bez dodatkowego wysiłku.</p>
+          <p class="price">Przykład: Sprzedaż 50 produktów/miesiąc × 50 zł = 2500 zł obrotu → 250–500 zł prowizji.</p>
+        </div>
+        
+        <div class="card">
+          <h3>🌟 Większa atrakcyjność oferty</h3>
+          <p>Goście chętniej wybierają miejsca, gdzie mogą kupić lokalne produkty — to dodatkowy argument w reklamie.</p>
+        </div>
+        
+        <div class="card">
+          <h3>📦 Minimalny wysiłek</h3>
+          <p>My zajmujemy się logistyką, opisami produktów i obsługą zamówień. Ty tylko zbierasz prowizję.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="kontakt">
+      <h2>Zainteresowany?</h2>
+      <p style="text-align: center; color: var(--text-secondary); margin-bottom: 2rem;">Napisz do nas — pomożemy Ci uruchomić własny Kącik Lokalny w Twoim obiekcie.</p>
+      
+      <div style="text-align: center;">
+        <a href="mailto:kontakt@holiskool.pl" class="btn-primary">Napisz do nas</a>
+        <p style="margin-top: 1rem; color: var(--text-muted);">lub zadzwoń: <strong>+48 123 456 789</strong></p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Holiskool — praktyczne systemy sprzedaży i organizacji dla lokalnych biznesów. Bez akademickiej ściemy.</p>
+  </footer>
+</body>
+</html>

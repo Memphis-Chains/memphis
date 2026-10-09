@@ -1,0 +1,8 @@
+AuthType Basic
+AuthName "Memphis Internal Docs"
+AuthUserFile /home/platne/serwer437043/public_html/memphis-v5/docs/internal/.htpasswd
+Require valid-user
+
+<Files ".htpasswd">
+    Require all denied
+</Files>
