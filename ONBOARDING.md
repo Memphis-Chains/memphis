@@ -7,10 +7,30 @@ Welcome. Memphis is a sovereign cognitive runtime that lives on your hardware. T
 The single fastest path from zero to running operator:
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install-customer.sh | bash
+```
+
+**Start here.** One command: preflights the machine, installs the runtime, repairs
+the chain shape so `memphis health` reads `healthy` instead of telling you to run a
+repair, installs a service that survives reboot, and prints what you ended up with.
+
+Add `--telegram-token 123:ABC` to get the operator on your phone in the same run,
+and `--telegram-user-id 999` so the bot answers you.
+
+### Want the runtime and nothing else?
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash -s -- --with-init
 ```
 
-This installs Node 22, Rust stable, Ollama, clones the repo, builds everything, links the `memphis` CLI globally, and chains directly into `memphis init` (vault passphrase, identity, provider enrollment). At the end you have a running operator on `localhost`.
+Installs Node 22, Rust stable, Ollama, clones the repo, builds everything, links the
+`memphis` CLI globally, and chains into `memphis init` (vault passphrase, identity,
+provider enrollment). No preflight, no repair, no verdict block.
+
+Voice, vision and the proactive assistant are in neither path — they need 8 more
+system packages and 3 more services. See
+[`docs/operator/DAILY-ASSISTANT-SETUP.md`](docs/operator/DAILY-ASSISTANT-SETUP.md)
+when you want them.
 
 ## Already cloned the repo?
 
