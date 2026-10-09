@@ -77,11 +77,55 @@ describe('api/_boot.php — require_token has no default credential', () => {
     const end = boot.indexOf('\nfunction ', start + 1);
     const body = boot.slice(start, end === -1 ? undefined : end);
 
-    expect(body).toContain("getenv('MEMPHIS_STATS_TOKEN')");
-    // A missing variable must disable the endpoint, never authenticate anyone.
+    // require_token delegates the lookup; the resolver is stats_token().
+    // On this host getenv() has nothing to read, so the lookup is not inline.
+    expect(body).toContain('stats_token()');
+    expect(body).not.toContain("getenv('MEMPHIS_STATS_TOKEN')");
+    // A missing secret must disable the endpoint, never authenticate anyone.
     expect(body).toContain('endpoint_disabled');
     expect(body).toContain('503');
     expect(body).toContain('hash_equals');
+  });
+
+  it('resolves the secret from env or a file, never from a literal', () => {
+    // stats_token() is the resolver. getenv() alone was the wrong assumption:
+    // measured under fpm-fcgi with open_basedir set, getenv() saw nothing and
+    // ~/secrets was unreadable from PHP, so the file branch is what actually runs.
+    const start = boot.indexOf('function stats_token(');
+    expect(start).toBeGreaterThan(-1);
+    const end = boot.indexOf('\nfunction ', start + 1);
+    const body = boot.slice(start, end === -1 ? undefined : end);
+
+    expect(body).toContain("getenv('MEMPHIS_STATS_TOKEN')");
+    expect(body).toContain('is_readable');
+    // Candidate paths must be probed for readability, never assigned a value.
+    expect(body).not.toMatch(/=\s*['"][^'"]{8,}['"]\s*;/);
+  });
+
+  it('does not terminate the request on the success path', () => {
+    // Measured regression, 2026-10-09: require_token() ended with `exit`, so a
+    // correctly authenticated request returned HTTP 200 with content-length: 0 —
+    // the script died inside the guard and never reached its own body. It looked
+    // healthy: right status, right headers, no error logged anywhere.
+    //
+    // respond() already ends the request on both failure paths, so a trailing
+    // exit is redundant there and fatal here. This asserts the absence, because
+    // every other assertion in this file passes with the exit present.
+    const start = boot.indexOf('function require_token(');
+    const end = boot.indexOf('\nfunction ', start + 1);
+    const body = boot.slice(start, end === -1 ? undefined : end);
+
+    // Drop comments before looking for a statement: the explanatory note in the
+    // source mentions `exit`, and matching it would make the test unfixable.
+    const code = body
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('*') && !l.trim().startsWith('//'))
+      .join('\n');
+
+    expect(code).not.toMatch(/^\s*exit;\s*$/m);
+    // void, not never: `never` promises the function never returns, which is
+    // only true on the failure branches.
+    expect(body).toContain('function require_token(string $header): void');
   });
 
   it('assigns no literal to the expected token', () => {
@@ -99,7 +143,9 @@ describe('api/_boot.php — require_token has no default credential', () => {
     );
     expect(assignments.length).toBeGreaterThan(0);
     for (const a of assignments) {
-      expect(a).toMatch(/^getenv\(/);
+      // The resolver, not getenv directly: on this host getenv() has nothing to
+      // read, so the lookup lives in stats_token().
+      expect(a).toMatch(/^stats_token\(\)$/);
       expect(a).not.toMatch(/['"][^'"]+['"]$/);
     }
   });

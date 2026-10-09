@@ -89,8 +89,30 @@ SELF="scripts/default-secret-scan.sh"
 # and a gate that cannot separate those is a gate that gets deleted.
 #
 # The list is names that hold a secret and nothing else.
+#
+# `fromEnv` is here because of a real miss on 2026-10-09, not a guess. A second
+# mutation of _boot.php assigned the literal to `$fromEnv` instead of
+# `$expected`, the static contract test caught it — and the gate reported OK on
+# 1533 files. A gate that matches on variable NAMES cannot see a variable
+# someone named after where it came from. The lesson from MEMPHIS_ENV_PATH, one
+# layer over: the scan stayed green because its pattern did not cover the real
+# path, not because the path was clean.
 VAR='(token|secret|passwd|password|passphrase|api_key|apikey|credential)'
-VAR_PHP='(token|secret|passwd|password|passphrase|api_key|apikey|credential|expected|given)'
+# Prefixes matter: the measured gap was `$apiToken` passing while `$token` was
+# caught. A secret variable is almost always <qualifier><noun> — apiToken,
+# authToken, botToken, dbPassword. Listing only the nouns means a rename is
+# enough to walk past the gate.
+# Plural forms too: measured, `$userCredentials` passed while `$userCredential`
+# was caught. English plurals are one letter and a rename is still a rename.
+#
+# KNOWN GAP, DELIBERATE: `$sessionKey`, `$encryptionKey` and friends are NOT in
+# this list. `key` alone matches `key = record.key` in ordinary data code, and a
+# gate that blocks that is a gate that gets switched off. Cost of the gap: a
+# credential named `*Key` and nothing else is not caught here. `secret-scan.sh`
+# still catches it if the value has a machine-credential prefix, and the
+# reviewed api/ contract test reads that tree directly. Widening to `keys?` is a
+# one-word change the moment a false-positive baseline exists to justify it.
+VAR_PHP='(tokens?|secrets?|passw?d|password|passphrase|api_?keys?|credentials?|expected|given|fromenv|shared_?secrets?|[a-z_]*(tokens?|secrets?|passw?d|password|passphrase|credentials?))'
 VAR_JS='(TOKEN|SECRET|PASSWORD|PASSPHRASE|API_KEY|APISECRET|APIKEY|CREDENTIAL)'
 
 TMPHITS="$(mktemp)"
@@ -108,7 +130,22 @@ while IFS= read -r -d '' f; do
 
   # 1. direct assignment:  $token = 'literal';   const TOKEN = "literal";
   # php: $token = 'literal';
-  m="$(grep -nE "\\\$$VAR_PHP[[:space:]]*=[[:space:]]*['\"][^'\"]{4,}['\"]" "$f" 2>/dev/null || true)"
+  # WHY [\$] AND NOT \$  -- the gate was silently blind for its own bug
+  # ---------------------------------------------------------------
+  # `\$$VAR_PHP` does NOT expand to backslash-dollar + alternation. Inside double
+  # quotes bash turns `\$` into a plain `$`, so grep received the pattern
+  # `$(token|secret|expected|given)[...]=['"]...` and searched for a literal
+  # `$(` sequence that appears in no PHP file. It reported OK on 1533 files
+  # while a hard-coded credential sat in _boot.php -- green because the pattern
+  # never matched anything, not because the tree was clean.
+  #
+  # `[\$]` is a bracket expression: bash expands $VAR_PHP, the brackets reach
+  # grep as [\$], and ERE reads that as a literal dollar. Verified against a
+  # fixture before this line was trusted.
+  # -i: php variables are camelCase ($fromEnv, $apiToken), so the alternation
+  # must be case-insensitive. Measured: without it, a literal assigned to
+  # $fromEnv passed the gate while the same literal on $expected was caught.
+  m="$(grep -niE "[\$]$VAR_PHP[[:space:]]*=[[:space:]]*['\"][^'\"]{4,}['\"]" "$f" 2>/dev/null || true)"
   # js/ts: const TOKEN = "literal";  — uppercase only, so `key = record.key` is safe
   [ -z "$m" ] && m="$(grep -nE "(var|let|const)[[:space:]]+$VAR_JS[[:space:]]*=[[:space:]]*['\"][^'\"]{4,}['\"]" "$f" 2>/dev/null || true)"
   if [ -n "$m" ]; then

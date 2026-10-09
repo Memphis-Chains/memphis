@@ -52,6 +52,51 @@ function require_post(): void
 }
 
 /**
+ * Read the shared secret from wherever this host can actually see it.
+ *
+ * getenv() alone was the assumption, and it is wrong here. Measured on the
+ * host this actually runs on (PHP 8.5.9, fpm-fcgi, Apache):
+ *
+ *   - getenv('MEMPHIS_STATS_TOKEN') -> false, with nothing set
+ *   - open_basedir allows ~/public_html/memphis-v5, ~/tmp, /tmp, /home/tmp
+ *     and NOT ~/secrets
+ *
+ * So there is no .env the panel writes that getenv() would see, and a file in
+ * ~/secrets is unreadable from PHP. The env var is still honoured first, since
+ * a systemd unit or a php-fpm pool can set it properly; the file is the
+ * fallback that works on shared hosting.
+ *
+ * This is why the earlier version could keep a literal "as a fallback" and
+ * look correct for weeks: the env branch was never exercised at all, so nobody
+ * noticed that neither branch could work.
+ */
+function stats_token(): ?string
+{
+    $fromEnv = getenv('MEMPHIS_STATS_TOKEN');
+    if (is_string($fromEnv) && $fromEnv !== '') {
+        return $fromEnv;
+    }
+
+    foreach (['/home/platne/serwer437043/tmp/memphis-v5-stats.env',
+              '/home/tmp/memphis-v5-stats.env',
+              '/tmp/memphis-v5-stats.env'] as $path) {
+        if (!is_readable($path)) {
+            continue;
+        }
+        foreach (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+            if (str_starts_with($line, 'MEMPHIS_STATS_TOKEN=')) {
+                $value = trim(substr($line, strlen('MEMPHIS_STATS_TOKEN=')));
+                $value = trim($value, "\"'");
+                if ($value !== '') {
+                    return $value;
+                }
+            }
+        }
+    }
+    return null;
+}
+
+/**
  * Authenticate a shared-secret endpoint (operator stats, retention cron).
  *
  * WHY THERE IS NO FALLBACK VALUE
@@ -70,9 +115,9 @@ function require_post(): void
  * a parameter so one helper serves both stats and cron without either endpoint
  * growing its own comparison branch.
  */
-function require_token(string $header): never
+function require_token(string $header): void
 {
-    $expected = getenv('MEMPHIS_STATS_TOKEN');
+    $expected = stats_token();
     if (!is_string($expected) || $expected === '') {
         respond(
             ['ok' => false, 'error' => 'endpoint_disabled',
@@ -85,7 +130,14 @@ function require_token(string $header): never
         header('WWW-Authenticate: Bearer realm="memphis-operator"');
         respond(['ok' => false, 'error' => 'unauthorized'], 401);
     }
-    exit;
+    // NOTE: no `exit` here, and that omission is deliberate twice over.
+    // respond() already ends the request, so a trailing exit is redundant on
+    // the failure paths. On the success path it was actively wrong: this
+    // version returned 200 with content-length: 0 on every authenticated
+    // request, because the script died here before reaching its own body. The
+    // endpoint looked alive — 200, right headers, no error anywhere — which is
+    // the worst shape a silent failure can take. Returning void lets the caller
+    // continue.
 }
 
 function body_field(string $name, int $maxLen): ?string
