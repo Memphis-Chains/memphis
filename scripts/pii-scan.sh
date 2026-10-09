@@ -119,6 +119,52 @@ path_hits() {
   tracked | tr '\0' '\n' | grep -IE "$1" || true
 }
 
+# WHY FILE TYPES ARE A SEPARATE ARM
+# ----------------------------------
+# Measured 2026-10-09: `sites/memphis-v5/docs/internal/.htpasswd` was staged
+# on a PUBLIC repo carrying `memphis:<password-hash>`. Nothing caught it, and
+# the reason is structural rather than a missing regex:
+#
+#   - the value scan looks for account identifiers, and a password hash is
+#     not an account identifier
+#   - the path scan looks for those identifiers in names, and `.htpasswd` is
+#     an innocuous name
+#   - secret-scan.sh matches credential *content* (PEM headers, ghp_, AKIA),
+#     and an htpasswd line has none of those headers
+#
+# So the leak passed every arm that existed. It is not that the regex was
+# too weak; it is that the question "is this file type credential material
+# by nature" was never asked.
+#
+# File *type* is a different axis from file *value* and file *name*. The
+# 2026-09-29 lesson needed a value arm; the 2026-10-06 lesson needed a name
+# arm; this is the third: a guard keyed on names cannot know that
+# `.htpasswd` is a password database, and a guard keyed on values cannot
+# know it either, because the value was never the operator's identifier.
+#
+# Tier: BLOCK. A private key or a password hash on a public branch is never
+# a deliberate trade-off like the client-name advisory — it is a leak whose
+# only question is why it was committed. Exceptions are declared explicitly
+# below rather than discovered later.
+SECRET_FILE_TYPES='\.(htpasswd|htdigest|pem|key|p12|pfx|jks|keystore|ppk|kdbx|age|gnupg|kwallet|tfstate)$'
+
+# Paths exempt from the file-type arm. Empty today; the escape hatch exists
+# so a legitimate future addition is a visible, reviewed line rather than a
+# silently weakened pattern.
+SECRET_FILE_TYPE_EXEMPT=''
+
+# `grep -vE ''` matches every line and therefore filters ALL of them out —
+# an empty exemption list silently disabled this entire arm. Measured while
+# writing the tests: the pattern was correct and the filter ate the result.
+# `a^` can never match, so an empty list becomes a no-op instead of a
+# universal reject.
+if [ -n "$SECRET_FILE_TYPE_EXEMPT" ]; then
+  secret_type_files="$(path_hits "$SECRET_FILE_TYPES" \
+    | grep -vE "$SECRET_FILE_TYPE_EXEMPT" || true)"
+else
+  secret_type_files="$(path_hits "$SECRET_FILE_TYPES")"
+fi
+
 operator_files="$(hits "$OPERATOR_PII")"
 client_files="$(hits "$CLIENT_PII")"
 
@@ -132,6 +178,16 @@ operator_files="$(printf '%s\n%s' "$operator_files" "$operator_paths" | grep -v 
 client_files="$(printf '%s\n%s' "$client_files" "$client_paths" | grep -v '^$' || true)"
 
 status=0
+
+if [ -n "$secret_type_files" ]; then
+  echo "[pii-scan] BLOCK: credential-material file type in tracked files:" >&2
+  printf '%s\n' "$secret_type_files" | sed 's/^/[pii-scan]   /' >&2
+  echo "[pii-scan] These file types are secret by nature regardless of content:" >&2
+  echo "[pii-scan] a password hash has no identifying value to match on, and a" >&2
+  echo "[pii-scan] private key carries no credential header to scan for." >&2
+  echo "[pii-scan] Keep such material in the vault, not in the repository." >&2
+  status=1
+fi
 
 if [ -n "$operator_files" ]; then
   echo "[pii-scan] BLOCK: operator account identifier in tracked files:" >&2
@@ -153,7 +209,7 @@ if [ -n "$client_files" ]; then
   fi
 fi
 
-if [ "$status" = "0" ] && [ -z "$client_files" ]; then
+if [ "$status" = "0" ] && [ -z "$client_files" ] && [ -z "$secret_type_files" ]; then
   echo "[pii-scan] OK"
 elif [ "$status" = "0" ]; then
   echo "[pii-scan] OK (operator identifiers clean; advisory above)"

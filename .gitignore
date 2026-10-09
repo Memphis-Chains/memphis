@@ -18,6 +18,22 @@ coverage/
 *.secret
 *.pem
 *.key
+# Credential-material file types. 2026-10-09: the list above covered .pem
+# and .key but not the rest, so `sites/memphis-v5/docs/internal/.htpasswd`
+# — a real password hash — was committed to a PUBLIC repo. A guard keyed on
+# one extension list is only as good as the last extension added to it.
+# Kept in step with SECRET_FILE_TYPES in scripts/pii-scan.sh: gitignore
+# stops it being added, the scan stops it being committed.
+*.htpasswd
+*.htdigest
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.ppk
+*.kdbx
+*.age
+*.tfstate
 credentials/
 .config/memphis/tokens/
 .claude/settings.local.json
