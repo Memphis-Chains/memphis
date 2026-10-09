@@ -34,7 +34,8 @@ describe('tool registry', () => {
     // 2026-06-16: +2 tier-0 read — memphis_self_governance_status
     // (canonical supervised-operational autonomy readiness) and
     // memphis_tensor_status (canonical tensor/vector runtime truth).
-    expect(getToolNames(stableEnv)).toHaveLength(58); // 2026-10-03: +1 (memphis_classify)
+    // 2026-10-09: +1 tier-2 — memphis_wallet_sign (vault-held Ed25519 signing).
+    expect(getToolNames(stableEnv)).toHaveLength(59); // 2026-10-03: +1 (memphis_classify)
   });
 
   it('hides experimental preview tools by default', () => {
@@ -125,7 +126,8 @@ describe('tool registry', () => {
     // memphis_skill_create, memphis_skill_install (write to drafts/installed dirs).
     // PR #593 (S5): +1 tier-2 — memphis_self_pr_open (execute+network,
     // pushes branch + opens PR via gh).
-    expect(tier2.length).toBe(27); // 2026-10-03: +1 (memphis_classify)
+    // 2026-10-09: +1 tier-2 — memphis_wallet_sign (vault-held Ed25519 signing).
+    expect(tier2.length).toBe(28); // 2026-10-03: +1 (memphis_classify)
     expect(tier2.map((t) => t.name).sort()).toEqual(
       [
         'memphis_brave_search',
@@ -156,6 +158,7 @@ describe('tool registry', () => {
         'memphis_skill_create',
         'memphis_skill_install',
         'memphis_test',
+        'memphis_wallet_sign',
         'memphis_web_fetch',
         'memphis_web_search',
       ].sort(),

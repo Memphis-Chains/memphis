@@ -80,6 +80,7 @@ import { runMemphisSoulRead, runMemphisSoulWrite } from './tools/soul.js';
 import { runMemphisSystemInfo } from './tools/system-info.js';
 import { runMemphisTensorStatus } from './tools/tensor-status.js';
 import { runMemphisTest } from './tools/test-run.js';
+import { runMemphisWalletSign } from './tools/wallet-sign.js';
 import { runMemphisWebFetch } from './tools/web-fetch.js';
 import { runMemphisWebSearch } from './tools/web-search.js';
 import { RollbackManager } from '../backup/rollback.js';
@@ -536,6 +537,35 @@ export function createMemphisMcpServer(
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
             structuredContent: result as Record<string, unknown>,
+          };
+        },
+      ),
+    );
+  }
+
+  const walletSignPolicy = getToolPolicy(permissions, 'memphis_wallet_sign', resolvedManifest);
+  if (shouldRegisterTool('memphis_wallet_sign', walletSignPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_wallet_sign',
+      {
+        description: getToolDescription('memphis_wallet_sign'),
+        inputSchema: registryMcpInputSchema('memphis_wallet_sign'),
+      },
+      withApprovalGate(
+        'memphis_wallet_sign',
+        walletSignPolicy,
+        approvals,
+        async ({ keyName, message, label }) => {
+          // The seed never leaves the vault helper — this returns only the
+          // public key, the signature, and the message hash.
+          const result = runMemphisWalletSign({
+            keyName: String(keyName),
+            message: String(message),
+            label: typeof label === 'string' ? label : undefined,
+          });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
           };
         },
       ),

@@ -329,4 +329,38 @@ export const FOUNDATION_TOOLS: Record<string, ToolMeta> = {
       "Probe one or more HTTP endpoints in parallel. Each target gets a status (ok / unhealthy / timeout / unreachable), measured latency, and a comparison against `expectedStatus` (default 200). Tier-1 because it makes network requests but is read-only and operator-supplied URLs are explicit. Use to gate deploys, monitor downstream services, or verify the runtime's own /health endpoint after a restart.",
     cliFlags: [],
   },
+  memphis_wallet_sign: {
+    name: 'memphis_wallet_sign',
+    tier: 2,
+    capabilities: ['write', 'execute'],
+    description:
+      'Sign a Solana transaction message with an Ed25519 seed held in the vault. The private key is decrypted inside a callback and never returned — only the base58 public key, the 64-byte signature, and a SHA-256 of the signed message.',
+    inputSchema: z
+      .object({
+        keyName: z.string().min(1).describe('Vault key holding a base64 32-byte Ed25519 seed'),
+        message: z.string().min(1).describe('Base64 transaction message bytes to sign'),
+        label: z.string().optional().describe('Operator label recorded in the audit entry'),
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+    helpText:
+      'Sign an arbitrary byte string with a vault-held Solana key. Tier 2 and marked security-sensitive: a signature is a financial action with no rollback. The seed is decrypted via withVaultSecret and passed straight to the signer, so it never becomes a field on the tool result, a prompt field, or a log line. Every successful call appends a chain entry recording the public key, the message hash, and the operator label — never the key. Requires an authorized operator session. This signs; it does not broadcast — submit the signed transaction yourself.',
+    cliFlags: [
+      {
+        name: '--key',
+        description: 'Vault key holding the base64 32-byte Ed25519 seed.',
+        takesValue: true,
+      },
+      {
+        name: '--message',
+        description: 'Base64 transaction message bytes to sign.',
+        takesValue: true,
+      },
+      {
+        name: '--label',
+        description: 'Operator label recorded in the audit entry.',
+        takesValue: true,
+      },
+    ],
+  },
 };

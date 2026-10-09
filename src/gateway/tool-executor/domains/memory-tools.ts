@@ -4,6 +4,7 @@ import { runMemphisJournal } from '../../../mcp/tools/journal.js';
 import { runMemphisKartograf } from '../../../mcp/tools/kartograf.js';
 import { runMemphisRecall } from '../../../mcp/tools/recall.js';
 import { runMemphisSearch } from '../../../mcp/tools/search.js';
+import { runMemphisWalletSign } from '../../../mcp/tools/wallet-sign.js';
 import { buildRegistryInputJsonSchema } from '../../tool-json-schema.js';
 import { buildTool, type RuntimeToolDefinition } from '../../tool-runtime.js';
 import {
@@ -246,6 +247,39 @@ export function createMemoryRuntimeTools(deps: MemoryRuntimeToolDeps): RuntimeTo
       },
       async execute(input) {
         return runMemphisDecide(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_wallet_sign',
+      description:
+        'Sign a Solana transaction message with an Ed25519 seed held in the vault. The private key is decrypted inside a callback and never returned — only the base58 public key, the 64-byte signature, and a SHA-256 of the signed message.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          keyName: {
+            type: 'string',
+            description: 'Vault key holding a base64 32-byte Ed25519 seed',
+          },
+          message: { type: 'string', description: 'Base64 transaction message bytes to sign' },
+          label: { type: 'string', description: 'Operator label recorded in the audit entry' },
+        },
+        required: ['keyName', 'message'],
+      },
+      // Signing is not concurrency-safe in spirit: two simultaneous
+      // signatures produce two audit entries racing on the chain append,
+      // and a caller that signs in parallel is usually not asking a
+      // question but firing a batch without reading the results.
+      isConcurrencySafe: false,
+      isReadOnly: false,
+      validateInput(args) {
+        return {
+          keyName: requiredString(args, 'keyName'),
+          message: requiredString(args, 'message'),
+          label: optionalString(args, 'label'),
+        };
+      },
+      execute(input) {
+        return runMemphisWalletSign(input);
       },
     }),
   ];

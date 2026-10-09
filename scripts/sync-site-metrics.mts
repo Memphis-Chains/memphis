@@ -101,6 +101,20 @@ function render(): { src: string; checked: string[] } {
 
   strip('narzędzi bez flagi', unflaggedTools, String(unflaggedTools));
   strip('wywołań na zewnątrz', 0, '0');
+
+  // 2026-10-09: the "łącznie N" sub-label (total incl. the flagged tools) had
+  // no pattern here, so it silently kept the old number while the two
+  // metric-num labels above were rewritten. site-claims-contract.test.ts
+  // caught it as soon as a tool was added. Total = unflagged + flagged, both
+  // measured — never hand-maintained.
+  const totalSubLabel = new RegExp(
+    `(3 kolejne za <code>MEMPHIS_FEATURES=experimental-tools</code> — łącznie )\\d+`,
+  );
+  if (!totalSubLabel.test(src)) {
+    throw new Error('metric sub-label not found: łącznie N (experimental tools)');
+  }
+  src = src.replace(totalSubLabel, `$1${totalTools}`);
+
   checked.push('version');
 
   // --- instance counts: only where an operator instance exists ----------
