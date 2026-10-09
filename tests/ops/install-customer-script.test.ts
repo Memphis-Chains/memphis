@@ -66,6 +66,18 @@ describe('install-customer.sh — preflight refuses instead of failing later', (
 });
 
 describe('install-customer.sh — reaches healthy without operator intervention', () => {
+  it('refuses a non-Linux host in the preflight', () => {
+    // Asserted as SOURCE, not by running it, because the branch only executes
+    // on the platform it guards. A version of this test that ran the script
+    // instead passed on a mutant that accepts Darwin: on Linux the branch is
+    // never reached, so the run told us nothing about it. The macOS runner is
+    // where that was finally measured ("FAIL Darwin detected", exit 1).
+    expect(src).toMatch(/os="\$\(uname -s\)"/);
+    expect(src).toMatch(/case "\$os" in Linux\) ;; \*\)/);
+    // ...and the refusal must land in FAILURES, so it exits before installing.
+    expect(src.indexOf('bad "$os detected')).toBeLessThan(src.indexOf('bash "$INSTALL_SH"'));
+  });
+
   it('runs the runtime repair when health is not healthy', () => {
     expect(src).toContain('repair runtime');
     expect(src).toMatch(/rs="\$\(runtime_status\)"/);
@@ -131,13 +143,37 @@ describe('install-customer.sh — actually runs', () => {
   });
 
   it('has a --check-only path that runs the preflight and stops', () => {
-    const out = execFileSync('bash', [SCRIPT, '--check-only'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    expect(out).toMatch(/Preflight/);
-    expect(out).toMatch(/Re-run without --check-only/);
-    // It must NOT have installed anything.
-    expect(out).not.toMatch(/Installing the runtime/);
+    // On an unsupported OS the preflight REFUSES — that is the documented
+    // behaviour, exit 1, and it is what the first version of this test
+    // contradicted: it asserted the "re-run to install" line unconditionally,
+    // so the whole suite went red on the macOS runner while the script did
+    // exactly the right thing. Measured there: "FAIL Darwin detected", exit 1.
+    const supported = process.platform === 'linux';
+    const run = () =>
+      execFileSync('bash', [SCRIPT, '--check-only'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+    if (supported) {
+      const out = run();
+      expect(out).toMatch(/Preflight/);
+      expect(out).toMatch(/Re-run without --check-only/);
+      // It must NOT have installed anything.
+      expect(out).not.toMatch(/Installing the runtime/);
+      return;
+    }
+
+    // Unsupported platform: refuse loudly, and refuse BEFORE installing.
+    let stderr = '';
+    try {
+      run();
+    } catch (e) {
+      const err = e as { status?: number; stdout?: string; stderr?: string };
+      expect(err.status).toBe(1);
+      stderr = `${err.stdout ?? ''}${err.stderr ?? ''}`;
+    }
+    expect(stderr).toMatch(/Preflight/);
+    expect(stderr).not.toMatch(/Installing the runtime/);
   });
 });
