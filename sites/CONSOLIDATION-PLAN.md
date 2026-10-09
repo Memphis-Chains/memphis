@@ -7,12 +7,12 @@ Wersja 3 — po wykonaniu, z pomiarem, który unieważnił krok 3 w wersji 2.
 
 ## Wynik
 
-| | przed | po |
-|---|---|---|
-| drzewa źródłowe dla memphis-v5.pl | 2 (`docs/site/` + `sites/memphis-v5/`) | **1** |
-| plików mastera | 131 | **141** |
-| backend php w gicie | **nigdzie** | `sites/memphis-v5/api/` (8 plików) |
-| `memphis health` vs strona | 1.13.3 / 13 332 | zgodne, generowane |
+|                                   | przed                                  | po                                 |
+| --------------------------------- | -------------------------------------- | ---------------------------------- |
+| drzewa źródłowe dla memphis-v5.pl | 2 (`docs/site/` + `sites/memphis-v5/`) | **1**                              |
+| plików mastera                    | 131                                    | **141**                            |
+| backend php w gicie               | **nigdzie**                            | `sites/memphis-v5/api/` (8 plików) |
+| `memphis health` vs strona        | 1.13.3 / 13 332                        | zgodne, generowane                 |
 
 `docs/site/` usunięty po pomiarze: **31 plików, 0 różniących się, 0 brakujących**
 w masterze. Siedem referencji w kodzie (generator metryk, kontrakt strony,
@@ -56,16 +56,15 @@ z filtrem `_quarantine` i `*.backup-*` → **15 340 bloków / 10 aktywnych łań
 
 # Wersja 2 (plan, przed wykonaniem)
 
-
 ---
 
 ## Co zmierzyłem (nie zgadywałem)
 
 ### Skala
 
-| | `docs/site/` | `sites/memphis-v5/` | serwer |
-|---|---|---|---|
-| plików | 31 | 131 | 17098 (w tym `panel-app/vendor`) |
+|        | `docs/site/` | `sites/memphis-v5/` | serwer                           |
+| ------ | ------------ | ------------------- | -------------------------------- |
+| plików | 31           | 131                 | 17098 (w tym `panel-app/vendor`) |
 
 `docs/site/` to **mniejsza** kopia. `sites/memphis-v5/` ma pełny statyk.
 
@@ -88,12 +87,12 @@ video, og:image, twitter, canonical, JSON-LD, form — identycznie w obu).
 
 Co dokładnie:
 
-| | master / serwer (32513 B) | `docs/site/` (33080 B) |
-|---|---|---|
-| wersja | v1.13.3 | **v1.13.5** |
-| bloków | 13 332 | **15 311** |
-| łańcuchów | 12 | **10** |
-| narzędzi | 57 (+3 = 60) | **59 (+3 = 62)** |
+|                | master / serwer (32513 B)                            | `docs/site/` (33080 B)                       |
+| -------------- | ---------------------------------------------------- | -------------------------------------------- |
+| wersja         | v1.13.3                                              | **v1.13.5**                                  |
+| bloków         | 13 332                                               | **15 311**                                   |
+| łańcuchów      | 12                                                   | **10**                                       |
+| narzędzi       | 57 (+3 = 60)                                         | **59 (+3 = 62)**                             |
 | podpis metryki | „Runtime generuje je przy każdym załadowaniu strony" | **„odświeżone ręcznie przy zmianie wersji"** |
 
 Wersja w `docs/site/` to ta sama praca, którą zrobiłem dziś na stronie
@@ -194,6 +193,7 @@ to dokładnie ten błąd, który naprawiłem dziś wcześniej. Ale to **Twoja de
 Panel nie był ruszany od 22 kwietnia (`.env`) i 27 września (migracje).
 
 Wciągnięcie go do `Memphis-Chains/memphis` oznaczałoby:
+
 - publiczne `.env` i `laravel.log` przy pierwszym pushu
 - ~180 MB `vendor/` w historii
 - `storage/framework/views/*.php` — cache, nie kod
@@ -207,6 +207,7 @@ Największa decyzja architektoniczna tego planu. **Nie ruszam bez Twojego słowa
 ### Krok 6 — bramka
 
 `estate.json.serverOwnedNeverRsync` trzyma `api/` i `data/`. Po kroku 3:
+
 - `data/` zostaje
 - `api/` **wypada**
 
@@ -228,14 +229,14 @@ powinny być w crawl-ie.
 
 ## Kolejność, odwracalność, koszt
 
-| Krok | Co robi | Odwracalny | Ryzyko | Czas |
-|---|---|---|---|---|
-| 1 | backend do repo | tak (cp, nic nie nadpisuje) | brak | 2 min |
-| 2 | nowszy index.html do mastera | tak (git) | **zmiana strony — do zgody** | 1 min |
-| 3 | poprawka exclude | tak (jedna linia) | brak | 2 min |
-| 4 | usunąć docs/site/ | tak (git rm) | skasuje pracę równoległej sesji | 1 min |
-| 5 | panel-app | decyzja | — | do decyzji |
-| 6 | estate.json | tak | brak | 1 min |
+| Krok | Co robi                      | Odwracalny                  | Ryzyko                          | Czas       |
+| ---- | ---------------------------- | --------------------------- | ------------------------------- | ---------- |
+| 1    | backend do repo              | tak (cp, nic nie nadpisuje) | brak                            | 2 min      |
+| 2    | nowszy index.html do mastera | tak (git)                   | **zmiana strony — do zgody**    | 1 min      |
+| 3    | poprawka exclude             | tak (jedna linia)           | brak                            | 2 min      |
+| 4    | usunąć docs/site/            | tak (git rm)                | skasuje pracę równoległej sesji | 1 min      |
+| 5    | panel-app                    | decyzja                     | —                               | do decyzji |
+| 6    | estate.json                  | tak                         | brak                            | 1 min      |
 
 Kroki 1, 3, 6 to ~5 minut i dotyczą wyłącznie repo. Krok 2 czeka na Twoje
 słowo. Kroki 4 i 5 czekają na decyzję.

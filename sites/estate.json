@@ -41,11 +41,35 @@
   ],
   "checks": {
     "textArtifactGlobs": [
-      "*.html", "*.htm", "*.json", "*.txt", "*.xml", "*.md", "*.csv",
-      "*.sql", "*.log", "*.env", "*bak*", "*backup*", "*.orig", "*.save",
-      "*~", "*.swp", "*.tmp", "*.yml", "*.yaml", "*.ini", "*.conf"
+      "*.html",
+      "*.htm",
+      "*.json",
+      "*.txt",
+      "*.xml",
+      "*.md",
+      "*.csv",
+      "*.sql",
+      "*.log",
+      "*.env",
+      "*bak*",
+      "*backup*",
+      "*.orig",
+      "*.save",
+      "*~",
+      "*.swp",
+      "*.tmp",
+      "*.yml",
+      "*.yaml",
+      "*.ini",
+      "*.conf"
     ],
-    "requiredPublicFiles": ["404.html", "favicon.ico", "manifest.webmanifest", "robots.txt", "sitemap.xml"],
+    "requiredPublicFiles": [
+      "404.html",
+      "favicon.ico",
+      "manifest.webmanifest",
+      "robots.txt",
+      "sitemap.xml"
+    ],
     "requiredHeaders": [
       "strict-transport-security",
       "x-content-type-options",
