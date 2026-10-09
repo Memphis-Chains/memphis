@@ -5,7 +5,8 @@
  *
  * WHY THIS EXISTS
  * ---------------
- * docs/site/index.html carried four numbers presented as "Liczby z
+ * docs/site/index.html (now sites/memphis-v5/index.html after the 2026-10-09
+ * consolidation) carried four numbers presented as "Liczby z
  * uruchomionej instancji". They were hand-maintained and had drifted: the
  * page said 13 332 blocks while the operator's chains held 15 046, and
  * 57 tools / "łącznie 60" while TOOL_REGISTRY holds 61 with 3 behind the
@@ -27,7 +28,9 @@ import { join, resolve } from 'node:path';
 
 import { TOOL_REGISTRY } from '../src/gateway/tool-registry.js';
 
-const SITE = resolve('docs/site/index.html');
+// The single master for memphis-v5.pl. It used to be docs/site/index.html —
+// two trees for one domain, which is how a stale file gets published.
+const SITE = resolve('sites/memphis-v5/index.html');
 
 /** Read the version from package.json so the page cannot quote a stale one. */
 const VERSION = (JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as { version: string })

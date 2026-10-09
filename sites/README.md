@@ -83,12 +83,21 @@ must never be synced over:
 | `panel-app/` | Laravel + Filament application, database, env file |
 | `panel/` | webroot of that application |
 | `docs/` | generated documentation site |
-| `api/` | PHP endpoints |
-| `data/` | SQLite analytics database |
+| `data/` | SQLite analytics database and the HMAC salt |
 
-These are listed in `estate.json` under `serverOwnedNeverRsync`. `sites-sync.sh
---pull` excludes them; `--push` prints them so the exclusion is visible rather
-than silent.
+`api/` was on this list until 2026-10-09 and is now **repo-owned**: the only git
+copy of the PHP backend lives in `sites/memphis-v5/api/`, and one `git clean` used
+to destroy it. It stays excluded from `--pull` so the server's copy can never
+overwrite the repo's, and `rsync --delete` leaves excluded paths alone (measured,
+not assumed).
+
+The remaining ones are listed in `estate.json` under `serverOwnedNeverRsync`.
+`sites-sync.sh --pull` excludes them; `--push` prints them so the exclusion is
+visible rather than silent.
+
+One asymmetry worth knowing: `--push` is an rsync **without** `--delete`, so it
+would overwrite `data/site.db` if the master ever held one. It does not, and that
+is the only thing protecting the production database — not a guard.
 
 ## Leak detection
 

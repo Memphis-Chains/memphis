@@ -12,7 +12,7 @@
       "dir": "sites/memphis-v5",
       "status": "KEEP",
       "role": "product front door: landing, quickstart, chat, roadmap, privacy",
-      "notes": "server-managed bytres that are NOT in the repo and must never be rsynced over: panel-app/ (Laravel), panel/ (webroot), docs/ (docs build), api/ (PHP), data/ (sqlite), .memphis-snapshots/. The repo copy is public-static only."
+      "notes": "server-managed bytres that are NOT in the repo and must never be rsynced over: panel-app/ (Laravel), panel/ (webroot), docs/ (docs build), data/ (sqlite + salt), .memphis-snapshots/. api/ is repo-owned since 2026-10-09 — its php is in git, its data/ stays server-side. The repo copy is public-static only."
     },
     {
       "key": "marcin-kukla",
@@ -31,22 +31,14 @@
       "notes": "no repo master existed before 2026-10-09; production was imported by sites-sync.sh --pull"
     }
   ],
+  "$commentServerOwned": "api/ was here until 2026-10-09 and is now repo-owned: sites/memphis-v5/api/ holds the only git copy of the php backend. data/ stays server-side (sqlite + salt) and is still excluded from pulls. sites-sync.sh keeps --exclude api/ so a pull never overwrites the repo copy with the server's, and rsync --delete does not remove excluded paths on the receiving side (measured, not assumed).",
   "serverOwnedNeverRsync": [
     "memphis-v5/panel-app",
     "memphis-v5/panel",
     "memphis-v5/docs",
-    "memphis-v5/api",
     "memphis-v5/data",
     "memphis-v5/.memphis-snapshots"
   ],
-  "supersededCopies": {
-    "$comment": "Directories that also look like a site source. The audit warns while any of these exist, because two masters for one domain is how a stale file gets published. Resolve by deleting or by pointing this at the live one.",
-    "docs/site": {
-      "forSite": "memphis-v5",
-      "state": "still being edited by a parallel session as of 2026-10-09",
-      "resolution": "operator decision — merge anything unique into sites/memphis-v5/, then remove docs/site/"
-    }
-  },
   "checks": {
     "textArtifactGlobs": [
       "*.html", "*.htm", "*.json", "*.txt", "*.xml", "*.md", "*.csv",

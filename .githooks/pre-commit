@@ -18,7 +18,7 @@ scripts/sync-site-metrics.mts
 scripts/sync-native-tiers.mts
 tests/unit/site-claims-contract.test.ts
 crates/memphis-operator/src/chat.rs
-docs/site/index.html
+sites/memphis-v5/index.html
 src/security/content-scan.ts'
 
 NEEDS_MUTATION_GATE=0

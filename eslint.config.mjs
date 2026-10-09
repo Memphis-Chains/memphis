@@ -130,7 +130,7 @@ export default [
     // Browser assets for the public site (memphis-v5.pl). These run in a
     // page, not in Node, so they need DOM globals rather than nodeGlobals.
     // They are served as static files and never bundled into the runtime.
-    files: ['docs/site/**/*.js'],
+    files: ['sites/memphis-v5/**/*.js'],
     languageOptions: {
       globals: {
         ...nodeGlobals,
@@ -171,7 +171,7 @@ export default [
       'target/**',
       'sites/**',
       'public/**',
-      'docs/site/**',
+      'sites/memphis-v5/**',
     ],
   },
 ];

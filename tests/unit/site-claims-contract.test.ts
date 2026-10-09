@@ -25,7 +25,7 @@ import { getChainNames } from '../../src/memory/chain-catalog.js';
  * about its own numbers is a page that will be wrong.
  */
 
-const SITE_HTML = resolve('docs/site/index.html');
+const SITE_HTML = resolve('sites/memphis-v5/index.html');
 const REGISTRY = resolve('src/infra/cli/registry.ts');
 const PACKAGE = resolve('package.json');
 
@@ -40,7 +40,7 @@ function cliCommands(): Set<string> {
   return names;
 }
 
-describe('docs/site/index.html — claims match the code', () => {
+describe('sites/memphis-v5/index.html — claims match the code', () => {
   const html = readFileSync(SITE_HTML, 'utf8');
   const pkg = JSON.parse(readFileSync(PACKAGE, 'utf8')) as { version: string };
 
