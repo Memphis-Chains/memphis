@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 import Database from 'better-sqlite3';
 
+import { probeOllamaReadiness, type OllamaReadiness } from './ollama-readiness.js';
 import { getChainPath, getDataDir, getReadableChainPaths } from '../../config/paths.js';
 import { getChainNames, getSearchableChainNames } from '../../memory/chain-catalog.js';
 import {
@@ -12,7 +13,6 @@ import {
 } from '../../onboarding/first-run.js';
 import type { AppConfig } from '../config/schema.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
-import { probeOllamaReadiness, type OllamaReadiness } from './ollama-readiness.js';
 
 // Sprint 0.5 G2: these lists used to be three separate hard-coded arrays
 // here; each missed `insights` + `soul` and carried `proactive` which

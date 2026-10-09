@@ -19,7 +19,7 @@
   "ignore": [
     "benchmark-search.ts",
     "benchmarks/performance-suite.ts",
-    "sites/memphis-v5/assets/app.js",
+    "sites/**",
     "tests/helpers/concurrent-writer.mjs"
   ]
 }
