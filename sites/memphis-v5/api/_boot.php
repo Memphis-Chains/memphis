@@ -51,6 +51,43 @@ function require_post(): void
     }
 }
 
+/**
+ * Authenticate a shared-secret endpoint (operator stats, retention cron).
+ *
+ * WHY THERE IS NO FALLBACK VALUE
+ * ------------------------------
+ * Both call sites used to read getenv('MEMPHIS_STATS_TOKEN') and fall back to
+ * a literal shipped in this file. A key committed to the repository is not a
+ * fallback — it is a credential published to everyone who can read the repo,
+ * and it still works after every other rotation. The endpoint answered 200
+ * with real traffic numbers when given that string.
+ *
+ * So: unconfigured means CLOSED, not open. A missing environment variable is
+ * an operator action (set it in the server .env), and the endpoint says so
+ * with 503 rather than pretending to authenticate someone.
+ *
+ * Shared-secret headers are compared in constant time, and the header name is
+ * a parameter so one helper serves both stats and cron without either endpoint
+ * growing its own comparison branch.
+ */
+function require_token(string $header): never
+{
+    $expected = getenv('MEMPHIS_STATS_TOKEN');
+    if (!is_string($expected) || $expected === '') {
+        respond(
+            ['ok' => false, 'error' => 'endpoint_disabled',
+             'detail' => 'MEMPHIS_STATS_TOKEN is not set on this host.'],
+            503,
+        );
+    }
+    $given = $_SERVER[$header] ?? ($_GET['token'] ?? '');
+    if (!hash_equals($expected, (string) $given)) {
+        header('WWW-Authenticate: Bearer realm="memphis-operator"');
+        respond(['ok' => false, 'error' => 'unauthorized'], 401);
+    }
+    exit;
+}
+
 function body_field(string $name, int $maxLen): ?string
 {
     $raw = file_get_contents('php://input');

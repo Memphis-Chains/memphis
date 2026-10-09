@@ -78,6 +78,21 @@ jobs:
       - name: Credential scan
         run: ./scripts/secret-scan.sh
 
+      - name: Credential default scan
+        # secret-scan.sh matches credential PREFIXES (ghp_, sk-ant-, AKIA, PEM),
+        # so a project-local shared secret matched none of its arms and the
+        # scan reported OK on a tree where one was committed. Measured on
+        # production before the fix:
+        #   curl -H 'X-Stats-Token: memphis-local-stats-2026' .../api/stats.php
+        #   -> HTTP 200, real visitor, download and funnel numbers
+        # and the same string unlocked a cron endpoint running DELETE FROM.
+        #
+        # This asks the question the prefix scan cannot: may a credential have
+        # a default? A value read from the environment must not fall back to a
+        # literal, because a literal in git is a published key that survives
+        # every later rotation. Unconfigured has to mean closed.
+        run: ./scripts/default-secret-scan.sh
+
       - name: Guards still catch the defects they were written for
         # Four guards were once shipped green and wrong; this is what tells
         # the two apart. Scoped to the guarded files so unrelated commits do
