@@ -148,6 +148,17 @@ export default [
     },
   },
   {
+    // Paths that are not application source and must never be linted.
+    //
+    // `sites/` holds the web estate: static HTML, browser JavaScript belonging
+    // to a public page, and a generated docs bundle. None of it is part of the
+    // Memphis runtime build. Linting it produced hundreds of `no-undef` errors
+    // for `document` and `window` in code that runs in a browser rather than in
+    // Node — failures carrying no information, on a pre-commit hook that could
+    // not be passed at all.
+    //
+    // Listed here rather than fixed: those files are masters of what production
+    // serves, so the site owns them, not the runtime lint.
     ignores: [
       'dist/**',
       '**/dist/**',
@@ -158,6 +169,9 @@ export default [
       'legacy/**',
       'memphis/**',
       'target/**',
+      'sites/**',
+      'public/**',
+      'docs/site/**',
     ],
   },
 ];
