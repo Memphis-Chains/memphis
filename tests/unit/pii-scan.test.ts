@@ -143,6 +143,40 @@ describe('scripts/pii-scan.sh — operator identifier detection', () => {
     expect(result.stderr).toContain('BLOCK');
   });
 
+  it('blocks a tracked .htpasswd even though its content carries no operator id', () => {
+    // The real leak from 2026-10-09: a password hash on a public branch.
+    // No value arm can catch this (the hash is not the operator's id), no
+    // name arm can catch it (.htpasswd is innocuous), and secret-scan.sh
+    // looks for credential headers that an htpasswd line does not have.
+    const result = commitLeak('secrets/.htpasswd', 'memphis:$2y$10$abcdefghijklmnopqrstuv\n');
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('BLOCK');
+    expect(result.stderr).toContain('.htpasswd');
+  });
+
+  it('blocks a tracked private key file by type, not by content', () => {
+    // A binary-looking key body with no PEM header: content arms see nothing,
+    // the type arm sees `id_ed25519.key`.
+    const result = commitLeak('keys/id_ed25519.key', '\x00\x01\x02opaque-key-bytes\n');
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('.key');
+  });
+
+  it('blocks every credential-material extension, not just htpasswd', () => {
+    for (const name of ['a.pem', 'b.p12', 'c.pfx', 'd.jks', 'e.keystore', 'f.kdbx', 'g.age']) {
+      const result = commitLeak(`creds/${name}`, 'opaque\n');
+      expect(result.status, `${name} should be blocked`).toBe(1);
+      expect(result.stderr).toContain(name);
+    }
+  });
+
+  it('does not block a tracked file whose name merely mentions the extension', () => {
+    // `.key` mid-name (deployment.key-map.json) is not a key file; a pattern
+    // anchored only on a substring would block it forever and get disabled.
+    const result = commitLeak('config/deployment.key-map.json', '{"note":"no secret here"}\n');
+    expect(result.status).toBe(0);
+  });
+
   it('reports a third-party identifier in a filename as advisory', () => {
     // Must use a name the script actually denies. An invented
     // 'client-brand' directory asserted nothing — the scan correctly did

@@ -66,7 +66,16 @@ const MUTATIONS: Mutation[] = [
   {
     name: 'sync-site-metrics would rewrite a hand-edited tool count',
     file: 'docs/site/index.html',
-    anchor: 'data-count="58">58</span>',
+    // Reads the live count instead of hardcoding it. Measured 2026-10-09:
+    // this anchor was `data-count="58">58</span>`, and adding one tool
+    // (memphis_wallet_sign) moved the page to 59 — so the mutation stopped
+    // matching, the gate reported "refusing to mutate", and the mutant was
+    // counted as SURVIVED. A hardcoded count in a guard that guards hardcoded
+    // counts fails the same way the page it protects does.
+    // `<TOOL_COUNT>` is substituted from the file at mutation time; the
+    // anchor type is a plain string (the harness splits on it), so this
+    // cannot be a RegExp literal.
+    anchor: 'data-count="<TOOL_COUNT>"><TOOL_COUNT></span>',
     replacement: 'data-count="999">999</span>',
     guard: ['npx', 'tsx', 'scripts/sync-site-metrics.mts', '--check'],
   },
@@ -116,13 +125,32 @@ function status(cmd: string[]): number {
 function mutate(m: Mutation): boolean {
   const path = resolve(m.file);
   const src = readFileSync(path, 'utf8');
-  const count = src.split(m.anchor).length - 1;
+  // `<TOOL_COUNT>` is resolved against the live file so this mutation keeps
+  // working as the tool count changes. If the marker ever disappears, the
+  // guard below refuses to mutate rather than silently surviving.
+  const resolvedAnchor = m.anchor.includes('<TOOL_COUNT>')
+    ? m.anchor.replace(
+        /<TOOL_COUNT>/g,
+        (() => {
+          const counts = [...src.matchAll(/data-count="(\d+)">\1<\/span>/g)].map(
+            (mm) => mm[1] as string,
+          );
+          const toolCount = counts[0];
+          if (!toolCount) {
+            throw new Error(`no self-consistent data-count found in ${m.file} for "<TOOL_COUNT>"`);
+          }
+          return toolCount;
+        })(),
+      )
+    : m.anchor;
+
+  const count = src.split(resolvedAnchor).length - 1;
   if (count !== 1) {
     throw new Error(
       `anchor for "${m.name}" appears ${count} times in ${m.file} — refusing to mutate`,
     );
   }
-  writeFileSync(path, src.replace(m.anchor, m.replacement), 'utf8');
+  writeFileSync(path, src.replace(resolvedAnchor, m.replacement), 'utf8');
   return true;
 }
 
