@@ -191,12 +191,84 @@ export function readVaultSecretByKey(
   return accessVaultSecretByKey(key, ctx, 'secret-read', rawEnv);
 }
 
-export function useVaultSecretByKey(
+/**
+ * Bounded access to a vault secret: the plaintext is handed to `fn` and
+ * never returned.
+ *
+ * Why this exists (2026-10-09): `useVaultSecretByKey` was named
+ * "bounded-use" but its body was byte-identical to `readVaultSecretByKey`
+ * — same `vaultDecrypt`, same `plaintext` in the result. The audit label
+ * said one thing and the code did another, so any caller that reached for
+ * the "safe" helper still received the secret in a plain return value.
+ * A name is not a boundary. This function is the boundary.
+ *
+ * `fn` receives the plaintext as its argument. Whatever `fn` returns is
+ * passed through unchanged, so callers that legitimately need the value
+ * (env resolution, managed-app file material) keep working — but the
+ * value only exists inside the callback's stack frame, never as a field
+ * on a returned object that can be logged, serialised into a tool
+ * result, or walked by an LLM.
+ *
+ * Throws `VaultSecretUnavailableError` when the entry is missing, fails
+ * integrity verification, or cannot be decrypted — the callback simply
+ * never runs. Audit is written in both cases.
+ */
+export class VaultSecretUnavailableError extends Error {
+  readonly vaultKey: string;
+  constructor(vaultKey: string, reason: string) {
+    super(`Vault secret "${vaultKey}" unavailable: ${reason}`);
+    this.name = 'VaultSecretUnavailableError';
+    this.vaultKey = vaultKey;
+  }
+}
+
+export function withVaultSecret<T>(
   key: string,
   ctx: VaultAuditContext,
+  fn: (plaintext: string) => T,
   rawEnv: NodeJS.ProcessEnv = process.env,
-): VaultSecretReadResult {
-  return accessVaultSecretByKey(key, ctx, 'bounded-use', rawEnv);
+): T {
+  const entry = getLatestVaultEntry(key, rawEnv);
+  if (!entry) {
+    writeVaultAudit(ctx, 'bounded-use', 'allowed', { key, found: false });
+    throw new VaultSecretUnavailableError(key, 'no vault entry found');
+  }
+
+  if (!verifyVaultEntry(entry)) {
+    writeVaultAudit(ctx, 'bounded-use', 'blocked', {
+      key,
+      found: true,
+      reason: 'fingerprint_verification_failed',
+      entryId: entry.id,
+    });
+    throw new VaultSecretUnavailableError(key, 'integrity verification failed');
+  }
+
+  let plaintext: string;
+  try {
+    plaintext = vaultDecrypt(entry, rawEnv);
+  } catch (e) {
+    const cause = e instanceof Error ? e : new Error(String(e));
+    writeVaultAudit(ctx, 'bounded-use', 'error', {
+      key,
+      found: true,
+      entryId: entry.id,
+      reason: 'vault_decrypt_failed',
+      causeMessage: cause.message,
+      causeCode: (e as NodeJS.ErrnoException)?.code,
+    });
+    throw new VaultSecretUnavailableError(key, 'decryption failed');
+  }
+
+  writeVaultAudit(ctx, 'bounded-use', 'allowed', {
+    key,
+    found: true,
+    entryId: entry.id,
+    fingerprint: entry.fingerprint,
+    plaintextHash: fingerprintHash(plaintext),
+  });
+
+  return fn(plaintext);
 }
 
 export function initializeVault(

@@ -1,4 +1,4 @@
-import { useVaultSecretByKey } from '../../security/vault-boundary.js';
+import { VaultSecretUnavailableError, withVaultSecret } from '../../security/vault-boundary.js';
 
 const VAULT_PREFIX = 'VAULT:';
 
@@ -21,24 +21,25 @@ export function resolveVaultSecret(
   const keyName = value.slice(VAULT_PREFIX.length).trim();
   if (keyName.length === 0) return undefined;
 
-  const result = useVaultSecretByKey(
-    keyName,
-    { surface: 'system', route: 'config:vault-resolve' },
-    rawEnv,
-  );
-  if (!result.found) {
-    console.warn(
-      `[memphis-config] VAULT:${keyName} referenced but no vault entry found for key "${keyName}"`,
+  // Bounded access: the plaintext is returned by the callback, so it is
+  // only ever in this function's frame — never a field on a result object
+  // that a caller can log or serialise. 2026-10-09: this used to call
+  // `useVaultSecretByKey`, which had the same body as the plain read and
+  // handed back `plaintext` on the result object.
+  try {
+    return withVaultSecret(
+      keyName,
+      { surface: 'system', route: 'config:vault-resolve' },
+      (plaintext) => plaintext,
+      rawEnv,
     );
-    return undefined;
+  } catch (e) {
+    if (e instanceof VaultSecretUnavailableError) {
+      console.warn(`[memphis-config] VAULT:${keyName} resolution failed: ${e.message}`);
+      return undefined;
+    }
+    throw e;
   }
-
-  if (result.error) {
-    console.warn(`[memphis-config] VAULT:${keyName} resolution failed: ${result.error}`);
-    return undefined;
-  }
-
-  return result.plaintext;
 }
 
 /**
