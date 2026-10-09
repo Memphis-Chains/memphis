@@ -39,6 +39,14 @@
     "memphis-v5/data",
     "memphis-v5/.memphis-snapshots"
   ],
+  "supersededCopies": {
+    "$comment": "Directories that also look like a site source. The audit warns while any of these exist, because two masters for one domain is how a stale file gets published. Resolve by deleting or by pointing this at the live one.",
+    "docs/site": {
+      "forSite": "memphis-v5",
+      "state": "still being edited by a parallel session as of 2026-10-09",
+      "resolution": "operator decision — merge anything unique into sites/memphis-v5/, then remove docs/site/"
+    }
+  },
   "checks": {
     "textArtifactGlobs": [
       "*.html", "*.htm", "*.json", "*.txt", "*.xml", "*.md", "*.csv",
