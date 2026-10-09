@@ -1,8 +1,61 @@
-# Plan: konsolidacja źródeł prawdy web estate
+# Konsolidacja źródeł prawdy web estate
 
-Status: plan gotowy, czeka na akceptację operatora.
-Autor: Memphis, 2026-10-09. Powstał z audytu `docs/site/` vs `sites/memphis-v5/`.
-Wersja 2 — po zamknięciu trzech pytań, które wersja 1 zostawiła otwarte.
+Status: **wykonane 2026-10-09** (kroki 1–4, 6). Krok 5 (`panel-app/`) świadomie
+otwarty — decyzja architektoniczna, czeka na operatora.
+Autor: Memphis. Powstało z audytu `docs/site/` vs `sites/memphis-v5/`.
+Wersja 3 — po wykonaniu, z pomiarem, który unieważnił krok 3 w wersji 2.
+
+## Wynik
+
+| | przed | po |
+|---|---|---|
+| drzewa źródłowe dla memphis-v5.pl | 2 (`docs/site/` + `sites/memphis-v5/`) | **1** |
+| plików mastera | 131 | **141** |
+| backend php w gicie | **nigdzie** | `sites/memphis-v5/api/` (8 plików) |
+| `memphis health` vs strona | 1.13.3 / 13 332 | zgodne, generowane |
+
+`docs/site/` usunięty po pomiarze: **31 plików, 0 różniących się, 0 brakujących**
+w masterze. Siedem referencji w kodzie (generator metryk, kontrakt strony,
+mutation gate, pre-commit, eslint, knip) przestawionych na master **w tym samym
+commicie** — inaczej generator dalej edytowałby plik, który nie jest wdrażany.
+
+## Krok 3 był oparty o nieprawdę
+
+Plan mówił: „exclude musi zniknąć, bo następny pull skasuje to, co krok 1
+zabezpieczył". **Zmierzone odwrotnie.** rsync trzyma wykluczone ścieżki po obu
+stronach `--delete`:
+
+```
+rsync -a --delete --exclude 'api/' remote/ master/
+→ master/api/_boot.php nadal istnieje, treść REPO-API (serwer nie nadpisał)
+```
+
+Więc `--exclude 'api/'` **nie chroni** `api/` — ono je ** chroni w drugą stronę**:
+pull nie nadpisuje kopii z repo wersją serwera. Zostawiam flagę, ale z właściwym
+uzasadnieniem (jest w `estate.json` przy `serverOwnedNeverRsync`).
+
+## Czego plan nie przewidział: `--push` nadpisuje `data/`
+
+Zmierzone: `rsync -a master/ remote/` (bez `--delete`) **nadpisuje
+`data/site.db`**, gdyby master je miał. Nie ma go — dziś bezpiecznie przez przypadek,
+nie przez bramkę. `data/.salt` przetrwał, bo go w masterze nie ma. Dopisane do
+`estate.json` jako komentarz przy `serverOwnedNeverRsync`.
+
+## O liczbach: 15 340, nie 15 311
+
+Plan zostawił otwarte „czy 15 311 / 10 to prawdziwe". Zamknięte pomiarem i
+generatorem, nie ręczną edycją: `sync-site-metrics` przelicza z `~/.memphis/chains`
+z filtrem `_quarantine` i `*.backup-*` → **15 340 bloków / 10 aktywnych łańcuchów**
+(rośnie przy każdym wpisie). `memphis health` mówi 15 615, bo liczy inaczej
+(backupy + `_quarantine`) — to metoda, nie rozbieżność.
+
+**Kto nie jest w masterze:** `_quarantine`, `*.backup-*`, `panel-app/`, `panel/`,
+`docs/` (build), `data/` (sqlite + sól), `.memphis-snapshots/`.
+
+---
+
+# Wersja 2 (plan, przed wykonaniem)
+
 
 ---
 

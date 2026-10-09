@@ -65,7 +65,7 @@ const MUTATIONS: Mutation[] = [
   },
   {
     name: 'sync-site-metrics would rewrite a hand-edited tool count',
-    file: 'docs/site/index.html',
+    file: 'sites/memphis-v5/index.html',
     // Reads the live count instead of hardcoding it. Measured 2026-10-09:
     // this anchor was `data-count="58">58</span>`, and adding one tool
     // (memphis_wallet_sign) moved the page to 59 — so the mutation stopped
@@ -104,7 +104,7 @@ const MUTATIONS: Mutation[] = [
   },
   {
     name: 'site-claims contract accepts a stale version in JSON-LD',
-    file: 'docs/site/index.html',
+    file: 'sites/memphis-v5/index.html',
     anchor: '"softwareVersion": "1.13.5"',
     replacement: '"softwareVersion": "0.0.1"',
     guard: ['npx', 'vitest', 'run', 'tests/unit/site-claims-contract.test.ts'],
