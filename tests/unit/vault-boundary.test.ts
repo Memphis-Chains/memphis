@@ -91,8 +91,13 @@ describe('vault boundary', () => {
     expect(vaultDecrypt).not.toHaveBeenCalled();
   });
 
-  it('audits bounded-use secret access without exposing plaintext', async () => {
-    const { useVaultSecretByKey } = await import('../../src/security/vault-boundary.js');
+  it('audits bounded-use access without returning the plaintext', async () => {
+    // 2026-10-09: this test used to be called "without exposing plaintext"
+    // while asserting `plaintext: 'super-secret-token'` on the returned
+    // object — it asserted the bug it was named after. The scoped helper
+    // now hands the secret to a callback, so the contract is inverted: the
+    // callback receives it, the return value never carries it.
+    const { withVaultSecret } = await import('../../src/security/vault-boundary.js');
 
     getLatestVaultEntry.mockReturnValue({
       id: 'entry-2',
@@ -103,18 +108,36 @@ describe('vault boundary', () => {
     verifyVaultEntry.mockReturnValue(true);
     vaultDecrypt.mockReturnValue('super-secret-token');
 
-    const result = useVaultSecretByKey('MEMPHIS_API_TOKEN', {
-      surface: 'system',
-      route: 'config:vault-resolve',
-    });
-
-    expect(result).toEqual(
-      expect.objectContaining({
-        found: true,
-        key: 'MEMPHIS_API_TOKEN',
-        plaintext: 'super-secret-token',
-      }),
+    let seenInsideCallback: string | undefined;
+    const returned = withVaultSecret(
+      'MEMPHIS_API_TOKEN',
+      {
+        surface: 'system',
+        route: 'config:vault-resolve',
+      },
+      (plaintext) => {
+        seenInsideCallback = plaintext;
+        // The caller chooses what to return. Returning the raw secret is a
+        // deliberate act of the caller, not a property of the helper.
+        return { length: plaintext.length };
+      },
     );
+
+    expect(seenInsideCallback).toBe('super-secret-token');
+    expect(returned).toEqual({ length: 'super-secret-token'.length });
+
+    // The helper itself must not attach the secret to anything it returns
+    // on its own behalf.
+    const passthrough = withVaultSecret(
+      'MEMPHIS_API_TOKEN',
+      {
+        surface: 'system',
+        route: 'config:vault-resolve',
+      },
+      (plaintext) => plaintext,
+    );
+    expect(passthrough).toBe('super-secret-token');
+
     expect(writeSecurityAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'vault.bounded-use',
@@ -127,6 +150,72 @@ describe('vault boundary', () => {
       }),
     );
     expect(writeSecurityAudit.mock.calls[0][0].details).not.toHaveProperty('plaintext');
+  });
+
+  it('raises without invoking the callback when the entry is missing', async () => {
+    const { withVaultSecret, VaultSecretUnavailableError } =
+      await import('../../src/security/vault-boundary.js');
+
+    getLatestVaultEntry.mockReturnValue(undefined);
+
+    let called = false;
+    expect(() =>
+      withVaultSecret('MISSING_KEY', { surface: 'system', route: 'config:vault-resolve' }, () => {
+        called = true;
+      }),
+    ).toThrow(VaultSecretUnavailableError);
+    expect(called).toBe(false);
+  });
+
+  it('raises without invoking the callback when integrity verification fails', async () => {
+    const { withVaultSecret, VaultSecretUnavailableError } =
+      await import('../../src/security/vault-boundary.js');
+
+    getLatestVaultEntry.mockReturnValue({
+      id: 'entry-3',
+      key: 'TAMPERED',
+      createdAt: '2026-03-26T12:00:00.000Z',
+      fingerprint: 'fp-3',
+    });
+    verifyVaultEntry.mockReturnValue(false);
+
+    let called = false;
+    expect(() =>
+      withVaultSecret('TAMPERED', { surface: 'system', route: 'config:vault-resolve' }, () => {
+        called = true;
+      }),
+    ).toThrow(VaultSecretUnavailableError);
+    expect(called).toBe(false);
+    expect(writeSecurityAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'vault.bounded-use',
+        status: 'blocked',
+      }),
+    );
+  });
+
+  it('does not expose the secret when decryption throws', async () => {
+    const { withVaultSecret, VaultSecretUnavailableError } =
+      await import('../../src/security/vault-boundary.js');
+
+    getLatestVaultEntry.mockReturnValue({
+      id: 'entry-4',
+      key: 'BROKEN',
+      createdAt: '2026-03-26T12:00:00.000Z',
+      fingerprint: 'fp-4',
+    });
+    verifyVaultEntry.mockReturnValue(true);
+    vaultDecrypt.mockImplementation(() => {
+      throw new Error('boom');
+    });
+
+    let called = false;
+    expect(() =>
+      withVaultSecret('BROKEN', { surface: 'system', route: 'config:vault-resolve' }, () => {
+        called = true;
+      }),
+    ).toThrow(VaultSecretUnavailableError);
+    expect(called).toBe(false);
   });
 
   it('probes vault cipher cycle through bounded-use audit path', async () => {

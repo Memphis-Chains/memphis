@@ -3,13 +3,37 @@ import { join } from 'node:path';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { useVaultSecretByKey } = vi.hoisted(() => ({
-  useVaultSecretByKey: vi.fn(),
-}));
+// 2026-10-09: manifest.ts now uses the scoped helper `withVaultSecret`,
+// which passes the plaintext to a callback and never returns it.
+const { withVaultSecret, VaultSecretUnavailableError } = vi.hoisted(() => {
+  class VaultSecretUnavailableError extends Error {
+    constructor(key: string, reason: string) {
+      super(`Vault secret "${key}" unavailable: ${reason}`);
+      this.name = 'VaultSecretUnavailableError';
+    }
+  }
+  return { withVaultSecret: vi.fn(), VaultSecretUnavailableError };
+});
 
 vi.mock('../../src/security/vault-boundary.js', () => ({
-  useVaultSecretByKey,
+  withVaultSecret,
+  VaultSecretUnavailableError,
 }));
+
+/** Queued answers for the scoped helper. `undefined` = raise unavailable. */
+function queueSecrets(...values: Array<string | undefined>) {
+  withVaultSecret.mockReset();
+  for (const value of values) {
+    withVaultSecret.mockImplementationOnce(
+      (key: string, _ctx: unknown, fn: (p: string) => unknown) => {
+        if (value === undefined) {
+          throw new VaultSecretUnavailableError(String(key), 'no vault entry found');
+        }
+        return fn(value);
+      },
+    );
+  }
+}
 
 import {
   type ManagedAppManifestRef,
@@ -69,17 +93,7 @@ describe('managed apps vault boundary', () => {
     const rawEnv = { MEMPHIS_DATA_DIR: dir } as NodeJS.ProcessEnv;
     const ref = buildManifestRef();
 
-    useVaultSecretByKey
-      .mockReturnValueOnce({
-        found: true,
-        key: 'DEMO_TOKEN',
-        plaintext: 'secret-demo',
-      })
-      .mockReturnValueOnce({
-        found: true,
-        key: 'DEMO_FILE_TOKEN',
-        plaintext: 'secret-file-demo',
-      });
+    queueSecrets('secret-demo', 'secret-file-demo');
 
     const plan = planManagedAppAction(ref, 'install', { rawEnv });
 
@@ -101,7 +115,7 @@ describe('managed apps vault boundary', () => {
         }),
       ]),
     );
-    expect(useVaultSecretByKey).toHaveBeenNthCalledWith(
+    expect(withVaultSecret).toHaveBeenNthCalledWith(
       1,
       'DEMO_TOKEN',
       expect.objectContaining({
@@ -109,9 +123,10 @@ describe('managed apps vault boundary', () => {
         route: 'apps:manifest:vault-env',
         command: 'apps plan',
       }),
+      expect.any(Function),
       rawEnv,
     );
-    expect(useVaultSecretByKey).toHaveBeenNthCalledWith(
+    expect(withVaultSecret).toHaveBeenNthCalledWith(
       2,
       'DEMO_FILE_TOKEN',
       expect.objectContaining({
@@ -119,6 +134,7 @@ describe('managed apps vault boundary', () => {
         route: 'apps:manifest:vault-file',
         command: 'apps plan',
       }),
+      expect.any(Function),
       rawEnv,
     );
   });
@@ -128,16 +144,7 @@ describe('managed apps vault boundary', () => {
     const rawEnv = { MEMPHIS_DATA_DIR: dir } as NodeJS.ProcessEnv;
     const ref = buildManifestRef();
 
-    useVaultSecretByKey
-      .mockReturnValueOnce({
-        found: true,
-        key: 'DEMO_TOKEN',
-        error: 'Vault entry decryption failed',
-      })
-      .mockReturnValueOnce({
-        found: false,
-        key: 'DEMO_FILE_TOKEN',
-      });
+    queueSecrets(undefined, undefined);
 
     const plan = planManagedAppAction(ref, 'install', { rawEnv });
 
