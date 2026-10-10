@@ -135,9 +135,22 @@ jobs:
       - name: Release preflight gate
         run: ./scripts/ci-release-preflight-gate.sh
 
-  # Cross-arch matrix runs on push to main only — catches regressions that
-  # only fire on arm64 or macOS hardware before someone hits them in dev.
-  # Uses GitHub-hosted free runners (ubuntu-24.04-arm + macos-latest M-chip).
+  # Cross-arch matrix: catches regressions that only fire on arm64 or macOS
+  # hardware before someone hits them in dev. Uses GitHub-hosted free runners
+  # (ubuntu-24.04-arm + macos-latest M-chip).
+  #
+  # 2026-10-10: this used to be `if: github.event_name == 'push'`, push-only.
+  # That was correct while nothing required it, and became a trap the moment
+  # the `main` ruleset listed both matrix jobs as required status checks: on a
+  # PR the job is skipped, so the required check never arrives, and the PR sits
+  # at mergeStateStatus BLOCKED forever with no failing run and nothing to fix.
+  # Measured on PR #656 — chain-invariant and quality-gate green, cross-arch
+  # "skipping", merge blocked indefinitely.
+  #
+  # A required check that the workflow skips on the surface where it is
+  # required is not a gate, it is a deadlock. The matrix now runs on pull
+  # requests too, which is also where a macOS-only regression is cheapest to
+  # catch: before it reaches main.
   #
   # 2026-05-04 (Sprint F #432): `continue-on-error` removed. Three
   # consecutive main runs landed both arms green (Sprint S1 closed the
@@ -147,7 +160,6 @@ jobs:
   # keeps the other arch reporting even when one breaks, so the PR
   # surface still tells you "macOS only" vs "arm64 only" at a glance.
   cross-arch:
-    if: github.event_name == 'push'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
