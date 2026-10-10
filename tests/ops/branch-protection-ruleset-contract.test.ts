@@ -156,6 +156,83 @@ describe('branch protection — the automerge path cannot bypass the gate', () =
   });
 });
 
+describe('required checks must actually run where they are required', () => {
+  const ci = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8');
+  const chain = readFileSync(resolve('.github/workflows/chain-invariant.yml'), 'utf8');
+
+  /**
+   * A required check that its workflow skips on the surface where it is
+   * required is not a gate — it is a deadlock.
+   *
+   * Measured on PR #656, 2026-10-10: the `main` ruleset required
+   * `cross-arch (macos-latest)` and `cross-arch (ubuntu-24.04-arm)`, and the
+   * `cross-arch` job carried `if: github.event_name == 'push'`. On a pull
+   * request the job was skipped, the required check never arrived, and the PR
+   * sat at mergeStateStatus BLOCKED with chain-invariant and quality-gate both
+   * green and nothing failing to fix.
+   *
+   * Every required context has to name a job that runs on `pull_request`. This
+   * is the same failure shape as the knip rule that stayed green for weeks
+   * because its pattern never matched.
+   */
+
+  /**
+   * The block of a job, from its `name:` line to the next one, with comment
+   * lines stripped.
+   *
+   * Stripping comments is not cosmetic: the first version matched on the raw
+   * text and immediately flagged `quality-gate`, because the explanatory note
+   * written about this very fix quotes `github.event_name == 'push'`. A guard
+   * that reads its own documentation as configuration will fire forever.
+   */
+  function jobBlock(src: string, name: string): string {
+    const at = src.indexOf(`\n  ${name}:\n`);
+    if (at === -1) return '';
+    const rest = src.slice(at + 1);
+    const next = rest.search(/\n {2}[a-z][a-z0-9-]*:\n/);
+    const block = next === -1 ? rest : rest.slice(0, next);
+    return block
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('#'))
+      .join('\n');
+  }
+
+  it('quality-gate is not gated to push-only', () => {
+    const block = jobBlock(ci, 'quality-gate');
+    expect(block, 'quality-gate job not found in ci.yml').not.toBe('');
+    expect(block).not.toContain("github.event_name == 'push'");
+  });
+
+  it('chain-invariant is not gated to push-only', () => {
+    const block = jobBlock(chain, 'chain-invariant');
+    expect(block, 'chain-invariant job not found in chain-invariant.yml').not.toBe('');
+    expect(block).not.toContain("github.event_name == 'push'");
+    // And it must actually trigger on pull requests at all.
+    expect(chain).toMatch(/pull_request:/);
+  });
+
+  it('cross-arch runs on pull requests, where arch bugs are cheapest to catch', () => {
+    const block = jobBlock(ci, 'cross-arch');
+    expect(block, 'cross-arch job not found in ci.yml').not.toBe('');
+    // This is the exact line that deadlocked PR #656.
+    expect(block).not.toContain("github.event_name == 'push'");
+    expect(block).toContain('runs-on:');
+    expect(ci).toContain('ubuntu-24.04-arm');
+    expect(ci).toContain('macos-latest');
+  });
+
+  it('every workflow behind a required context triggers on pull_request', () => {
+    // The same deadlock one level up: a required check in a workflow that never
+    // runs on PRs never arrives.
+    for (const [file, src] of [
+      ['ci.yml', ci],
+      ['chain-invariant.yml', chain],
+    ] as const) {
+      expect(src, `${file} has no pull_request trigger`).toMatch(/pull_request:/);
+    }
+  });
+});
+
 describe('branch protection scripts — read HTTP status where it was written', () => {
   it('never runs an API call inside a pipeline', () => {
     // Three measured failures: appending the status after the body on stdout
