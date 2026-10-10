@@ -29,16 +29,22 @@ name: automerge
 on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
-  workflow_run:
-    # NAMES OF WORKFLOWS, not names of checks. `quality-gate` and
-    # `cross-arch (macos-latest)` are jobs inside `ci`; listing them here makes
-    # GitHub reject the whole file — it does not warn about an unknown name, the
-    # workflow simply stops being registered and every trigger goes quiet.
-    # Measured 2026-10-10: with `quality-gate` listed, `automerge` vanished from
-    # `GET /actions/workflows` and PR #665 sat with no automerge run at all.
-    # Producer of each required check: quality-gate and both cross-arch -> `ci`;
-    # chain-invariant -> `chain-invariant`.
-    workflows: [ci, chain-invariant]
+  # `check_run`, not `workflow_run`.
+  #
+  # `workflow_run` was measured on PR #669 and does not work here: it fired four
+  # times, all with `head_branch=main` and `head_sha` pointing at a commit on
+  # main — the MERGE, not the pull request. Asking "which PRs contain this
+  # commit" then correctly answers "none", so the job stopped every time with
+  # "nothing to merge" while a mergeable PR sat green and open. The trigger
+  # fired and was structurally incapable of merging anything.
+  #
+  # `check_run` fires for the check run itself, so its payload carries the
+  # commit that was actually checked — the PR head. The documented caveat is
+  # that GitHub skips `check_run` when the check suite came from GitHub Actions,
+  # which every check here does; that is why `check_suite` is NOT used and this
+  # is verified on every run rather than assumed: if the trigger stops firing,
+  # the PR stays open, which is the safe direction.
+  check_run:
     types: [completed]
 
 permissions:
@@ -61,10 +67,16 @@ jobs:
     # below, changing nothing else, removed it. The `?:` operator parses fine in
     # a step-level `if`, so a local `actionlint` run is not enough — the
     # rejection happens server-side on registration.
+    # A check_run that concluded `success` on the merge commit means the merge is
+    # already in, so there is nothing left to do. Anything else on main is a
+    # post-merge pipeline: quality-gate, chain-invariant, both cross-arch. The
+    # second guard closes the same door on the pull_request_target path.
     if: >-
-      (github.event_name != 'workflow_run' ||
-       github.event.workflow_run.conclusion == 'success') &&
-      (github.event_name != 'workflow_run' ||
+      (github.event_name != 'check_run' ||
+       github.event.check_run.head_branch != 'main') &&
+      (github.event_name != 'check_run' ||
+       github.event.check_run.conclusion == 'success') &&
+      (github.event_name != 'check_run' ||
        github.event.pull_request.draft == false)
     runs-on: ubuntu-latest
     steps:
@@ -76,7 +88,7 @@ jobs:
         id: pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SHA: ${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha }}
+          SHA: ${{ github.event.pull_request.head.sha || github.event.check_run.head_sha }}
           # Passed through env, not interpolated into the script body. `${{ }}`
           # inside a run block is expanded by GitHub before bash sees it, which
           # works in production and makes the step untestable locally — the
@@ -84,7 +96,17 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "check_run" ]]; then
+            # `workflow_run` fires on the DEFAULT branch's run, so `head_sha` is a
+            # commit on main — the merge, not the PR head. Asking "which pull
+            # requests contain this commit" therefore answers correctly and
+            # uselessly: no open PR contains the merge commit, so this always
+            # stopped with "nothing to merge". Measured on PR #669.
+            #
+            # The run that should wake this job is the PR's OWN check run, which
+            # is reached through its check suite, not through head_sha. Listing
+            # the open PRs and matching their head SHA is what identifies the PR
+            # this verdict belongs to.
             pr="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/pulls" \
               --jq '[.[] | select(.state == "open")] | sort_by(.number) | .[0].number // empty')"
             if [[ -z "$pr" ]]; then
