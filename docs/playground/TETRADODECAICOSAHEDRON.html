@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>tetradodecaicosahedron</title>
+<style>
+  :root{--black:#0a0908;--ink:#e8e2d6;--dim:#8a8578;--gold:#d9a441;--T:#5fe0a0;--D:#e8644f;--I:#f0c766}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--black);}
+  body{
+    font-family: ui-monospace,"DejaVu Sans Mono","Liberation Mono",Menlo,Consolas,monospace;
+    color:var(--ink); min-height:100vh; padding:40px 18px 90px;
+    background:radial-gradient(110% 80% at 50% 0%, #151009 0%, #0a0908 62%);
+  }
+  .wrap{width:100%;max-width:900px;margin:0 auto}
+  .bar{height:5px;background:repeating-linear-gradient(90deg,var(--gold) 0 26px,#1a1512 26px 52px)}
+  header{padding:30px 28px 24px;text-align:center;border-bottom:1px solid #241f1a}
+  h1{margin:0;font-size:clamp(26px,5.4vw,52px);letter-spacing:.10em;font-weight:700;
+     background:linear-gradient(180deg,#f4eee3,#b9b2a4 55%,#6b6558);
+     -webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{margin:12px 0 0;color:var(--dim);font-size:12px;letter-spacing:.2em;text-transform:uppercase}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:2px}
+  @media(max-width:720px){.grid{grid-template-columns:1fr}}
+  .pane{background:#0d0b09;border:1px solid #241f1a;padding:22px}
+  .pane svg{display:block;width:100%;height:auto}
+  h2{font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold);
+     font-weight:600;margin:0 0 16px;display:flex;align-items:center;gap:12px}
+  h2::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,#3a2e14,transparent)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  td{padding:7px 0;border-bottom:1px solid #1c1815;vertical-align:top}
+  td:first-child{color:var(--dim);width:46%;padding-right:10px}
+  td:last-child{color:var(--ink);text-align:right;white-space:nowrap}
+  .ok{color:var(--T)}
+  .legend{margin-top:22px;display:flex;gap:18px;flex-wrap:wrap;font-size:11.5px;color:var(--dim)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .dot{width:9px;height:9px;border-radius:50%}
+  .note{margin-top:20px;padding:16px 18px;border-left:2px solid var(--gold);
+        background:#100d0a;color:#cfc9bd;font-size:13px;line-height:1.85}
+  .note b{color:var(--gold);font-weight:600}
+  .bars{margin-top:22px}
+  .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px;font-size:11.5px;color:var(--dim)}
+  .bar-row .track{flex:1;height:9px;background:#16120f;border:1px solid #241f1a}
+  .bar-row .fill{height:100%}
+  .bar-row .val{width:104px;text-align:right;color:var(--ink)}
+  footer{margin-top:26px;padding-top:18px;border-top:1px solid #241f1a;color:#4e4941;
+         font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+         display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar"></div>
+  <header>
+    <h1>tetradodecaicosahedron</h1>
+    <p class="sub">hybryda trzech brył platońskich &middot; fantazja geometryczna</p>
+  </header>
+
+  <div class="grid">
+    <div class="pane">
+      <h2>rzut</h2>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="100%" height="100%">
+<defs>
+<linearGradient id="gT" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f7a58"/><stop offset="1" stop-color="#0f2c20"/></linearGradient>
+<linearGradient id="gD" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#93301f"/><stop offset="1" stop-color="#330f09"/></linearGradient>
+<linearGradient id="gI" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8a6d22"/><stop offset="1" stop-color="#332909"/></linearGradient>
+<radialGradient id="halo"><stop offset="0" stop-color="#d9a441" stop-opacity=".38"/><stop offset="1" stop-color="#d9a441" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="800" height="800" fill="#0a0908"/>
+<circle cx="400" cy="400" r="300" fill="url(#halo)"/>
+<polygon points="588.96,259.03 647.47,415.87 637.95,402.61" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="446.39,631.04 585.39,472.72 538.48,484.61" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="189.19,265.33 187.10,386.35 168.25,397.45" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="372.28,459.45 293.72,358.31 325.78,354.66" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="588.96,259.03 482.26,165.58 524.65,189.32" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="588.96,259.03 500.39,293.06 494.43,261.09" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="446.39,631.04 467.98,618.99 504.15,614.77" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="446.39,631.04 242.05,568.26 263.04,601.47" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="189.19,265.33 226.95,357.09 243.94,297.97" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="189.19,265.33 328.87,170.86 299.25,192.25" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="372.28,459.45 495.12,423.58 487.08,456.93" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="372.28,459.45 339.81,571.53 313.07,546.92" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="453.88,284.46 226.95,357.09 538.48,484.61" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="453.88,284.46 482.26,165.58 243.94,297.97" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="453.88,284.46 585.39,472.72 524.65,189.32" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="570.22,508.75 467.98,618.99 487.08,456.93" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="570.22,508.75 647.47,415.87 504.15,614.77" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="570.22,508.75 495.12,423.58 637.95,402.61" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="369.76,249.41 500.39,293.06 325.78,354.66" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="369.76,249.41 328.87,170.86 494.43,261.09" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="369.76,249.41 293.72,358.31 299.25,192.25" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="212.26,540.06 242.05,568.26 168.25,397.45" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="212.26,540.06 187.10,386.35 313.07,546.92" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="212.26,540.06 339.81,571.53 263.04,601.47" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="226.95,357.09 242.05,568.26 538.48,484.61" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="482.26,165.58 328.87,170.86 243.94,297.97" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="585.39,472.72 647.47,415.87 524.65,189.32" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="500.39,293.06 495.12,423.58 325.78,354.66" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="467.98,618.99 339.81,571.53 487.08,456.93" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="187.10,386.35 293.72,358.31 313.07,546.92" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="226.95,357.09 242.05,568.26 168.25,397.45" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="482.26,165.58 328.87,170.86 494.43,261.09" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="585.39,472.72 647.47,415.87 504.15,614.77" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="500.39,293.06 495.12,423.58 637.95,402.61" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="467.98,618.99 339.81,571.53 263.04,601.47" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="187.10,386.35 293.72,358.31 299.25,192.25" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="588.96,259.03 482.26,165.58 494.43,261.09" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="588.96,259.03 500.39,293.06 637.95,402.61" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="588.96,259.03 647.47,415.87 524.65,189.32" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="446.39,631.04 585.39,472.72 504.15,614.77" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="446.39,631.04 467.98,618.99 263.04,601.47" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="446.39,631.04 242.05,568.26 538.48,484.61" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="189.19,265.33 226.95,357.09 168.25,397.45" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="189.19,265.33 328.87,170.86 243.94,297.97" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="189.19,265.33 187.10,386.35 299.25,192.25" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="372.28,459.45 495.12,423.58 325.78,354.66" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="372.28,459.45 339.81,571.53 487.08,456.93" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="372.28,459.45 293.72,358.31 313.07,546.92" fill="url(#gD)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="453.88,284.46 226.95,357.09 243.94,297.97" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="453.88,284.46 482.26,165.58 524.65,189.32" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="570.22,508.75 467.98,618.99 504.15,614.77" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="570.22,508.75 495.12,423.58 487.08,456.93" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="369.76,249.41 500.39,293.06 494.43,261.09" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="369.76,249.41 328.87,170.86 299.25,192.25" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="212.26,540.06 242.05,568.26 263.04,601.47" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="212.26,540.06 339.81,571.53 313.07,546.92" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="453.88,284.46 585.39,472.72 538.48,484.61" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="570.22,508.75 647.47,415.87 637.95,402.61" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="369.76,249.41 293.72,358.31 325.78,354.66" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<polygon points="212.26,540.06 187.10,386.35 168.25,397.45" fill="url(#gT)" stroke="#0a0908" stroke-width="0.6"/>
+<g stroke="#e0b866" stroke-width="0.8" opacity="0.45">
+<line x1="453.88" y1="284.46" x2="226.95" y2="357.09"/>
+<line x1="226.95" y1="357.09" x2="243.94" y2="297.97"/>
+<line x1="453.88" y1="284.46" x2="243.94" y2="297.97"/>
+<line x1="226.95" y1="357.09" x2="538.48" y2="484.61"/>
+<line x1="453.88" y1="284.46" x2="538.48" y2="484.61"/>
+<line x1="453.88" y1="284.46" x2="482.26" y2="165.58"/>
+<line x1="482.26" y1="165.58" x2="243.94" y2="297.97"/>
+<line x1="482.26" y1="165.58" x2="524.65" y2="189.32"/>
+<line x1="453.88" y1="284.46" x2="524.65" y2="189.32"/>
+<line x1="453.88" y1="284.46" x2="585.39" y2="472.72"/>
+<line x1="585.39" y1="472.72" x2="524.65" y2="189.32"/>
+<line x1="585.39" y1="472.72" x2="538.48" y2="484.61"/>
+<line x1="588.96" y1="259.03" x2="482.26" y2="165.58"/>
+<line x1="588.96" y1="259.03" x2="524.65" y2="189.32"/>
+<line x1="482.26" y1="165.58" x2="494.43" y2="261.09"/>
+<line x1="588.96" y1="259.03" x2="494.43" y2="261.09"/>
+<line x1="588.96" y1="259.03" x2="500.39" y2="293.06"/>
+<line x1="500.39" y1="293.06" x2="494.43" y2="261.09"/>
+<line x1="500.39" y1="293.06" x2="637.95" y2="402.61"/>
+<line x1="588.96" y1="259.03" x2="637.95" y2="402.61"/>
+<line x1="588.96" y1="259.03" x2="647.47" y2="415.87"/>
+<line x1="647.47" y1="415.87" x2="524.65" y2="189.32"/>
+<line x1="647.47" y1="415.87" x2="637.95" y2="402.61"/>
+<line x1="446.39" y1="631.04" x2="585.39" y2="472.72"/>
+<line x1="446.39" y1="631.04" x2="538.48" y2="484.61"/>
+<line x1="585.39" y1="472.72" x2="504.15" y2="614.77"/>
+<line x1="446.39" y1="631.04" x2="504.15" y2="614.77"/>
+<line x1="446.39" y1="631.04" x2="467.98" y2="618.99"/>
+<line x1="467.98" y1="618.99" x2="504.15" y2="614.77"/>
+<line x1="467.98" y1="618.99" x2="263.04" y2="601.47"/>
+<line x1="446.39" y1="631.04" x2="263.04" y2="601.47"/>
+<line x1="446.39" y1="631.04" x2="242.05" y2="568.26"/>
+<line x1="242.05" y1="568.26" x2="538.48" y2="484.61"/>
+<line x1="242.05" y1="568.26" x2="263.04" y2="601.47"/>
+<line x1="570.22" y1="508.75" x2="467.98" y2="618.99"/>
+<line x1="570.22" y1="508.75" x2="504.15" y2="614.77"/>
+<line x1="467.98" y1="618.99" x2="487.08" y2="456.93"/>
+<line x1="570.22" y1="508.75" x2="487.08" y2="456.93"/>
+<line x1="570.22" y1="508.75" x2="647.47" y2="415.87"/>
+<line x1="647.47" y1="415.87" x2="504.15" y2="614.77"/>
+<line x1="570.22" y1="508.75" x2="637.95" y2="402.61"/>
+<line x1="570.22" y1="508.75" x2="495.12" y2="423.58"/>
+<line x1="495.12" y1="423.58" x2="637.95" y2="402.61"/>
+<line x1="495.12" y1="423.58" x2="487.08" y2="456.93"/>
+<line x1="189.19" y1="265.33" x2="226.95" y2="357.09"/>
+<line x1="189.19" y1="265.33" x2="243.94" y2="297.97"/>
+<line x1="226.95" y1="357.09" x2="168.25" y2="397.45"/>
+<line x1="189.19" y1="265.33" x2="168.25" y2="397.45"/>
+<line x1="189.19" y1="265.33" x2="328.87" y2="170.86"/>
+<line x1="328.87" y1="170.86" x2="243.94" y2="297.97"/>
+<line x1="328.87" y1="170.86" x2="299.25" y2="192.25"/>
+<line x1="189.19" y1="265.33" x2="299.25" y2="192.25"/>
+<line x1="189.19" y1="265.33" x2="187.10" y2="386.35"/>
+<line x1="187.10" y1="386.35" x2="299.25" y2="192.25"/>
+<line x1="187.10" y1="386.35" x2="168.25" y2="397.45"/>
+<line x1="369.76" y1="249.41" x2="500.39" y2="293.06"/>
+<line x1="369.76" y1="249.41" x2="494.43" y2="261.09"/>
+<line x1="500.39" y1="293.06" x2="325.78" y2="354.66"/>
+<line x1="369.76" y1="249.41" x2="325.78" y2="354.66"/>
+<line x1="369.76" y1="249.41" x2="328.87" y2="170.86"/>
+<line x1="328.87" y1="170.86" x2="494.43" y2="261.09"/>
+<line x1="369.76" y1="249.41" x2="299.25" y2="192.25"/>
+<line x1="369.76" y1="249.41" x2="293.72" y2="358.31"/>
+<line x1="293.72" y1="358.31" x2="299.25" y2="192.25"/>
+<line x1="293.72" y1="358.31" x2="325.78" y2="354.66"/>
+<line x1="212.26" y1="540.06" x2="242.05" y2="568.26"/>
+<line x1="212.26" y1="540.06" x2="263.04" y2="601.47"/>
+<line x1="242.05" y1="568.26" x2="168.25" y2="397.45"/>
+<line x1="212.26" y1="540.06" x2="168.25" y2="397.45"/>
+<line x1="212.26" y1="540.06" x2="187.10" y2="386.35"/>
+<line x1="187.10" y1="386.35" x2="313.07" y2="546.92"/>
+<line x1="212.26" y1="540.06" x2="313.07" y2="546.92"/>
+<line x1="212.26" y1="540.06" x2="339.81" y2="571.53"/>
+<line x1="339.81" y1="571.53" x2="263.04" y2="601.47"/>
+<line x1="339.81" y1="571.53" x2="313.07" y2="546.92"/>
+<line x1="372.28" y1="459.45" x2="495.12" y2="423.58"/>
+<line x1="372.28" y1="459.45" x2="487.08" y2="456.93"/>
+<line x1="495.12" y1="423.58" x2="325.78" y2="354.66"/>
+<line x1="372.28" y1="459.45" x2="325.78" y2="354.66"/>
+<line x1="372.28" y1="459.45" x2="339.81" y2="571.53"/>
+<line x1="339.81" y1="571.53" x2="487.08" y2="456.93"/>
+<line x1="372.28" y1="459.45" x2="313.07" y2="546.92"/>
+<line x1="372.28" y1="459.45" x2="293.72" y2="358.31"/>
+<line x1="293.72" y1="358.31" x2="313.07" y2="546.92"/>
+<line x1="226.95" y1="357.09" x2="242.05" y2="568.26"/>
+<line x1="482.26" y1="165.58" x2="328.87" y2="170.86"/>
+<line x1="585.39" y1="472.72" x2="647.47" y2="415.87"/>
+<line x1="500.39" y1="293.06" x2="495.12" y2="423.58"/>
+<line x1="467.98" y1="618.99" x2="339.81" y2="571.53"/>
+<line x1="187.10" y1="386.35" x2="293.72" y2="358.31"/>
+</g>
+<g>
+<circle cx="453.88" cy="284.46" r="3.2" fill="#5fe0a0" stroke="#0a0908" stroke-width="1"/>
+<circle cx="588.96" cy="259.03" r="3.2" fill="#e8644f" stroke="#0a0908" stroke-width="1"/>
+<circle cx="446.39" cy="631.04" r="3.2" fill="#e8644f" stroke="#0a0908" stroke-width="1"/>
+<circle cx="570.22" cy="508.75" r="3.2" fill="#5fe0a0" stroke="#0a0908" stroke-width="1"/>
+<circle cx="189.19" cy="265.33" r="3.2" fill="#e8644f" stroke="#0a0908" stroke-width="1"/>
+<circle cx="369.76" cy="249.41" r="3.2" fill="#5fe0a0" stroke="#0a0908" stroke-width="1"/>
+<circle cx="212.26" cy="540.06" r="3.2" fill="#5fe0a0" stroke="#0a0908" stroke-width="1"/>
+<circle cx="372.28" cy="459.45" r="3.2" fill="#e8644f" stroke="#0a0908" stroke-width="1"/>
+<circle cx="226.95" cy="357.09" r="3.2" fill="#e8644f" stroke="#0a0908" stroke-width="1"/>
+<circle cx="482.26" cy="165.58" r="3.2" fill="#e8644f" stroke="#0a0908" stroke-width="1"/>
+<circle cx="585.39" cy="472.72" r="3.2" fill="#e8644f" stroke="#0a0908" stroke-width="1"/>
+<circle cx="500.39" cy="293.06" r="3.2" fill="#e8644f" stroke="#0a0908" stroke-width="1"/>
+<circle cx="467.98" cy="618.99" r="3.2" fill="#e8644f" stroke="#0a0908" stroke-width="1"/>
+<circle cx="647.47" cy="415.87" r="3.2" fill="#e8644f" stroke="#0a0908" stroke-width="1"/>
+<circle cx="242.05" cy="568.26" r="3.2" fill="#e8644f" stroke="#0a0908" stroke-width="1"/>
+<circle cx="328.87" cy="170.86" r="3.2" fill="#e8644f" stroke="#0a0908" stroke-width="1"/>
+<circle cx="187.10" cy="386.35" r="3.2" fill="#e8644f" stroke="#0a0908" stroke-width="1"/>
+<circle cx="495.12" cy="423.58" r="3.2" fill="#e8644f" stroke="#0a0908" stroke-width="1"/>
+<circle cx="339.81" cy="571.53" r="3.2" fill="#e8644f" stroke="#0a0908" stroke-width="1"/>
+<circle cx="293.72" cy="358.31" r="3.2" fill="#e8644f" stroke="#0a0908" stroke-width="1"/>
+<circle cx="243.94" cy="297.97" r="3.2" fill="#f0c766" stroke="#0a0908" stroke-width="1"/>
+<circle cx="524.65" cy="189.32" r="3.2" fill="#f0c766" stroke="#0a0908" stroke-width="1"/>
+<circle cx="538.48" cy="484.61" r="3.2" fill="#f0c766" stroke="#0a0908" stroke-width="1"/>
+<circle cx="494.43" cy="261.09" r="3.2" fill="#f0c766" stroke="#0a0908" stroke-width="1"/>
+<circle cx="504.15" cy="614.77" r="3.2" fill="#f0c766" stroke="#0a0908" stroke-width="1"/>
+<circle cx="637.95" cy="402.61" r="3.2" fill="#f0c766" stroke="#0a0908" stroke-width="1"/>
+<circle cx="263.04" cy="601.47" r="3.2" fill="#f0c766" stroke="#0a0908" stroke-width="1"/>
+<circle cx="299.25" cy="192.25" r="3.2" fill="#f0c766" stroke="#0a0908" stroke-width="1"/>
+<circle cx="168.25" cy="397.45" r="3.2" fill="#f0c766" stroke="#0a0908" stroke-width="1"/>
+<circle cx="487.08" cy="456.93" r="3.2" fill="#f0c766" stroke="#0a0908" stroke-width="1"/>
+<circle cx="313.07" cy="546.92" r="3.2" fill="#f0c766" stroke="#0a0908" stroke-width="1"/>
+<circle cx="325.78" cy="354.66" r="3.2" fill="#f0c766" stroke="#0a0908" stroke-width="1"/>
+</g>
+<g font-family="ui-monospace,monospace" text-anchor="middle">
+<text x="400" y="36" font-size="12" fill="#d9a441" letter-spacing="5">V=32   E=90   F=60   &#183;   V&#8722;E+F=2</text>
+<text x="400" y="772" font-size="11" fill="#6f6a5f" letter-spacing="3">DODECA &#183; ICOSA &#183; TETRA &#8212; 32 wierzch&#243;lk&#243;w na jednej sferze</text>
+</g>
+</svg>
+      <div class="legend">
+        <span><i class="dot" style="background:#5fe0a0"></i>tetra (4)</span>
+        <span><i class="dot" style="background:#e8644f"></i>dodeca (20)</span>
+        <span><i class="dot" style="background:#f0c766"></i>icosa (12)</span>
+      </div>
+    </div>
+
+    <div class="pane">
+      <h2>zmierzone</h2>
+      <table>
+        <tr><td>wierzchołki (unikalne)</td><td>32</td></tr>
+        <tr><td>na sferze, r = 1</td><td>wszystkie 32</td></tr>
+        <tr><td>krawędzie</td><td>90</td></tr>
+        <tr><td>ściany</td><td>60</td></tr>
+        <tr><td>Euler V&minus;E+F</td><td class="ok">2</td></tr>
+        <tr><td>stopień wierzchołka</td><td>5 &times;12, 6 &times;20</td></tr>
+        <tr><td>tetra ∩ dodeca</td><td>4 wierzchołki</td></tr>
+        <tr><td>kolizje 20+12</td><td class="ok">0</td></tr>
+      </table>
+
+      <div class="bars">
+        <h2 style="margin-top:26px">długości krawędzi (R=1)</h2>
+        <div class="bar-row"><span>0.1884</span><span class="track"><span class="fill" style="width:18.7%;background:#4a3a1c"></span></span><span class="val">12 &times;</span></div>
+        <div class="bar-row"><span>0.6409</span><span class="track"><span class="fill" style="width:63.5%;background:#7d6420"></span></span><span class="val">24 &times;</span></div>
+        <div class="bar-row"><span>0.7136</span><span class="track"><span class="fill" style="width:70.7%;background:#8a2c1f"></span></span><span class="val">30 &times;</span></div>
+        <div class="bar-row"><span>1.0088</span><span class="track"><span class="fill" style="width:100%;background:#c8412f"></span></span><span class="val">24 &times;</span></div>
+      </div>
+
+      <div class="note">
+        <b>Nie jest bryłą platońską.</b> Nie ma nazwy w nauce. Nie jest to też
+        &ldquo;tetradodecaicosahedron&rdquo; w sensie Steinhausa&mdash;to nazwa
+        dwudziestościanu, w dodatku nie istniejącego. Tutaj: <b>suma</b>
+        20 wierzchołków dodeca + 12 wierzchołków ikosa na tej samej sferze,
+        a tetra jest podzbiorem dodeca (te same 4 wierzchołki).
+        Otoczka wypukła ma cztery różne długości krawędzi, więc nie jest
+        foremna.
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span>generator: /tmp/gen.mjs</span>
+    <span>hull: triple-plane, eps 1e-7</span>
+    <span>projekcja perspektywowa, f=2.9</span>
+  </footer>
+  <div class="bar"></div>
+</div>
+</body>
+</html>
