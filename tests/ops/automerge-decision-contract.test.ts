@@ -20,7 +20,7 @@
  * for real in automerge-decision.test.ts, which runs the extracted script
  * against a fake `gh` and checks all-green, one-failing and one-pending.
  */
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -150,71 +150,34 @@ describe('automerge — it merges, and only by squash', () => {
       expect(wf).toContain('types: [completed]');
     });
 
-    it('names workflows that exist, not the checks they produce', () => {
-      // `workflow_run.workflows` takes WORKFLOW names. `quality-gate` and
-      // `cross-arch (macos-latest)` are job names inside `ci`. Listing them makes
-      // GitHub reject the whole file without warning: the workflow stops being
-      // registered, vanishes from the API, and every trigger goes silent. That is
-      // what happened on 2026-10-10 — PR #665 got no automerge run at all, and
-      // the cause was a name that looked entirely plausible.
-      const real = new Set<string>();
-      for (const file of readdirSync(resolve('.github/workflows'))) {
-        if (!/\.ya?ml$/.test(file)) continue;
-        const other = parseYaml(readFileSync(resolve('.github/workflows', file), 'utf8')) as {
-          name?: string;
-        };
-        if (other?.name) real.add(other.name);
-      }
-      const triggers = (doc as { on: Record<string, { workflows?: string[] }> }).on;
-      const listed = triggers.workflow_run?.workflows ?? [];
-      expect(listed.length).toBeGreaterThan(0);
-      for (const name of listed) {
-        expect(real, `workflow_run names "${name}", which is not a workflow`).toContain(name);
-      }
+    it('wakes on the pull request head, not on a commit on main', () => {
+      // Measured on PR #669. `workflow_run` fired four times with
+      // `head_branch=main` and a `head_sha` pointing at the MERGE commit, so
+      // "which PRs contain this commit" correctly answered none and the job
+      // stopped every time while a green PR sat open. `check_run` carries the
+      // commit that was actually checked.
+      const triggers = (doc as { on: Record<string, unknown> }).on;
+      expect(triggers.workflow_run).toBeUndefined();
+      expect(triggers.check_run).toBeDefined();
+      const wf = doc.jobs.automerge as unknown as Record<string, unknown>;
+      expect(wf).toBeTruthy();
     });
 
-    it('never uses the ternary operator in a job-level if', () => {
-      // Measured by bisection 2026-10-10. Adding `cond ? a : b` to the job-level
-      // `if` made GitHub reject the whole file: the workflow stopped being
-      // registered, both triggers went silent, and every push produced a run
-      // named after the FILE PATH with conclusion `failure` and zero jobs —
-      // "This run likely failed because of a workflow file issue", no detail.
-      //
-      // Reverting the ternary to a conjunction, changing nothing else, removed
-      // it. Local YAML parsing and eslint both accept the ternary, so neither
-      // tool in this repository would have caught it.
+    it('ignores a check_run that ran against the merge commit', () => {
+      // `main`'s own quality-gate and chain-invariant runs complete constantly.
+      // Treating those as a verdict would make the job look for a PR at every
+      // post-merge pipeline run on main.
       const jobIf = doc.jobs.automerge.if ?? '';
-      expect(jobIf).not.toMatch(/\?[^?]*:/);
+      expect(jobIf).toContain("github.event.check_run.head_branch != 'main'");
+      expect(jobIf).toContain("github.event.check_run.conclusion == 'success'");
     });
 
-    it('keeps the two conditions the second trigger depends on', () => {
-      // The conjunction above is only equivalent to the ternary if both guards
-      // survive the rewrite: a red upstream run must not merge a PR, and a
-      // draft must not merge on either trigger.
+    it('refuses a check_run that did not succeed', () => {
+      // The verdict must come from the check that finished, not from optimism.
       const jobIf = doc.jobs.automerge.if ?? '';
-      expect(jobIf).toContain("github.event_name != 'workflow_run'");
-      expect(jobIf).toContain("github.event.workflow_run.conclusion == 'success'");
+      expect(jobIf).toContain("github.event.check_run.conclusion == 'success'");
       expect(jobIf).toContain('github.event.pull_request.draft == false');
-    });
-
-    it('covers both workflows behind the required checks', () => {
-      // quality-gate and both cross-arch contexts come from `ci`; chain-invariant
-      // comes from its own workflow. Missing either means the second door never
-      // opens when that check is the last to finish.
-      const triggers = (doc as { on: Record<string, { workflows?: string[] }> }).on;
-      const listed = new Set(triggers.workflow_run?.workflows ?? []);
-      for (const w of ['ci', 'chain-invariant']) expect(listed).toContain(w);
-    });
-
-    it('refuses a failed or non-success upstream run', () => {
-      // The job-level `if` has to close the second door the same way the first
-      // door is closed for drafts.
-      const jobIf = doc.jobs.automerge.if ?? '';
-      expect(jobIf).toContain("github.event.workflow_run.conclusion == 'success'");
-      expect(jobIf).toContain('github.event.pull_request.draft == false');
-      // Both guards are scoped to the workflow_run trigger, so neither applies
-      // on the pull_request_target path.
-      expect(jobIf.match(/github\.event_name != 'workflow_run'/g) ?? []).toHaveLength(2);
+      expect(jobIf.match(/github\.event_name != 'check_run'/g) ?? []).toHaveLength(3);
     });
 
     it('passes the PR number through env, not into the script body', () => {
