@@ -2,33 +2,36 @@ name: automerge
 
 # Merge without a human, for PRs that have proven themselves.
 #
-# WHAT THIS REPLACES
-# ------------------
-# The previous version ran on any non-draft PR carrying an `automerge` label and
-# called peter-evans/enable-pull-request-automerge. Measured 2026-10-10: the
-# label `automerge` does not exist in this repository, no PR has ever carried it,
-# and PRs #656 and #657 — merged without it — took 29 and 11 minutes from open
-# to merge. So this workflow had never fired. A gate nobody triggers is a
-# comment, not a gate, and it read as protection.
+# Two triggers, because one is not enough:
 #
-# It also would not have worked as written: it enabled auto-merge without
-# referencing check status. GitHub's auto-merge does respect required status
-# checks, so the ruleset was doing the real work, but nothing here said so.
+#   pull_request_target  fires as soon as the PR is opened or updated. At that
+#                        moment the checks have not finished, so the job reads
+#                        "missing" and correctly refuses. It costs one run.
+#   workflow_run         fires when the required workflows finish. This is the
+#                        run that can actually merge.
 #
-# THE RULE NOW
-# ------------
-# Merge automatically when all four required checks are green AND the PR is not
-# a draft. Nothing else: no label to forget, no config that silently stops
-# matching. The check names are read from the repository ruleset rather than
-# hardcoded, because a hardcoded list is a second place that can go stale — the
-# same mistake as a metric nobody regenerates.
+# Before 2026-10-10 only the first existed, so automerge never merged: it
+# evaluated the checks once, while they were still running, and nothing woke
+# it up afterwards. Observed on PR #663 — the step saw `chain-invariant` as
+# `missing`, the check then went green, and the PR sat open until merged by
+# hand.
 #
-# Required checks come from the `main` ruleset. If that ruleset cannot be read,
-# this workflow refuses rather than merging on assumption.
-
+# `check_run` / `check_suite` cannot be used instead: GitHub does not emit
+# those events for check suites it created itself, which is every check here.
+# `workflow_run` has no such restriction.
+#
+# SECURITY. This job holds a write token, so it must never execute code from a
+# pull request. Both triggers run the workflow from `main`, and there is no
+# `actions/checkout` anywhere in this file — every byte executed comes from the
+# base branch. If a checkout is ever added here, the `pull_request_target`
+# trigger becomes an arbitrary-code-execution hole: anyone able to open a pull
+# request would inherit write access to the repository.
 on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
+  workflow_run:
+    workflows: [ci, chain-invariant, quality-gate]
+    types: [completed]
 
 permissions:
   contents: write
@@ -36,26 +39,67 @@ permissions:
 
 jobs:
   automerge:
-    if: github.event.pull_request.draft == false
+    # Never act on a draft, and never on a workflow_run whose own outcome was
+    # anything other than success — a failing `ci` must not be able to drag a
+    # PR in through the second door.
+    if: >-
+      github.event_name == 'workflow_run'
+        ? github.event.workflow_run.conclusion == 'success'
+        : github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
-      # Required checks are read from the ruleset, not from a list in this file.
-      # `refs/heads/main` is resolved by GitHub, so a branch rename does not
-      # silently reduce the list to nothing.
+      # `workflow_run` payloads carry no `pull_request` object, so the PR has to
+      # be resolved from the commit the finished run was made against. When
+      # several PRs share a head commit (a branch opened twice) the oldest is
+      # taken: merging the newer one would merge the same commits twice.
+      - name: Resolve the pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha }}
+          # Passed through env, not interpolated into the script body. `${{ }}`
+          # inside a run block is expanded by GitHub before bash sees it, which
+          # works in production and makes the step untestable locally — the
+          # extracted script then fails on a bad substitution.
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]; then
+            pr="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/pulls" \
+              --jq '[.[] | select(.state == "open")] | sort_by(.number) | .[0].number // empty')"
+            if [[ -z "$pr" ]]; then
+              echo "::notice::No open pull request for ${SHA} — nothing to merge."
+              exit 0
+            fi
+            draft="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq .draft)"
+            if [[ "$draft" == "true" ]]; then
+              echo "::notice::PR #${pr} is a draft — not merging."
+              exit 0
+            fi
+          else
+            pr="${PR_NUMBER:-}"
+            if [[ -z "$pr" ]]; then
+              echo "::error::No pull request number in the event payload."
+              exit 1
+            fi
+          fi
+          echo "number=${pr}" >>"$GITHUB_OUTPUT"
+          echo "sha=${SHA}" >>"$GITHUB_OUTPUT"
+
+      # Required checks are read from the branch's effective ruleset, not from a
+      # list in this file. A hardcoded list is a second place that can go stale
+      # — the same mistake as a metric nobody regenerates.
+      #
+      # `/rulesets` returns ruleset metadata with no `rules` key at all; reading
+      # `.rules[]?` from it yields nothing and the `?` swallows that, so the
+      # step reported an empty policy while four checks were configured. 928
+      # runs, every one skipped. Branch rules live at /rules/branches/<branch>.
       - name: Read required checks from the repository ruleset
         id: policy
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # The LIST endpoint (/rulesets) returns ruleset metadata only — it has no
-          # `rules` key at all. Reading `.rules[]?` from it yields nothing, and the
-          # `?` turns that into an empty string rather than an error, so this step
-          # failed with "no active required checks" while four required checks were
-          # configured. Measured 2026-10-10 against this repo.
-          #
-          # Rules for a branch live at /rules/branches/<branch>, which returns the
-          # effective rules including anything inherited from an org.
           branch="${MEMPHIS_MAIN_BRANCH:-main}"
           api="https://api.github.com/repos/${GITHUB_REPOSITORY}/rules/branches/${branch}"
           rules="$(curl -fsSL -H 'Accept: application/vnd.github+json' \
@@ -76,8 +120,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REQUIRED: ${{ steps.policy.outputs.required }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.sha }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
         run: |
           set -euo pipefail
           IFS=',' read -ra contexts <<<"$REQUIRED"

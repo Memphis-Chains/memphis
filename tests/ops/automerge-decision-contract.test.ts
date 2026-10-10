@@ -24,8 +24,15 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 
 const wf = readFileSync(resolve('.github/workflows/automerge.yml'), 'utf8');
+// Parsed once, so structural assertions can look at steps and triggers
+// instead of at text that comments also occupy.
+const doc = parseYaml(wf) as {
+  on: Record<string, unknown>;
+  jobs: { automerge: { if?: string; steps: Array<{ uses?: string; run?: string }> } };
+};
 
 describe('automerge — triggers on state, not on a label', () => {
   it('does not gate on the automerge label', () => {
@@ -117,5 +124,58 @@ describe('automerge — it merges, and only by squash', () => {
   it('has the permissions the merge needs', () => {
     expect(wf).toContain('contents: write');
     expect(wf).toContain('pull-requests: write');
+  });
+
+  describe('automerge — the write token must never touch pull request code', () => {
+    it('never checks out anything', () => {
+      // This job holds contents:write and pull-requests:write. Both triggers run
+      // from the base branch, so the only thing that can execute is what is
+      // already merged. A checkout of the PR head would make this job an
+      // arbitrary-code-execution hole for anyone who can open a pull request.
+      // Inspect the parsed steps, not the file text. A comment in the workflow
+      // explains this exact rule, and a text search reports the explanation as
+      // the violation.
+      const steps = (doc as { jobs: { automerge: { steps: Array<{ uses?: string }> } } }).jobs
+        .automerge.steps;
+      const checkouts = steps.filter((st) => (st.uses ?? '').includes('actions/checkout'));
+      expect(checkouts).toEqual([]);
+    });
+
+    it('waits for the checks instead of evaluating them once', () => {
+      // `pull_request_target` alone fires while the checks are still running, so
+      // the job reads "missing", refuses, and nothing wakes it afterwards. That
+      // is why it never merged: PR #663 sat green and open until merged by hand.
+      expect(wf).toContain('pull_request_target');
+      expect(wf).toContain('workflow_run');
+      expect(wf).toContain('types: [completed]');
+    });
+
+    it('names the workflows that gate a merge', () => {
+      // A trigger that names a workflow which no longer exists never fires, and
+      // the second door silently never opens — the same shape as reading rules
+      // from an endpoint that has none.
+      const gated = wf.match(/workflows:\s*\[([^\]]*)\]/)?.[1] ?? '';
+      expect(
+        gated
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean).length,
+      ).toBeGreaterThan(0);
+    });
+
+    it('refuses a failed or non-success upstream run', () => {
+      // The job-level `if` has to close the second door the same way the first
+      // door is closed for drafts.
+      expect(wf).toContain("github.event_name == 'workflow_run'");
+      expect(wf).toContain("github.event.workflow_run.conclusion == 'success'");
+      expect(wf).toContain('github.event.pull_request.draft == false');
+    });
+
+    it('passes the PR number through env, not into the script body', () => {
+      // `${{ }}` inside a run block is expanded before bash runs. It works, and
+      // it makes the step impossible to execute outside Actions.
+      const runs = (wf.match(/run: \|[\s\S]*?(?=\n\s{0,6}[a-z-]+:|\n\n)/g) ?? []).join('\n');
+      expect(runs).not.toContain('${{');
+    });
   });
 });
