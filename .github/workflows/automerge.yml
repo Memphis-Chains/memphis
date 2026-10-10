@@ -50,10 +50,22 @@ jobs:
     # Never act on a draft, and never on a workflow_run whose own outcome was
     # anything other than success — a failing `ci` must not be able to drag a
     # PR in through the second door.
+    # Written as a conjunction, not as `cond ? a : b`. GitHub's expression
+    # parser rejects the ternary form in a job-level `if`: the workflow stops
+    # being registered, every trigger goes silent, and each push produces a run
+    # named after the FILE PATH with conclusion `failure` and no jobs —
+    # "This run likely failed because of a workflow file issue", with no detail.
+    #
+    # Measured by bisection on 2026-10-10. Adding this `if` alone to the previous
+    # `main` reproduced the failure; replacing the ternary with the conjunction
+    # below, changing nothing else, removed it. The `?:` operator parses fine in
+    # a step-level `if`, so a local `actionlint` run is not enough — the
+    # rejection happens server-side on registration.
     if: >-
-      github.event_name == 'workflow_run'
-        ? github.event.workflow_run.conclusion == 'success'
-        : github.event.pull_request.draft == false
+      (github.event_name != 'workflow_run' ||
+       github.event.workflow_run.conclusion == 'success') &&
+      (github.event_name != 'workflow_run' ||
+       github.event.pull_request.draft == false)
     runs-on: ubuntu-latest
     steps:
       # `workflow_run` payloads carry no `pull_request` object, so the PR has to
