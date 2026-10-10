@@ -1,5 +1,5 @@
 {
-  "$comment": "Single source of truth for the web estate. Every path under sites/ is the MASTER for that site and is deployable. sites-sync.sh imports production; sites-deploy.sh refuses to publish drift. Read sites/README.md before changing this file.",
+  "$comment": "Single source of truth for the web estate. Every path under sites/ is the MASTER for that site and is deployable. sites-sync.sh --pull imports production; --push is a drift gate that refuses to publish stale. Publishing itself is the manual five-step procedure in README.md — there is no sites-deploy.sh, and this field said otherwise until 2026-10-10. Read sites/README.md before changing this file.",
   "ssh": {
     "host": "lhpl",
     "remoteRoot": "public_html",
