@@ -1,0 +1,180 @@
+/**
+ * main must actually be protected, and the check that says so must be able to
+ * fail.
+ *
+ * WHAT WAS WRONG, MEASURED 2026-10-09
+ * -----------------------------------
+ * `verify-branch-protection.sh` read
+ * GET /repos/{owner}/{repo}/branches/{branch}/protection, which answers 404
+ * "Branch not protected" for this repository — the protection is a *ruleset*
+ * named "main", not classic branch protection. It then printed the failure and
+ * exited 0. Every other failure path in that function called `exit 1`; the 404
+ * path did not. So the one script whose job is to detect an unprotected main
+ * was reporting "no protection here" with a success status.
+ *
+ * And `enforce-branch-protection.sh` PUT to the same dead endpoint, so it could
+ * never have applied anything. Nothing in CI ran either script.
+ *
+ * These assertions are about the source, not about GitHub's current state: the
+ * live state is verified by running the scripts, which the operator does with
+ * `npm run -s ops:verify-main-protection`. A test that called GitHub would be a
+ * test that passes or fails for reasons outside the repo.
+ */
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+const ENFORCE = resolve('scripts/enforce-branch-protection.sh');
+const VERIFY = resolve('scripts/verify-branch-protection.sh');
+const enforce = readFileSync(ENFORCE, 'utf8');
+const verify = readFileSync(VERIFY, 'utf8');
+
+/** The four contexts that must gate a merge. */
+const REQUIRED = [
+  'quality-gate',
+  'chain-invariant',
+  'cross-arch (macos-latest)',
+  'cross-arch (ubuntu-24.04-arm)',
+];
+
+describe('branch protection scripts — use the interface that exists', () => {
+  it('reads and writes rulesets, not the dead branch-protection endpoint', () => {
+    // The endpoint below answers 404 for this repository. Measured, twice: once
+    // with curl and once through the previous version of verify-branch-protection.sh.
+    for (const [name, src] of [
+      ['enforce', enforce],
+      ['verify', verify],
+    ]) {
+      expect(src, `${name} must not use branches/{branch}/protection`).not.toContain(
+        '/branches/${BRANCH}/protection',
+      );
+      expect(src).toContain('/rulesets');
+    }
+  });
+
+  it('never reads a required check from a status it assumed', () => {
+    // `~DEFAULT_BRANCH` is resolved by GitHub. A literal "main" would silently
+    // stop applying if the default branch were renamed — which is exactly the
+    // shape of the ruleset that was already in place, with an empty condition.
+    expect(enforce).toContain('~DEFAULT_BRANCH');
+  });
+});
+
+describe('verify-branch-protection.sh — a read failure must be a failure', () => {
+  it('exits non-zero when the ruleset list cannot be read', () => {
+    // The defect this file exists to prevent: a 404 printed as a failure and
+    // returned as success. Any HTTP code other than 200 has to exit 1.
+    expect(verify).toMatch(/\[\[ "\$code" == "200" \]\] \|\| \{/);
+    expect(verify).toMatch(/Cannot list rulesets/);
+    // ...and the exit must actually be non-zero, not a bare echo.
+    const guard = verify.indexOf('Cannot list rulesets');
+    expect(guard).toBeGreaterThan(-1);
+    expect(verify.slice(guard, guard + 400)).toContain('exit 1');
+  });
+
+  it('exits non-zero when the ruleset is missing entirely', () => {
+    expect(verify).toContain('fail "No ruleset named');
+    expect(verify).toMatch(/^fail\(\) \{/m);
+    // A `fail` that only echoes would be the same defect wearing a new hat.
+    const fn = verify.slice(verify.indexOf('fail()'));
+    expect(fn.slice(0, 200)).toContain('exit 1');
+  });
+
+  it('rejects a ruleset that is stored but does not apply', () => {
+    // Empty include + exclude means "applies to nothing", which reads as a
+    // configured rule and behaves as no rule at all. That is the state this
+    // repository was actually in.
+    expect(verify).toContain('has no branch condition');
+    expect(verify).toContain('strict_required_status_checks_policy');
+  });
+});
+
+describe('branch protection policy — what must and must not gate a merge', () => {
+  it.each(REQUIRED)('requires %s', (context) => {
+    expect(enforce).toContain(`{ context: "${context}" }`);
+    expect(verify).toContain(context);
+  });
+
+  it('requires them strict, so a stale green run is not accepted', () => {
+    expect(enforce).toContain('strict_required_status_checks_policy: true');
+    expect(verify).toContain('Required checks are not strict');
+  });
+
+  it('does NOT require the Telegram smoke check', () => {
+    // telegram-smoke.yml exits 78 when its secrets are absent, on purpose:
+    // "skipped is not success", so a green row means a message was really sent.
+    // As a required check it could never be green without secrets, and would
+    // block every merge forever. It runs on its own schedule and stays advisory.
+    expect(enforce).not.toContain('{ context: "smoke" }');
+    // verify fails if someone adds it later.
+    expect(verify).toContain('The Telegram smoke check is required');
+  });
+
+  it('writes no pull_request rule, because the API rejects one for solo use', () => {
+    // Measured: HTTP 422 "Invalid property /rules/N" for
+    // `required_approving_review_count: 0`, and `dismiss_stale_reviews_on_push`
+    // is not on the ruleset schema at all — it is a repository setting.
+    expect(enforce).not.toContain('"type": "pull_request"');
+  });
+});
+
+describe('branch protection scripts — read HTTP status where it was written', () => {
+  it('never runs an API call inside a pipeline', () => {
+    // Three measured failures: appending the status after the body on stdout
+    // (jq parsed the trailing "200"), then a variable set inside a helper
+    // called from a pipeline (the body is a subshell and cannot export upward),
+    // then a global set inside the same helper. All three reported
+    // "unknown" or crashed on a request that had actually returned 200.
+    for (const [name, src] of [
+      ['enforce', enforce],
+      ['verify', verify],
+    ]) {
+      expect(src, `${name} must not pipe a curl call`).not.toMatch(/= "\$\(curl/);
+      expect(src).toContain("-w '%{http_code}'");
+    }
+  });
+
+  it('checks the status code, not only curl success', () => {
+    // curl exits 0 on a 404. Reading only its exit code is how the old verify
+    // script called a failed request a success.
+    expect(enforce).toMatch(/require_2xx/);
+    expect(verify).toMatch(/\[\[ "\$code" == "200" \]\]/);
+  });
+});
+
+describe('branch protection scripts — are runnable', () => {
+  it.each([
+    ['enforce', ENFORCE],
+    ['verify', VERIFY],
+  ])('%s passes bash -n', (_name, path) => {
+    expect(() => execFileSync('bash', ['-n', path], { encoding: 'utf8' })).not.toThrow();
+  });
+
+  it('verify refuses to run without a token instead of reporting success', () => {
+    // A verification script that proceeds without credentials can only produce
+    // a false negative, and a false "OK" is worse than no check.
+    //
+    // The refusal is exit 2 with the message on stderr, so this catches the
+    // exception rather than reading stdout: the first version used execFileSync
+    // without a try and failed with "Command failed" — which was the script
+    // behaving correctly, and the test asserting the wrong channel.
+    let message = '';
+    let status: number | undefined;
+    try {
+      execFileSync('bash', [VERIFY], {
+        encoding: 'utf8',
+        env: { PATH: process.env.PATH, GITHUB_TOKEN: '', GH_TOKEN: '' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      status = 0;
+    } catch (e) {
+      const err = e as { status?: number; stderr?: string };
+      status = err.status;
+      message = err.stderr ?? '';
+    }
+    expect(status).toBe(2);
+    expect(message).toContain('Missing token');
+  });
+});
