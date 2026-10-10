@@ -187,7 +187,24 @@ Po krokach 1–2 `docs/site/` jest w pełni redundanctny. Dwie ścieżki:
 to dokładnie ten błąd, który naprawiłem dziś wcześniej. Ale to **Twoja decyzja**:
 31 plików w historii gita, i równoległa sesja może jeszcze pisać w `docs/site/`.
 
-### Krok 5 — `panel-app/`: świadomie poza repo
+### Krok 5 — `panel-app/`: rozstrzygnięte 2026-10-10, czeka na operatora
+
+Szczegóły w [`docs/dev/notes/panel-app-ownership.md`](../docs/dev/notes/panel-app-ownership.md).
+
+Zmierzone na serwerze: 156 MB i 16 910 plików, z czego **149 MB to `vendor/`**.
+Własnego kodu jest **82 pliki** (`app/` 56, `resources/` 6, migracje 17, testy 3)
+i **zero wersjonowania** — brak `.git`.
+
+Kluczowe: `--exclude 'panel-app/'` chroni przed nadpisaniem przez rsync, ale nie
+przed utratą. Historia, diff i możliwość cofnięcia nie istnieją. To nie jest
+decyzja architektoniczna — to brak kopii kodu, który sami napisaliśmy,
+opisany jako decyzja.
+
+Rekomendacja: osobne **prywatne** repo. Alternatywnie zapas poza webrootem.
+Wciąganie do `memphis` odradzam — `.env` z `APP_KEY` i 149 MB historii za pierwszym
+pushem.
+
+### Krok 5 (wersja pierwotna) — `panel-app/`: świadomie poza repo
 
 17 098 plików, `vendor/`, `.env`, `storage/logs/`, 60 plików cache widoków.
 Panel nie był ruszany od 22 kwietnia (`.env`) i 27 września (migracje).

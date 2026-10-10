@@ -123,20 +123,30 @@ describe('branch protection policy — what must and must not gate a merge', () 
 describe('branch protection — the automerge path cannot bypass the gate', () => {
   const automerge = readFileSync(resolve('.github/workflows/automerge.yml'), 'utf8');
 
-  it('goes through the action that shells out to gh pr merge --auto', () => {
-    // Measured 2026-10-09: automerge.yml has 928 runs, every one `skipped`,
-    // because the `automerge` label does not exist in this repository. So it is
-    // a path that has never fired, not a path that let anything through — and
-    // an earlier note in this repo claimed the opposite.
+  it('checks status itself, without depending on a label nobody applies', () => {
+    // Measured 2026-10-10: the `automerge` label does not exist in this
+    // repository and no PR has ever carried it, so the old workflow — gated on
+    // that label — had never fired. It read as a merge path and provided none.
     //
-    // The action runs `gh pr merge --auto`, which GitHub holds until the
-    // required checks pass. With required_status_checks in place the label is a
-    // request, not a permission.
-    expect(automerge).toContain('enable-pull-request-automerge');
-    expect(automerge).toContain("contains(github.event.pull_request.labels.*.name, 'automerge')");
+    // The workflow now reads the required checks from the ruleset and merges
+    // only when each one reports success. No label, no action, no assumption
+    // that GitHub's auto-merge queue will do the waiting for it.
+    expect(automerge).toContain('gh pr merge');
+    expect(automerge).toContain('--squash');
+    expect(automerge).toContain('!= "success"');
+    // Read the executable lines, not the whole file: the header explains what
+    // this replaced and names the old action, so a plain not.toContain on the
+    // source matches its own documentation. Same rule as the site-metrics and
+    // install-customer tests.
+    const code = automerge
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('#'))
+      .join('\n');
+    expect(code).not.toContain('enable-pull-request-automerge');
+    expect(code).not.toContain('contains(github.event.pull_request.labels');
 
-    // ...and verify reports the path rather than staying quiet about it.
-    expect(verify).toContain('automerge path');
+    // ...and verify still refuses to let the smoke check become a gate.
+    expect(verify).toContain('The Telegram smoke check is required');
   });
 
   it('verify fails if automerge ever uses --admin', () => {
