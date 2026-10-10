@@ -245,3 +245,9 @@ work/
 dsmx-usa-assets/
 private-work/
 notes/szczepan-*.md
+
+# one-off operator scripts that read a vault secret — never in the public repo
+htpasswd-write-tmp.mts
+
+# scratch dir for throwaway generator/test scripts — never a source of truth
+tmp/

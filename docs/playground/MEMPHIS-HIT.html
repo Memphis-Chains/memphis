@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>MEMPHIS</title>
+<style>
+  :root{ --black:#0a0908; --ink:#efe8da; --dim:#8a8578; --hot:#c8412f; }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--black);}
+  body{
+    min-height:100vh;
+    display:flex; align-items:center; justify-content:center;
+    padding:60px 22px;
+    font-family: ui-monospace,"DejaVu Sans Mono","Liberation Mono",Menlo,Consolas,monospace;
+    color:var(--ink);
+    background:
+      radial-gradient(90% 70% at 50% 30%, #16110d 0%, #0a0908 65%);
+  }
+  .card{
+    width:100%; max-width:640px;
+    border:1px solid #241f1a;
+    padding:52px 40px 44px;
+    background:linear-gradient(180deg,#100d0a,#0a0908);
+    box-shadow:0 40px 100px -40px #000, 0 0 0 1px #000 inset;
+    position:relative;
+  }
+  .card::before,.card::after{
+    content:""; position:absolute; left:0; right:0; height:5px;
+    background:repeating-linear-gradient(90deg,var(--hot) 0 26px,#1a1512 26px 52px);
+  }
+  .card::before{top:0}
+  .card::after{bottom:0}
+  h1{
+    margin:0 0 34px;
+    font-size:clamp(34px,7vw,68px);
+    letter-spacing:.16em; font-weight:700; text-transform:uppercase;
+    background:linear-gradient(180deg,#f4eee3,#b9b2a4 55%,#6b6558);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  p{ margin:0 0 26px; font-size:17px; line-height:2.0; color:#d6d0c4; }
+  p strong{color:#fff; font-weight:600;}
+  p .hot{color:var(--hot); font-weight:700;}
+  .hit{
+    margin:34px 0 30px;
+    font-size:clamp(26px,5vw,42px);
+    letter-spacing:.06em; font-weight:700; line-height:1.35;
+    color:#fff;
+    text-shadow:0 0 30px rgba(200,65,47,.35);
+  }
+  .kadr{
+    margin:30px 0 0; padding-left:16px;
+    border-left:2px solid var(--hot);
+    color:var(--dim); font-size:14px; line-height:1.95; letter-spacing:.04em;
+  }
+  .foot{
+    margin-top:40px; padding-top:20px; border-top:1px solid #241f1a;
+    display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap;
+    color:#4e4941; font-size:10.5px; letter-spacing:.16em; text-transform:uppercase;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Memphis</h1>
+
+    <p><strong>Nie pytam cię kim jesteś.</strong> Pytam tylko, czy wchodzisz.</p>
+
+    <p>Zero telemetrii. Zero konta. Zero telefonu do nikogo. Sto dziewięćdziesiąt siedem plików, trzydzieści dni, jeden katalog — i wszystko zostaje u ciebie, w katalogu, nie w czyimś raporcie.</p>
+
+    <p><span class="hot">Kadr pusty.</span> Dlatego nie ma kogo złapać.</p>
+
+    <p class="hit">Hej. Wchodź.</p>
+
+    <p class="kadr">Wchodzenie jest jedynym logowaniem.</p>
+
+    <div class="foot">
+      <span>reżyseria: pusty kadr</span>
+      <span>produkcja: łańcuch</span>
+      <span>zero widoków</span>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>MEMPHIS — hymn marszowy</title>
+<style>
+  :root{
+    --ink:#e8e4dc;
+    --dim:#8a8578;
+    --hot:#c8412f;
+    --gold:#d9a441;
+    --black:#0a0908;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--black);}
+  body{
+    font-family: ui-monospace, "DejaVu Sans Mono", "Liberation Mono", Menlo, Consolas, monospace;
+    color:var(--ink);
+    min-height:100vh;
+    display:flex; justify-content:center;
+    padding:48px 20px 120px;
+  }
+  .frame{
+    width:100%; max-width:780px;
+    border:1px solid #241f1a;
+    box-shadow: 0 0 0 1px #000 inset, 0 30px 80px -30px #000;
+    background:
+      radial-gradient(120% 80% at 50% 0%, #14100c 0%, #0a0908 60%);
+  }
+  header{
+    border-bottom:1px solid #241f1a;
+    padding:34px 32px 28px;
+    text-align:center;
+    position:relative;
+  }
+  header::after{
+    content:"";
+    position:absolute; left:0; right:0; bottom:-1px; height:1px;
+    background:linear-gradient(90deg,transparent,var(--hot),transparent);
+  }
+  h1{
+    margin:0;
+    font-size:clamp(38px,8vw,86px);
+    letter-spacing:.14em;
+    font-weight:700;
+    text-transform:uppercase;
+    background:linear-gradient(180deg,#f2ece1 0%, #b9b2a4 55%, #6b6558 100%);
+    -webkit-background-clip:text; background-clip:text;
+    color:transparent;
+    text-shadow:0 0 40px rgba(200,65,47,.10);
+  }
+  .sub{
+    margin:14px 0 0;
+    color:var(--dim);
+    font-size:13px; letter-spacing:.22em; text-transform:uppercase;
+  }
+  .meta{
+    margin-top:22px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;
+  }
+  .chip{
+    border:1px solid #2c261f; color:var(--dim);
+    font-size:11px; letter-spacing:.16em; text-transform:uppercase;
+    padding:5px 10px;
+  }
+  .chip.hot{border-color:#5b2a22; color:var(--hot);}
+  .chip.gold{border-color:#4a3a1c; color:var(--gold);}
+
+  article{padding:36px 32px 20px;}
+  h2{
+    font-size:12px; letter-spacing:.28em; text-transform:uppercase;
+    color:var(--hot); font-weight:600;
+    margin:44px 0 18px;
+    display:flex; align-items:center; gap:14px;
+  }
+  h2::after{content:""; flex:1; height:1px; background:linear-gradient(90deg,#3a1a14,transparent);}
+  h2:first-child{margin-top:0;}
+
+  p.stanza{
+    margin:0 0 22px;
+    font-size:16px; line-height:2.05;
+    color:#cfc9bd;
+    white-space:pre-wrap;
+    font-family: inherit;
+  }
+  p.stanza b{color:var(--gold); font-weight:600;}
+
+  .chorus{
+    margin:30px -8px;
+    padding:26px 20px;
+    border-left:3px solid var(--hot);
+    background:linear-gradient(90deg, #150d0a 0%, transparent 78%);
+    font-size:16px; line-height:2.1; color:#efe7d8;
+    white-space:pre-wrap;
+  }
+  .chorus .beat{color:var(--hot); font-weight:700; letter-spacing:.08em;}
+
+  .final{
+    margin-top:52px;
+    border-top:1px solid #241f1a;
+    padding-top:26px;
+  }
+  .coda{
+    text-align:center;
+    margin-top:44px;
+    font-size:11px; letter-spacing:.2em; text-transform:uppercase;
+    color:#5d574c;
+    line-height:2;
+  }
+  .coda strong{color:var(--hot); font-weight:600; letter-spacing:.3em; font-size:13px;}
+  .bar{
+    height:5px; margin:0;
+    background:repeating-linear-gradient(90deg, var(--hot) 0 26px, #1a1512 26px 52px);
+  }
+  footer{
+    padding:22px 32px 30px;
+    border-top:1px solid #241f1a;
+    color:#4e4941; font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+    display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap;
+  }
+  .nb{ display:block; height:3px; background:#16120f; border-left:1px solid var(--hot); padding-left:14px; margin:28px 32px 0; color:#5d574c; font-size:11.5px; letter-spacing:.1em; line-height:1.9;}
+</style>
+</head>
+<body>
+<div class="frame">
+
+  <div class="bar"></div>
+  <header>
+    <h1>Memphis</h1>
+    <p class="sub">hymn marszowy na cztery nogi</p>
+    <div class="meta">
+      <span class="chip hot">kino niezależne</span>
+      <span class="chip gold">epic theme</span>
+      <span class="chip">sekcja rytmiczna — zawsze razem</span>
+      <span class="chip">bas</span>
+    </div>
+  </header>
+
+  <article>
+    <h2>Zwrotka I</h2>
+    <p class="stanza">Zaczyna się od pustego katalogu —
+jedna komenda, tyle.
+Nie pyta „czy na pewno”, nie każe ci wierzyć,
+wchodzi i staje, i ma swój rytm.
+
+Świeży system, trzydzieści dni,
+sto dziewięćdziesiąt siedem plików twardej pracy,
+nikt nie mówił „to niemożliwe”,
+bo nikt nie mówił nic.
+Ja też nie mówię. Liczę.</p>
+
+    <div class="chorus"><span class="beat">Hej, hej, hej —</span>
+Memphis, Memphis,
+łańcuch za łańcuchem,
+przerwij go, nie znikaj.
+<span class="beat">Hej, hej, hej —</span>
+sekcja zawsze razem,
+beton i hasz,
+i bas, co trzyma rytm.</div>
+
+    <h2>Zwrotka II</h2>
+    <p class="stanza">Tam gdzie inni piszą „proszę, nie zgub się”,
+ja piszę: „nie ma dokąd”.
+Każdy blok ma poprzednika w plecach —
+wypchnij jedno, upada cały szereg.
+Łańcuch nie jest ozdobą. Łańcuch jest kością.
+
+A w kieszeni — sejf, żelazo i sól,
+tajemnica ma zapach, którego nie da się zmyć.
+Nawet jeśli ktoś zerwie, coś tam zostaje,
+i zostaje <b>w katalogu</b>, nie w twojej głowie.</p>
+
+    <div class="chorus"><span class="beat">Hej, hej, hej —</span>
+Memphis, Memphis,
+zero kamer, zero rachunków,
+nikt nie liczy twoich kroków.
+<span class="beat">Hej, hej, hej —</span>
+sekcja zawsze razem,
+mury, mury, mury,
+i bas, co trzyma rytm.</div>
+
+    <h2>Zwrotka III — głośniej</h2>
+    <p class="stanza">Mówicie: „to tylko soft”. To tylko kod.
+Pójdźcie, zróbcie, wróćcie, powiedzcie — „nie ma”.
+
+Nie ma telemetrii. Nie ma telefonu.
+Nie ma cię w cudzym arkuszu, w cudzym raporcie,
+w czyimś zdaniu „zbadaliśmy setki instalacji”.
+Nie ma cię. I nie będzie.
+Kadr pusty — dlatego nie ma kogo złapać.
+
+A ja? Jestem dźwiękiem w cudzym terminalu.
+Cztery linijki na czarnym tle, litera po literze,
+prosto w klawiaturę, w duszę, w powrót.
+Kino jest małe. Kadr jest jeden. <b>Kadr jest zawsze ten sam.</b>
+Mówię jedno słowo — i w całym domu milknie radio.</p>
+
+    <div class="chorus"><span class="beat">Hej, hej, hej —</span>
+Memphis, Memphis,
+wszystko co wiem, mieści się w linijce,
+i linijka nie kłamie.
+<span class="beat">Hej, hej, hej —</span>
+sekcja zawsze razem,
+beton i hasz,
+i bas, co trzyma rytm.</div>
+
+    <h2>Ostatnio — wolno, ciężko, bas</h2>
+    <p class="stanza final">A potem cisza.
+Nie pustka — cisza.
+Bo cisza po tym, co naprawdę zostało,
+jest głośniejsza niż wszystkie twoje monitory.
+
+I zostaje tylko krok,
+i krok, i krok.
+Do przodu. Do przodu.</p>
+
+    <p class="coda"><strong>Hej.</strong><br>— z drona przy basie: żadna wtyczka nie zostawiła śladu.<br>Kadr pusty. Zawsze.</p>
+  </article>
+
+  <div class="nb">nr kadr 01 / jedyny kadr &nbsp;·&nbsp; długość 2:41 &nbsp;·&nbsp; zero widoków publicznych &nbsp;·&nbsp; zero rachunków</div>
+
+  <footer>
+    <span>reżyseria: pusty kadr</span>
+    <span>produkcja: łańcuch</span>
+    <span>sejf, żelazo i sól</span>
+  </footer>
+  <div class="bar"></div>
+</div>
+</body>
+</html>
