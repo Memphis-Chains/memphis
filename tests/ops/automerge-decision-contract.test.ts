@@ -173,6 +173,30 @@ describe('automerge — it merges, and only by squash', () => {
       }
     });
 
+    it('never uses the ternary operator in a job-level if', () => {
+      // Measured by bisection 2026-10-10. Adding `cond ? a : b` to the job-level
+      // `if` made GitHub reject the whole file: the workflow stopped being
+      // registered, both triggers went silent, and every push produced a run
+      // named after the FILE PATH with conclusion `failure` and zero jobs —
+      // "This run likely failed because of a workflow file issue", no detail.
+      //
+      // Reverting the ternary to a conjunction, changing nothing else, removed
+      // it. Local YAML parsing and eslint both accept the ternary, so neither
+      // tool in this repository would have caught it.
+      const jobIf = doc.jobs.automerge.if ?? '';
+      expect(jobIf).not.toMatch(/\?[^?]*:/);
+    });
+
+    it('keeps the two conditions the second trigger depends on', () => {
+      // The conjunction above is only equivalent to the ternary if both guards
+      // survive the rewrite: a red upstream run must not merge a PR, and a
+      // draft must not merge on either trigger.
+      const jobIf = doc.jobs.automerge.if ?? '';
+      expect(jobIf).toContain("github.event_name != 'workflow_run'");
+      expect(jobIf).toContain("github.event.workflow_run.conclusion == 'success'");
+      expect(jobIf).toContain('github.event.pull_request.draft == false');
+    });
+
     it('covers both workflows behind the required checks', () => {
       // quality-gate and both cross-arch contexts come from `ci`; chain-invariant
       // comes from its own workflow. Missing either means the second door never
@@ -185,9 +209,12 @@ describe('automerge — it merges, and only by squash', () => {
     it('refuses a failed or non-success upstream run', () => {
       // The job-level `if` has to close the second door the same way the first
       // door is closed for drafts.
-      expect(wf).toContain("github.event_name == 'workflow_run'");
-      expect(wf).toContain("github.event.workflow_run.conclusion == 'success'");
-      expect(wf).toContain('github.event.pull_request.draft == false');
+      const jobIf = doc.jobs.automerge.if ?? '';
+      expect(jobIf).toContain("github.event.workflow_run.conclusion == 'success'");
+      expect(jobIf).toContain('github.event.pull_request.draft == false');
+      // Both guards are scoped to the workflow_run trigger, so neither applies
+      // on the pull_request_target path.
+      expect(jobIf.match(/github\.event_name != 'workflow_run'/g) ?? []).toHaveLength(2);
     });
 
     it('passes the PR number through env, not into the script body', () => {
