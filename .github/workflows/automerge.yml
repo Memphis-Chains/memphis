@@ -29,17 +29,6 @@ name: automerge
 on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
-  workflow_run:
-    # NAMES OF WORKFLOWS, not names of checks. `quality-gate` and
-    # `cross-arch (macos-latest)` are jobs inside `ci`; listing them here makes
-    # GitHub reject the whole file — it does not warn about an unknown name, the
-    # workflow simply stops being registered and every trigger goes quiet.
-    # Measured 2026-10-10: with `quality-gate` listed, `automerge` vanished from
-    # `GET /actions/workflows` and PR #665 sat with no automerge run at all.
-    # Producer of each required check: quality-gate and both cross-arch -> `ci`;
-    # chain-invariant -> `chain-invariant`.
-    workflows: [ci, chain-invariant]
-    types: [completed]
 
 permissions:
   contents: write
