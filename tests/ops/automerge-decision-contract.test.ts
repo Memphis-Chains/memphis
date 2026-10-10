@@ -20,7 +20,7 @@
  * for real in automerge-decision.test.ts, which runs the extracted script
  * against a fake `gh` and checks all-green, one-failing and one-pending.
  */
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -150,17 +150,36 @@ describe('automerge — it merges, and only by squash', () => {
       expect(wf).toContain('types: [completed]');
     });
 
-    it('names the workflows that gate a merge', () => {
-      // A trigger that names a workflow which no longer exists never fires, and
-      // the second door silently never opens — the same shape as reading rules
-      // from an endpoint that has none.
-      const gated = wf.match(/workflows:\s*\[([^\]]*)\]/)?.[1] ?? '';
-      expect(
-        gated
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean).length,
-      ).toBeGreaterThan(0);
+    it('names workflows that exist, not the checks they produce', () => {
+      // `workflow_run.workflows` takes WORKFLOW names. `quality-gate` and
+      // `cross-arch (macos-latest)` are job names inside `ci`. Listing them makes
+      // GitHub reject the whole file without warning: the workflow stops being
+      // registered, vanishes from the API, and every trigger goes silent. That is
+      // what happened on 2026-10-10 — PR #665 got no automerge run at all, and
+      // the cause was a name that looked entirely plausible.
+      const real = new Set<string>();
+      for (const file of readdirSync(resolve('.github/workflows'))) {
+        if (!/\.ya?ml$/.test(file)) continue;
+        const other = parseYaml(readFileSync(resolve('.github/workflows', file), 'utf8')) as {
+          name?: string;
+        };
+        if (other?.name) real.add(other.name);
+      }
+      const triggers = (doc as { on: Record<string, { workflows?: string[] }> }).on;
+      const listed = triggers.workflow_run?.workflows ?? [];
+      expect(listed.length).toBeGreaterThan(0);
+      for (const name of listed) {
+        expect(real, `workflow_run names "${name}", which is not a workflow`).toContain(name);
+      }
+    });
+
+    it('covers both workflows behind the required checks', () => {
+      // quality-gate and both cross-arch contexts come from `ci`; chain-invariant
+      // comes from its own workflow. Missing either means the second door never
+      // opens when that check is the last to finish.
+      const triggers = (doc as { on: Record<string, { workflows?: string[] }> }).on;
+      const listed = new Set(triggers.workflow_run?.workflows ?? []);
+      for (const w of ['ci', 'chain-invariant']) expect(listed).toContain(w);
     });
 
     it('refuses a failed or non-success upstream run', () => {
