@@ -120,6 +120,42 @@ describe('branch protection policy — what must and must not gate a merge', () 
   });
 });
 
+describe('branch protection — the automerge path cannot bypass the gate', () => {
+  const automerge = readFileSync(resolve('.github/workflows/automerge.yml'), 'utf8');
+
+  it('goes through the action that shells out to gh pr merge --auto', () => {
+    // Measured 2026-10-09: automerge.yml has 928 runs, every one `skipped`,
+    // because the `automerge` label does not exist in this repository. So it is
+    // a path that has never fired, not a path that let anything through — and
+    // an earlier note in this repo claimed the opposite.
+    //
+    // The action runs `gh pr merge --auto`, which GitHub holds until the
+    // required checks pass. With required_status_checks in place the label is a
+    // request, not a permission.
+    expect(automerge).toContain('enable-pull-request-automerge');
+    expect(automerge).toContain("contains(github.event.pull_request.labels.*.name, 'automerge')");
+
+    // ...and verify reports the path rather than staying quiet about it.
+    expect(verify).toContain('automerge path');
+  });
+
+  it('verify fails if automerge ever uses --admin', () => {
+    // --admin bypasses required checks. There is no version of that which is
+    // safe while this script claims main is protected.
+    expect(automerge).not.toContain('--admin');
+    expect(verify).toContain('which bypasses required checks');
+  });
+
+  it('never greps for a literal the workflow does not contain', () => {
+    // The first version checked for `--auto` in the workflow file. The workflow
+    // uses the action, so that string never appears — the check matched nothing,
+    // printed nothing, and passed. A gate that is green because its pattern
+    // cannot fire is the same failure as the dead knip rule, in a new place.
+    expect(verify).not.toMatch(/grep -q -- '--auto'/);
+    expect(verify).toContain("grep -q 'enable-pull-request-automerge'");
+  });
+});
+
 describe('branch protection scripts — read HTTP status where it was written', () => {
   it('never runs an API call inside a pipeline', () => {
     // Three measured failures: appending the status after the body on stdout

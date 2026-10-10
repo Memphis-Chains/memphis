@@ -37,6 +37,8 @@ REPO="${GITHUB_REPO:-memphis}"
 TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
 RULESET_NAME="${MEMPHIS_MAIN_RULESET_NAME:-main}"
 API="${GITHUB_API_URL:-https://api.github.com}"
+# Only used to read the workflow file when this script runs from a clone.
+REPO_ROOT="${MEMPHIS_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 EXPECTED_CONTEXTS="chain-invariant,cross-arch (macos-latest),cross-arch (ubuntu-24.04-arm),quality-gate"
 
@@ -107,6 +109,35 @@ strict="$(jq -r '[.rules[] | select(.type == "required_status_checks") | .parame
 # requiring it would block every merge forever.
 if grep -qx 'smoke' <<<"$(tr ',' '\n' <<<"$actual")"; then
   fail "The Telegram smoke check is required. It cannot pass without secrets."
+fi
+
+# The label alone must never be enough to merge. `automerge.yml` runs
+# `gh pr merge --auto` on any non-draft PR labelled `automerge`, and that
+# command is gated by the repository's required checks — so with the rule above
+# in place, the label is a request rather than a permission. Measured 2026-10-09:
+# the workflow has 928 runs, all `skipped`, because the `automerge` label does
+# not exist in this repository. It is a path that has never fired, not a path
+# that let anything through.
+#
+# Asserted so the two files cannot drift: if a future edit makes the label
+# sufficient on its own, this is where it should be noticed.
+AUTOMERGE_WORKFLOW="$REPO_ROOT/.github/workflows/automerge.yml"
+if [[ -f "$AUTOMERGE_WORKFLOW" ]]; then
+  # The action shells out to `gh pr merge --auto`, so the workflow file itself
+  # carries `auto` only in its name. An earlier version of this check looked for
+  # a literal `--auto` and matched nothing, printing nothing and passing — the
+  # same shape as a gate that stays green because its pattern never fires.
+  if grep -q 'enable-pull-request-automerge' "$AUTOMERGE_WORKFLOW"; then
+    echo "[verify-branch-protection] automerge path: peter-evans/enable-pull-request-automerge (gated by required checks)"
+  else
+    echo "[verify-branch-protection] no automerge workflow found - merges are manual and gated" >&2
+  fi
+  # A workflow that merges on a label alone, with no reference to check status,
+  # is the shape that let a red gate reach main. There is no safe version of
+  # that without the required-checks rule, so flag it rather than trust it.
+  if grep -q -- '--admin' "$AUTOMERGE_WORKFLOW"; then
+    fail "automerge.yml uses --admin, which bypasses required checks."
+  fi
 fi
 
 echo "[verify-branch-protection] OK for ${OWNER}/${REPO} (ruleset ${id}, ${RULESET_NAME}): required=${actual}, strict=true"
