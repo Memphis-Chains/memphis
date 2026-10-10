@@ -72,11 +72,12 @@ function shellSingleQuote(value: string): string {
 /**
  * Run the "resolve the pull request" step with a stub `gh`.
  *
- * `workflow_run` payloads carry no pull_request object, so the step has to find
- * the PR from the commit. The stub answers only the two queries the step makes.
+ * `check_run` payloads carry no pull_request object, so the step has to find
+ * the PR from the commit that was checked. The stub answers only the queries the
+ * step makes.
  */
 function runResolve(args: {
-  event: 'pull_request_target' | 'workflow_run';
+  event: 'pull_request_target' | 'check_run';
   openPrs: Array<{ number: number; state: string }>;
   draftFor: Record<number, boolean>;
 }): { r: SpawnSyncReturns<string>; outFile: string; calls: string[] } {
@@ -346,9 +347,9 @@ describe('automerge — an unreadable policy blocks the merge', () => {
 describe('automerge — the second trigger has to find its own pull request', () => {
   const SHA = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
 
-  it('resolves the PR from the commit on workflow_run', () => {
+  it('resolves the PR from the checked commit on check_run', () => {
     const { r, outFile } = runResolve({
-      event: 'workflow_run',
+      event: 'check_run',
       openPrs: [{ number: 663, state: 'open' }],
       draftFor: { 663: false },
     });
@@ -361,7 +362,7 @@ describe('automerge — the second trigger has to find its own pull request', ()
   it('takes the oldest PR when a head commit is claimed by two', () => {
     // Merging the newer one would merge the same commits a second time.
     const { outFile } = runResolve({
-      event: 'workflow_run',
+      event: 'check_run',
       openPrs: [
         { number: 700, state: 'open' },
         { number: 660, state: 'open' },
@@ -375,7 +376,7 @@ describe('automerge — the second trigger has to find its own pull request', ()
     // The run belongs to a closed or merged PR. Merging number "" would call
     // `gh pr merge ""`, which is not a refusal, it is a command against nothing.
     const { r, outFile } = runResolve({
-      event: 'workflow_run',
+      event: 'check_run',
       openPrs: [{ number: 659, state: 'closed' }],
       draftFor: {},
     });
@@ -390,7 +391,7 @@ describe('automerge — the second trigger has to find its own pull request', ()
     // `workflow_run` has no draft field, so the step has to check itself —
     // otherwise the second door walks straight past the first door's guard.
     const { r, outFile } = runResolve({
-      event: 'workflow_run',
+      event: 'check_run',
       openPrs: [{ number: 664, state: 'open' }],
       draftFor: { 664: true },
     });
