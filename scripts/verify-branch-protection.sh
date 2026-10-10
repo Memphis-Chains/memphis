@@ -1,73 +1,144 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# verify-branch-protection.sh — prove main is actually protected.
+#
+# WHAT THIS USED TO DO WRONG, MEASURED 2026-10-09
+# ---------------------------------------------
+# It read GET /repos/{owner}/{repo}/branches/{branch}/protection, which answers
+# 404 "Branch not protected" for this repository — the protection lives in a
+# ruleset named "main", not in classic branch protection.
+#
+# And then it printed:
+#
+#     [verify-branch-protection] Failed (HTTP 404)
+#     {"message": "Branch not protected", ...}
+#
+# ...and exited 0. Every real failure in the function calls `exit 1`; the 404
+# path did not. A verification that reports a failure and returns success is
+# the shape that lets a missing gate look like a passing one, and this one had
+# been reporting "no protection here" while printing a green result.
+#
+# So this version reads the ruleset, which is where the protection actually is,
+# and treats "cannot read the ruleset" as a failure rather than as absence of
+# failure.
+#
+# WHAT IT ASSERTS
+#   - the ruleset exists, is active, and targets the default branch
+#   - deletion and non-fast-forward are blocked
+#   - required_status_checks contains all four contexts, strict
+#   - the Telegram smoke check is NOT required (it exits 78 without secrets)
+#
+# That last one is the part worth keeping: a check that can never pass without
+# secrets must never become a merge gate.
+
 OWNER="${GITHUB_OWNER:-Memphis-Chains}"
 REPO="${GITHUB_REPO:-memphis}"
-BRANCH="${GITHUB_BRANCH:-main}"
 TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
-PROFILE="${MEMPHIS_BRANCH_PROTECTION_PROFILE:-team}"
+RULESET_NAME="${MEMPHIS_MAIN_RULESET_NAME:-main}"
+API="${GITHUB_API_URL:-https://api.github.com}"
+# Only used to read the workflow file when this script runs from a clone.
+REPO_ROOT="${MEMPHIS_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
-case "$PROFILE" in
-  solo)
-    expected_required_reviews=0
-    ;;
-  team)
-    expected_required_reviews=1
-    ;;
-  *)
-    echo "[verify-branch-protection] Invalid MEMPHIS_BRANCH_PROTECTION_PROFILE=${PROFILE} (expected solo|team)" >&2
-    exit 2
-    ;;
-esac
+EXPECTED_CONTEXTS="chain-invariant,cross-arch (macos-latest),cross-arch (ubuntu-24.04-arm),quality-gate"
 
 if [[ -z "$TOKEN" ]]; then
   echo "[verify-branch-protection] Missing token. Set GITHUB_TOKEN or GH_TOKEN." >&2
   exit 2
 fi
 
-response_file="$(mktemp)"
-status_code="$(
-  curl -sS \
-    -o "$response_file" \
-    -w '%{http_code}' \
-    -H "Accept: application/vnd.github+json" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    "https://api.github.com/repos/${OWNER}/${REPO}/branches/${BRANCH}/protection"
-)"
-
-if [[ "$status_code" != "200" ]]; then
-  echo "[verify-branch-protection] Failed (HTTP ${status_code})" >&2
-  cat "$response_file" >&2
-  rm -f "$response_file"
+fail() {
+  echo "[verify-branch-protection] $1" >&2
   exit 1
+}
+
+out="$(mktemp)"
+code="$(curl -sS -o "$out" -w '%{http_code}' \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  "${API}/repos/${OWNER}/${REPO}/rulesets")"
+
+# A read failure is a failure. The old version treated 404 as informational and
+# then exited 0, which is how an unprotected main reported success.
+[[ "$code" == "200" ]] || {
+  echo "[verify-branch-protection] Cannot list rulesets (HTTP ${code})" >&2
+  cat "$out" >&2
+  rm -f "$out"
+  exit 1
+}
+
+id="$(jq -r --arg n "$RULESET_NAME" '.[] | select(.name == $n) | .id' "$out" | head -1)"
+rm -f "$out"
+
+[[ -n "$id" && "$id" != "null" ]] || fail "No ruleset named '${RULESET_NAME}' — main is not protected."
+
+out="$(mktemp)"
+code="$(curl -sS -o "$out" -w '%{http_code}' \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  "${API}/repos/${OWNER}/${REPO}/rulesets/${id}")"
+
+[[ "$code" == "200" ]] || {
+  echo "[verify-branch-protection] Cannot read ruleset ${id} (HTTP ${code})" >&2
+  cat "$out" >&2
+  rm -f "$out"
+  exit 1
+}
+
+enforcement="$(jq -r '.enforcement' "$out")"
+[[ "$enforcement" == "active" ]] || fail "Ruleset '${RULESET_NAME}' is ${enforcement}, not active."
+
+# Empty include + exclude would mean "applies to nothing", which reads as a
+# configured rule and behaves as no rule at all.
+cond_include="$(jq -r '.conditions.ref_name.include | join(",")' "$out")"
+cond_exclude="$(jq -r '.conditions.ref_name.exclude | join(",")' "$out")"
+[[ -n "$cond_include" ]] || fail "Ruleset '${RULESET_NAME}' has no branch condition — it does not apply anywhere."
+[[ "$cond_exclude" == "" ]] || fail "Ruleset '${RULESET_NAME}' excludes: ${cond_exclude}"
+
+rule_types="$(jq -r '[.rules[].type] | sort | join(",")' "$out")"
+[[ "$rule_types" == *"deletion"* ]] || fail "Ruleset does not block deletion."
+[[ "$rule_types" == *"non_fast_forward"* ]] || fail "Ruleset allows force-push."
+
+actual="$(jq -r '[.rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | sort | join(",")' "$out")"
+[[ "$actual" == "$EXPECTED_CONTEXTS" ]] || fail "Required checks mismatch.\n  expected: ${EXPECTED_CONTEXTS}\n  actual:   ${actual}"
+
+strict="$(jq -r '[.rules[] | select(.type == "required_status_checks") | .parameters.strict_required_status_checks_policy] | .[0]' "$out")"
+[[ "$strict" == "true" ]] || fail "Required checks are not strict — a stale green run would be accepted as evidence."
+
+# The Telegram smoke check exits 78 when its secrets are absent, by design, so
+# requiring it would block every merge forever.
+if grep -qx 'smoke' <<<"$(tr ',' '\n' <<<"$actual")"; then
+  fail "The Telegram smoke check is required. It cannot pass without secrets."
 fi
 
-required_contexts="$(jq -r '.required_status_checks.contexts[]?' "$response_file")"
-if ! grep -qx 'quality-gate' <<<"$required_contexts"; then
-  echo "[verify-branch-protection] Missing required status check: quality-gate" >&2
-  cat "$response_file" >&2
-  rm -f "$response_file"
-  exit 1
+# The label alone must never be enough to merge. `automerge.yml` runs
+# `gh pr merge --auto` on any non-draft PR labelled `automerge`, and that
+# command is gated by the repository's required checks — so with the rule above
+# in place, the label is a request rather than a permission. Measured 2026-10-09:
+# the workflow has 928 runs, all `skipped`, because the `automerge` label does
+# not exist in this repository. It is a path that has never fired, not a path
+# that let anything through.
+#
+# Asserted so the two files cannot drift: if a future edit makes the label
+# sufficient on its own, this is where it should be noticed.
+AUTOMERGE_WORKFLOW="$REPO_ROOT/.github/workflows/automerge.yml"
+if [[ -f "$AUTOMERGE_WORKFLOW" ]]; then
+  # The action shells out to `gh pr merge --auto`, so the workflow file itself
+  # carries `auto` only in its name. An earlier version of this check looked for
+  # a literal `--auto` and matched nothing, printing nothing and passing — the
+  # same shape as a gate that stays green because its pattern never fires.
+  if grep -q 'enable-pull-request-automerge' "$AUTOMERGE_WORKFLOW"; then
+    echo "[verify-branch-protection] automerge path: peter-evans/enable-pull-request-automerge (gated by required checks)"
+  else
+    echo "[verify-branch-protection] no automerge workflow found - merges are manual and gated" >&2
+  fi
+  # A workflow that merges on a label alone, with no reference to check status,
+  # is the shape that let a red gate reach main. There is no safe version of
+  # that without the required-checks rule, so flag it rather than trust it.
+  if grep -q -- '--admin' "$AUTOMERGE_WORKFLOW"; then
+    fail "automerge.yml uses --admin, which bypasses required checks."
+  fi
 fi
 
-enforce_admins="$(jq -r '.enforce_admins.enabled' "$response_file")"
-linear_history="$(jq -r '.required_linear_history.enabled' "$response_file")"
-force_pushes="$(jq -r '.allow_force_pushes.enabled' "$response_file")"
-required_reviews="$(jq -r '.required_pull_request_reviews.required_approving_review_count' "$response_file")"
-
-if [[ "$enforce_admins" != "true" || "$linear_history" != "true" || "$force_pushes" != "false" ]]; then
-  echo "[verify-branch-protection] Policy mismatch" >&2
-  cat "$response_file" >&2
-  rm -f "$response_file"
-  exit 1
-fi
-
-if [[ "$required_reviews" != "$expected_required_reviews" ]]; then
-  echo "[verify-branch-protection] Required review count mismatch: expected=${expected_required_reviews} actual=${required_reviews}" >&2
-  cat "$response_file" >&2
-  rm -f "$response_file"
-  exit 1
-fi
-
-echo "[verify-branch-protection] OK for ${OWNER}/${REPO}:${BRANCH} (profile=${PROFILE})"
-rm -f "$response_file"
+echo "[verify-branch-protection] OK for ${OWNER}/${REPO} (ruleset ${id}, ${RULESET_NAME}): required=${actual}, strict=true"
+rm -f "$out"
