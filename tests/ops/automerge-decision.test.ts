@@ -118,10 +118,42 @@ function runMerge(verdicts: string, required = CHECK_NAMES.join(',')) {
 }
 
 /** Run the policy step with a stub curl that returns `rulesetJson`. */
+/**
+ * The payload `/rules/branches/<branch>` actually returns, as measured on this
+ * repository 2026-10-10. Every entry is a rule with its own `type`; the status
+ * check rule carries its contexts under `parameters`. The ruleset LIST endpoint
+ * returns metadata with no `rules` key at all, which is why this shape exists.
+ */
+function branchRules(contexts: string[] = CHECK_NAMES, extra: unknown[] = []): string {
+  return JSON.stringify([
+    { type: 'deletion', ruleset_id: 1, ruleset_source_type: 'Repository' },
+    { type: 'non_fast_forward', ruleset_id: 1, ruleset_source_type: 'Repository' },
+    {
+      type: 'required_status_checks',
+      parameters: {
+        strict_required_status_checks_policy: true,
+        do_not_enforce_on_create: false,
+        required_status_checks: contexts.map((context) => ({ context })),
+      },
+      ruleset_source_type: 'Repository',
+      ruleset_id: 1,
+    },
+    ...extra,
+  ]);
+}
+
 function runPolicy(rulesetJson: string) {
   const binDir = tmp('memphis-curl-');
   const curlPath = path.join(binDir, 'curl');
-  writeFileSync(curlPath, `#!/usr/bin/env bash\ncat <<'JSON'\n${rulesetJson}\nJSON\n`, 'utf8');
+  // Record the URL. A stub that answers every endpoint with the same body cannot
+  // tell /rulesets from /rules/branches/<branch>, so a regression in the URL the
+  // workflow reads passes silently — which is exactly how the original bug hid.
+  const urlFile = path.join(tmp('memphis-url-'), 'requested');
+  writeFileSync(
+    curlPath,
+    `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> "${urlFile}"\ncat <<'JSON'\n${rulesetJson}\nJSON\n`,
+    'utf8',
+  );
   chmodSync(curlPath, 0o755);
 
   const outFile = path.join(tmp('memphis-out-'), 'gh_output');
@@ -135,7 +167,7 @@ function runPolicy(rulesetJson: string) {
     },
     encoding: 'utf8',
   });
-  return { r, outFile };
+  return { r, outFile, urlFile };
 }
 
 afterEach(() => {
@@ -193,53 +225,31 @@ describe('automerge — merges only when every required check passed', () => {
 });
 
 describe('automerge — an unreadable policy blocks the merge', () => {
-  it('refuses when the ruleset has no active required checks', () => {
-    const { r } = runPolicy('[]');
+  it('refuses when the branch has no required status checks', () => {
+    const { r } = runPolicy(JSON.stringify([{ type: 'deletion', ruleset_id: 1 }]));
     expect(r.status).not.toBe(0);
     // GitHub workflow commands are stdout annotations, not shell redirects:
     // `::error::` on stderr would never be rendered on the run page.
     expect(`${r.stdout}${r.stderr}`).toContain('refusing to auto-merge');
   });
 
-  it('refuses when the ruleset is disabled', () => {
-    const { r } = runPolicy(
-      JSON.stringify([
-        {
-          name: 'main',
-          enforcement: 'disabled',
-          rules: [
-            {
-              type: 'required_status_checks',
-              parameters: { required_status_checks: [{ context: 'quality-gate' }] },
-            },
-          ],
-        },
-      ]),
+  it('refuses when the ruleset metadata has no rules array', () => {
+    // The exact payload the old reader was fed: ruleset list entries carry no
+    // `rules` key. This is the regression that made automerge skip every run.
+    const { r, urlFile } = runPolicy(
+      JSON.stringify([{ id: 1, name: 'main', enforcement: 'active', target: 'branch' }]),
     );
     expect(r.status).not.toBe(0);
-    // GitHub workflow commands are stdout annotations, not shell redirects:
-    // `::error::` on stderr would never be rendered on the run page.
+    // Same shape, and it must still be fetched from the branch endpoint.
+    expect(readFileSync(urlFile, 'utf8')).toContain('/rules/branches/main');
     expect(`${r.stdout}${r.stderr}`).toContain('refusing to auto-merge');
   });
 
   it('passes the four real checks through from the ruleset', () => {
-    const { r, outFile } = runPolicy(
-      JSON.stringify([
-        {
-          name: 'main',
-          enforcement: 'active',
-          rules: [
-            {
-              type: 'required_status_checks',
-              parameters: {
-                required_status_checks: CHECK_NAMES.map((context) => ({ context })),
-              },
-            },
-          ],
-        },
-      ]),
-    );
+    const { r, outFile, urlFile } = runPolicy(branchRules());
     expect(r.status).toBe(0);
+    // The endpoint itself is the contract: the ruleset LIST carries no rules.
+    expect(readFileSync(urlFile, 'utf8')).toContain('/rules/branches/main');
     const written = readFileSync(outFile, 'utf8');
     for (const name of CHECK_NAMES) {
       expect(written).toContain(name);

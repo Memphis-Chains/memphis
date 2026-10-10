@@ -48,19 +48,26 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/rulesets"
+          # The LIST endpoint (/rulesets) returns ruleset metadata only — it has no
+          # `rules` key at all. Reading `.rules[]?` from it yields nothing, and the
+          # `?` turns that into an empty string rather than an error, so this step
+          # failed with "no active required checks" while four required checks were
+          # configured. Measured 2026-10-10 against this repo.
+          #
+          # Rules for a branch live at /rules/branches/<branch>, which returns the
+          # effective rules including anything inherited from an org.
+          branch="${MEMPHIS_MAIN_BRANCH:-main}"
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/rules/branches/${branch}"
           rules="$(curl -fsSL -H 'Accept: application/vnd.github+json' \
             -H "Authorization: Bearer ${GH_TOKEN}" "$api")"
-          name="${MEMPHIS_MAIN_RULESET_NAME:-main}"
 
-          contexts="$(jq -r --arg n "$name" '
-            .[] | select(.name == $n) | .enforcement as $e
-            | select($e == "active")
-            | .rules[]? | select(.type == "required_status_checks")
-            | .parameters.required_status_checks[]?.context' <<<"$rules" | sort -u | paste -sd, -)"
+          contexts="$(jq -r '
+            [ .[] | select(.type == "required_status_checks")
+              | .parameters.required_status_checks[]?.context ]
+            | sort | unique | join(",")' <<<"$rules")"
 
           if [[ -z "$contexts" ]]; then
-            echo "::error::No active required checks in ruleset '${name}' — refusing to auto-merge."
+            echo "::error::No required status checks configured for '${branch}' — refusing to auto-merge."
             exit 1
           fi
           echo "required=$contexts" >>"$GITHUB_OUTPUT"

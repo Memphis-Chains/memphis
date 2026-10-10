@@ -56,16 +56,28 @@ describe('automerge — required checks come from the ruleset', () => {
     expect(wf).not.toMatch(/context:\s*['"]quality-gate['"]/);
   });
 
-  it('refuses to merge when the ruleset cannot be read', () => {
+  it('refuses to merge when the required checks cannot be read', () => {
     // Guessing an empty list would mean "nothing is required", which merges
     // everything — the exact failure this replaces.
-    expect(wf).toContain('No active required checks');
+    expect(wf).toContain('No required status checks configured');
     expect(wf).toContain('refusing to auto-merge');
   });
 
-  it('reads the active ruleset only', () => {
-    expect(wf).toContain('enforcement');
-    expect(wf).toContain('select($e == "active")');
+  it('reads branch rules, not the ruleset metadata list', () => {
+    // `/rulesets` returns entries with no `rules` key at all. Reading `.rules[]?`
+    // from it yields nothing and the `?` swallows that, so the step reported an
+    // empty policy while four checks were configured — 928 runs, every one
+    // skipped. The endpoint is the fix; this asserts it cannot silently regress.
+    expect(wf).toContain('/rules/branches/');
+    // Assert against the executed shell only. A blanket `not.toContain` over the
+    // file also matches the comment that explains this bug — the same shape as
+    // a grep that reports its own test fixture.
+    const executed = wf
+      .split('\n')
+      .filter((l) => !l.trimStart().startsWith('#'))
+      .join('\n');
+    expect(executed).not.toMatch(/api=.*\/rulesets"/);
+    expect(executed).not.toContain('.rules[]?');
   });
 });
 
