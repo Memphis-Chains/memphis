@@ -251,3 +251,5 @@ htpasswd-write-tmp.mts
 
 # scratch dir for throwaway generator/test scripts — never a source of truth
 tmp/
+
+<!-- verify: final -->
