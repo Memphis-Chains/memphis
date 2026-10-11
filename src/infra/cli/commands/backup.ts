@@ -27,6 +27,7 @@ import {
   cleanupDatabaseSnapshots,
   databaseSnapshotTarArgs,
   snapshotDatabases,
+  tarWarningFlags,
   verifyDatabaseSnapshotEntries,
   type DatabaseSnapshotResult,
 } from './backup-db-snapshot.js';
@@ -275,30 +276,6 @@ function isTarExecutionError(error: unknown): boolean {
  * flag without checking. Caching avoids re-probing on every backup
  * (tar variant doesn't change mid-runtime).
  */
-let cachedTarSupportsWarningOpt: boolean | null = null;
-
-function tarSupportsWarningOpt(): boolean {
-  if (cachedTarSupportsWarningOpt !== null) return cachedTarSupportsWarningOpt;
-  try {
-    execFileSync('tar', ['--warning=no-file-changed', '--version'], {
-      stdio: ['ignore', 'ignore', 'ignore'],
-    });
-    cachedTarSupportsWarningOpt = true;
-  } catch {
-    // BSD tar (macOS) + busybox tar reject the flag. We fall back to
-    // running tar without warning suppression — the
-    // `isTarFileChangedWarning` catch path below tolerates the
-    // resulting exit-1 + stderr signature, so behaviour stays correct,
-    // just slightly noisier in logs.
-    cachedTarSupportsWarningOpt = false;
-  }
-  return cachedTarSupportsWarningOpt;
-}
-
-function tarWarningFlags(): string[] {
-  // The error classifier needs these diagnostics even when tar exits 1.
-  return tarSupportsWarningOpt() ? ['--warning=file-changed', '--warning=file-removed'] : [];
-}
 
 /**
  * Detect tar's "file changed as we read it" (or "file removed") exit

@@ -21,6 +21,7 @@ import {
   cleanupDatabaseSnapshots,
   databaseSnapshotTarArgs,
   snapshotDatabases,
+  tarWarningFlags,
   verifyDatabaseSnapshotEntries,
 } from './backup-db-snapshot.mjs';
 
@@ -153,8 +154,10 @@ async function main() {
   const tarArgs = [
     '-czf',
     partialPath,
-    '--warning=file-changed',
-    '--warning=file-removed',
+    // Probed, not assumed: a hardcoded `--warning=` kills the archive on tar
+    // builds that lack it, which is the same class of bug the macOS runner
+    // hit in the CLI writer.
+    ...tarWarningFlags(),
     // Shared policy — see loadExcludePolicy() above. Never hand-maintain a
     // second exclude list here; that is how vault material got into 6/7
     // nightly archives.

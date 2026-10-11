@@ -21,6 +21,8 @@ export function snapshotDatabases(options: {
   databasePath?: string;
 }): Promise<DatabaseSnapshotResult>;
 export function cleanupDatabaseSnapshots(snapshot: DatabaseSnapshotResult): void;
+export function tarSupportsWarningOpt(): boolean;
+export function tarWarningFlags(): string[];
 export function databaseSnapshotTarArgs(
   snapshot: DatabaseSnapshotResult,
   memphisRoot: string,

@@ -15,6 +15,9 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import * as snapshotModule from '../../scripts/backup-db-snapshot.mjs';
+import { tarSupportsWarningOpt, tarWarningFlags } from '../../scripts/backup-db-snapshot.mjs';
+import * as snapshotBridge from '../../src/infra/cli/commands/backup-db-snapshot.js';
 import {
   cleanupDatabaseSnapshots,
   snapshotDatabases,
@@ -80,6 +83,29 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
   vi.unstubAllEnvs();
   vi.mocked(execFileSync).mockReset();
+});
+
+describe('the compiled CLI and the systemd runner share one implementation', () => {
+  it('re-exports every runtime export of the shared module', () => {
+    // A hand-maintained export list is how the two writers silently drift:
+    // adding a function to the module left it unreachable from the CLI until
+    // tsc failed. Reported as one list, so a missing name is named.
+    const runtimeExports = Object.keys(snapshotModule).filter((name) => name !== 'default');
+    const bridged = new Set(Object.keys(snapshotBridge));
+    expect(runtimeExports.filter((name) => !bridged.has(name))).toEqual([]);
+    expect(runtimeExports.length).toBeGreaterThan(0);
+  });
+
+  it('probes tar for the exact warning flag the archive run emits', () => {
+    // The old probe asked tar to accept `--warning=no-file-changed` beside
+    // `--version`, which macOS tar accepts while it is only printing its
+    // version. The real run then died with
+    // `tar: Option --warning=file-changed is not supported`.
+    const flags = tarWarningFlags();
+    expect(flags).toEqual(snapshotModule.tarWarningFlags());
+    expect(tarSupportsWarningOpt()).toBe(snapshotModule.tarSupportsWarningOpt());
+    for (const flag of flags) expect(flag).toMatch(/^--warning=file-(changed|removed)$/);
+  });
 });
 
 describe('consistent database snapshots through every archive writer', () => {

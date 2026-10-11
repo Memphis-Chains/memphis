@@ -1,5 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import Database from 'better-sqlite3';
@@ -95,6 +96,35 @@ export async function snapshotDatabases({ memphisRoot, dataDir, databasePath }) 
   }
   result.ok = result.errors.length === 0;
   return result;
+}
+
+let cachedWarningOpt = null;
+
+/**
+ * Whether the local tar understands `--warning=`.
+ *
+ * The probe must ask about the exact flag the archive run emits. Probing
+ * `--warning=no-file-changed` next to `--version` answered yes on the macOS
+ * runner while the real run died with
+ * `tar: Option --warning=file-changed is not supported`, exit 2 — tar accepts
+ * an unknown long option while merely printing its version.
+ */
+export function tarSupportsWarningOpt() {
+  if (cachedWarningOpt !== null) return cachedWarningOpt;
+  try {
+    execFileSync('tar', ['--warning=file-changed', '--warning=file-removed', '--version'], {
+      stdio: ['ignore', 'ignore', 'ignore'],
+    });
+    cachedWarningOpt = true;
+  } catch {
+    cachedWarningOpt = false;
+  }
+  return cachedWarningOpt;
+}
+
+/** Warning flags, or none when tar cannot take them. */
+export function tarWarningFlags() {
+  return tarSupportsWarningOpt() ? ['--warning=file-changed', '--warning=file-removed'] : [];
 }
 
 export function cleanupDatabaseSnapshots(snapshot) {
