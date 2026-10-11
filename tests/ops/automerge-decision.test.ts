@@ -103,23 +103,29 @@ function runResolve(args: {
     `printf '%s\\n' "$*" >> ${JSON.stringify(callsFile)}`,
     'expr=""; prev=""',
     'for a in "$@"; do [[ "$prev" == "--jq" ]] && expr="$a"; prev="$a"; done',
-    // The LIST route carries `draft` on every entry, because that is the field
-    // the step filters on. Handing it a list without `draft` makes
-    // `select(.draft == false)` drop every row: the job reports "nothing open"
-    // while pull requests are open — a refusal for the wrong reason that would
-    // still show green.
     `prs=${shellSingleQuote(prs)}`,
     `drafts=${shellSingleQuote(draftPrs)}`,
-    'prsWithDraft="$(printf %s "$prs" | jq -c --argjson d "$drafts" \'[.[] | {number, state, draft: ($d | map({key: (.number|tostring), value: .draft}) | from_entries)[(.number|tostring)] // false}]\')"',
-    `drafts=${shellSingleQuote(draftPrs)}`,
-    `HEAD_SHA=${JSON.stringify(args.headSha ?? 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef')}`,
+    `HEAD_SHA=${JSON.stringify(headSha)}`,
+    // Every jq program goes through shellSingleQuote. Writing `\'` inside a
+    // TypeScript string emits a literal backslash into the shell script, and
+    // the shell does not treat that as a quote — so the two lines run together
+    // and jq sees one expression with a `//` comment on the wrong line. It
+    // passed locally and failed on the runner with a syntax error, which is why
+    // the quoting lives in exactly one helper now.
+    `prsWithDraft="$(printf %s "$prs" | jq -c --argjson d "$drafts" ${shellSingleQuote(
+      '[.[] | {number, state, draft: ($d | map({key: (.number|tostring), value: .draft}) | from_entries)[(.number|tostring)] // false}]',
+    )})"`,
     'case "$*" in',
     '  *state=open*) data="$prsWithDraft" ;;',
     '  *commits/*/pulls*) data="$prs" ;;',
     '  */pulls/*)',
     '    n="$(printf %s "$*" | sed -n "s|.*/pulls/\\([0-9]*\\).*|\\1|p")"',
-    '    obj="$(printf %s "$drafts" | jq -c --arg n "$n" \'map(select((.number|tostring) == $n))[0] // {}\')"',
-    '    data="$(printf %s "$obj" | jq -c --arg h "$HEAD_SHA" \'{number: .number, draft: .draft, head: {sha: $h}}\')"',
+    `    obj="$(printf %s "$drafts" | jq -c --arg n "$n" ${shellSingleQuote(
+      'map(select((.number|tostring) == $n))[0] // {}',
+    )})"`,
+    `    data="$(printf %s "$obj" | jq -c --arg h "$HEAD_SHA" ${shellSingleQuote(
+      '{number: .number, draft: .draft, head: {sha: $h}}',
+    )})"`,
     '    ;;',
     '  *) exit 1 ;;',
     'esac',
