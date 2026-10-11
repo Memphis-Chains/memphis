@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   appendFileSync,
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -16,6 +17,7 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import readline from 'node:readline/promises';
+import { fileURLToPath } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
 
 import chalk from 'chalk';
@@ -27,6 +29,85 @@ import { resolveDotEnvPath } from '../../config/dotenv-file.js';
 import { classifyField } from '../../config/mutability.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
+
+/**
+ * Shared backup exclusion policy — ONE source of truth for every archiver.
+ *
+ * Historically the CLI (`createArchive`) and the systemd runner
+ * (`scripts/scheduled-backup-runner.mjs`) each kept their own hand-written
+ * exclude list, and they disagreed: the runner excluded nothing secret at
+ * all, and BOTH used literal paths (`--exclude=./vault-entries.json`) which
+ * do not match suffixed variants. Measured on this host: `*.bak-diag-*`
+ * vault copies present in 6/7 archives, `site-secrets/*.htpasswd` in 4/7.
+ *
+ * The policy lives in `scripts/backup-exclude-policy.json` so the plain-Node
+ * runner can read it too (it cannot import TypeScript). Read relative to the
+ * compiled module so it works from both `src/` (tsx) and `dist/`.
+ */
+const BACKUP_EXCLUDE_POLICY_FILE = 'backup-exclude-policy.json';
+
+type BackupExcludePolicy = {
+  excludePatterns: string[];
+  fallbackExcludeNames: string[];
+};
+
+function readBackupExcludePolicy(): BackupExcludePolicy {
+  const candidates = [
+    resolve(process.cwd(), 'scripts', BACKUP_EXCLUDE_POLICY_FILE),
+    resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '../../../scripts',
+      BACKUP_EXCLUDE_POLICY_FILE,
+    ),
+    resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '../../../../scripts',
+      BACKUP_EXCLUDE_POLICY_FILE,
+    ),
+  ];
+  for (const candidate of candidates) {
+    try {
+      const raw = readFileSync(candidate, 'utf8');
+      const parsed = JSON.parse(raw) as Partial<BackupExcludePolicy>;
+      if (Array.isArray(parsed.excludePatterns) && Array.isArray(parsed.fallbackExcludeNames)) {
+        return {
+          excludePatterns: parsed.excludePatterns.filter((p) => typeof p === 'string'),
+          fallbackExcludeNames: parsed.fallbackExcludeNames.filter((n) => typeof n === 'string'),
+        };
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+  throw new Error(
+    `Backup exclude policy not found or malformed: ${BACKUP_EXCLUDE_POLICY_FILE}. ` +
+      'Refusing to archive without a known exclusion policy — an unfiltered ' +
+      'archive would pack vault material. Checked: ' +
+      candidates.join(', '),
+  );
+}
+
+const BACKUP_EXCLUDE_POLICY = readBackupExcludePolicy();
+
+/** tar argv entries (`--exclude=...`) shared by every archive path. */
+export const BACKUP_EXCLUDE_PATTERNS: readonly string[] = BACKUP_EXCLUDE_POLICY.excludePatterns;
+
+/** Top-level directory + file names the JSON fallback archiver must skip. */
+export const FALLBACK_EXCLUDE_NAMES: readonly string[] = BACKUP_EXCLUDE_POLICY.fallbackExcludeNames;
+
+/**
+ * Basenames of secret material, WITHOUT the glob prefix and without the
+ * trailing `*`. A name matches when it equals the base, or starts with
+ * `base.` or `base-`, which covers `.bak-diag-*`, `.tmp`, `.old`.
+ */
+export const SECRET_BASENAME_PREFIXES: readonly string[] = [
+  'vault-entries.json',
+  'vault-state.json',
+  '.tier2-passphrase',
+  '.github-pat',
+  'memphis.pid',
+  'boot-failures.json',
+];
 
 const DERIVED_PATHS = ['case-index.sqlite', 'embeddings'] as const;
 
@@ -83,6 +164,13 @@ type BackupArchive = {
 };
 
 const BACKUP_SUFFIX = '.tar.gz';
+/**
+ * Suffix for an archive that is still being written. Anything carrying it is
+ * in-flight or failed: it must not be listed, verified, retained, copied
+ * offsite, or counted in backup health. Mirrors PARTIAL_SUFFIX in
+ * scripts/scheduled-backup-runner.mjs — keep the two in sync.
+ */
+const PARTIAL_SUFFIX = '.partial';
 const CHECKSUM_SUFFIX = '.sha256';
 const DEFAULT_TAG = 'backup';
 const DEFAULT_MANIFEST: Manifest = {
@@ -328,29 +416,46 @@ function safeTargetPath(root: string, entryPath: string): string {
   return join(root, entryPath);
 }
 
+/**
+ * Basename test for secret material, applied at every depth of the fallback
+ * walk. Mirrors the glob arm of the shared policy
+ * (the `vault-entries.json*` and `vault-state.json*` glob arms of the
+ * policy) so both archivers exclude the same set. Keeping this as a name
+ * test rather than a second hand-kept list is the whole point: two lists
+ * is how the drift happened.
+ */
+function isExcludedSecretBasename(name: string): boolean {
+  if (name.endsWith('.lock')) return true;
+  return SECRET_BASENAME_PREFIXES.some(
+    (prefix) => name === prefix || name.startsWith(`${prefix}.`) || name.startsWith(`${prefix}-`),
+  );
+}
+
 function collectFallbackArchiveEntries(root: string, relativePath = '.'): BackupArchiveEntry[] {
   const currentRoot = relativePath === '.' ? root : join(root, relativePath);
   const entries: BackupArchiveEntry[] = [];
 
   for (const entry of readdirSync(currentRoot, { withFileTypes: true })) {
     if (relativePath === '.') {
-      // `snapshots` is excluded for the same reason as `backups`: it holds
-      // pre-change tarballs of the source tree, so packing it makes every
-      // scheduled backup ~66x larger (53 MB -> 3.3 GB on this host) and
-      // feeds itself — each night's archive contains the previous night's
-      // archive. The archive is also redundant with git: every snapshot here
-      // was a pre-fix copy of a tree that is reconstructible from history.
-      if (
-        entry.name === 'backups' ||
-        entry.name === 'cache' ||
-        entry.name === 'logs' ||
-        entry.name === 'snapshots'
-      ) {
+      // Same shared policy as the tar path, expressed as names because this
+      // archiver walks the tree itself instead of delegating to tar. The two
+      // lists drifted for the entire life of this file: the tar path knew
+      // about vault + telemetry and the fallback knew about neither.
+      if (FALLBACK_EXCLUDE_NAMES.includes(entry.name)) {
         continue;
       }
       if (entry.name.endsWith('.lock')) {
         continue;
       }
+    }
+
+    // Secret material may sit at the root of the data dir (not only inside
+    // excluded directories) and may carry any suffix: `vault-entries.json`,
+    // `vault-entries.json.bak-diag-20261008-095251`, `.github-pat.bak`.
+    // The tar path gets this from the glob patterns; this walker needs the
+    // equivalent test on the basename, at EVERY depth, not only the root.
+    if (isExcludedSecretBasename(entry.name)) {
+      continue;
     }
 
     const entryPath = relativePath === '.' ? entry.name : join(relativePath, entry.name);
@@ -462,30 +567,40 @@ function getBackupArchives(
   const manifest = loadManifest(backupRoot);
   const now = Date.now();
 
-  return readdirSync(backupRoot)
-    .filter((file) => file.endsWith(BACKUP_SUFFIX))
-    .map((file) => {
-      const path = join(backupRoot, file);
-      const stat = statSync(path);
-      const fromManifest = manifest.backups.find((b) => b.file === file);
-      const checksumHex = readChecksumHex(path);
-      const timestamp = fromManifest?.timestamp ?? stat.mtime.toISOString();
-      return {
-        file,
-        path,
-        tag:
-          fromManifest?.tag ??
-          (file.replace(BACKUP_SUFFIX, '').split('-').slice(0, -5).join('-') || DEFAULT_TAG),
-        timestamp,
-        size: fromManifest?.size ?? stat.size,
-        checksum:
-          fromManifest?.checksum ?? (checksumHex ? `sha256:${checksumHex}` : 'sha256:missing'),
-        fileCount: fromManifest?.fileCount ?? 0,
-        checksumPath: existsSync(checksumFilePathFor(path)) ? checksumFilePathFor(path) : undefined,
-        stale: now - new Date(timestamp).getTime() > 7 * 24 * 60 * 60 * 1000,
-      };
-    })
-    .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
+  return (
+    readdirSync(backupRoot)
+      .filter((file) => file.endsWith(BACKUP_SUFFIX))
+      // Reject the `.partial` marker wherever it sits in the name, not only as
+      // a trailing suffix. `endsWith(PARTIAL_SUFFIX)` alone was insufficient:
+      // an in-flight archive is filtered out only because the marker happens
+      // to come last, so any other placement — `<name>.partial.tar.gz` — was
+      // listed as a valid backup. The marker is a contract, not a suffix.
+      .filter((file) => !file.includes(PARTIAL_SUFFIX))
+      .map((file) => {
+        const path = join(backupRoot, file);
+        const stat = statSync(path);
+        const fromManifest = manifest.backups.find((b) => b.file === file);
+        const checksumHex = readChecksumHex(path);
+        const timestamp = fromManifest?.timestamp ?? stat.mtime.toISOString();
+        return {
+          file,
+          path,
+          tag:
+            fromManifest?.tag ??
+            (file.replace(BACKUP_SUFFIX, '').split('-').slice(0, -5).join('-') || DEFAULT_TAG),
+          timestamp,
+          size: fromManifest?.size ?? stat.size,
+          checksum:
+            fromManifest?.checksum ?? (checksumHex ? `sha256:${checksumHex}` : 'sha256:missing'),
+          fileCount: fromManifest?.fileCount ?? 0,
+          checksumPath: existsSync(checksumFilePathFor(path))
+            ? checksumFilePathFor(path)
+            : undefined,
+          stale: now - new Date(timestamp).getTime() > 7 * 24 * 60 * 60 * 1000,
+        };
+      })
+      .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1))
+  );
 }
 
 function resolveBackupFile(input: string, backupRoot: string): string {
@@ -577,49 +692,34 @@ function createArchive(memphisRoot: string, backupPath: string): void {
     // The rest of the backup still completes.
   }
 
+  const tarArgs = [
+    '-czf',
+    backupPath,
+    // Live data dir: sqlite WAL, journal appends, lockfile churn
+    // can change files mid-archive. GNU tar accepts the warning
+    // suppress flags; BSD tar (macOS) rejects the option entirely
+    // — `tarWarningFlags()` returns [] there and we rely on the
+    // catch-block tolerance instead.
+    ...tarWarningFlags(),
+    // CRITICAL — never include vault or auth secrets. Culture requires
+    // secrets to be vault-managed, not file-committed; backing them up
+    // violates that and creates a leak path if an archive is
+    // exfiltrated. Vault entries can be re-created from operator memory
+    // + vault recovery flow (see docs/runbooks/RESTORE-FROM-BACKUP.md).
+    //
+    // The patterns come from the shared policy file, not a list kept
+    // here: the systemd runner archiver is a second active writer and
+    // the two lists silently drifted. Excludes are GLOBS — a literal
+    // `--exclude=./vault-entries.json` misses `*.bak-diag-*` variants,
+    // which is exactly how they reached 6/7 archives on this host.
+    ...BACKUP_EXCLUDE_PATTERNS,
+    '-C',
+    memphisRoot,
+    '.',
+  ];
+
   try {
-    execFileSync(
-      'tar',
-      [
-        '-czf',
-        backupPath,
-        // Live data dir: sqlite WAL, journal appends, lockfile churn
-        // can change files mid-archive. GNU tar accepts the warning
-        // suppress flags; BSD tar (macOS) rejects the option entirely
-        // — `tarWarningFlags()` returns [] there and we rely on the
-        // catch-block tolerance instead.
-        ...tarWarningFlags(),
-        '--exclude=./backups',
-        '--exclude=./cache',
-        '--exclude=./logs',
-        // Snapshots are pre-change tarballs of the source tree. Packing
-        // them makes every scheduled backup ~66x larger (53 MB -> 3.3 GB on
-        // this host) and feeds itself: each night's archive contains the
-        // previous night's. Redundant with git, which reconstructs any of
-        // these trees from history.
-        '--exclude=./snapshots',
-        '--exclude=*.lock',
-        // CRITICAL — never include vault or auth secrets. Culture requires
-        // secrets to be vault-managed, not file-committed; backing them up
-        // in plaintext violates that and creates a leak path if an
-        // archive is exfiltrated. Vault entries can be re-created from
-        // operator memory + vault recovery flow (see docs/runbooks/RESTORE-FROM-BACKUP.md).
-        '--exclude=./.tier2-passphrase',
-        '--exclude=./.github-pat',
-        '--exclude=./vault-entries.json',
-        '--exclude=./vault-state.json',
-        // Skip transient runtime PID files — recreated on next boot.
-        '--exclude=./memphis.pid',
-        '--exclude=./state/boot-failures.json*',
-        // Telemetry is regenerable and bloaty; skip unless explicitly
-        // requested via `--tag include-telemetry` (future flag).
-        '--exclude=./telemetry',
-        '-C',
-        memphisRoot,
-        '.',
-      ],
-      { stdio: ['ignore', 'pipe', 'pipe'] },
-    );
+    execFileSync('tar', tarArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (error) {
     // Even with the warning-suppress flags above, GNU tar still exits
     // status 1 when it encountered file-changed/removed conditions.
@@ -865,6 +965,12 @@ export async function createBackup(options: BackupOptions = {}): Promise<{
 
   const checksumHex = sha256ForFile(backupPath);
   writeChecksumFile(backupPath, checksumHex);
+  // An archive is operator data (chains, indexes, redacted env). Under the
+  // default umask 002 it was published world-readable at 0664 even though the
+  // source files are 0600 — the copy was less protected than its sources.
+  // Both halves land together: archive and digest.
+  chmodSync(backupPath, 0o600);
+  chmodSync(checksumFilePathFor(backupPath), 0o600);
 
   const entry: ManifestEntry = {
     file,

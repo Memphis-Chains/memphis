@@ -1,0 +1,31 @@
+{
+  "$comment": "Single source of truth for backup exclusions. Consumed by BOTH active archivers: src/infra/cli/commands/backup.ts (CLI + built-in 02:00 scheduler) and scripts/scheduled-backup-runner.mjs (systemd 04:00 timer). Adding a secret here must never mean editing two files \u2014 that asymmetry is the defect this file exists to remove.",
+  "$whyGlobs": "tar --exclude matches glob patterns, not literal paths. The previous `--exclude=./vault-entries.json` excluded exactly one filename and missed `vault-entries.json.bak-diag-*`, which was measured present in 6/7 archives on this host. Secret excludes MUST use a trailing `*`.",
+  "excludePatterns": [
+    "--exclude=./backups",
+    "--exclude=./cache",
+    "--exclude=./logs",
+    "--exclude=./snapshots",
+    "--exclude=./telemetry",
+    "--exclude=./site-secrets",
+    "--exclude=*/vault-entries.json*",
+    "--exclude=*/vault-state.json*",
+    "--exclude=*/.tier2-passphrase*",
+    "--exclude=*/.github-pat*",
+    "--exclude=*/*.lock",
+    "--exclude=*/memphis.pid",
+    "--exclude=*/boot-failures.json*",
+    "--exclude=./site-recover",
+    "--exclude=*/embed-index.json.tmp-*"
+  ],
+  "$walNote": "SQLite -wal/-shm are deliberately NOT excluded. Removing them from a copy of a live database yields a db that opens but silently lacks committed transactions; the correct approach is a consistent snapshot (sqlite backup API), not exclusion. Measured gap: data/memphis.db (30.6 MB) is absent from 7/7 archives because the runner only archives /home/memphis/.memphis.",
+  "fallbackExcludeNames": [
+    "backups",
+    "cache",
+    "logs",
+    "snapshots",
+    "telemetry",
+    "site-secrets",
+    "site-recover"
+  ]
+}
