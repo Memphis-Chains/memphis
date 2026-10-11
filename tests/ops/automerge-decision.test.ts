@@ -65,6 +65,20 @@ function steps(): { resolve: string; policy: string; merge: string } {
 }
 
 /** Wrap a value for `jq -r '<expr>'` style single quoting in bash. */
+/** The four check contexts the `main` ruleset requires, read at runtime by the
+ *  workflow rather than hardcoded there. Listed here so the tests assert
+ *  against the same set — measured from GET /rules/branches/main, 2026-10-10. */
+const CHECK_NAMES = [
+  'chain-invariant',
+  'cross-arch (macos-latest)',
+  'cross-arch (ubuntu-24.04-arm)',
+  'quality-gate',
+];
+
+/** An obviously fake commit id, used wherever the stub needs something to
+ *  return without any test asserting on its value. */
+const DEFAULT_SHA = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
+
 function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
@@ -84,54 +98,56 @@ function runResolve(args: {
   const binDir = tmp('memphis-gh-');
   const ghPath = path.join(binDir, 'gh');
   const callsFile = path.join(tmp('memphis-ghcalls-'), 'calls');
-  const prs = JSON.stringify(args.openPrs);
-  const draftPrs = JSON.stringify(
-    Object.entries(args.draftFor).map(([number, draft]) => ({ number: Number(number), draft })),
-  );
-  const headSha = args.headSha ?? 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
-  // The stub must behave like `gh api --jq <expr>`, not like a raw HTTP
-  // endpoint, and it must answer each route with the shape that route really
-  // returns: /commits/:sha/pulls is a LIST, /pulls/:n is ONE object. A stub
-  // that flattens both makes the step die on a jq error before it reaches its
-  // decision — the test goes red for a reason that has nothing to do with the
-  // branch under test.
+  const headSha = args.headSha ?? DEFAULT_SHA;
+
+  // The stub answers each route with the shape that route really returns:
+  // `/pulls?state=open` and `/commits/:sha/pulls` are LISTS that carry `draft`
+  // on every entry, `/pulls/:n` is ONE object. A stub that flattens them, or
+  // omits `draft`, makes the step die on a jq error or silently drop every row
+  // — a refusal for the wrong reason, which is the direction tests are least
+  // able to catch.
   //
-  // The script lives in its own file rather than a template literal so the shell
-  // inside it needs no escaping at all.
+  // All of that data is built here with JSON.stringify and embedded in the
+  // script through shellSingleQuote. An earlier version assembled `jq` programs
+  // inside the shell strings instead, escaping quotes into a TypeScript
+  // literal: `\'` is a backslash followed by a quote, the shell does not read
+  // that as a quote, the next line runs on, and jq receives one expression with
+  // a `//` in the wrong place. It passed locally and failed on the runner.
+  const listJson = JSON.stringify(
+    args.openPrs.map((pr) => ({
+      number: pr.number,
+      state: pr.state,
+      draft: args.draftFor[pr.number] ?? false,
+    })),
+  );
+  const objectsJson = JSON.stringify(
+    Object.keys(args.draftFor).map((n) => ({
+      number: Number(n),
+      draft: args.draftFor[Number(n)] ?? false,
+      head: { sha: headSha },
+    })),
+  );
+
   const stub = [
     '#!/usr/bin/env bash',
     `printf '%s\\n' "$*" >> ${JSON.stringify(callsFile)}`,
     'expr=""; prev=""',
     'for a in "$@"; do [[ "$prev" == "--jq" ]] && expr="$a"; prev="$a"; done',
-    `prs=${shellSingleQuote(prs)}`,
-    `drafts=${shellSingleQuote(draftPrs)}`,
-    `HEAD_SHA=${JSON.stringify(headSha)}`,
-    // Every jq program goes through shellSingleQuote. Writing `\'` inside a
-    // TypeScript string emits a literal backslash into the shell script, and
-    // the shell does not treat that as a quote — so the two lines run together
-    // and jq sees one expression with a `//` comment on the wrong line. It
-    // passed locally and failed on the runner with a syntax error, which is why
-    // the quoting lives in exactly one helper now.
-    `prsWithDraft="$(printf %s "$prs" | jq -c --argjson d "$drafts" ${shellSingleQuote(
-      '[.[] | {number, state, draft: ($d | map({key: (.number|tostring), value: .draft}) | from_entries)[(.number|tostring)] // false}]',
-    )})"`,
+    `objects=${shellSingleQuote(objectsJson)}`,
     'case "$*" in',
-    '  *state=open*) data="$prsWithDraft" ;;',
-    '  *commits/*/pulls*) data="$prs" ;;',
+    `  *state=open*|*commits/*/pulls*) data=${shellSingleQuote(listJson)} ;;`,
     '  */pulls/*)',
     '    n="$(printf %s "$*" | sed -n "s|.*/pulls/\\([0-9]*\\).*|\\1|p")"',
-    `    obj="$(printf %s "$drafts" | jq -c --arg n "$n" ${shellSingleQuote(
+    `    data="$(printf %s "$objects" | jq -c --arg n "$n" ${shellSingleQuote(
       'map(select((.number|tostring) == $n))[0] // {}',
-    )})"`,
-    `    data="$(printf %s "$obj" | jq -c --arg h "$HEAD_SHA" ${shellSingleQuote(
-      '{number: .number, draft: .draft, head: {sha: $h}}',
     )})"`,
     '    ;;',
     '  *) exit 1 ;;',
     'esac',
     'printf %s "$data" | jq -r "$expr"',
   ].join('\n');
-  writeFileSync(ghPath, stub + '\n', 'utf8');
+
+  writeFileSync(ghPath, `${stub}\n`, 'utf8');
   chmodSync(ghPath, 0o755);
 
   const outFile = path.join(tmp('memphis-out-'), 'gh_output');
@@ -144,26 +160,17 @@ function runResolve(args: {
       GITHUB_OUTPUT: outFile,
       GITHUB_EVENT_NAME: args.event,
       SHA: headSha,
-      // The pull_request_target branch interpolates the number directly.
       PR_NUMBER: '4242',
     },
     encoding: 'utf8',
   });
   // No `gh` call means no log file. That is the point on the
-  // `pull_request_target` path: the number comes from the event payload, so
-  // nothing is looked up and nothing can be looked up wrongly.
+  // `pull_request_target` path when the number comes from the payload and the
+  // step returns before the draft check; the case that asserts zero calls
+  // covers a step that genuinely never asks.
   const calls = existsSync(callsFile) ? readFileSync(callsFile, 'utf8').split('\n') : [];
   return { r, outFile, calls };
 }
-
-const CHECK_NAMES = [
-  'chain-invariant',
-  'cross-arch (macos-latest)',
-  'cross-arch (ubuntu-24.04-arm)',
-  'quality-gate',
-];
-
-/** `name=conclusion` lines, which is the verdicts file format the stub reads. */
 function verdictsFor(overrides: Record<string, string> = {}): string {
   return CHECK_NAMES.map((name) => `${name}=${overrides[name] ?? 'success'}`).join('\n') + '\n';
 }
