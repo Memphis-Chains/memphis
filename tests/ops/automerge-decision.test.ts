@@ -90,7 +90,7 @@ function shellSingleQuote(value: string): string {
  * itself and read its head SHA back. The stub answers only what the step asks.
  */
 function runResolve(args: {
-  event: 'pull_request_target' | 'schedule';
+  event: 'pull_request_target' | 'schedule' | 'workflow_dispatch';
   openPrs: Array<{ number: number; state: string }>;
   draftFor: Record<number, boolean>;
   headSha?: string;
@@ -427,6 +427,25 @@ describe('automerge — the scheduled retry has to find its own pull request', (
     });
     expect(r.status).not.toBe(0);
     expect(`${r.stdout}${r.stderr}`).toContain('refusing');
+  });
+
+  it('resolves its own pull request on a manual run', () => {
+    // A manual run carries no pull request at all — not even a null one. The
+    // step used to fall through to the payload branch, found no number, and
+    // exited 1 with "No pull request number in the event payload", which is
+    // exactly the message you get when the manual button cannot do the one
+    // thing it exists for.
+    const { r, outFile } = runResolve({
+      event: 'workflow_dispatch',
+      openPrs: [
+        { number: 670, state: 'open' },
+        { number: 675, state: 'open' },
+      ],
+      draftFor: { 675: false },
+    });
+    expect(r.status).toBe(0);
+    expect(`${r.stdout}${r.stderr}`).toContain('Manual run');
+    expect(readFileSync(outFile, 'utf8')).toContain('number=675');
   });
 
   it('uses the payload number on pull_request_target', () => {
