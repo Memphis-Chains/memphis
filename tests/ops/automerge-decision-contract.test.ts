@@ -239,6 +239,26 @@ describe('automerge — it merges, and only by squash', () => {
       expect(draftAt).toBeGreaterThan(nonPrAt);
     });
 
+    it('writes the output keys the merge step reads', () => {
+      // The resolve step wrote `number=` while the merge step read
+      // `steps.pr.outputs.pr_number`. PR_NUMBER arrived empty, `gh pr merge ""`
+      // failed with "could not determine current branch", and no trigger could
+      // ever merge. Both sides read the same file, so every assertion made
+      // from one side agreed with the other and the disagreement was invisible.
+      // This compares the two sets instead.
+      const resolve = stepsScript('resolve');
+      const written = new Set(
+        [...resolve.matchAll(/echo "(\w+)=\$\{/g)].map((m) => m[1] as string),
+      );
+      const read = new Set(
+        [...wf.matchAll(/steps\.pr\.outputs\.(\w+)/g)].map((m) => m[1] as string),
+      );
+      expect(read.size).toBeGreaterThan(0);
+      for (const key of read) {
+        expect(written, `merge step reads "${key}", resolve step never writes it`).toContain(key);
+      }
+    });
+
     it('still refuses drafts', () => {
       expect(doc.jobs.automerge.if ?? '').toContain('github.event.pull_request.draft == false');
     });
