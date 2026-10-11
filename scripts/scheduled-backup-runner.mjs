@@ -1,8 +1,5 @@
 #!/usr/bin/env node
-// Scheduled backup runner v4 — adds --ignore-failed-read to tar (GNU tar
-// returns exit 1 on any exclude pattern match even with --warning=no-all;
-// --ignore-failed-read suppresses non-fatal exit codes while keeping
-// file-level error reporting).
+// Scheduled backups with consistent SQLite snapshots and gated publication.
 
 import { execFileSync } from 'node:child_process';
 import {
@@ -15,11 +12,17 @@ import {
   writeFileSync,
   chmodSync,
   renameSync,
-  rmSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DatabaseSync } from 'node:sqlite';
+
+import {
+  cleanupDatabaseSnapshots,
+  databaseSnapshotTarArgs,
+  snapshotDatabases,
+  verifyDatabaseSnapshotEntries,
+} from './backup-db-snapshot.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -77,8 +80,16 @@ if (!EXPLICIT_DATA_DIR && !DRY_RUN) {
   );
   process.exit(2);
 }
-const DATA_DIR = getArg('data-dir', '/home/memphis/.memphis');
+const DATA_DIR = resolve(getArg('data-dir', join(homedir(), '.memphis')));
 const BACKUPS_DIR = join(DATA_DIR, 'backups');
+// Custom data roots are isolated by default. An external repository/database
+// must be supplied explicitly; the standard live root uses this installation.
+const REPO_ROOT = getArg(
+  'repo-root',
+  process.env.MEMPHIS_BACKUP_REPO_ROOT ??
+    (DATA_DIR === join(homedir(), '.memphis') ? dirname(SCRIPT_DIR) : undefined),
+);
+const DATABASE_PATH = getArg('database-path', undefined);
 
 const tag = getArg('tag', 'scheduled');
 const keep = Number(getArg('keep', '7'));
@@ -92,21 +103,13 @@ const excludePatterns = loadExcludePolicy();
 // `.tar.gz` and is rejected by every consumer filter.
 const PARTIAL_SUFFIX = '.partial';
 
-/**
- * Databases to snapshot. `memphis.db` is the operational database — measured
- * 30.6 MB, WAL mode with a live writer, and absent from 7/7 archives on this
- * host because the archiver only ever walked the data dir while this file
- * lives in the repo's `data/`.
- */
-const DATABASES = ['memphis.db', 'dashboard.db'];
-
 const timestamp = new Date()
   .toISOString()
   .replace(/[:.]/g, '-')
   .replace(/T/, '_')
   .replace(/Z$/, '')
   .slice(0, 19);
-const fileName = `${tag}-${timestamp}.tar.gz`;
+const fileName = `${tag}-${timestamp}-${process.pid}.tar.gz`;
 const backupPath = join(BACKUPS_DIR, fileName);
 // Everything up to the final rename lands here.
 const partialPath = `${backupPath}${PARTIAL_SUFFIX}`;
@@ -120,24 +123,16 @@ function sha256(file) {
   return out.split(' ')[0].trim();
 }
 
-function runWalCheckpoint() {
-  try {
-    const out = execFileSync(
-      '/usr/bin/node',
-      ['/home/memphis/memphis/scripts/wal-checkpoint.mjs'],
-      { encoding: 'utf8', stdio: 'pipe' },
-    );
-    const result = JSON.parse(out);
-    return { ok: true, saved_wal: result.saved_wal };
-  } catch (e) {
-    return { ok: false, err: e.message };
-  }
-}
-
 function cleanupOldBackups(keepN) {
   if (!Number.isFinite(keepN) || keepN < 1) return [];
   const entries = readdirSync(BACKUPS_DIR)
-    .filter((f) => f.startsWith(`${tag}-`) && f.endsWith('.tar.gz'))
+    .filter(
+      (f) =>
+        f.startsWith(`${tag}-`) &&
+        f.endsWith('.tar.gz') &&
+        !f.includes(PARTIAL_SUFFIX) &&
+        existsSync(join(BACKUPS_DIR, `${f}.sha256`)),
+    )
     .sort();
   const toDelete = entries.slice(0, Math.max(0, entries.length - keepN));
   for (const f of toDelete) {
@@ -154,20 +149,12 @@ function cleanupOldBackups(keepN) {
   return toDelete;
 }
 
-function main() {
-  ensureDir(BACKUPS_DIR);
-
-  const wal = runWalCheckpoint();
-
-  // Consistent database snapshot BEFORE tar. The operational database lives
-  // outside the walked data dir and was therefore absent from 7/7 archives.
-  // A snapshot failure is fatal on purpose: publishing an archive that
+async function main() {
   const tarArgs = [
     '-czf',
     partialPath,
-    '--ignore-failed-read', // suppress tar exit 1 on exclude pattern match
-    '--warning=no-file-changed',
-    '--warning=no-file-removed',
+    '--warning=file-changed',
+    '--warning=file-removed',
     // Shared policy — see loadExcludePolicy() above. Never hand-maintain a
     // second exclude list here; that is how vault material got into 6/7
     // nightly archives.
@@ -215,98 +202,140 @@ function main() {
     return;
   }
 
-  let tarOk = false;
-  let tarErr = '';
+  process.umask(0o077);
+  ensureDir(BACKUPS_DIR);
+  const dbSnapshot = await snapshotDatabases({
+    memphisRoot: DATA_DIR,
+    dataDir: REPO_ROOT ? join(resolve(REPO_ROOT), 'data') : undefined,
+    databasePath:
+      DATABASE_PATH ??
+      (REPO_ROOT && process.env.DATABASE_URL?.startsWith('file:')
+        ? resolve(REPO_ROOT, process.env.DATABASE_URL.slice(5))
+        : undefined),
+  });
   try {
-    execFileSync('tar', tarArgs, { stdio: 'pipe' });
-    tarOk = true;
-  } catch (e) {
-    tarErr = e.message;
-  }
+    if (!dbSnapshot.ok) {
+      console.log(
+        JSON.stringify({
+          ok: false,
+          published: false,
+          reason: 'database-snapshot-failed',
+          dbSnapshot,
+        }),
+      );
+      process.exitCode = 1;
+      return;
+    }
+    tarArgs.splice(-3, 3, ...databaseSnapshotTarArgs(dbSnapshot, DATA_DIR));
+    writeFileSync(partialPath, '', { flag: 'wx', mode: 0o600 });
+    let tarOk = false;
+    let tarErr = '';
+    try {
+      execFileSync('tar', tarArgs, { stdio: 'pipe', env: { ...process.env, LC_ALL: 'C' } });
+      tarOk = true;
+    } catch (e) {
+      tarErr = e.message;
+      // Keep diagnostics enabled: suppressing the warning also hides the
+      // evidence needed to distinguish directory churn from a real failure.
+      tarOk =
+        e.status === 1 &&
+        /file changed as we read it|file removed before we read it/.test(String(e.stderr ?? ''));
+    }
 
-  if (!tarOk) {
-    console.log(JSON.stringify({ ok: false, error: tarErr, walCheckpoint: wal }, null, 2));
-    process.exit(1);
-  }
+    if (!tarOk) {
+      console.log(
+        JSON.stringify({ ok: false, published: false, error: tarErr, dbSnapshot }, null, 2),
+      );
+      process.exitCode = 1;
+      return;
+    }
 
-  const size = statSync(partialPath).size;
-  const checksum = sha256(partialPath);
+    const size = statSync(partialPath).size;
+    const checksum = sha256(partialPath);
 
-  // Validate BEFORE publishing. drillOk means the archive actually contains
-  // chain blocks, i.e. there is something to restore. It used to be computed
-  // after retention and never affected `ok`, so an archive with zero chain
-  // data reported success. Now it gates publication.
-  let drillOk = false;
-  let fileCount = 0;
-  let listError = null;
-  try {
-    const listOutput = execFileSync('tar', ['-tzf', partialPath], { encoding: 'utf8' });
-    const entries = listOutput.split('\n').filter(Boolean);
-    fileCount = entries.length;
-    drillOk = entries.some((e) => /chains\/.+\.json/.test(e));
-  } catch (e) {
-    listError = e.message;
-  }
+    // Validate BEFORE publishing. drillOk means the archive actually contains
+    // chain blocks, i.e. there is something to restore. It used to be computed
+    // after retention and never affected `ok`, so an archive with zero chain
+    // data reported success. Now it gates publication.
+    let drillOk = false;
+    let fileCount = 0;
+    let listError = null;
+    try {
+      const listOutput = execFileSync('tar', ['-tzf', partialPath], { encoding: 'utf8' });
+      const entries = listOutput.split('\n').filter(Boolean);
+      verifyDatabaseSnapshotEntries(dbSnapshot, entries);
+      fileCount = entries.length;
+      drillOk = entries.some((e) => /chains\/.+\.json/.test(e));
+    } catch (e) {
+      listError = e.message;
+    }
 
-  // Sidecar `.sha256` is what `memphis backup verify` reads as the expected
-  // value (backup.ts readChecksumHex -> `${archive}${CHECKSUM_SUFFIX}`).
-  // Written against the PARTIAL path and renamed with the archive, so a
-  // published archive never exists without its digest.
-  const partialSidecar = `${partialPath}.sha256`;
-  writeFileSync(partialSidecar, `${checksum}  ${fileName}\n`, { encoding: 'utf8' });
+    // Sidecar `.sha256` is what `memphis backup verify` reads as the expected
+    // value (backup.ts readChecksumHex -> `${archive}${CHECKSUM_SUFFIX}`).
+    // Written against the PARTIAL path and renamed with the archive, so a
+    // published archive never exists without its digest.
+    const partialSidecar = `${partialPath}.sha256`;
+    writeFileSync(partialSidecar, `${checksum}  ${fileName}\n`, { encoding: 'utf8', mode: 0o600 });
 
-  if (!drillOk) {
-    // Do NOT rename. Keep the artifact for diagnosis but never expose it
-    // under the final name; retention and USB both key off that name.
+    if (!drillOk) {
+      // Do NOT rename. Keep the artifact for diagnosis but never expose it
+      // under the final name; retention and USB both key off that name.
+      console.log(
+        JSON.stringify(
+          {
+            ok: false,
+            published: false,
+            reason: listError ? 'archive-not-listable' : 'no-chain-data-in-archive',
+            partial: partialPath,
+            fileCount,
+            dbSnapshot,
+          },
+          null,
+          2,
+        ),
+      );
+      process.exitCode = 1;
+      return;
+    }
+
+    // Publish: sidecar first, then the archive itself. A reader that sees the
+    // archive therefore always finds its digest already present.
+    const finalSidecar = `${backupPath}.sha256`;
+    renameSync(partialSidecar, finalSidecar);
+    renameSync(partialPath, backupPath);
+    // Operator data: 0600, matching the source files it was created from.
+    // The archives were previously world-readable at 0664 (umask 002).
+    chmodSync(backupPath, 0o600);
+    if (existsSync(finalSidecar)) chmodSync(finalSidecar, 0o600);
+
+    // Retention runs AFTER publication, so it can only ever delete archives
+    // that already passed validation.
+    const deleted = cleanupOldBackups(keep);
+
     console.log(
       JSON.stringify(
         {
-          ok: false,
-          published: false,
-          reason: listError ? 'archive-not-listable' : 'no-chain-data-in-archive',
-          partial: partialPath,
+          ok: true,
+          path: backupPath,
+          file: fileName,
+          tag,
+          size,
+          checksum: `sha256:${checksum}`,
           fileCount,
-          walCheckpoint: wal,
+          dbSnapshot,
+          drillOk,
+          cleanupDeleted: deleted,
         },
         null,
         2,
       ),
     );
-    process.exit(1);
+  } finally {
+    cleanupDatabaseSnapshots(dbSnapshot);
   }
-
-  // Publish: sidecar first, then the archive itself. A reader that sees the
-  // archive therefore always finds its digest already present.
-  const finalSidecar = `${backupPath}.sha256`;
-  renameSync(partialSidecar, finalSidecar);
-  renameSync(partialPath, backupPath);
-  // Operator data: 0600, matching the source files it was created from.
-  // The archives were previously world-readable at 0664 (umask 002).
-  chmodSync(backupPath, 0o600);
-  if (existsSync(finalSidecar)) chmodSync(finalSidecar, 0o600);
-
-  // Retention runs AFTER publication, so it can only ever delete archives
-  // that already passed validation.
-  const deleted = cleanupOldBackups(keep);
-
-  console.log(
-    JSON.stringify(
-      {
-        ok: true,
-        path: backupPath,
-        file: fileName,
-        tag,
-        size,
-        checksum: `sha256:${checksum}`,
-        fileCount,
-        walCheckpoint: wal,
-        drillOk,
-        cleanupDeleted: deleted,
-      },
-      null,
-      2,
-    ),
-  );
 }
 
-main();
+main().catch((error) => {
+  console.log(JSON.stringify({ ok: false, published: false, error: error.message }));
+  process.exitCode = 1;
+});
