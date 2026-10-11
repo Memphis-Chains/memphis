@@ -106,7 +106,7 @@ jobs:
     # request object: on a schedule `github.event.pull_request` is null, and
     # dereferencing it in an `if` is an error rather than a false.
     if: >-
-      github.event_name == 'schedule' ||
+      github.event_name != 'pull_request_target' ||
       github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
@@ -159,11 +159,21 @@ jobs:
               exit 0
             fi
           else
-            pr="${PR_NUMBER:-}"
+            # `workflow_dispatch` has no payload either — it carries no pull
+            # request at all, not even a null one. Treating it like a
+            # pull_request_target with an empty number produced
+            # "No pull request number in the event payload" and exit 1, which
+            # is why a manual run could never do the one thing it exists for.
+            # It behaves exactly like the schedule: ask which PR to act on.
+            echo "::notice::Manual run — resolving the newest open pull request."
+            pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=50" \
+              --jq '[.[] | select(.state == "open" and .draft == false)]
+                    | sort_by(.number) | last | .number // empty')"
             if [[ -z "$pr" ]]; then
-              echo "::error::No pull request number in the event payload."
-              exit 1
+              echo "::notice::No mergeable pull request is open."
+              exit 0
             fi
+            SHA="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq .head.sha)"
           fi
           if [[ -z "${SHA:-}" ]]; then
             echo "::error::No commit to inspect — refusing."
