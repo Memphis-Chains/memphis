@@ -27,25 +27,33 @@ name: automerge
 # trigger becomes an arbitrary-code-execution hole: anyone able to open a pull
 # request would inherit write access to the repository.
 on:
+  # ONE trigger, and it is the one GitHub actually emits for this repository.
+  #
+  # Measured on 2026-10-10, on PR #669, with the checks running green the
+  # whole time:
+  #
+  #   workflow_run  fired 4x, every time with head_branch=main and head_sha
+  #                 pointing at the MERGE rather than the PR head. Asking
+  #                 "which PRs contain this commit" then correctly answered
+  #                 none, so the job stopped every time with "nothing to merge"
+  #                 while a mergeable PR sat open.
+  #   check_run    fired 0 times. GitHub does not emit it for check suites it
+  #                 created itself, which is every check in this repository.
+  #
+  # So the second door does not exist as a separate event. What remains is the
+  # first door plus a delayed retry: `pull_request_target` on a schedule, which
+  # re-reads the required checks and merges when they have gone green.
+  #
+  # This does NOT auto-merge on the fast path — a PR opened and pushed in one
+  # go still waits for the retry, which is at most ~5 minutes. That is slower
+  # than ideal and completely silent about it, which is the honest shape of a
+  # repository whose own CI cannot report its own completion events.
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
-  # `check_run`, not `workflow_run`.
-  #
-  # `workflow_run` was measured on PR #669 and does not work here: it fired four
-  # times, all with `head_branch=main` and `head_sha` pointing at a commit on
-  # main — the MERGE, not the pull request. Asking "which PRs contain this
-  # commit" then correctly answers "none", so the job stopped every time with
-  # "nothing to merge" while a mergeable PR sat green and open. The trigger
-  # fired and was structurally incapable of merging anything.
-  #
-  # `check_run` fires for the check run itself, so its payload carries the
-  # commit that was actually checked — the PR head. The documented caveat is
-  # that GitHub skips `check_run` when the check suite came from GitHub Actions,
-  # which every check here does; that is why `check_suite` is NOT used and this
-  # is verified on every run rather than assumed: if the trigger stops firing,
-  # the PR stays open, which is the safe direction.
-  check_run:
-    types: [completed]
+  schedule:
+    # Every 5 minutes. The first entry is off-peak so the repository is not hit
+    # on the hour by every workflow at once.
+    - cron: '3,8,13,18,23,28,33,38,43,48,53,58 * * * *'
 
 permissions:
   contents: write
@@ -53,31 +61,45 @@ permissions:
 
 jobs:
   automerge:
-    # Never act on a draft, and never on a workflow_run whose own outcome was
-    # anything other than success — a failing `ci` must not be able to drag a
-    # PR in through the second door.
-    # Written as a conjunction, not as `cond ? a : b`. GitHub's expression
-    # parser rejects the ternary form in a job-level `if`: the workflow stops
-    # being registered, every trigger goes silent, and each push produces a run
-    # named after the FILE PATH with conclusion `failure` and no jobs —
-    # "This run likely failed because of a workflow file issue", with no detail.
+    # Two ways in.
     #
-    # Measured by bisection on 2026-10-10. Adding this `if` alone to the previous
-    # `main` reproduced the failure; replacing the ternary with the conjunction
-    # below, changing nothing else, removed it. The `?:` operator parses fine in
-    # a step-level `if`, so a local `actionlint` run is not enough — the
-    # rejection happens server-side on registration.
-    # A check_run that concluded `success` on the merge commit means the merge is
-    # already in, so there is nothing left to do. Anything else on main is a
-    # post-merge pipeline: quality-gate, chain-invariant, both cross-arch. The
-    # second guard closes the same door on the pull_request_target path.
+    #   pull_request_target  a verdict the moment the PR opens or is updated.
+    #                        The checks are still running then, so this normally
+    #                        reports `missing` and refuses. Cheap, and it refuses
+    #                        loudly rather than by accident.
+    #   schedule             every five minutes, asks which open pull request is
+    #                        the newest non-draft one and whether its checks are
+    #                        green. This is the run that can actually merge.
+    #
+    # `schedule` exists because both event-driven alternatives were measured and
+    # neither works on this repository:
+    #
+    #   check_run    never fires. Zero such runs in the repository's history.
+    #                GitHub does not emit it for check suites it created itself,
+    #                which every check here is. (PR #670 switched to it.)
+    #   workflow_run fires, but its payload carries the commit on `main` — the
+    #                merge, not the pull request head. "Which open pull requests
+    #                contain this commit" therefore answers correctly and
+    #                uselessly: no open PR contains a merge commit. It ran four
+    #                times on PR #669 and stopped with "nothing to merge" each
+    #                time while a green, mergeable PR sat open.
+    #
+    # A schedule has no payload to be wrong about, so the job asks for the PR it
+    # should act on instead of inferring it.
+    #
+    # The `if` is a conjunction because GitHub's expression parser rejects the
+    # ternary form in a job-level `if`. Adding that ternary to the previous
+    # `main` reproduced a silent failure: the workflow stopped being registered,
+    # every trigger went quiet, and each push produced a run named after the
+    # FILE PATH with conclusion `failure` and no jobs — "This run likely failed
+    # because of a workflow file issue", with no detail. Bisection, 2026-10-10.
+    #
+    # `schedule` is listed first so the job runs at all when there is no pull
+    # request object: on a schedule `github.event.pull_request` is null, and
+    # dereferencing it in an `if` is an error rather than a false.
     if: >-
-      (github.event_name != 'check_run' ||
-       github.event.check_run.head_branch != 'main') &&
-      (github.event_name != 'check_run' ||
-       github.event.check_run.conclusion == 'success') &&
-      (github.event_name != 'check_run' ||
-       github.event.pull_request.draft == false)
+      github.event_name == 'schedule' ||
+      github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       # `workflow_run` payloads carry no `pull_request` object, so the PR has to
@@ -88,7 +110,7 @@ jobs:
         id: pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SHA: ${{ github.event.pull_request.head.sha || github.event.check_run.head_sha }}
+          SHA: ${{ github.event.pull_request.head.sha }}
           # Passed through env, not interpolated into the script body. `${{ }}`
           # inside a run block is expanded by GitHub before bash sees it, which
           # works in production and makes the step untestable locally — the
@@ -96,22 +118,32 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_EVENT_NAME}" == "check_run" ]]; then
-            # `workflow_run` fires on the DEFAULT branch's run, so `head_sha` is a
-            # commit on main — the merge, not the PR head. Asking "which pull
-            # requests contain this commit" therefore answers correctly and
-            # uselessly: no open PR contains the merge commit, so this always
-            # stopped with "nothing to merge". Measured on PR #669.
-            #
-            # The run that should wake this job is the PR's OWN check run, which
-            # is reached through its check suite, not through head_sha. Listing
-            # the open PRs and matching their head SHA is what identifies the PR
-            # this verdict belongs to.
-            pr="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/pulls" \
-              --jq '[.[] | select(.state == "open")] | sort_by(.number) | .[0].number // empty')"
+          if [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
+            # No event payload on a schedule. Take the newest open PR that has no
+            # draft, and let the required-check step decide whether it is ready.
+            # Oldest-first would leave the newest PR waiting for every older one.
+            # `state` is filtered here as well as in the query string. The
+            # query is an API-side filter; relying on it alone means any change
+            # in what the endpoint returns, or a stale listing, hands this step
+            # a closed PR and the job tries to merge something that is not open.
+            pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=50" \
+              --jq '[.[] | select(.state == "open" and .draft == false)]
+                    | sort_by(.number) | last | .number // empty')"
             if [[ -z "$pr" ]]; then
-              echo "::notice::No open pull request for ${SHA} — nothing to merge."
+              echo "::notice::No mergeable pull request is open."
               exit 0
+            fi
+            SHA="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq .head.sha)"
+            draft="false"
+          elif [[ "${GITHUB_EVENT_NAME}" == "pull_request_target" ]]; then
+            # The number is in the payload. Looking it up by commit instead is a
+            # second source that can disagree with the event, and when it came
+            # back empty the step reported "nothing to merge" while the payload
+            # had named the PR. Only `schedule` has to ask.
+            pr="${PR_NUMBER:-}"
+            if [[ -z "$pr" ]]; then
+              echo "::error::No pull request number in the event payload."
+              exit 1
             fi
             draft="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq .draft)"
             if [[ "$draft" == "true" ]]; then
@@ -124,6 +156,10 @@ jobs:
               echo "::error::No pull request number in the event payload."
               exit 1
             fi
+          fi
+          if [[ -z "${SHA:-}" ]]; then
+            echo "::error::No commit to inspect — refusing."
+            exit 1
           fi
           echo "number=${pr}" >>"$GITHUB_OUTPUT"
           echo "sha=${SHA}" >>"$GITHUB_OUTPUT"
