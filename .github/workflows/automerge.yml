@@ -179,7 +179,13 @@ jobs:
             echo "::error::No commit to inspect — refusing."
             exit 1
           fi
-          echo "number=${pr}" >>"$GITHUB_OUTPUT"
+          # The key here is the whole contract with the next step. It used to be
+          # written as `number=` while the merge step read
+          # `steps.pr.outputs.pr_number` — so PR_NUMBER arrived empty, `gh pr
+          # merge ""` failed with "could not determine current branch", and the
+          # job could never merge no matter which trigger fired. The unit test
+          # asserted on `number=` because it read the same file.
+          echo "pr_number=${pr}" >>"$GITHUB_OUTPUT"
           echo "sha=${SHA}" >>"$GITHUB_OUTPUT"
 
       # Required checks are read from the branch's effective ruleset, not from a
