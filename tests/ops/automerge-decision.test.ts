@@ -357,6 +357,14 @@ describe('automerge — an unreadable policy blocks the merge', () => {
 
 describe('automerge — the scheduled retry has to find its own pull request', () => {
   it('takes the newest open pull request', () => {
+    // Guard: if the step wrote nothing, print why. A bare ENOENT on the output
+    // file says nothing about which of the stub, the API shape, or the filter
+    // was wrong, and this exact test passed locally while failing on CI.
+    const failWithStep = (r: SpawnSyncReturns<string>) => {
+      throw new Error(
+        `step produced no output.\nstatus=${r.status}\nstdout=${r.stdout}\nstderr=${r.stderr}`,
+      );
+    };
     // Oldest-first would leave the newest PR waiting behind every older one,
     // so the retry would pass over the PR that was just fixed.
     const { r, outFile } = runResolve({
@@ -368,6 +376,7 @@ describe('automerge — the scheduled retry has to find its own pull request', (
       draftFor: { 669: false },
     });
     expect(r.status).toBe(0);
+    if (!existsSync(outFile)) failWithStep(r);
     expect(readFileSync(outFile, 'utf8')).toContain('number=669');
   });
 
