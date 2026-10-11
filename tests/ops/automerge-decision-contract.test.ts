@@ -227,11 +227,16 @@ describe('automerge — it merges, and only by squash', () => {
       // that can actually merge — would be skipped every time. The schedule arm
       // has to come first for that reason, not for tidiness.
       const cond = doc.jobs.automerge.if ?? '';
-      expect(cond).toContain("github.event_name == 'schedule'");
-      const scheduleAt = cond.indexOf("github.event_name == 'schedule'");
+      expect(cond).toContain("github.event_name != 'pull_request_target'");
+      expect(cond).toContain('github.event.pull_request.draft == false');
+      // The schedule arm must come first: on `schedule` and `workflow_dispatch`
+      // `github.event.pull_request` is null, and dereferencing it is an error
+      // rather than a false. Both non-PR triggers have to be let through before
+      // the draft check is evaluated at all.
+      const nonPrAt = cond.indexOf("github.event_name != 'pull_request_target'");
       const draftAt = cond.indexOf('github.event.pull_request.draft');
-      expect(scheduleAt).toBeGreaterThanOrEqual(0);
-      expect(draftAt).toBeGreaterThan(scheduleAt);
+      expect(nonPrAt).toBeGreaterThanOrEqual(0);
+      expect(draftAt).toBeGreaterThan(nonPrAt);
     });
 
     it('still refuses drafts', () => {
