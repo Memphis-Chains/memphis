@@ -65,6 +65,20 @@ function steps(): { resolve: string; policy: string; merge: string } {
 }
 
 /** Wrap a value for `jq -r '<expr>'` style single quoting in bash. */
+/** The four check contexts the `main` ruleset requires, read at runtime by the
+ *  workflow rather than hardcoded there. Listed here so the tests assert
+ *  against the same set — measured from GET /rules/branches/main, 2026-10-10. */
+const CHECK_NAMES = [
+  'chain-invariant',
+  'cross-arch (macos-latest)',
+  'cross-arch (ubuntu-24.04-arm)',
+  'quality-gate',
+];
+
+/** An obviously fake commit id, used wherever the stub needs something to
+ *  return without any test asserting on its value. */
+const DEFAULT_SHA = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
+
 function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
@@ -72,49 +86,68 @@ function shellSingleQuote(value: string): string {
 /**
  * Run the "resolve the pull request" step with a stub `gh`.
  *
- * `check_run` payloads carry no pull_request object, so the step has to find
- * the PR from the commit that was checked. The stub answers only the queries the
- * step makes.
+ * A `schedule` run carries no payload at all, so the step has to find the PR
+ * itself and read its head SHA back. The stub answers only what the step asks.
  */
 function runResolve(args: {
-  event: 'pull_request_target' | 'check_run';
+  event: 'pull_request_target' | 'schedule';
   openPrs: Array<{ number: number; state: string }>;
   draftFor: Record<number, boolean>;
+  headSha?: string;
 }): { r: SpawnSyncReturns<string>; outFile: string; calls: string[] } {
   const binDir = tmp('memphis-gh-');
   const ghPath = path.join(binDir, 'gh');
   const callsFile = path.join(tmp('memphis-ghcalls-'), 'calls');
-  const prs = JSON.stringify(args.openPrs);
-  const draftPrs = JSON.stringify(
-    Object.entries(args.draftFor).map(([number, draft]) => ({ number: Number(number), draft })),
-  );
-  // The stub must behave like `gh api --jq <expr>`, not like a raw HTTP
-  // endpoint, and it must answer each route with the shape that route really
-  // returns: /commits/:sha/pulls is a LIST, /pulls/:n is ONE object. A stub
-  // that flattens both makes the step die on a jq error before it reaches its
-  // decision — the test goes red for a reason that has nothing to do with the
-  // branch under test.
+  const headSha = args.headSha ?? DEFAULT_SHA;
+
+  // The stub answers each route with the shape that route really returns:
+  // `/pulls?state=open` and `/commits/:sha/pulls` are LISTS that carry `draft`
+  // on every entry, `/pulls/:n` is ONE object. A stub that flattens them, or
+  // omits `draft`, makes the step die on a jq error or silently drop every row
+  // — a refusal for the wrong reason, which is the direction tests are least
+  // able to catch.
   //
-  // The script lives in its own file rather than a template literal so the shell
-  // inside it needs no escaping at all.
+  // All of that data is built here with JSON.stringify and embedded in the
+  // script through shellSingleQuote. An earlier version assembled `jq` programs
+  // inside the shell strings instead, escaping quotes into a TypeScript
+  // literal: `\'` is a backslash followed by a quote, the shell does not read
+  // that as a quote, the next line runs on, and jq receives one expression with
+  // a `//` in the wrong place. It passed locally and failed on the runner.
+  const listJson = JSON.stringify(
+    args.openPrs.map((pr) => ({
+      number: pr.number,
+      state: pr.state,
+      draft: args.draftFor[pr.number] ?? false,
+    })),
+  );
+  const objectsJson = JSON.stringify(
+    Object.keys(args.draftFor).map((n) => ({
+      number: Number(n),
+      draft: args.draftFor[Number(n)] ?? false,
+      head: { sha: headSha },
+    })),
+  );
+
   const stub = [
     '#!/usr/bin/env bash',
     `printf '%s\\n' "$*" >> ${JSON.stringify(callsFile)}`,
     'expr=""; prev=""',
     'for a in "$@"; do [[ "$prev" == "--jq" ]] && expr="$a"; prev="$a"; done',
-    `prs=${shellSingleQuote(prs)}`,
-    `drafts=${shellSingleQuote(draftPrs)}`,
+    `objects=${shellSingleQuote(objectsJson)}`,
     'case "$*" in',
-    '  *commits/*/pulls*) data="$prs" ;;',
+    `  *state=open*|*commits/*/pulls*) data=${shellSingleQuote(listJson)} ;;`,
     '  */pulls/*)',
     '    n="$(printf %s "$*" | sed -n "s|.*/pulls/\\([0-9]*\\).*|\\1|p")"',
-    '    data="$(printf %s "$drafts" | jq -c --arg n "$n" \'map(select((.number|tostring) == $n))[0] // {}\')"',
+    `    data="$(printf %s "$objects" | jq -c --arg n "$n" ${shellSingleQuote(
+      'map(select((.number|tostring) == $n))[0] // {}',
+    )})"`,
     '    ;;',
     '  *) exit 1 ;;',
     'esac',
     'printf %s "$data" | jq -r "$expr"',
   ].join('\n');
-  writeFileSync(ghPath, stub + '\n', 'utf8');
+
+  writeFileSync(ghPath, `${stub}\n`, 'utf8');
   chmodSync(ghPath, 0o755);
 
   const outFile = path.join(tmp('memphis-out-'), 'gh_output');
@@ -126,27 +159,18 @@ function runResolve(args: {
       GITHUB_REPOSITORY: 'Memphis-Chains/memphis',
       GITHUB_OUTPUT: outFile,
       GITHUB_EVENT_NAME: args.event,
-      SHA: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
-      // The pull_request_target branch interpolates the number directly.
+      SHA: headSha,
       PR_NUMBER: '4242',
     },
     encoding: 'utf8',
   });
   // No `gh` call means no log file. That is the point on the
-  // `pull_request_target` path: the number comes from the event payload, so
-  // nothing is looked up and nothing can be looked up wrongly.
+  // `pull_request_target` path when the number comes from the payload and the
+  // step returns before the draft check; the case that asserts zero calls
+  // covers a step that genuinely never asks.
   const calls = existsSync(callsFile) ? readFileSync(callsFile, 'utf8').split('\n') : [];
   return { r, outFile, calls };
 }
-
-const CHECK_NAMES = [
-  'chain-invariant',
-  'cross-arch (macos-latest)',
-  'cross-arch (ubuntu-24.04-arm)',
-  'quality-gate',
-];
-
-/** `name=conclusion` lines, which is the verdicts file format the stub reads. */
 function verdictsFor(overrides: Record<string, string> = {}): string {
   return CHECK_NAMES.map((name) => `${name}=${overrides[name] ?? 'success'}`).join('\n') + '\n';
 }
@@ -344,59 +368,65 @@ describe('automerge — an unreadable policy blocks the merge', () => {
   });
 });
 
-describe('automerge — the second trigger has to find its own pull request', () => {
-  const SHA = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
-
-  it('resolves the PR from the checked commit on check_run', () => {
+describe('automerge — the scheduled retry has to find its own pull request', () => {
+  it('takes the newest open pull request', () => {
+    // Guard: if the step wrote nothing, print why. A bare ENOENT on the output
+    // file says nothing about which of the stub, the API shape, or the filter
+    // was wrong, and this exact test passed locally while failing on CI.
+    const failWithStep = (r: SpawnSyncReturns<string>) => {
+      throw new Error(
+        `step produced no output.\nstatus=${r.status}\nstdout=${r.stdout}\nstderr=${r.stderr}`,
+      );
+    };
+    // Oldest-first would leave the newest PR waiting behind every older one,
+    // so the retry would pass over the PR that was just fixed.
     const { r, outFile } = runResolve({
-      event: 'check_run',
-      openPrs: [{ number: 663, state: 'open' }],
-      draftFor: { 663: false },
+      event: 'schedule',
+      openPrs: [
+        { number: 660, state: 'open' },
+        { number: 669, state: 'open' },
+      ],
+      draftFor: { 669: false },
     });
     expect(r.status).toBe(0);
-    const written = readFileSync(outFile, 'utf8');
-    expect(written).toContain('number=663');
-    expect(written).toContain(`sha=${SHA}`);
+    if (!existsSync(outFile)) failWithStep(r);
+    expect(readFileSync(outFile, 'utf8')).toContain('number=669');
   });
 
-  it('takes the oldest PR when a head commit is claimed by two', () => {
-    // Merging the newer one would merge the same commits a second time.
+  it('skips drafts and takes the newest that is not one', () => {
     const { outFile } = runResolve({
-      event: 'check_run',
+      event: 'schedule',
       openPrs: [
-        { number: 700, state: 'open' },
-        { number: 660, state: 'open' },
+        { number: 661, state: 'open' },
+        { number: 669, state: 'open' },
       ],
-      draftFor: { 660: false, 700: false },
+      draftFor: { 669: true, 661: false },
     });
-    expect(readFileSync(outFile, 'utf8')).toContain('number=660');
+    expect(readFileSync(outFile, 'utf8')).toContain('number=661');
   });
 
-  it('stops when the commit has no open pull request', () => {
-    // The run belongs to a closed or merged PR. Merging number "" would call
-    // `gh pr merge ""`, which is not a refusal, it is a command against nothing.
+  it('stops when nothing is open', () => {
     const { r, outFile } = runResolve({
-      event: 'check_run',
+      event: 'schedule',
       openPrs: [{ number: 659, state: 'closed' }],
       draftFor: {},
     });
-    expect(`${r.stdout}${r.stderr}`).toContain('nothing to merge');
-    // The step returns before writing, so no output is produced. Reading it as
-    // an empty string would be a test that passes for the wrong reason.
+    expect(`${r.stdout}${r.stderr}`).toContain('No mergeable pull request');
     expect(existsSync(outFile)).toBe(false);
   });
 
-  it('stops on a draft', () => {
-    // `pull_request_target` filters drafts in the job-level `if`. A
-    // `workflow_run` has no draft field, so the step has to check itself —
-    // otherwise the second door walks straight past the first door's guard.
-    const { r, outFile } = runResolve({
-      event: 'check_run',
-      openPrs: [{ number: 664, state: 'open' }],
-      draftFor: { 664: true },
+  it('refuses when the PR head SHA cannot be read', () => {
+    // Without a commit to inspect the required-check step would query an empty
+    // SHA and read it as "no checks reported", which is the same verdict as a
+    // green run. Failing is the honest direction.
+    const { r } = runResolve({
+      event: 'schedule',
+      openPrs: [{ number: 670, state: 'open' }],
+      draftFor: { 670: false },
+      headSha: '',
     });
-    expect(`${r.stdout}${r.stderr}`).toContain('is a draft');
-    expect(existsSync(outFile)).toBe(false);
+    expect(r.status).not.toBe(0);
+    expect(`${r.stdout}${r.stderr}`).toContain('refusing');
   });
 
   it('uses the payload number on pull_request_target', () => {
@@ -407,7 +437,12 @@ describe('automerge — the second trigger has to find its own pull request', ()
     });
     expect(r.status).toBe(0);
     expect(readFileSync(outFile, 'utf8')).toContain('number=4242');
-    // No API round trip on this path.
-    expect(calls.filter(Boolean)).toEqual([]);
+    // The number comes from the payload — no lookup by commit, because that is a
+    // second source that can disagree with the event. Exactly one call remains:
+    // the draft check, which the payload does not carry.
+    const made = calls.filter(Boolean);
+    expect(made).toHaveLength(1);
+    expect(made[0]).toContain('/pulls/4242');
+    expect(made[0]).not.toContain('commits/');
   });
 });

@@ -34,6 +34,16 @@ const doc = parseYaml(wf) as {
   jobs: { automerge: { if?: string; steps: Array<{ uses?: string; run?: string }> } };
 };
 
+function stepsScript(needle: string): string {
+  const doc = parseYaml(wf) as {
+    jobs: { automerge: { steps: Array<{ name?: string; run?: string }> } };
+  };
+  const hit = doc.jobs.automerge.steps.find(
+    (s) => (s.name ?? '').toLowerCase().includes(needle) && s.run,
+  );
+  return hit?.run ?? '';
+}
+
 describe('automerge — triggers on state, not on a label', () => {
   it('does not gate on the automerge label', () => {
     // The label does not exist in this repository and no PR has carried it.
@@ -145,39 +155,81 @@ describe('automerge — it merges, and only by squash', () => {
       // `pull_request_target` alone fires while the checks are still running, so
       // the job reads "missing", refuses, and nothing wakes it afterwards. That
       // is why it never merged: PR #663 sat green and open until merged by hand.
-      expect(wf).toContain('pull_request_target');
-      expect(wf).toContain('workflow_run');
-      expect(wf).toContain('types: [completed]');
-    });
-
-    it('wakes on the pull request head, not on a commit on main', () => {
-      // Measured on PR #669. `workflow_run` fired four times with
-      // `head_branch=main` and a `head_sha` pointing at the MERGE commit, so
-      // "which PRs contain this commit" correctly answered none and the job
-      // stopped every time while a green PR sat open. `check_run` carries the
-      // commit that was actually checked.
+      // The two event-driven alternatives were both measured and both dead on
+      // this repository, so the retry is a schedule rather than a completion
+      // event: `workflow_run` carries the merge commit, `check_run` never fires
+      // for check suites GitHub created itself. `schedule` has no payload to be
+      // wrong about. See "retries on a schedule" for the numbers.
+      // Read the parsed triggers, not the file text: this file's own comments
+      // name both dead triggers, and a text search reports the explanation as
+      // the configuration.
       const triggers = (doc as { on: Record<string, unknown> }).on;
+      expect(Object.keys(triggers).sort()).toEqual(['pull_request_target', 'schedule']);
+    });
+
+    it('retries on a schedule instead of trusting a completion event', () => {
+      // Measured on PR #669, with the checks green the whole time:
+      //   workflow_run  fired 4x with head_branch=main and a merge-commit
+      //                 head_sha, so "which PR contains this commit" answered
+      //                 none every time;
+      //   check_run    fired 0x — GitHub omits it for check suites it created
+      //                 itself, which is all of them here.
+      // Neither can be the second door. The schedule re-reads the checks.
+      const triggers = (
+        doc as {
+          on: Record<string, Array<{ cron?: string }> | undefined>;
+        }
+      ).on;
       expect(triggers.workflow_run).toBeUndefined();
-      expect(triggers.check_run).toBeDefined();
-      const wf = doc.jobs.automerge as unknown as Record<string, unknown>;
-      expect(wf).toBeTruthy();
+      expect(triggers.check_run).toBeUndefined();
+      expect(triggers.pull_request_target).toBeDefined();
+      expect(triggers.schedule?.[0]?.cron ?? '').not.toBe('');
     });
 
-    it('ignores a check_run that ran against the merge commit', () => {
-      // `main`'s own quality-gate and chain-invariant runs complete constantly.
-      // Treating those as a verdict would make the job look for a PR at every
-      // post-merge pipeline run on main.
-      const jobIf = doc.jobs.automerge.if ?? '';
-      expect(jobIf).toContain("github.event.check_run.head_branch != 'main'");
-      expect(jobIf).toContain("github.event.check_run.conclusion == 'success'");
+    it('polls often enough to be useful', () => {
+      // The schedule IS the merge path, so its interval is the merge latency.
+      // Every 5 minutes is the finest granularity that does not burn the free
+      // minutes quota; slower than this and a green PR waits visibly.
+      const triggers = (
+        doc as {
+          on: Record<string, Array<{ cron?: string }> | undefined>;
+        }
+      ).on;
+      const entry = triggers.schedule?.[0]?.cron ?? '';
+      const minutes = entry.split(' ')[0]?.split(',').map(Number).filter(Number.isInteger);
+      expect(minutes?.length ?? 0).toBeGreaterThan(0);
+      for (let i = 1; i < (minutes?.length ?? 0); i++) {
+        const gap = minutes[i] - minutes[i - 1];
+        expect(gap).toBeLessThanOrEqual(5);
+      }
     });
 
-    it('refuses a check_run that did not succeed', () => {
-      // The verdict must come from the check that finished, not from optimism.
-      const jobIf = doc.jobs.automerge.if ?? '';
-      expect(jobIf).toContain("github.event.check_run.conclusion == 'success'");
-      expect(jobIf).toContain('github.event.pull_request.draft == false');
-      expect(jobIf.match(/github\.event_name != 'check_run'/g) ?? []).toHaveLength(3);
+    it('takes the newest open PR on the retry path', () => {
+      // Oldest-first would leave the newest PR waiting behind every older one,
+      // so the retry would pass over the PR that was just fixed.
+      const resolve = stepsScript('resolve');
+      expect(resolve).toContain('sort_by(.number) | last');
+      // `state` is filtered here, not only in the query string. `?state=open`
+      // is an API-side filter; if the endpoint ever returns something else, the
+      // step must not pick up a closed PR and try to merge it.
+      expect(resolve).toContain('select(.state == "open" and .draft == false)');
+    });
+
+    it('runs on a schedule, where there is no pull request to check', () => {
+      // On `schedule` `github.event.pull_request` is null. A job-level `if` that
+      // dereferences it is an error, not a false, and the retry — the only run
+      // that can actually merge — would be skipped every time. The schedule arm
+      // has to come first for that reason, not for tidiness.
+      const cond = doc.jobs.automerge.if ?? '';
+      expect(cond).toContain("github.event_name == 'schedule'");
+      const scheduleAt = cond.indexOf("github.event_name == 'schedule'");
+      const draftAt = cond.indexOf('github.event.pull_request.draft');
+      expect(scheduleAt).toBeGreaterThanOrEqual(0);
+      expect(draftAt).toBeGreaterThan(scheduleAt);
+    });
+
+    it('still refuses drafts', () => {
+      expect(doc.jobs.automerge.if ?? '').toContain('github.event.pull_request.draft == false');
     });
 
     it('passes the PR number through env, not into the script body', () => {
