@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import Database from 'better-sqlite3';
 
@@ -101,20 +101,33 @@ export function cleanupDatabaseSnapshots(snapshot) {
   rmSync(snapshot.snapshotDir, { recursive: true, force: true });
 }
 
-/** Exclude live files, then add the snapshots under their restoration paths. */
-export function databaseSnapshotTarArgs(snapshot, memphisRoot, gnuTar = true) {
+/**
+ * Exclude live files, then add the snapshots under their restoration paths.
+ *
+ * `--transform` is used unconditionally. macOS ships GNU tar, so the flag
+ * exists on both runners; the earlier `-s` fallback was the actual bug — GNU
+ * reads `-s` as `--same-order`, which cannot be combined with `-c`, and the
+ * macOS job failed with `tar: Invalid replacement flag n`.
+ *
+ * `--exclude` is matched against the name BEFORE the transform is applied.
+ * The live file is selected as `.` so it matches `./data/memphis.db`, while
+ * the staged copy is named `data/memphis.db` and survives the same pattern.
+ * Verified by hand: a tar run that keeps both yields two members of the same
+ * name, and one that drops both yields none.
+ */
+export function databaseSnapshotTarArgs(snapshot, memphisRoot) {
   if (snapshot.snapshotted.length === 0) return ['-C', memphisRoot, '.'];
-  const stageName = basename(snapshot.snapshotDir);
-  const substitution = `s|^${stageName}/|./|`;
+  const staged = snapshot.snapshotted.map(({ archivePath }) => archivePath);
+  const substitution = staged.map((archivePath) => `s|^${archivePath}|./${archivePath}|`).join(',');
   return [
     ...snapshot.excludedPaths.map((path) => `--exclude=./${path.replace(/[?*[]/g, '[$&]')}`),
-    ...(gnuTar ? [`--transform=${substitution}`] : ['-s', substitution]),
+    ...(substitution ? [`--transform=${substitution}`] : []),
     '-C',
     memphisRoot,
     '.',
     '-C',
-    dirname(snapshot.snapshotDir),
-    ...snapshot.snapshotted.map(({ archivePath }) => `${stageName}/${archivePath}`),
+    snapshot.snapshotDir,
+    ...staged,
   ];
 }
 

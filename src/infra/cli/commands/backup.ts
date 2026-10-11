@@ -723,7 +723,7 @@ function createArchive(
     // `--exclude=./vault-entries.json` misses `*.bak-diag-*` variants,
     // which is exactly how they reached 6/7 archives on this host.
     ...BACKUP_EXCLUDE_PATTERNS,
-    ...databaseSnapshotTarArgs(snapshot, memphisRoot, tarSupportsWarningOpt()),
+    ...databaseSnapshotTarArgs(snapshot, memphisRoot),
   ];
 
   try {
