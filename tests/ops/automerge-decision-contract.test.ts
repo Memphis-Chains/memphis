@@ -162,9 +162,15 @@ describe('automerge — it merges, and only by squash', () => {
       // wrong about. See "retries on a schedule" for the numbers.
       // Read the parsed triggers, not the file text: this file's own comments
       // name both dead triggers, and a text search reports the explanation as
-      // the configuration.
+      // the configuration. `workflow_dispatch` is deliberate — every scheduled
+      // workflow here that has ever fired carries one, and it also gives the
+      // operator a way to run the merge decision by hand.
       const triggers = (doc as { on: Record<string, unknown> }).on;
-      expect(Object.keys(triggers).sort()).toEqual(['pull_request_target', 'schedule']);
+      expect(Object.keys(triggers).sort()).toEqual([
+        'pull_request_target',
+        'schedule',
+        'workflow_dispatch',
+      ]);
     });
 
     it('retries on a schedule instead of trusting a completion event', () => {

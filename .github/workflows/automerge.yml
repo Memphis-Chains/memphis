@@ -27,6 +27,14 @@ name: automerge
 # trigger becomes an arbitrary-code-execution hole: anyone able to open a pull
 # request would inherit write access to the repository.
 on:
+  # `workflow_dispatch` is present because every scheduled workflow here that
+  # has ever fired also carries it: rust-sanitizers, chain-invariant,
+  # nightly-crystal, quarterly-gate, weekly-runtime-kpi, Telegram smoke test.
+  # `automerge` was the only one without it, and its schedule never fired in
+  # any shape tried — a 12-value minute list or a single minute. That is
+  # correlation, not proof, but it is the only structural difference left
+  # and a manual trigger costs nothing.
+  workflow_dispatch:
   # ONE trigger, and it is the one GitHub actually emits for this repository.
   #
   # Measured on 2026-10-10, on PR #669, with the checks running green the
