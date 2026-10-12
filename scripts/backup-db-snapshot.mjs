@@ -1,4 +1,12 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -127,6 +135,67 @@ export function tarWarningFlags() {
   return tarSupportsWarningOpt() ? ['--warning=file-changed', '--warning=file-removed'] : [];
 }
 
+let cachedSubstitution = null;
+
+/**
+ * The flag this tar uses to rewrite a member's stored name.
+ *
+ * GNU: `--transform=<sed>`. BSD (macOS, libarchive): `-s <sed>`. Probing with
+ * `--version` cannot decide it — the macOS runner printed no complaint about
+ * an unknown `--transform` while it was only printing its version, then
+ * answered `tar: Option --transform=... is not supported` on the real archive
+ * run, while the previous `-s` fallback there means `--same-order` in GNU.
+ *
+ * So this performs the smallest real archive run that must succeed, and
+ * remembers which flag produced a readable archive. A guess here is what
+ * made two consecutive CI runs red on macOS while passing on Linux.
+ */
+export function tarSubstitutionFlags(substitution) {
+  if (cachedSubstitution === null) {
+    const probe = mkdtempSync(join(tmpdir(), 'memphis-tar-probe-'));
+    try {
+      mkdirSync(join(probe, 'in'));
+      mkdirSync(join(probe, 'stage'));
+      writeFileSync(join(probe, 'in/keep.txt'), 'keep');
+      writeFileSync(join(probe, 'stage/staged.txt'), 'staged');
+      const attempt = (args) => {
+        try {
+          execFileSync(
+            'tar',
+            [
+              '-czf',
+              join(probe, 'probe.tar.gz'),
+              ...args,
+              '-C',
+              join(probe, 'in'),
+              '.',
+              '-C',
+              join(probe, 'stage'),
+              'staged.txt',
+            ],
+            { stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, LC_ALL: 'C' } },
+          );
+          return execFileSync('tar', ['-tzf', join(probe, 'probe.tar.gz')], {
+            encoding: 'utf8',
+          }).includes('staged.txt');
+        } catch {
+          return false;
+        }
+      };
+      cachedSubstitution = attempt([`--transform=s|^stage/|./|`])
+        ? ['--transform']
+        : attempt(['-s', 's|^stage/|./|'])
+          ? ['-s']
+          : [];
+    } finally {
+      rmSync(probe, { recursive: true, force: true });
+    }
+  }
+  // [] means no substitution flag is available; the caller must then rely on
+  // names being stored as-is, which the caller already handles.
+  return cachedSubstitution.length === 0 ? [] : [`${cachedSubstitution[0]}=${substitution}`];
+}
+
 export function cleanupDatabaseSnapshots(snapshot) {
   rmSync(snapshot.snapshotDir, { recursive: true, force: true });
 }
@@ -134,16 +203,19 @@ export function cleanupDatabaseSnapshots(snapshot) {
 /**
  * Exclude live files, then add the snapshots under their restoration paths.
  *
- * `--transform` is used unconditionally. macOS ships GNU tar, so the flag
- * exists on both runners; the earlier `-s` fallback was the actual bug — GNU
- * reads `-s` as `--same-order`, which cannot be combined with `-c`, and the
- * macOS job failed with `tar: Invalid replacement flag n`.
+ * The substitution flag is probed, never assumed: GNU tar has `--transform`,
+ * the BSD tar on macOS has `-s`, and each is an unknown-option error on the
+ * other. Guessing it redlined two consecutive macOS runs while Linux stayed
+ * green — `--version` accepts either flag, so it cannot answer this.
  *
- * `--exclude` is matched against the name BEFORE the transform is applied.
- * The live file is selected as `.` so it matches `./data/memphis.db`, while
- * the staged copy is named `data/memphis.db` and survives the same pattern.
- * Verified by hand: a tar run that keeps both yields two members of the same
- * name, and one that drops both yields none.
+ * `--exclude` is matched against the name BEFORE the substitution is applied,
+ * and against names in every branch, so excluding `./data/memphis.db` to drop
+ * the live file also drops the staged copy of the same name — the archive
+ * comes out with no database at all, which is what `archive-not-listable`
+ * reported. The live file is reached through `.`, so its archived name carries
+ * the `./` prefix, while the staged copy is named without it and survives.
+ * Measured by hand on all three shapes: keeping both yields two members of
+ * the same name, dropping both yields none, this yields exactly one.
  */
 export function databaseSnapshotTarArgs(snapshot, memphisRoot) {
   if (snapshot.snapshotted.length === 0) return ['-C', memphisRoot, '.'];
@@ -151,7 +223,7 @@ export function databaseSnapshotTarArgs(snapshot, memphisRoot) {
   const substitution = staged.map((archivePath) => `s|^${archivePath}|./${archivePath}|`).join(',');
   return [
     ...snapshot.excludedPaths.map((path) => `--exclude=./${path.replace(/[?*[]/g, '[$&]')}`),
-    ...(substitution ? [`--transform=${substitution}`] : []),
+    ...(substitution ? tarSubstitutionFlags(substitution) : []),
     '-C',
     memphisRoot,
     '.',

@@ -21,6 +21,7 @@ import * as snapshotBridge from '../../src/infra/cli/commands/backup-db-snapshot
 import {
   cleanupDatabaseSnapshots,
   snapshotDatabases,
+  verifyDatabaseSnapshotEntries,
   type DatabaseSnapshotResult,
 } from '../../src/infra/cli/commands/backup-db-snapshot.js';
 import {
@@ -94,6 +95,37 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
     const bridged = new Set(Object.keys(snapshotBridge));
     expect(runtimeExports.filter((name) => !bridged.has(name))).toEqual([]);
     expect(runtimeExports.length).toBeGreaterThan(0);
+  });
+
+  it('carries the snapshot once whether or not tar can rename members', () => {
+    // GNU stores the staged copy as `./data/memphis.db`, BSD tar without a
+    // substitution flag stores it as `data/memphis.db`. In both cases the
+    // live file — reachable as `.`, so archived with the `./` prefix — is the
+    // one the exclude pattern matches, and the verification below normalises
+    // the prefix away. Measured by hand on this host: with no substitution
+    // flag the archive still lists exactly one database member.
+    const snapshot = {
+      ok: true,
+      snapshotDir: '/stage',
+      snapshotted: [{ file: 'memphis.db', archivePath: 'data/memphis.db', source: 'x', bytes: 1 }],
+      excludedPaths: ['data/memphis.db', 'data/memphis.db-wal', 'data/memphis.db-shm'],
+      errors: [],
+    } as DatabaseSnapshotResult;
+    for (const stored of ['./data/memphis.db', 'data/memphis.db']) {
+      expect(() =>
+        verifyDatabaseSnapshotEntries(snapshot, ['./', './data/', stored]),
+      ).not.toThrow();
+    }
+    // The live sidecars must never ride along, whatever tar stored them as.
+    for (const sidecar of ['./data/memphis.db-wal', './data/memphis.db-shm']) {
+      expect(() => verifyDatabaseSnapshotEntries(snapshot, ['./data/memphis.db', sidecar])).toThrow(
+        /sidecars/,
+      );
+    }
+    // And two copies of the same database is still a failure.
+    expect(() =>
+      verifyDatabaseSnapshotEntries(snapshot, ['./data/memphis.db', 'data/memphis.db']),
+    ).toThrow(/exactly one/);
   });
 
   it('probes tar for the exact warning flag the archive run emits', () => {

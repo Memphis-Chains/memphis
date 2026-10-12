@@ -9,6 +9,7 @@ export {
   cleanupDatabaseSnapshots,
   databaseSnapshotTarArgs,
   snapshotDatabases,
+  tarSubstitutionFlags,
   tarSupportsWarningOpt,
   tarWarningFlags,
   verifyDatabaseSnapshotEntries,

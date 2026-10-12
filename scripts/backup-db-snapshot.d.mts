@@ -21,6 +21,7 @@ export function snapshotDatabases(options: {
   databasePath?: string;
 }): Promise<DatabaseSnapshotResult>;
 export function cleanupDatabaseSnapshots(snapshot: DatabaseSnapshotResult): void;
+export function tarSubstitutionFlags(substitution: string): string[];
 export function tarSupportsWarningOpt(): boolean;
 export function tarWarningFlags(): string[];
 export function databaseSnapshotTarArgs(
