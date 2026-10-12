@@ -1,0 +1,25 @@
+[Unit]
+Description=Copy latest memphis scheduled backup to USB drive
+After=default.target
+# USB drive should be detected by memphis-usb-capture-watch.timer first
+
+[Service]
+Type=oneshot
+# Mount the backup drive first. /run is tmpfs, so a mount does not survive a
+# reboot, and backup-to-usb.sh only accepts a directory that already is a
+# mountpoint — the two facts together produced 25 consecutive "no USB mount
+# found" with the drive plugged in. The mount helper exits 2 when the drive is
+# absent, which is a normal outcome here and must not block the copy step.
+ExecStartPre=-/home/memphis/memphis/scripts/usb-backup-mount.sh
+ExecStart=/home/memphis/memphis/scripts/backup-to-usb.sh
+WorkingDirectory=/home/memphis/memphis
+Nice=15
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+Restart=no
+# backup-to-usb.sh exit codes:
+#   0 — success (copy + rotate OK)
+#   1 — no valid archive to copy
+#   2 — USB not mounted (acceptable; skip silently)
+#   3 — copy failed (real error, surface in journal)
+SuccessExitStatus=0 1 2
