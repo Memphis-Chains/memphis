@@ -29,17 +29,33 @@ if ! command -v udisksctl >/dev/null 2>&1; then
   exit 2
 fi
 
-# Find the partition by label rather than by device node. `lsblk -o LABEL` is
-# used rather than parsing `udisksctl info`: the output field there is named
-# `IdLabel`, and that spelling has changed between udisks2 versions, so the
-# first version of this script found no partition on this host while the drive
-# was plugged in and correctly labelled.
+# Find the partition by label rather than by device node, so plugging in a
+# different USB stick first cannot redirect the copy.
+#
+# Two lookup paths, because each one alone fails somewhere this project runs.
+# `lsblk -o LABEL` does not exist on macOS — the first version of this script
+# used it alone and the contract test failed there, not on the drive. `blkid`
+# prints LABEL= on both, so it leads; `lsblk` stays as a fallback for hosts
+# where blkid needs privileges this script does not have. Parsing
+# `udisksctl info` is deliberately not used: that field is named `IdLabel`,
+# and the spelling has moved between udisks2 versions.
 PART=""
-while read -r dev _label; do
-  [ "$_label" = "$LABEL" ] || continue
-  PART="$dev"
-  break
-done < <(lsblk -lnpo NAME,TYPE,LABEL 2>/dev/null | awk '$2=="part" && $3!="" {print $1, $3}')
+if command -v blkid >/dev/null 2>&1; then
+  while IFS= read -r dev; do
+    [ -n "$dev" ] || continue
+    if blkid "$dev" 2>/dev/null | grep -q "^LABEL=\"$LABEL\"$"; then
+      PART="$dev"
+      break
+    fi
+  done < <(blkid -o device 2>/dev/null)
+fi
+if [ -z "$PART" ] && command -v lsblk >/dev/null 2>&1; then
+  while read -r dev _label; do
+    [ "$_label" = "$LABEL" ] || continue
+    PART="$dev"
+    break
+  done < <(lsblk -lnpo NAME,TYPE,LABEL 2>/dev/null | awk '$2=="part" && $3!="" {print $1, $3}')
+fi
 
 if [ -z "$PART" ]; then
   echo "usb-backup-mount: no partition labelled $LABEL found (drive absent?)"

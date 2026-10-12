@@ -80,12 +80,14 @@ describe('scripts/usb-backup-mount.sh', () => {
     expect(execLines(unitSource()).join('\n')).not.toContain('/dev/sd');
   });
 
-  it('finds the partition through lsblk LABEL, not udisks info', () => {
-    // The udisks output field is `IdLabel`, and that spelling has moved
-    // between versions — the first version of this script looked for
-    // `^Label:` and reported the drive absent while it was plugged in and
-    // correctly labelled. Asserted so the next edit does not reintroduce it.
+  it('looks the label up through a tool that exists on every runner', () => {
+    // Each lookup path failed somewhere this project runs, so both are kept
+    // and asserted: `lsblk -o LABEL` does not exist on macOS — this test
+    // failed there — and `udisksctl info` names the field `IdLabel`, whose
+    // spelling has moved between udisks2 versions. My first version grepped
+    // for `^Label:` and reported the drive absent while it was plugged in.
     const source = readFileSync(MOUNTER, 'utf8');
+    expect(source).toContain('command -v blkid');
     expect(source).toContain('NAME,TYPE,LABEL');
     expect(source).not.toMatch(/grep\s+-q\s+"\^Label:/);
   });
