@@ -134,6 +134,7 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
             '-czf',
             join(probe, `${name}.tar.gz`),
             ...args,
+            '--exclude=./data/memphis.db',
             '-C',
             join(probe, 'in'),
             '.',
@@ -143,14 +144,16 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
           ],
           { stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, LC_ALL: 'C' } },
         );
-        const listing = actualChildProcess.execFileSync(
-          'tar',
-          ['-tzf', join(probe, `${name}.tar.gz`)],
-          { encoding: 'utf8' },
-        );
-        observed[name] = listing.includes('./data/memphis.db')
-          ? 'accepted, renamed'
-          : `accepted, stored as ${JSON.stringify(listing.trim().split('\n').pop())}`;
+        const members = actualChildProcess
+          .execFileSync('tar', ['-tzf', join(probe, `${name}.tar.gz`)], { encoding: 'utf8' })
+          .split('\n')
+          .filter((line) => /memphis\.db$/.test(line));
+        observed[name] =
+          members.length === 1
+            ? `accepted, one member as ${JSON.stringify(members[0])}`
+            : members.length === 0
+              ? 'accepted, NO member'
+              : `DUPLICATE: ${JSON.stringify(members)}`;
       } catch (error) {
         observed[name] =
           `rejected: ${String((error as { stderr?: Buffer }).stderr ?? '').trim() || (error as Error).message}`;
