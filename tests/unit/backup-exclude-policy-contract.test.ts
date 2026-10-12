@@ -149,4 +149,60 @@ describe('backup exclude policy — one source of truth for every archiver', () 
       expect(result.excluded).not.toContain(`./${kept}`);
     }
   });
+
+  it('every secret carries a form that matches without a leading path', () => {
+    // GNU tar matches `*/name` against a root entry, so the `*/name` glob
+    // alone is indistinguishable from correct here — a test run on this host
+    // cannot tell the two tar dialects apart. It passed with the `name*`
+    // forms deleted, which is the measurement that matters: the invariant is
+    // asserted structurally, and the macOS run is what proves the glob is
+    // needed. Deleting a `name*` form must fail this.
+    const patterns = tarPatternArgs().map((p) => p.replace('--exclude=', ''));
+    for (const secret of [
+      '.env',
+      '.env.*',
+      'vault-entries.json*',
+      'vault-state.json*',
+      '.tier2-passphrase*',
+      '.github-pat*',
+      'memphis.pid',
+      'boot-failures.json*',
+      'embed-index.json.tmp-*',
+    ]) {
+      expect(patterns, `missing a root-level form for ${secret}`).toContain(secret);
+    }
+  });
+
+  it('tar drops a secret stored at the archive root', () => {
+    // The macOS runner put `./vault-state.json` inside the archive. The
+    // `*/name` glob needs a directory component in front of the name, so it
+    // cannot match a root entry — every secret therefore also carries a
+    // bare `name*` form. This runs real tar rather than reading the policy,
+    // because the failure was in how tar matched, not in what we declared.
+    const root = mkdtempSync(join(tmpdir(), 'memphis-policy-tar-'));
+    mkdirSync(join(root, 'chains'), { recursive: true });
+    writeFileSync(join(root, 'chains/journal-000001.json'), '{"fixture":true}');
+    writeFileSync(join(root, 'vault-state.json'), 'SECRET');
+    writeFileSync(join(root, 'vault-entries.json'), 'SECRET');
+    writeFileSync(join(root, '.env'), 'SECRET');
+    // A file whose name merely contains the secret's suffix must survive.
+    writeFileSync(join(root, 'memphis.env'), 'NOT A SECRET');
+    // The archive lives outside the tree: writing it into a directory tar is
+    // reading makes tar exit 1 with "file changed as we read it", which is a
+    // property of the fixture, not of the policy under test.
+    const archive = join(tmpdir(), `memphis-policy-tar-${process.pid}-${Date.now()}.tar.gz`);
+
+    execFileSync(
+      'tar',
+      ['-czf', archive, '--warning=no-file-changed', ...tarPatternArgs(), '-C', root, '.'],
+      { stdio: 'pipe', env: { ...process.env, LC_ALL: 'C' } },
+    );
+    const listing = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' });
+
+    expect(listing).toContain('chains/journal-000001.json');
+    expect(listing).not.toMatch(/vault-state\.json/);
+    expect(listing).not.toMatch(/vault-entries\.json/);
+    expect(listing).not.toMatch(/(^|\/)\.env$/m);
+    expect(listing).toMatch(/memphis\.env/);
+  });
 });
