@@ -116,6 +116,12 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
       '--transform=EXPR': [`--transform=${expr}`],
       '-s EXPR': ['-s', expr],
       '-s=EXPR': [`-s=${expr}`],
+      // bsdtar measured on the macOS runner: `-s EXPR` is rejected there as
+      // "Invalid replacement flag .", which is the separator in the expression
+      // being read as flag syntax. Its substitution form takes the expression
+      // without a leading `s`.
+      '-s EXPR-no-s': ['-s', expr.replace(/^s\|/, '')],
+      '-s=EXPR-no-s': [`-s=${expr.replace(/^s\|/, '')}`],
     };
     const observed: Record<string, string> = {};
     for (const [name, args] of Object.entries(shapes)) {
