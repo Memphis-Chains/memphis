@@ -137,10 +137,17 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
       // what bsdtar does — measured there as "accepted, NO member" for the
       // shape above.
       'staged under a distinct name': [],
+      // Keeps the final path — which the restore step relies on, since it
+      // runs `tar -xzf -C target` with no remapping — while excluding the
+      // live file by its `./`-prefixed name only. A flat staged name would
+      // land at the archive root instead of `data/`, so this shape exists to
+      // test whether the exclusion can be confined to the live file instead.
+      'no-exclude': [],
     };
     const observed: Record<string, string> = {};
     for (const [name, args] of Object.entries(shapes)) {
       const distinct = name === 'staged under a distinct name';
+      const excludeLive = name === 'no-exclude';
       try {
         // `execFileSync` is mocked in this file; the dialect is a property of
         // the platform, so it must be measured against the real binary.
@@ -148,9 +155,9 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
           'tar',
           [
             '-czf',
-            join(probe, `${name}.tar.gz`),
+            join(probe, `${name.replace(/[^a-z0-9]+/gi, '-')}.tar.gz`),
             ...args,
-            '--exclude=./data/memphis.db',
+            ...(excludeLive ? [] : ['--exclude=./data/memphis.db']),
             '-C',
             join(probe, 'in'),
             '.',
@@ -161,7 +168,11 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
           { stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, LC_ALL: 'C' } },
         );
         const members = actualChildProcess
-          .execFileSync('tar', ['-tzf', join(probe, `${name}.tar.gz`)], { encoding: 'utf8' })
+          .execFileSync(
+            'tar',
+            ['-tzf', join(probe, `${name.replace(/[^a-z0-9]+/gi, '-')}.tar.gz`)],
+            { encoding: 'utf8' },
+          )
           .split('\n')
           .filter((line) => /memphis\.db$/.test(line));
         observed[name] =
