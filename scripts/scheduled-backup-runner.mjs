@@ -126,14 +126,14 @@ function sha256(file) {
 
 function cleanupOldBackups(keepN) {
   if (!Number.isFinite(keepN) || keepN < 1) return [];
+  // Every archive of this tag counts towards `keep`, whether or not it has a
+  // sidecar. Filtering on the sidecar first looked safer — an archive with no
+  // digest is not one to delete — but it made retention blind in the other
+  // direction: archives written before sidecars existed (three here) were
+  // never counted and never removed, so the directory grew without bound and
+  // `keep=7` did not mean seven archives.
   const entries = readdirSync(BACKUPS_DIR)
-    .filter(
-      (f) =>
-        f.startsWith(`${tag}-`) &&
-        f.endsWith('.tar.gz') &&
-        !f.includes(PARTIAL_SUFFIX) &&
-        existsSync(join(BACKUPS_DIR, `${f}.sha256`)),
-    )
+    .filter((f) => f.startsWith(`${tag}-`) && f.endsWith('.tar.gz') && !f.includes(PARTIAL_SUFFIX))
     .sort();
   const toDelete = entries.slice(0, Math.max(0, entries.length - keepN));
   for (const f of toDelete) {

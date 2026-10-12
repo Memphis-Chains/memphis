@@ -1,0 +1,21 @@
+[Unit]
+Description=Memphis scheduled backup — daily tar.gz of ~/.memphis + drill verification
+After=memphis.service
+Wants=memphis.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/memphis/memphis
+# --data-dir is required, not optional. The runner refuses to start without it:
+# importing it once deleted an operator archive through the keep=7 retention, so
+# the guard stays and the unit carries the flag. A unit without it fails with
+# exit 2 and produces no archive at all — measured 2026-10-12, the first
+# nightly run after that guard landed.
+ExecStart=/usr/bin/node /home/memphis/memphis/scripts/scheduled-backup-runner.mjs --data-dir %h/.memphis
+Nice=15
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+Restart=no
+SuccessExitStatus=1
+# tar exit 1 on warnings (file-changed) even with --warning=no-* suppress; archive is valid
+# stdout/stderr to journal; the runner prints its status JSON
