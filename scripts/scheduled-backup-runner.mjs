@@ -292,6 +292,10 @@ async function main() {
             ok: false,
             published: false,
             reason: listError ? 'archive-not-listable' : 'no-chain-data-in-archive',
+            // Collected and then dropped: six CI rounds of this PR were spent
+            // inferring the cause from the reason string alone. Whatever tar
+            // said belongs in the report that says the archive is unusable.
+            ...(listError ? { listError } : {}),
             partial: partialPath,
             fileCount,
             dbSnapshot,

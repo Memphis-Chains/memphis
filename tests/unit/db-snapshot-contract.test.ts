@@ -16,7 +16,11 @@ import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as snapshotModule from '../../scripts/backup-db-snapshot.mjs';
-import { tarSupportsWarningOpt, tarWarningFlags } from '../../scripts/backup-db-snapshot.mjs';
+import {
+  tarSubstitutionFlags,
+  tarSupportsWarningOpt,
+  tarWarningFlags,
+} from '../../scripts/backup-db-snapshot.mjs';
 import * as snapshotBridge from '../../src/infra/cli/commands/backup-db-snapshot.js';
 import {
   cleanupDatabaseSnapshots,
@@ -95,6 +99,73 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
     const bridged = new Set(Object.keys(snapshotBridge));
     expect(runtimeExports.filter((name) => !bridged.has(name))).toEqual([]);
     expect(runtimeExports.length).toBeGreaterThan(0);
+  });
+
+  it('reports which substitution flag this tar accepts, and with what syntax', () => {
+    // Six rounds of this PR chose tar's dialect from documentation or from the
+    // Linux host, and every guess was wrong. This prints what the local tar
+    // actually does with each syntax, so a failing run on any platform states
+    // the difference instead of only the symptom.
+    const probe = mkdtempSync(join(tmpdir(), 'memphis-dialect-'));
+    mkdirSync(join(probe, 'in'));
+    mkdirSync(join(probe, 'stage/data'), { recursive: true });
+    writeFileSync(join(probe, 'in/a.txt'), 'a');
+    writeFileSync(join(probe, 'stage/data/memphis.db'), 'db');
+    const expr = 's|^data/memphis.db|./data/memphis.db|';
+    const shapes: Record<string, string[]> = {
+      '--transform=EXPR': [`--transform=${expr}`],
+      '-s EXPR': ['-s', expr],
+      '-s=EXPR': [`-s=${expr}`],
+    };
+    const observed: Record<string, string> = {};
+    for (const [name, args] of Object.entries(shapes)) {
+      try {
+        // `execFileSync` is mocked in this file; the dialect is a property of
+        // the platform, so it must be measured against the real binary.
+        actualChildProcess.execFileSync(
+          'tar',
+          [
+            '-czf',
+            join(probe, `${name}.tar.gz`),
+            ...args,
+            '-C',
+            join(probe, 'in'),
+            '.',
+            '-C',
+            join(probe, 'stage'),
+            'data/memphis.db',
+          ],
+          { stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, LC_ALL: 'C' } },
+        );
+        const listing = actualChildProcess.execFileSync(
+          'tar',
+          ['-tzf', join(probe, `${name}.tar.gz`)],
+          { encoding: 'utf8' },
+        );
+        observed[name] = listing.includes('./data/memphis.db')
+          ? 'accepted, renamed'
+          : `accepted, stored as ${JSON.stringify(listing.trim().split('\n').pop())}`;
+      } catch (error) {
+        observed[name] =
+          `rejected: ${String((error as { stderr?: Buffer }).stderr ?? '').trim() || (error as Error).message}`;
+      }
+    }
+    // stderr, not console.log: vitest swallows stdout from a passing test,
+    // so a console.log here would be invisible in exactly the run that needs
+    // it. Writing to stderr puts the measurement in the CI log.
+    const version = actualChildProcess
+      .execFileSync('tar', ['--version'], { encoding: 'utf8' })
+      .split('\n')[0];
+    process.stderr.write(`[tar-dialect] ${version}\n`);
+    for (const [name, outcome] of Object.entries(observed)) {
+      process.stderr.write(`[tar-dialect] ${name}: ${outcome}\n`);
+    }
+    // The archiver must use a shape this platform accepted. `[]` is also
+    // legal — the archive is correct without any substitution — but a shape
+    // the local tar rejected is a bug the next run would repeat.
+    expect(
+      observed[tarSubstitutionFlags(expr)[0] === '-s' ? '-s EXPR' : '--transform=EXPR'],
+    ).not.toMatch(/^rejected/);
   });
 
   it('carries the snapshot once whether or not tar can rename members', () => {
