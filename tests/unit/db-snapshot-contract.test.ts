@@ -154,6 +154,12 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
       // the live file and not the snapshot. On GNU tar 1.35 this stores one
       // member as "data/memphis.db" — the path restore needs.
       'exclude-dir, add-staged-dir': ['--exclude=./data'],
+      // `--no-recursion` plus an explicit member name per branch, so the
+      // exclusion never has to match the staged copy: the live directory is
+      // walked without recursion and only the files that are not databases
+      // are named. bsdtar applies --exclude to every branch, which is what
+      // made every shape above lose the snapshot or keep both.
+      '--no-recursion, explicit members': ['--no-recursion'],
     };
     const observed: Record<string, string> = {};
     for (const [name, args] of Object.entries(shapes)) {
