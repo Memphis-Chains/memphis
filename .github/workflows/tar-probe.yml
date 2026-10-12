@@ -1,0 +1,10 @@
+name: tar-probe
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: measure
+        run: bash .github/probe-macos.sh .
