@@ -111,6 +111,8 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
     mkdirSync(join(probe, 'stage/data'), { recursive: true });
     writeFileSync(join(probe, 'in/a.txt'), 'a');
     writeFileSync(join(probe, 'stage/data/memphis.db'), 'db');
+    // The distinct-name shape reaches the same file from a second -C.
+    writeFileSync(join(probe, 'stage/memphis.db'), 'db');
     const expr = 's|^data/memphis.db|./data/memphis.db|';
     const shapes: Record<string, string[]> = {
       '--transform=EXPR': [`--transform=${expr}`],
@@ -128,9 +130,17 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
       // archive was written and read back with the database stored twice.
       // This is the only shape bsdtar has not yet been measured on.
       'no-substitution (two -C)': [],
+      // Same, but the staged copy is named so the exclude cannot match it: the
+      // live file is reachable as `./data/memphis.db` while the staged one is
+      // `memphis.db`, a name no exclude pattern in the policy matches. This is
+      // the shape that survives --exclude applying to every branch, which is
+      // what bsdtar does — measured there as "accepted, NO member" for the
+      // shape above.
+      'staged under a distinct name': [],
     };
     const observed: Record<string, string> = {};
     for (const [name, args] of Object.entries(shapes)) {
+      const distinct = name === 'staged under a distinct name';
       try {
         // `execFileSync` is mocked in this file; the dialect is a property of
         // the platform, so it must be measured against the real binary.
@@ -146,7 +156,7 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
             '.',
             '-C',
             join(probe, 'stage'),
-            'data/memphis.db',
+            distinct ? 'memphis.db' : 'data/memphis.db',
           ],
           { stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, LC_ALL: 'C' } },
         );
@@ -179,8 +189,14 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
     // legal — the archive is correct without any substitution — but a shape
     // the local tar rejected is a bug the next run would repeat.
     expect(
-      observed[tarSubstitutionFlags(expr)[0] === '-s' ? '-s EXPR' : '--transform=EXPR'],
-    ).not.toMatch(/^rejected/);
+      observed[
+        tarSubstitutionFlags(expr).length === 0
+          ? 'no-substitution (two -C)'
+          : tarSubstitutionFlags(expr)[0] === '-s'
+            ? '-s EXPR'
+            : '--transform=EXPR'
+      ],
+    ).not.toMatch(/^(rejected|DUPLICATE|NO member)/);
   });
 
   it('carries the snapshot once whether or not tar can rename members', () => {
