@@ -24,6 +24,7 @@ import chalk from 'chalk';
 import cliProgress from 'cli-progress';
 
 import {
+  DATABASE_PLACEMENT_MANIFEST,
   cleanupDatabaseSnapshots,
   databaseSnapshotTarArgs,
   snapshotDatabases,
@@ -458,11 +459,29 @@ function createFallbackArchive(
     format: 'memphis-backup-v1',
     entries: [
       ...collectFallbackArchiveEntries(memphisRoot, '.', snapshot.excludedPaths),
-      ...snapshot.snapshotted.map(({ archivePath }) => ({
-        path: archivePath,
+      // The staged name, not the final path: the snapshot on disk is written
+      // under STAGED_PREFIX, and the JSON fallback must carry the same
+      // placement manifest the tar archive does, or restore would place the
+      // database differently depending on which archiver produced it.
+      ...snapshot.snapshotted.map(({ stagedPath }) => ({
+        path: stagedPath,
         kind: 'file' as const,
-        contentBase64: readFileSync(join(snapshot.snapshotDir, archivePath)).toString('base64'),
+        contentBase64: readFileSync(join(snapshot.snapshotDir, stagedPath)).toString('base64'),
       })),
+      // Only when there is a snapshot: with no database the archiver produces
+      // no manifest, and requiring one here would make a plain data backup
+      // fail for no reason.
+      ...(snapshot.snapshotted.length > 0
+        ? [
+            {
+              path: DATABASE_PLACEMENT_MANIFEST,
+              kind: 'file' as const,
+              contentBase64: readFileSync(
+                join(snapshot.snapshotDir, DATABASE_PLACEMENT_MANIFEST),
+              ).toString('base64'),
+            },
+          ]
+        : []),
     ],
   };
   writeFileSync(backupPath, gzipSync(Buffer.from(JSON.stringify(archive), 'utf8')));
@@ -793,6 +812,40 @@ function extractArchive(archivePath: string, targetRoot: string): void {
     }
     extractFallbackArchive(archivePath, targetRoot);
   }
+}
+
+/**
+ * Move each staged database to the path its archive recorded.
+ *
+ * The archiver stores snapshots under `STAGED_PREFIX` because no --exclude
+ * pattern can be written that drops the live file without also dropping the
+ * staged copy on a tar that applies exclusions to every branch — measured on
+ * bsdtar as the archive coming back with no database at all. GNU tar would
+ * allow `--transform` to write the final name directly, but there is no
+ * substitution syntax that works on both.
+ *
+ * The archive carries the mapping itself, so an archive restored on another
+ * host, or by hand, still lands the database in the right place. A staged
+ * database without a recorded destination is an error: restoring it under its
+ * staging name would leave a half-restored data directory that passes a
+ * directory listing and fails at the first query.
+ */
+function placeStagedDatabases(stagedRoot: string): void {
+  const manifestPath = join(stagedRoot, DATABASE_PLACEMENT_MANIFEST);
+  if (!existsSync(manifestPath)) return;
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+    placements?: Record<string, string>;
+  };
+  for (const [stagedName, finalPath] of Object.entries(manifest.placements ?? {})) {
+    const stagedFile = join(stagedRoot, stagedName);
+    if (!existsSync(stagedFile)) {
+      throw new Error(`Archive recorded a database at ${finalPath} but ${stagedName} is missing`);
+    }
+    const destination = safeTargetPath(stagedRoot, finalPath);
+    mkdirSync(dirname(destination), { recursive: true });
+    renameSync(stagedFile, destination);
+  }
+  rmSync(manifestPath, { force: true });
 }
 
 function withProgress<T>(label: string, enabled: boolean, fn: () => T): T {
@@ -1169,6 +1222,7 @@ export async function restoreBackup(options: RestoreOptions): Promise<{
   }
 
   try {
+    placeStagedDatabases(stagedRoot);
     for (const item of readdirSync(stagedRoot)) {
       renameSync(join(stagedRoot, item), join(memphisRoot, item));
     }

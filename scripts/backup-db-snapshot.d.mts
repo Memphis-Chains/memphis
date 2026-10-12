@@ -6,11 +6,19 @@
 // consumed by the compiler, not by another module. It is listed in knip.json's
 // `ignore` for that reason — not because the type surface is optional.
 export const SNAPSHOT_DIR_NAME: string;
+export const STAGED_PREFIX: string;
+export const DATABASE_PLACEMENT_MANIFEST: string;
 
 export type DatabaseSnapshotResult = {
   ok: boolean;
   snapshotDir: string;
-  snapshotted: Array<{ file: string; archivePath: string; source: string; bytes: number }>;
+  snapshotted: Array<{
+    file: string;
+    archivePath: string;
+    stagedPath: string;
+    source: string;
+    bytes: number;
+  }>;
   excludedPaths: string[];
   errors: string[];
 };
@@ -22,6 +30,10 @@ export function snapshotDatabases(options: {
 }): Promise<DatabaseSnapshotResult>;
 export function cleanupDatabaseSnapshots(snapshot: DatabaseSnapshotResult): void;
 export function tarSubstitutionFlags(substitution: string): string[];
+export function databasePlacementManifest(snapshot: DatabaseSnapshotResult): {
+  manifestName: string;
+  content: string;
+};
 export function tarSupportsWarningOpt(): boolean;
 export function tarWarningFlags(): string[];
 export function databaseSnapshotTarArgs(

@@ -9,12 +9,19 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import Database from 'better-sqlite3';
 
 // Kept in the exclusion policy for staging directories left by older versions.
 export const SNAPSHOT_DIR_NAME = 'db-snapshot';
+// Staged databases are stored under this prefix so no --exclude pattern in
+// backup-exclude-policy.json can reach them on a tar that applies exclusions
+// to every branch. Restore maps them back to their recorded archive path.
+export const STAGED_PREFIX = '.memphis-db-snapshot-';
+// Carried inside the archive; restore deletes it after placing the databases,
+// so it never becomes part of the restored data directory.
+export const DATABASE_PLACEMENT_MANIFEST = '.memphis-db-placement.json';
 const DATABASES = ['memphis.db', 'dashboard.db'];
 
 function pathWithin(root, source) {
@@ -70,7 +77,10 @@ export async function snapshotDatabases({ memphisRoot, dataDir, databasePath }) 
     if (localPath) {
       result.excludedPaths.push(localPath, `${localPath}-wal`, `${localPath}-shm`);
     }
-    const target = join(snapshotDir, archivePath);
+    // Written under the staging name, not the final path — see
+    // databaseSnapshotTarArgs() for the measurement behind that.
+    const stagedPath = `${STAGED_PREFIX}${basename(archivePath)}`;
+    const target = join(snapshotDir, stagedPath);
     try {
       mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
       const sourceDb = new Database(source, { readonly: true, fileMustExist: true });
@@ -96,12 +106,26 @@ export async function snapshotDatabases({ memphisRoot, dataDir, databasePath }) 
         snapshotDb.close();
       }
       chmodSync(target, 0o600);
-      result.snapshotted.push({ file, archivePath, source, bytes: statSync(target).size });
+      result.snapshotted.push({
+        file,
+        archivePath,
+        stagedPath,
+        source,
+        bytes: statSync(target).size,
+      });
     } catch (error) {
       rmSync(target, { force: true });
       result.errors.push(`${source}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+  if (result.snapshotted.length > 0) {
+    // The manifest is what lets restore place a snapshot stored under a
+    // staging name. It is written last, and only on success, so a failed
+    // snapshot never leaves a manifest pointing at files that do not exist.
+    const { manifestName, content } = databasePlacementManifest(result);
+    writeFileSync(join(snapshotDir, manifestName), content, { mode: 0o600 });
+  }
+
   result.ok = result.errors.length === 0;
   return result;
 }
@@ -200,6 +224,34 @@ export function tarSubstitutionFlags(substitution) {
   return cachedSubstitution.length === 0 ? [] : [`--transform=${substitution}`];
 }
 
+/**
+ * The placement manifest, as archive content.
+ *
+ * Written next to the staged databases and carried by the same archive, so an
+ * archive is self-describing: restoring it elsewhere, or extracting it by
+ * hand, still places each database where it belongs. Its name is recorded in
+ * the exclude policy so it never rides along from the live data directory.
+ */
+export function databasePlacementManifest(snapshot) {
+  const placements = {};
+  for (const { stagedPath, archivePath } of snapshot.snapshotted) {
+    placements[stagedPath] = archivePath;
+  }
+  return {
+    manifestName: DATABASE_PLACEMENT_MANIFEST,
+    content: `${JSON.stringify(
+      {
+        format: 'memphis-db-placement-v1',
+        // Written by the archiver; restore refuses a path it considers unsafe
+        // through the same check every other archive entry passes.
+        placements,
+      },
+      null,
+      2,
+    )}\n`,
+  };
+}
+
 export function cleanupDatabaseSnapshots(snapshot) {
   rmSync(snapshot.snapshotDir, { recursive: true, force: true });
 }
@@ -221,27 +273,67 @@ export function cleanupDatabaseSnapshots(snapshot) {
  * Measured by hand on all three shapes: keeping both yields two members of
  * the same name, dropping both yields none, this yields exactly one.
  */
+/**
+ * Stage every database under a name no exclude pattern in the policy can
+ * match, and let the restore step move it to its final path.
+ *
+ * Measured on both tars (the probe in db-snapshot-contract.test.ts prints
+ * the table on every run):
+ *   - GNU tar 1.35 accepts `--transform=EXPR`, so the name could be rewritten
+ *     during archiving.
+ *   - bsdtar 3.5.3 / libarchive rejects `--transform` outright, and its `-s`
+ *     takes no expression we can build. There is no substitution syntax that
+ *     works on both.
+ *   - With no substitution, `--exclude` is matched against the member name in
+ *     EVERY branch, so excluding `./data/memphis.db` to drop the live file also
+ *     drops the staged copy: measured as "accepted, NO member".
+ *
+ * A staged name the exclusions cannot reach is therefore the only shape that
+ * carries the database on both. The cost is that the archive stores the
+ * snapshot under its staging name, so `restoreBackup` moves it into place —
+ * which it can do, because it already extracts into a staging directory and
+ * renames each top-level entry afterwards.
+ *
+ * The mapping is recorded in the archive itself rather than in a side file,
+ * so an archive carries enough to be restored on its own.
+ */
 export function databaseSnapshotTarArgs(snapshot, memphisRoot) {
   if (snapshot.snapshotted.length === 0) return ['-C', memphisRoot, '.'];
-  const staged = snapshot.snapshotted.map(({ archivePath }) => archivePath);
-  const substitution = staged.map((archivePath) => `s|^${archivePath}|./${archivePath}|`).join(',');
+  const staged = snapshot.snapshotted.map(({ archivePath }) => ({
+    archivePath,
+    stagedPath: `${STAGED_PREFIX}${basename(archivePath)}`,
+  }));
   return [
     ...snapshot.excludedPaths.map((path) => `--exclude=./${path.replace(/[?*[]/g, '[$&]')}`),
-    ...(substitution ? tarSubstitutionFlags(substitution) : []),
     '-C',
     memphisRoot,
     '.',
     '-C',
     snapshot.snapshotDir,
-    ...staged,
+    ...staged.map(({ stagedPath }) => stagedPath),
+    DATABASE_PLACEMENT_MANIFEST,
   ];
 }
 
+/**
+ * Archive members that place a staged database at its final path.
+ *
+ * Consumed by restore after extraction. Every entry is checked against the
+ * same rules as any other archive path, and a missing staged database is an
+ * error rather than a silent partial restore.
+ */
+
 export function verifyDatabaseSnapshotEntries(snapshot, entries) {
   const paths = entries.map((entry) => entry.replace(/^\.\//, ''));
-  for (const { archivePath } of snapshot.snapshotted) {
-    if (paths.filter((entry) => entry === archivePath).length !== 1) {
-      throw new Error(`Archive must contain exactly one database snapshot: ${archivePath}`);
+  for (const { archivePath, stagedPath } of snapshot.snapshotted) {
+    // The staged name is what the archiver must carry; the final path is what
+    // restore must produce. Both are checked, so an archive that happens to
+    // hold a database under its final name cannot pass by accident.
+    if (paths.filter((entry) => entry === stagedPath).length !== 1) {
+      throw new Error(`Archive must contain exactly one database snapshot: ${stagedPath}`);
+    }
+    if (paths.includes(archivePath)) {
+      throw new Error(`Archive contains a live database at ${archivePath}, not a snapshot`);
     }
     if (paths.includes(`${archivePath}-wal`) || paths.includes(`${archivePath}-shm`)) {
       throw new Error(`Archive contains live database sidecars: ${archivePath}`);

@@ -10,13 +10,15 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as snapshotModule from '../../scripts/backup-db-snapshot.mjs';
 import {
+  DATABASE_PLACEMENT_MANIFEST,
+  STAGED_PREFIX,
   tarSubstitutionFlags,
   tarSupportsWarningOpt,
   tarWarningFlags,
@@ -228,35 +230,49 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
     ).not.toMatch(/^(rejected|DUPLICATE|NO member)/);
   });
 
-  it('carries the snapshot once whether or not tar can rename members', () => {
-    // GNU stores the staged copy as `./data/memphis.db`, BSD tar without a
-    // substitution flag stores it as `data/memphis.db`. In both cases the
-    // live file — reachable as `.`, so archived with the `./` prefix — is the
-    // one the exclude pattern matches, and the verification below normalises
-    // the prefix away. Measured by hand on this host: with no substitution
-    // flag the archive still lists exactly one database member.
+  it('carries the snapshot under a staging name no exclusion can reach', () => {
+    // The snapshot is archived as `.memphis-db-snapshot-<name>` and the
+    // placement manifest says where it belongs. That indirection is what makes
+    // the archive portable: the live file is excluded by its `./`-prefixed
+    // name, which on bsdtar matches members in every branch, so a staged copy
+    // stored under its final path was excluded along with the live file —
+    // measured there as an archive with no database in it.
+    const stagedPath = `${STAGED_PREFIX}memphis.db`;
     const snapshot = {
       ok: true,
       snapshotDir: '/stage',
-      snapshotted: [{ file: 'memphis.db', archivePath: 'data/memphis.db', source: 'x', bytes: 1 }],
+      snapshotted: [
+        { file: 'memphis.db', archivePath: 'data/memphis.db', stagedPath, source: 'x', bytes: 1 },
+      ],
       excludedPaths: ['data/memphis.db', 'data/memphis.db-wal', 'data/memphis.db-shm'],
       errors: [],
     } as DatabaseSnapshotResult;
-    for (const stored of ['./data/memphis.db', 'data/memphis.db']) {
+
+    // Both spellings a tar might store the member under are accepted.
+    for (const stored of [`./${stagedPath}`, stagedPath]) {
       expect(() =>
-        verifyDatabaseSnapshotEntries(snapshot, ['./', './data/', stored]),
+        verifyDatabaseSnapshotEntries(snapshot, [
+          './',
+          './data/',
+          stored,
+          DATABASE_PLACEMENT_MANIFEST,
+        ]),
       ).not.toThrow();
     }
-    // The live sidecars must never ride along, whatever tar stored them as.
+    // A live database at its final path means the exclusion was lost.
+    expect(() => verifyDatabaseSnapshotEntries(snapshot, [stagedPath, 'data/memphis.db'])).toThrow(
+      /live database/,
+    );
+    // A WAL or shm alongside it restores as a torn database.
     for (const sidecar of ['./data/memphis.db-wal', './data/memphis.db-shm']) {
-      expect(() => verifyDatabaseSnapshotEntries(snapshot, ['./data/memphis.db', sidecar])).toThrow(
+      expect(() => verifyDatabaseSnapshotEntries(snapshot, [stagedPath, sidecar])).toThrow(
         /sidecars/,
       );
     }
-    // And two copies of the same database is still a failure.
-    expect(() =>
-      verifyDatabaseSnapshotEntries(snapshot, ['./data/memphis.db', 'data/memphis.db']),
-    ).toThrow(/exactly one/);
+    // Two staged copies of the same database is still a failure.
+    expect(() => verifyDatabaseSnapshotEntries(snapshot, [`./${stagedPath}`, stagedPath])).toThrow(
+      /exactly one/,
+    );
   });
 
   it('probes tar for the exact warning flag the archive run emits', () => {
@@ -306,10 +322,15 @@ describe('consistent database snapshots through every archive writer', () => {
           archive = created.backupPath;
         }
         const entries = listArchiveContents(archive).map((entry) => entry.replace(/^\.\//, ''));
-        expect(entries.filter((entry) => entry.endsWith('.db'))).toEqual([archivePath]);
+        // The archive carries the snapshot under its staging name and the
+        // mapping that puts it back; `archivePath` is where restore must leave
+        // it, asserted below by opening the restored database at that path.
+        const stagedName = `${STAGED_PREFIX}${basename(archivePath)}`;
+        expect(entries.filter((entry) => entry.endsWith('.db'))).toEqual([stagedName]);
+        expect(entries).toContain(DATABASE_PLACEMENT_MANIFEST);
         expect(
           entries.some((entry) =>
-            /-wal$|-shm$|db-snapshot|vault-state|(?:^|\/)\.env(?:\.|$)/.test(entry),
+            /-wal$|-shm$|(?:^|\/)db-snapshot\/?$|vault-state|(?:^|\/)\.env(?:\.|$)/.test(entry),
           ),
         ).toBe(false);
         expect(statSync(archive).mode & 0o777).toBe(0o600);
@@ -413,7 +434,7 @@ describe('consistent database snapshots through every archive writer', () => {
     expect(created.dbSnapshot.snapshotted).toMatchObject([
       { source: path, archivePath: 'memphis.db' },
     ]);
-    expect(listArchiveContents(created.backupPath)).toContain('./memphis.db');
+    expect(listArchiveContents(created.backupPath)).toContain(`${STAGED_PREFIX}memphis.db`);
   });
 
   it('concurrent snapshots have separate staging and never reuse old content', async () => {
@@ -434,7 +455,10 @@ describe('consistent database snapshots through every archive writer', () => {
     ] as const) {
       expect(snapshot.ok).toBe(true);
       expect(statSync(snapshot.snapshotDir).mode & 0o777).toBe(0o700);
-      const path = join(snapshot.snapshotDir, 'memphis.db');
+      // Staging directories hold the snapshot under its staging name; each
+      // snapshot records which one it wrote, which is what makes concurrent
+      // runs independent rather than sharing a fixed filename.
+      const path = join(snapshot.snapshotDir, snapshot.snapshotted[0].stagedPath);
       expect(statSync(path).mode & 0o777).toBe(0o600);
       const restored = new Database(path, { readonly: true });
       try {

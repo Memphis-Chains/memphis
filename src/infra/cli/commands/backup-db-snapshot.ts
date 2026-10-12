@@ -5,8 +5,11 @@
 // `tsc` caught it. `db-snapshot-contract.test.ts` asserts that every runtime
 // export of the module is re-exported here.
 export {
+  DATABASE_PLACEMENT_MANIFEST,
   SNAPSHOT_DIR_NAME,
+  STAGED_PREFIX,
   cleanupDatabaseSnapshots,
+  databasePlacementManifest,
   databaseSnapshotTarArgs,
   snapshotDatabases,
   tarSubstitutionFlags,
