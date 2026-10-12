@@ -92,14 +92,21 @@ describe('scripts/usb-backup-mount.sh', () => {
     expect(source).not.toMatch(/grep\s+-q\s+"\^Label:/);
   });
 
-  it('reports an absent drive as 2, and an unusable environment the same way', () => {
+  it('reports an absent drive as 2, so the copy step is not blocked', () => {
     const result = spawnSync('bash', [MOUNTER], {
       encoding: 'utf8',
       timeout: 30_000,
       env: { ...process.env, MEMPHIS_USB_LABEL: 'definitely-not-present-memphis' },
     });
+    // The exit code is the contract, and it is the same on a host with no
+    // `udisksctl` at all — which is the macOS runner. The message differs by
+    // how the lookup failed, so it is asserted to name a reason rather than a
+    // particular sentence: my first version demanded the label be echoed,
+    // which the "no udisksctl" branch never reaches.
     expect(result.status).toBe(2);
-    expect(result.stdout + result.stderr).toContain('definitely-not-present-memphis');
+    expect(result.stdout + result.stderr).toMatch(
+      /definitely-not-present-memphis|udisksctl unavailable/,
+    );
   }, 40_000);
 
   it('is syntactically valid bash', () => {
