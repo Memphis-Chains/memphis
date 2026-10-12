@@ -143,6 +143,13 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
       // land at the archive root instead of `data/`, so this shape exists to
       // test whether the exclusion can be confined to the live file instead.
       'no-exclude': [],
+      // Excludes the destination DIRECTORY from the live tree and adds the
+      // staged copy of that same directory from a second -C. The `./` in the
+      // pattern is what separates them: the live branch archives as
+      // `./data/...`, the staged one as `data/...`, so the exclusion reaches
+      // the live file and not the snapshot. On GNU tar 1.35 this stores one
+      // member as "data/memphis.db" — the path restore needs.
+      'exclude-dir, add-staged-dir': ['--exclude=./data'],
     };
     const observed: Record<string, string> = {};
     for (const [name, args] of Object.entries(shapes)) {
@@ -158,6 +165,7 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
             join(probe, `${name.replace(/[^a-z0-9]+/gi, '-')}.tar.gz`),
             ...args,
             ...(excludeLive ? [] : ['--exclude=./data/memphis.db']),
+            ...(name === 'exclude-dir, add-staged-dir' ? ['--exclude=./data'] : []),
             '-C',
             join(probe, 'in'),
             '.',
