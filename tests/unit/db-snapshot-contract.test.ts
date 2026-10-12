@@ -122,6 +122,12 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
       // without a leading `s`.
       '-s EXPR-no-s': ['-s', expr.replace(/^s\|/, '')],
       '-s=EXPR-no-s': [`-s=${expr.replace(/^s\|/, '')}`],
+      // The shape a platform with no usable substitution actually runs. On
+      // macOS the archiver therefore takes this path, and the runner's own
+      // report was "Archive must contain exactly one database snapshot" — the
+      // archive was written and read back with the database stored twice.
+      // This is the only shape bsdtar has not yet been measured on.
+      'no-substitution (two -C)': [],
     };
     const observed: Record<string, string> = {};
     for (const [name, args] of Object.entries(shapes)) {
