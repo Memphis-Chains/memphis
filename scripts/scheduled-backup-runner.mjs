@@ -237,7 +237,7 @@ async function main() {
       execFileSync('tar', tarArgs, { stdio: 'pipe', env: { ...process.env, LC_ALL: 'C' } });
       tarOk = true;
     } catch (e) {
-      tarErr = e.message;
+      tarErr = `${e.message}${e.stderr ? ` | tar: ${String(e.stderr).trim()}` : ''}`;
       // Keep diagnostics enabled: suppressing the warning also hides the
       // evidence needed to distinguish directory churn from a real failure.
       tarOk =
@@ -270,7 +270,10 @@ async function main() {
       fileCount = entries.length;
       drillOk = entries.some((e) => /chains\/.+\.json/.test(e));
     } catch (e) {
-      listError = e.message;
+      // tar's own stderr is the only thing that says WHY. Dropping it turned
+      // five CI rounds into guesswork: the report said
+      // `archive-not-listable` and nothing about which flag tar rejected.
+      listError = `${e.message}${e.stderr ? ` | tar: ${String(e.stderr).trim()}` : ''}`;
     }
 
     // Sidecar `.sha256` is what `memphis backup verify` reads as the expected

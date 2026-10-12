@@ -191,9 +191,13 @@ export function tarSubstitutionFlags(substitution) {
       rmSync(probe, { recursive: true, force: true });
     }
   }
-  // [] means no substitution flag is available; the caller must then rely on
-  // names being stored as-is, which the caller already handles.
-  return cachedSubstitution.length === 0 ? [] : [`${cachedSubstitution[0]}=${substitution}`];
+  // [] means no substitution flag is available; the caller then relies on names
+  // being stored as-is, which it already handles. The two dialects take the
+  // expression differently — GNU as `--transform=EXPR`, BSD as two arguments
+  // `-s EXPR` — and passing `-s=EXPR` to BSD tar is what produced
+  // `archive-not-listable` on the macOS runner.
+  if (cachedSubstitution[0] === '-s') return ['-s', substitution];
+  return cachedSubstitution.length === 0 ? [] : [`--transform=${substitution}`];
 }
 
 export function cleanupDatabaseSnapshots(snapshot) {

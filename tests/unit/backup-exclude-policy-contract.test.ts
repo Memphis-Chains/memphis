@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { tarWarningFlags } from '../../scripts/backup-db-snapshot.mjs';
 import {
   BACKUP_EXCLUDE_PATTERNS,
   FALLBACK_EXCLUDE_NAMES,
@@ -192,9 +193,12 @@ describe('backup exclude policy — one source of truth for every archiver', () 
     // property of the fixture, not of the policy under test.
     const archive = join(tmpdir(), `memphis-policy-tar-${process.pid}-${Date.now()}.tar.gz`);
 
+    // The warning flags come from the same probe the archivers use, so this
+    // test does not repeat the mistake that made five CI rounds guesswork:
+    // hardcoding a flag only one tar dialect accepts.
     execFileSync(
       'tar',
-      ['-czf', archive, '--warning=no-file-changed', ...tarPatternArgs(), '-C', root, '.'],
+      ['-czf', archive, ...tarWarningFlags(), ...tarPatternArgs(), '-C', root, '.'],
       { stdio: 'pipe', env: { ...process.env, LC_ALL: 'C' } },
     );
     const listing = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' });
