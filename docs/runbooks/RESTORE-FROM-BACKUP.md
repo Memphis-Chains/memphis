@@ -4,6 +4,42 @@
 > Audience: operator (Wodzu) i każdy, kto kiedyś odziedziczy Memphisa.
 > Culture: auditable, reversible, vault-first, anty-hubris.
 
+## SQLite snapshots — implementation update, 2026-10-11
+
+Both backup writers use SQLite's online backup API for `memphis.db` and
+`dashboard.db`. A failed copy or failed database check prevents publication.
+Only those databases' live files and WAL/SHM sidecars are replaced by snapshots;
+this does not establish consistency for every other SQLite file in the tree.
+Each run stages copies in its own temporary directory (0700), stores database
+copies and archives with mode 0600, and removes its staging directory afterward.
+No checkpoint of the production database is needed.
+
+The CLI/runtime uses the configured `DATABASE_URL` (a `file:` URL, resolved as
+the runtime resolves it), or `data/memphis.db` relative to its working directory.
+The standalone runner uses the installation's `data/` for the standard
+`~/.memphis` root. For another layout, pass `--repo-root <installation>` or
+`--database-path <sqlite-file>` explicitly. A custom `--data-dir` alone searches
+only that tree; `--dry-run` performs no checkpoint, snapshot, directory creation
+or retention. Programmatic `createBackup({ memphisRoot })` likewise needs
+`dataDir` or `databasePath` to include an external database.
+
+| Source location               | Archive and restored location                    |
+| ----------------------------- | ------------------------------------------------ |
+| Inside the Memphis data root  | Same relative path, including `data/` if present |
+| External operational database | `memphis.db` at the archive root                 |
+| External dashboard database   | `dashboard.db` at the archive root               |
+
+**Restoring the archive does not replace a database outside the Memphis data
+root.** Before starting a restored runtime, point its `DATABASE_URL` to the
+restored `memphis.db`, or perform a separately approved, offline replacement at
+the configured destination. Preserve the destination database and any WAL/SHM
+files together for rollback; never combine a restored database with old live
+sidecars. A successful archive check alone does not prove runtime recovery.
+
+The regression suite restores all three archive paths (runner, CLI tar and CLI
+fallback) into temporary directories and checks committed WAL rows plus SQLite
+integrity. It does not boot the production runtime or prove vault recovery.
+
 ## TL;DR
 
 ```bash
@@ -15,7 +51,7 @@ DRILL=/tmp/memphis-restore-$(date +%s)
 mkdir -p "$DRILL" && cd "$DRILL" && tar xzf ~/.memphis/backups/<file>.tar.gz
 
 # 3. Weryfikacja łańcuchów
-cd "$DRILL" && /home/memphis/.local/share/npm-global/bin/memphis chain verify
+MEMPHIS_DATA_DIR="$DRILL" MEMPHIS_HOME="$DRILL" /home/memphis/.local/share/npm-global/bin/memphis chain verify
 
 # 4. Jeśli verify OK — restore na prod
 memphis backup restore <file>
@@ -99,7 +135,7 @@ ls chains/ | head -5
 jq -r '.generatedAt' config/soul-manifest.json  # albo python3 -m json.tool
 
 # Weryfikacja łańcuchów (extracted runtime)
-/home/memphis/.local/share/npm-global/bin/memphis chain verify
+MEMPHIS_DATA_DIR="$DRILL" MEMPHIS_HOME="$DRILL" /home/memphis/.local/share/npm-global/bin/memphis chain verify
 # oczekiwane: ok=true, chainsChecked=10, blockCount=N
 
 # Cleanup drill
@@ -170,31 +206,35 @@ curl -sS http://127.0.0.1:3000/health
 
 ## Vault recovery (critical path)
 
-Vault jest **excluded z backup** (kultura). To znaczy, że po restore vault jest pusty i trzeba go odbudować.
+The primary vault files (`vault-entries.json`, `vault-state.json`, including
+suffixed copies) are excluded from these archives. The operational SQLite
+snapshot is not a vault backup. Neither an operator passphrase nor
+`--pepper-restore` can reconstruct missing encrypted entries.
 
-### Jakie sekrety musisz pamiętać / mieć w 1Password
+Before a production restore, establish which recovery source is available:
 
-| Secret                              | Skąd odtworzyć                                | Jak przywrócić                                           |
-| ----------------------------------- | --------------------------------------------- | -------------------------------------------------------- |
-| `MEMPHIS_TELEGRAM_BOT_TOKEN`        | 1Password / BotFather                         | `memphis vault set telegram_bot_token <value>`           |
-| `MEMPHIS_TELEGRAM_ALLOWED_USER_IDS` | ten sam co było                               | `memphis vault set telegram_allowed_user_ids ${TELEGRAM_CHAT_ID}` |
-| `MEMPHIS_API_TOKEN`                 | wygenerować na nowo: `memphis token generate` | `memphis vault set api_token <value>`                    |
-| Tier-2 passphrase                   | **musisz pamiętać**                           | `memphis vault unlock --passphrase <value>`              |
-| GitHub PAT                          | `gh auth login` albo z 1Password              | `vault set github_pat <pat>`                             |
+1. An existing, working vault on the original host: preserve it through the
+   supported vault/backup workflow before replacing runtime data. Do not assume
+   `backup restore` preserves excluded files; it replaces the data-root contents.
+2. A separately protected, complete vault recovery copy: verify the supported
+   recovery procedure and availability of its matching keys/passphrase first.
+   The archive checksum and SQLite tests do not validate that recovery copy.
+3. No vault recovery copy: retrieve provider credentials from the operator's
+   external secret store, or reissue them through the providers, then populate
+   a fresh vault through supported vault commands. Initialize/unlock it with
+   the operator's conscious Tier 2 authorization where required.
 
-**Bez tier-2 passphrase vault jest locked** — to jest celowe (kultura: secrets zarządzane, nie file-committed). Jeśli passphrase zapomniany, vault jest NIEODWRACALNY (rotated entries, new keys).
+Never restore by directly editing vault JSON or placing a passphrase in a
+standalone file. Do not print recovered secrets in logs or journal entries.
+Check `memphis vault` for the commands supported by the installed version:
+this runbook's former `memphis vault export --recipient ...` example was not a
+verified capability and must not be used as a recovery dependency.
 
-### Backup dla vault (opcjonalnie, encrypted)
-
-Jeśli potrzebujesz backup vault (np. dla środowisk testowych):
-
-```bash
-# Export vault entries (encrypted with operator GPG key)
-memphis vault export --recipient wodzu@memphis.local > vault-backup-$(date +%F).gpg
-# Przechowuj GPG-encrypted OUTSIDE Memphis (off-host)
-```
-
-Nigdy nie commituj `vault-entries.json` do repo, nigdy nie wkładaj do non-encrypted backup.
+After recovery, check the required vault entry names through the vault interface
+and verify the required provider/service round trips. Record only the outcomes,
+not credential values. Full disaster recovery remains unproven until the runtime
+starts with the restored database, chain verification succeeds, and vault-backed
+services work.
 
 ---
 

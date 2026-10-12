@@ -123,18 +123,28 @@ describe('scripts/scheduled-backup-runner.mjs — persists the checksum sidecar'
   it('writes the digest it computed next to the archive', () => {
     // verifyBackup() reads the expected value from `<archive>.sha256`.
     // The runner computed the identical digest and only printed it.
-    expect(runnerSource).toMatch(/writeFileSync\(\s*`\$\{backupPath\}\.sha256`/);
+    expect(runnerSource).toMatch(/writeFileSync\(\s*partialSidecar/);
+    expect(runnerSource).toMatch(/finalSidecar = `\$\{backupPath\}\.sha256`/);
   });
 
-  it('writes the sidecar before cleanup can drop the archive it describes', () => {
+  it('publishes the sidecar before the archive it describes', () => {
+    // The digest is written against the PARTIAL name and renamed into place.
     // `cleanupOldBackups(` first matches the function DEFINITION near the top
     // of the file, not its call inside main() — that made this assertion
-    // compare a definition position against a call position.
-    const sidecarWrite = runnerSource.indexOf('writeFileSync(`${backupPath}.sha256`');
+    // compare a definition position against a call position. Every anchor
+    // here is asserted present, so a rename alone cannot make this green.
+    const sidecarWrite = runnerSource.indexOf('writeFileSync(partialSidecar');
+    const sidecarPublish = runnerSource.indexOf('renameSync(partialSidecar, finalSidecar);');
+    const archivePublish = runnerSource.indexOf('renameSync(partialPath, backupPath);');
     const cleanupCall = runnerSource.indexOf('const deleted = cleanupOldBackups(keep)');
     expect(sidecarWrite).toBeGreaterThan(-1);
+    expect(sidecarPublish).toBeGreaterThan(-1);
+    expect(archivePublish).toBeGreaterThan(-1);
     expect(cleanupCall).toBeGreaterThan(-1);
-    expect(sidecarWrite).toBeLessThan(cleanupCall);
+    expect(sidecarWrite).toBeLessThan(sidecarPublish);
+    // Sidecar first: a reader that sees the archive finds its digest present.
+    expect(sidecarPublish).toBeLessThan(archivePublish);
+    expect(archivePublish).toBeLessThan(cleanupCall);
   });
 
   it('removes the sidecar when rotating an archive out, so none linger', () => {

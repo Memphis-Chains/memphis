@@ -10,7 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createBackup, restoreBackup } from '../../src/infra/cli/commands/backup.js';
 import { resetInstallRootMemoForTests } from '../../src/infra/runtime/install-root.js';
@@ -65,12 +65,14 @@ describe('backup → wipe → restore round trip', () => {
 
   beforeEach(() => {
     env = setupDrillEnv();
+    vi.stubEnv('MEMPHIS_ENV_FILE', join(env.memphisRoot, '.env'));
     savedRuntimeRoot = process.env.MEMPHIS_RUNTIME_ROOT;
     process.env.MEMPHIS_RUNTIME_ROOT = env.memphisRoot;
     resetInstallRootMemoForTests();
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     if (savedRuntimeRoot === undefined) delete process.env.MEMPHIS_RUNTIME_ROOT;
     else process.env.MEMPHIS_RUNTIME_ROOT = savedRuntimeRoot;
     resetInstallRootMemoForTests();
@@ -115,7 +117,8 @@ describe('backup → wipe → restore round trip', () => {
     expect(restoredVault.encryptedMasterKey).toBe('opaque-blob');
 
     const envText = readFileSync(join(env.memphisRoot, '.env'), 'utf8');
-    expect(envText).toContain('MEMPHIS_VAULT_PEPPER=originalPepper123456');
+    expect(envText).not.toContain('originalPepper123456');
+    expect(envText).toContain('GEN_MAX_TOKENS=1024');
   });
 
   it('writes a pre-restore safety backup before swapping in the new contents', async () => {
@@ -145,12 +148,14 @@ describe('--pepper-restore for cross-host vault recovery', () => {
 
   beforeEach(() => {
     env = setupDrillEnv();
+    vi.stubEnv('MEMPHIS_ENV_FILE', join(env.memphisRoot, '.env'));
     savedRuntimeRoot = process.env.MEMPHIS_RUNTIME_ROOT;
     process.env.MEMPHIS_RUNTIME_ROOT = env.memphisRoot;
     resetInstallRootMemoForTests();
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     if (savedRuntimeRoot === undefined) delete process.env.MEMPHIS_RUNTIME_ROOT;
     else process.env.MEMPHIS_RUNTIME_ROOT = savedRuntimeRoot;
     resetInstallRootMemoForTests();
@@ -206,7 +211,7 @@ describe('--pepper-restore for cross-host vault recovery', () => {
     ).rejects.toThrow(/at least 12 characters/);
   });
 
-  it('does not modify .env when --pepper-restore is omitted', async () => {
+  it('does not recreate source secrets when --pepper-restore is omitted', async () => {
     const created = await createBackup({
       memphisRoot: env.memphisRoot,
       backupRoot: env.backupRoot,
@@ -229,6 +234,8 @@ describe('--pepper-restore for cross-host vault recovery', () => {
     });
 
     const envText = readFileSync(join(env.memphisRoot, '.env'), 'utf8');
-    expect(envText).toContain('MEMPHIS_VAULT_PEPPER=originalPepper123456');
+    expect(envText).not.toContain('originalPepper123456');
+    expect(envText).not.toContain('destinationPepperABC');
+    expect(envText).toContain('GEN_MAX_TOKENS=1024');
   });
 });
