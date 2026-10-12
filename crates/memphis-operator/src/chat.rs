@@ -5533,6 +5533,27 @@ mod tests {
         assert_eq!(tool_tier("memphis_classify"), 2);
     }
 
+    /// Guards `MEMPHIS_BASAL_URL` across the tests that set it.
+    ///
+    /// `cargo test` runs these in parallel threads of one process, and the
+    /// environment is process-wide. Both tests that point the tool at a closed
+    /// port set this variable, and both clear it when they finish — so
+    /// whichever finishes first lets the other fall back to
+    /// `BASAL_DEFAULT_URL`. On an operator host where BASAL is running that
+    /// URL answers, and the "service is unreachable" test sees a confident
+    /// reply instead of the start command it asserts. Measured: 20 s latency
+    /// and confidence=0.880 from the live service, with the port the test
+    /// pointed at never listening at all.
+    ///
+    /// The guard must be taken before `set_var` and held for the whole body.
+    static BASAL_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn basal_env_guard() -> std::sync::MutexGuard<'static, ()> {
+        BASAL_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn classify_rejects_calls_that_carry_no_decision() {
         let root = temp_runtime_root("classify-invalid");
@@ -5541,6 +5562,7 @@ mod tests {
         // No request may leave the process for any of these, so an endpoint
         // that would hang is safe to point at: if the guard is missing, the
         // test still fails, just slower.
+        let _guard = basal_env_guard();
         unsafe { std::env::set_var("MEMPHIS_BASAL_URL", "http://127.0.0.1:9/v1/systemone") };
 
         let cases: Vec<(&str, Value, &str)> = vec![
@@ -5603,7 +5625,10 @@ mod tests {
         let root = temp_runtime_root("classify-down");
         let runtime = runtime_for(root.as_path());
         // Port 9 (discard) is closed here, so this exercises the down path
-        // without depending on whether the operator left BASAL running.
+        // without depending on whether the operator left BASAL running. The
+        // guard is held for the whole test body: without it another thread's
+        // `remove_var` restores the default URL and this reads a real reply.
+        let _guard = basal_env_guard();
         unsafe { std::env::set_var("MEMPHIS_BASAL_URL", "http://127.0.0.1:9/v1/systemone") };
 
         let call = classify_call(json!({
