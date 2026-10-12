@@ -107,9 +107,13 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
     // actually does with each syntax, so a failing run on any platform states
     // the difference instead of only the symptom.
     const probe = mkdtempSync(join(tmpdir(), 'memphis-dialect-'));
-    mkdirSync(join(probe, 'in'));
+    mkdirSync(join(probe, 'in/data'), { recursive: true });
     mkdirSync(join(probe, 'stage/data'), { recursive: true });
     writeFileSync(join(probe, 'in/a.txt'), 'a');
+    // The live file the exclude patterns exist to drop. Without it the probe
+    // measures a tree that has nothing to exclude, and every shape that
+    // excludes nothing reports success for the wrong reason.
+    writeFileSync(join(probe, 'in/data/memphis.db'), 'LIVE');
     writeFileSync(join(probe, 'stage/data/memphis.db'), 'db');
     // The distinct-name shape reaches the same file from a second -C.
     writeFileSync(join(probe, 'stage/memphis.db'), 'db');
