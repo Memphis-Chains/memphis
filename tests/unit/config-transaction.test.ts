@@ -10,6 +10,7 @@ import {
   commitConfigurationTransaction,
   configurationFileHash,
   recoverConfigurationTransaction,
+  withConfigurationWriteLock,
 } from '../../src/infra/config/config-transaction.js';
 
 const roots: string[] = [];
@@ -31,6 +32,21 @@ function fixture() {
   };
 }
 describe('durable multi-file configuration transaction', () => {
+  it('allows recovery reads under the writer lock and releases ownership after failure', () => {
+    const { env, updates } = fixture();
+    expect(() =>
+      withConfigurationWriteLock(env, () => {
+        expect(recoverConfigurationTransaction(env)).toBe(false);
+        expect(() => commitConfigurationTransaction(env, updates)).toThrow(
+          /inside a write callback/,
+        );
+        expect(() => withConfigurationWriteLock(env, () => undefined)).toThrow(/Nested/);
+        throw new Error('synthetic callback failure');
+      }),
+    ).toThrow('synthetic callback failure');
+    commitConfigurationTransaction(env, updates);
+    expect(recoverConfigurationTransaction(env)).toBe(false);
+  });
   it.each([0, 1])('recovers interruption after publication %s idempotently', (interruptAfter) => {
     const { env, state, updates } = fixture();
     expect(() =>

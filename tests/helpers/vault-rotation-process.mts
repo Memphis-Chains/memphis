@@ -24,6 +24,38 @@ if (mode === 'init') {
     recovery_answer: 'synthetic',
   });
   for (const [key, secret] of secrets) saveVaultEntry(vaultEncrypt(key, secret));
+} else if (mode === 'hold-entry') {
+  const entry = vaultEncrypt('racer', 'synthetic-racer');
+  fs.writeFileSync(operation, 'ready');
+  const deadline = Date.now() + 25000;
+  while (!fs.existsSync(point)) {
+    assert.ok(Date.now() < deadline, 'Fixture release deadline exceeded');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  const before = fs.readFileSync(process.env.MEMPHIS_VAULT_ENTRIES_PATH!);
+  assert.throws(() => saveVaultEntry(entry), /current vault/);
+  assert.deepEqual(fs.readFileSync(process.env.MEMPHIS_VAULT_ENTRIES_PATH!), before);
+  // Retry the entire write, not the stale encrypted payload. This also checks
+  // that the original process invalidates its cached pre-rotation key.
+  const fresh = saveVaultEntry(vaultEncrypt('racer', 'synthetic-racer'));
+  assert.equal(vaultDecrypt(fresh), 'synthetic-racer');
+} else if (mode === 'rotate-clean') {
+  rotateVaultMasterKey();
+} else if (mode === 'write-many') {
+  for (let i = 0; i < 4; i++) {
+    const key = `writer-${operation}-${i}`;
+    saveVaultEntry(vaultEncrypt(key, `synthetic-${key}`));
+  }
+} else if (mode === 'read-many') {
+  const entries = listVaultEntries();
+  assert.equal(entries.length, Number(operation));
+  assert.equal(new Set(entries.map((entry) => entry.key)).size, entries.length);
+  for (const entry of entries) {
+    const secret =
+      secrets.find(([key]) => key === entry.key)?.[1] ??
+      (entry.key === 'racer' ? 'synthetic-racer' : `synthetic-${entry.key}`);
+    assert.equal(vaultDecrypt(entry), secret);
+  }
 } else if (mode === 'rotate') {
   const { rotateVaultPepperAndConfig } =
     await import('../../src/infra/storage/vault-pepper-transaction.js');

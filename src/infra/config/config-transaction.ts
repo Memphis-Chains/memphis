@@ -11,6 +11,9 @@ export interface ConfigFileUpdate {
   content: string;
   expectedHash: string | null;
 }
+// Synchronous callbacks may read the vault while holding its journal lock.
+// A second SQLite connection must not try to reacquire that same writer lock.
+const activeWriteLocks = new Set<string>();
 export function configurationFileHash(path: string): string | null {
   try {
     return createHash('sha256').update(readFileSync(path)).digest('hex');
@@ -85,6 +88,7 @@ function completePending(db: Database.Database, afterWrite?: (index: number) => 
 }
 
 export function recoverConfigurationTransaction(envPath: string): boolean {
+  if (activeWriteLocks.has(resolve(envPath))) return false;
   if (!existsSync(join(`${resolve(envPath)}.transactions`, 'journal.sqlite'))) return false;
   const db = openJournal(envPath);
   try {
@@ -102,6 +106,9 @@ export function commitConfigurationTransaction(
   updates: ConfigFileUpdate[],
   afterWrite?: (index: number) => void,
 ): void {
+  if (activeWriteLocks.has(resolve(envPath))) {
+    throw new Error('Cannot prepare a configuration transaction inside a write callback');
+  }
   validateUpdates(updates);
   const db = openJournal(envPath);
   try {
@@ -131,6 +138,10 @@ export function commitConfigurationTransaction(
 
 /** Serialize generic env mutations with rotation and recover pending intent first. */
 export function withConfigurationWriteLock<T>(envPath: string, write: () => T): T {
+  const lockPath = resolve(envPath);
+  if (activeWriteLocks.has(lockPath)) {
+    throw new Error('Nested configuration write callbacks are not supported');
+  }
   const db = openJournal(envPath);
   try {
     // Commit recovered intent before invoking a generic mutation. If that
@@ -142,7 +153,12 @@ export function withConfigurationWriteLock<T>(envPath: string, write: () => T): 
       const recovered = db
         .transaction(() => {
           if (completePending(db)) return true;
-          result = write();
+          activeWriteLocks.add(lockPath);
+          try {
+            result = write();
+          } finally {
+            activeWriteLocks.delete(lockPath);
+          }
           return false;
         })
         .immediate();
