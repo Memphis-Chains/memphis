@@ -18,6 +18,9 @@ use thiserror::Error;
 
 use crate::config::{format_path, OperatorConfig};
 
+#[path = "vault_snapshot.rs"]
+mod vault_snapshot;
+
 #[derive(Debug, Error)]
 pub enum OperatorError {
     #[error("{0}")]
@@ -485,6 +488,10 @@ impl OperatorRuntime {
     }
 
     pub fn read_vault_secret(&self, key: &str) -> Result<VaultSecretView, OperatorError> {
+        let _snapshot = vault_snapshot::VaultReadGuard::acquire(
+            &self.config,
+            &resolve_vault_state_path(&self.config),
+        )?;
         let vault = load_vault(&self.config, false)?
             .expect("strict vault load should return a vault instance");
 
@@ -641,6 +648,10 @@ impl OperatorRuntime {
     }
 
     fn load_vault_summary(&self) -> Result<VaultSummary, OperatorError> {
+        let _snapshot = vault_snapshot::VaultReadGuard::acquire(
+            &self.config,
+            &resolve_vault_state_path(&self.config),
+        )?;
         let state_version = read_vault_state_version(&self.config.vault_state_path);
         let entries = load_vault_entries(&self.config.vault_entries_path)?;
         Ok(VaultSummary {
@@ -1423,6 +1434,8 @@ pub(crate) fn try_read_vault_secret_plaintext(
     config: &OperatorConfig,
     key: &str,
 ) -> Result<Option<String>, OperatorError> {
+    let _snapshot =
+        vault_snapshot::VaultReadGuard::acquire(config, &resolve_vault_state_path(config))?;
     let Some(vault) = load_vault_cached(config, true)? else {
         return Ok(None);
     };
