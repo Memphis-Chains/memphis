@@ -42,6 +42,7 @@ function makeEnv(dir: string, bridgePath: string): NodeJS.ProcessEnv {
     RUST_CHAIN_BRIDGE_PATH: bridgePath,
     MEMPHIS_VAULT_PEPPER: 'test-pepper-0123456789abcdef',
     MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
+    MEMPHIS_VAULT_ENTRIES_PATH: join(dir, 'vault-entries.json'),
   } as NodeJS.ProcessEnv;
 }
 

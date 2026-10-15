@@ -98,6 +98,7 @@ describe('rust vault adapter status', () => {
       RUST_CHAIN_BRIDGE_PATH: bridgePath,
       MEMPHIS_VAULT_PEPPER: '0123456789abcdef',
       MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
+      MEMPHIS_VAULT_ENTRIES_PATH: join(dir, 'vault-entries.json'),
     } as NodeJS.ProcessEnv;
 
     const init = vaultInit(
@@ -157,6 +158,7 @@ describe('rust vault adapter status', () => {
       RUST_CHAIN_BRIDGE_PATH: bridgePath,
       MEMPHIS_VAULT_PEPPER: '0123456789abcdef',
       MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
+      MEMPHIS_VAULT_ENTRIES_PATH: join(dir, 'vault-entries.json'),
     } as NodeJS.ProcessEnv;
 
     const init = vaultInit(
@@ -205,6 +207,7 @@ describe('rust vault adapter status', () => {
       RUST_CHAIN_BRIDGE_PATH: bridgePath,
       MEMPHIS_VAULT_PEPPER: '0123456789abcdef',
       MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
+      MEMPHIS_VAULT_ENTRIES_PATH: join(dir, 'vault-entries.json'),
     } as NodeJS.ProcessEnv;
 
     const init = vaultInit(
@@ -249,6 +252,7 @@ describe('rust vault adapter status', () => {
           RUST_CHAIN_BRIDGE_PATH: bridgePath,
           MEMPHIS_VAULT_PEPPER: '0123456789abcdef',
           MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
+          MEMPHIS_VAULT_ENTRIES_PATH: join(dir, 'vault-entries.json'),
         } as NodeJS.ProcessEnv,
       ),
     ).toThrow('legacy init failed');

@@ -24,6 +24,7 @@ import {
   commitConfigurationTransaction,
   configurationFileHash,
   recoverConfigurationTransaction,
+  withConfigurationWriteLock,
 } from '../config/config-transaction.js';
 import { writePrivateAtomicFile } from '../config/private-atomic-file.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
@@ -531,32 +532,24 @@ export class VaultAlreadyInitializedError extends Error {
   }
 }
 
-function refuseIfVaultStateExists(rawEnv: NodeJS.ProcessEnv): void {
+function refuseIfVaultDataExists(rawEnv: NodeJS.ProcessEnv): void {
   if (parseBool(rawEnv.MEMPHIS_VAULT_FORCE_REINIT, false)) return;
-  const statePath = resolveVaultPath('vault-state.json', rawEnv);
-  if (!existsSync(statePath)) return;
-  let raw: string;
-  try {
-    raw = readFileSync(statePath, 'utf8').trim();
-  } catch {
-    return;
-  }
-  if (!raw) return;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return;
-  }
-  const obj = parsed as Record<string, unknown> | null;
-  const hasSalt = typeof obj?.salt === 'string' && (obj.salt as string).length > 0;
-  const hasKey =
-    (typeof obj?.encryptedMasterKey === 'string' &&
-      (obj.encryptedMasterKey as string).length > 0) ||
-    (typeof obj?.masterKey === 'string' && (obj.masterKey as string).length > 0);
-  if (hasSalt && hasKey) {
+  for (const file of ['vault-state.json', 'vault-entries.json'] as const) {
+    const path = resolveVaultPath(file, rawEnv);
+    try {
+      const raw = readFileSync(path, 'utf8').trim();
+      if (file === 'vault-state.json' && !raw) continue;
+      if (file === 'vault-entries.json') {
+        const entries: unknown = JSON.parse(raw);
+        if (Array.isArray(entries) && entries.length === 0) continue;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      // Unreadable or malformed data is not an empty vault. Preserve it for
+      // recovery instead of silently replacing the key that could unlock it.
+    }
     throw new VaultAlreadyInitializedError(
-      `Vault state already initialized at ${statePath}. ` +
+      `Vault data already exists or cannot be read at ${path}. ` +
         `Refusing to re-initialize — this would generate a new master key and ` +
         `leave existing encrypted entries unreadable. ` +
         `If you intentionally want to wipe the vault, set MEMPHIS_VAULT_FORCE_REINIT=1. ` +
@@ -569,7 +562,17 @@ export function vaultInit(
   input: VaultInitInput,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): { version: number; did: string } {
-  refuseIfVaultStateExists(rawEnv);
+  const journalPath = rawEnv.MEMPHIS_ENV_FILE || resolveVaultPath('vault-state.json', rawEnv);
+  return withConfigurationWriteLock(journalPath, () => {
+    refuseIfVaultDataExists(rawEnv);
+    return initializeVaultUnderLock(input, rawEnv);
+  });
+}
+
+function initializeVaultUnderLock(
+  input: VaultInitInput,
+  rawEnv: NodeJS.ProcessEnv,
+): { version: number; did: string } {
   const bridge = getBridgeOrThrow(rawEnv);
 
   if (typeof bridge.newContract.vault_init_full === 'function') {
@@ -578,8 +581,9 @@ export function vaultInit(
       input.recovery_question,
       input.recovery_answer,
     );
-    activeVault = normalizeVault(result.vault);
-    persistVaultState(activeVault, rawEnv);
+    const vault = normalizeVault(result.vault);
+    persistVaultState(vault, rawEnv);
+    activeVault = vault;
     return { version: 1, did: result.did };
   }
 
