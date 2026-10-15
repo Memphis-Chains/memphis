@@ -41,6 +41,21 @@ if (mode === 'init') {
   assert.equal(vaultDecrypt(fresh), 'synthetic-racer');
 } else if (mode === 'rotate-clean') {
   rotateVaultMasterKey();
+} else if (mode === 'hold-rotation') {
+  const rename = fs.renameSync;
+  fs.renameSync = (source, destination) => {
+    rename(source, destination);
+    if (String(destination) === process.env.MEMPHIS_VAULT_STATE_PATH) {
+      fs.writeFileSync(operation, 'published-state');
+      const deadline = Date.now() + 25000;
+      while (!fs.existsSync(point)) {
+        assert.ok(Date.now() < deadline, 'Fixture rotation release deadline exceeded');
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+      }
+    }
+  };
+  syncBuiltinESMExports();
+  rotateVaultMasterKey();
 } else if (mode === 'write-many') {
   for (let i = 0; i < 4; i++) {
     const key = `writer-${operation}-${i}`;

@@ -85,3 +85,30 @@ runtime-root configurations, concurrent initialization and native reader snapsho
 consistency are not covered by this lock contract. A rejected stale write must
 be retried from encryption, not by resubmitting the old encrypted entry; a stale
 pepper configuration requires reloading configuration first.
+
+
+## Native snapshot coordination — subsequent verification
+
+Rust previously read state and entries separately without participating in the
+configuration journal. A cross-language fixture reproduced a generic decryption
+failure after a TS writer died between publishing those files. Native secret
+reads, provider credential reads (including cached vault handles), and vault
+summaries now hold SQLite BEGIN IMMEDIATE locks across the snapshot. A shared
+SQLite read transaction would not suffice: TS entry writers publish files while
+holding a reserved writer transaction, before committing database metadata.
+
+For compatibility native locks both the state-path journal used by older TS
+callers and the configured dotenv journal; aliases are canonicalized, deduplicated
+and acquired in a stable order. The TUI launcher pins the resolved dotenv path.
+Direct native launches using a dotenv-backed rotation must provide
+MEMPHIS_ENV_FILE (or MEMPHIS_RUNTIME_ROOT); no unrelated working-directory dotenv
+is guessed. Initialized vault reads require writable private lock journals.
+Absent optional vaults create no journals.
+
+Pending prepared intent is reported as recovery-required before decrypting or
+using a cached key. Native does not replay TS journal content itself. Recovery
+remains in the configuration/vault loader. Two process integration tests cover a
+paused TS publication and SIGKILL followed by TS recovery and a successful native
+read. Rust unit tests cover both journal paths, alias deduplication and optional
+vault absence. This does not migrate arbitrary native/TS configuration roots or
+claim safe concurrent vault initialization.
