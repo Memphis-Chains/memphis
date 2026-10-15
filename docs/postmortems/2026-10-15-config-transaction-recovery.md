@@ -39,3 +39,23 @@ Before reverting readers, finish any prepared transaction using a compatible
 recovery implementation and verify the complete generation. Retain the private
 journal and encrypted snapshots; do not delete pending intent or mix individual
 files from old and new generations. The on-disk journal schema is unchanged.
+
+
+## Encrypted rotation integration — subsequent verification
+
+`tests/integration/vault-rotation-crash.test.ts` now drives the actual pepper and
+master-key rotation operations using the real Rust/NAPI encryption bridge and
+synthetic credentials. Six cases inject SIGKILL immediately before the first
+target rename (after durable intent) and after each of the two target renames.
+A fresh process loads configuration through the normal startup loader, recovers,
+checks both entry fingerprints and decrypts both credentials, including Unicode.
+A second fresh startup verifies idempotence. Pepper rotation preserves encrypted
+entry bytes; master-key rotation replaces them. The startup fixture also models
+systemd inheriting the pre-recovery pepper from EnvironmentFile. Captured output
+is checked for the synthetic plaintext sentinels.
+
+The kill injection exists only in a child-process fixture by intercepting Node's
+rename syscall wrapper; production crypto and transaction code are not mocked.
+This verifies process crashes, not sudden host power loss or filesystem hardware
+failure. No live credential is rotated. Generic concurrent credential writers,
+full native/TS configuration provenance and all S1 acceptance still need review.
