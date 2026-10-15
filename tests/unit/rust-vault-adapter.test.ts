@@ -117,6 +117,15 @@ describe('rust vault adapter status', () => {
 
     const plaintext = vaultDecrypt(encrypted, rawEnv);
     expect(plaintext).toBe('hello');
+    // A warm cache must not let the old key bypass a changed pepper or root.
+    expect(() =>
+      vaultDecrypt(encrypted, { ...rawEnv, MEMPHIS_VAULT_PEPPER: 'different-pepper-1234' }),
+    ).toThrow();
+    expect(vaultDecrypt(encrypted, rawEnv)).toBe('hello');
+    expect(() =>
+      vaultDecrypt(encrypted, { ...rawEnv, MEMPHIS_VAULT_STATE_PATH: join(dir, 'missing.json') }),
+    ).toThrow();
+    expect(vaultDecrypt(encrypted, rawEnv)).toBe('hello');
   });
 
   it('keeps compatibility with historical camelCase vault bridge exports', () => {

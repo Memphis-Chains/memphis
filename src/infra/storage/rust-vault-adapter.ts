@@ -1,17 +1,12 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
 import {
   chmodSync,
-  closeSync,
   copyFileSync,
   existsSync,
-  fsyncSync,
   mkdirSync,
-  openSync,
   readdirSync,
   readFileSync,
-  renameSync,
   unlinkSync,
-  writeFileSync,
 } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -25,44 +20,14 @@ import {
 import { resolveVaultPath } from './vault-paths.js';
 import { parseBool } from '../../core/env.js';
 import { errorTemplates } from '../../core/errors.js';
+import {
+  commitConfigurationTransaction,
+  configurationFileHash,
+  recoverConfigurationTransaction,
+} from '../config/config-transaction.js';
+import { writePrivateAtomicFile } from '../config/private-atomic-file.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
 import { resolveRustBridgePath } from '../runtime/install-root.js';
-
-/**
- * fsync a file so writes are durable on disk. Used between
- * writeFileSync(tmp) and renameSync(tmp, live) during vault rotation
- * (#145). Silently tolerates platforms/filesystems where fsync isn't
- * available — the rename itself is still the primary durability
- * barrier, fsync just closes the crash-between-write-and-rename window.
- */
-function fsyncFile(path: string): void {
-  let fd: number | null = null;
-  try {
-    fd = openSync(path, 'r+');
-    fsyncSync(fd);
-  } catch (err) {
-    // Best-effort; proceed with the rename even if fsync isn't supported
-    // (e.g. tmpfs, network mount). Sprint 2.4: surface to stderr so the
-    // operator notices durability degradation — silent swallow used to
-    // mean nobody could tell whether vault writes were actually durable
-    // until a power-cut audit. Stderr instead of pino so this module
-    // stays free of logger dependencies (loaded during shutdown paths
-    // where pino transports may already be torn down).
-    process.stderr.write(
-      `[memphis-vault] fsync(${path}) failed — durability degraded for this write: ${
-        err instanceof Error ? err.message : String(err)
-      }\n`,
-    );
-  } finally {
-    if (fd !== null) {
-      try {
-        closeSync(fd);
-      } catch {
-        // noop
-      }
-    }
-  }
-}
 
 export interface RustVaultAdapterStatus {
   rustEnabled: boolean;
@@ -165,6 +130,7 @@ function isV2State(state: PersistedVaultState): state is PersistedVaultStateV2 {
 }
 
 let activeVault: JsVault | null = null;
+let activeVaultIdentity: string | null = null;
 
 function getVaultMasterKey(vault: JsVault): Buffer {
   const key = vault.master_key ?? vault.masterKey;
@@ -288,32 +254,21 @@ function snapshotVaultStateBeforeWrite(statePath: string): void {
 function persistVaultState(vault: JsVault, rawEnv: NodeJS.ProcessEnv = process.env): void {
   const statePath = resolveVaultPath('vault-state.json', rawEnv);
   const pepper = getVaultPepper(rawEnv);
-
   mkdirSync(dirname(statePath), { recursive: true });
   snapshotVaultStateBeforeWrite(statePath);
 
   if (pepper.length >= 12) {
-    const serialized = serializeVaultStateV2(vault, pepper);
-    // Sprint 2.2 (#275): create with 0600 mode at write time so there's
-    // no umask-window where the file is world-readable. Previous logic
-    // used default mode + chmod-after — race-prone on multi-user hosts.
-    writeFileSync(statePath, JSON.stringify(serialized, null, 2), { mode: 0o600 });
+    writePrivateAtomicFile(
+      statePath,
+      JSON.stringify(serializeVaultStateV2(vault, pepper), null, 2),
+    );
   } else {
-    // Fallback to v1 if pepper is too short (should not happen in normal flow)
     const normalized = normalizeVault(vault);
     const serialized: PersistedVaultStateV1 = {
       salt: normalized.salt.toString('base64'),
       masterKey: getVaultMasterKey(normalized).toString('base64'),
     };
-    writeFileSync(statePath, JSON.stringify(serialized, null, 2), { mode: 0o600 });
-  }
-
-  // Belt-and-suspenders: tighten if the file existed before this write
-  // (writeFileSync `mode` only applies to file creation, not overwrite).
-  try {
-    chmodSync(statePath, 0o600);
-  } catch {
-    // chmod may fail on some platforms (Windows); non-fatal
+    writePrivateAtomicFile(statePath, JSON.stringify(serialized, null, 2));
   }
 }
 
@@ -394,12 +349,34 @@ function resolveVaultBridge(rawEnv: NodeJS.ProcessEnv = process.env): {
   };
 }
 
+function vaultCacheIdentity(rawEnv: NodeJS.ProcessEnv): string {
+  const path = resolveVaultPath('vault-state.json', rawEnv);
+  // Hash stays process-local. Include file content to detect atomic replacement,
+  // even when inode timestamps or file size are unchanged.
+  return createHash('sha256')
+    .update(path)
+    .update('\0')
+    .update(getVaultPepper(rawEnv))
+    .update('\0')
+    .update(existsSync(path) ? readFileSync(path) : Buffer.alloc(0))
+    .digest('hex');
+}
+
 function getActiveVaultOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): JsVault {
-  if (!activeVault) {
-    activeVault = loadPersistedVaultState(rawEnv);
+  recoverConfigurationTransaction(
+    rawEnv.MEMPHIS_ENV_FILE || resolveVaultPath('vault-state.json', rawEnv),
+  );
+  const identity = vaultCacheIdentity(rawEnv);
+  if (activeVaultIdentity !== identity) {
+    activeVault = null;
+    activeVaultIdentity = null;
   }
   if (!activeVault) {
-    throw new Error('vault not initialized; run vault init first');
+    activeVault = loadPersistedVaultState(rawEnv);
+    if (activeVault) activeVaultIdentity = vaultCacheIdentity(rawEnv);
+  }
+  if (!activeVault) {
+    throw new Error('vault not initialized or state cannot be decrypted');
   }
   activeVault = normalizeVault(activeVault);
   return activeVault;
@@ -660,6 +637,7 @@ export function vaultDecrypt(entry: VaultEntry, rawEnv: NodeJS.ProcessEnv = proc
  */
 export function resetActiveVault(): void {
   activeVault = null;
+  activeVaultIdentity = null;
 }
 
 export interface VaultPepperRotateResult {
@@ -705,14 +683,7 @@ export function rotateVaultStatePepper(
   }
 
   const wrapped = serializeVaultStateV2(vault, newPepper);
-  const tmpPath = `${statePath}.tmp-${process.pid}-${Date.now()}`;
-  writeFileSync(tmpPath, JSON.stringify(wrapped, null, 2));
-  try {
-    chmodSync(tmpPath, 0o600);
-  } catch {
-    // chmod non-fatal on some platforms
-  }
-  renameSync(tmpPath, statePath);
+  writePrivateAtomicFile(statePath, JSON.stringify(wrapped, null, 2));
 
   activeVault = normalizeVault(vault);
 
@@ -781,6 +752,11 @@ export function rotateVaultMasterKey(
   const statePath = resolveVaultPath('vault-state.json', rawEnv);
   const entriesPath = getEntriesStorePath(rawEnv);
 
+  const journalPath = rawEnv.MEMPHIS_ENV_FILE || statePath;
+  recoverConfigurationTransaction(journalPath);
+  const originalStateHash = configurationFileHash(statePath);
+  const originalEntriesHash = configurationFileHash(entriesPath);
+
   if (!existsSync(statePath)) {
     throw new Error(`Vault state not found at ${statePath}. Run "memphis vault init" first.`);
   }
@@ -818,16 +794,17 @@ export function rotateVaultMasterKey(
       const jsEntry = convertToJsVaultEntry(entry);
       const plaintext = bridge.newContract.vault_retrieve(oldVault, jsEntry);
       decrypted.push({ key: entry.key, plaintext, createdAt: entry.createdAt });
-    } catch (err) {
+    } catch {
       failed.push({
         key: entry.key,
         id: entry.id,
-        reason: err instanceof Error ? err.message : 'unknown_error',
+        reason: 'credential-decryption-failed',
       });
     }
   }
 
   if (failed.length > 0) {
+    for (const record of decrypted) record.plaintext.fill(0);
     const summary = failed
       .slice(0, 5)
       .map((f) => `  • key=${f.key} id=${f.id ?? '(none)'} — ${f.reason}`)
@@ -838,125 +815,51 @@ export function rotateVaultMasterKey(
     );
   }
 
-  const newVault: JsVault = {
+  const newVault = {
     salt: oldVault.salt,
     master_key: randomBytes(32),
   };
 
-  const reencrypted = decrypted.map((record) => {
-    const out = bridge.newContract.vault_store!(newVault, record.key, record.plaintext);
-    return {
-      id: out.id,
-      key: out.key,
-      encrypted: out.ciphertext.toString('base64'),
-      iv: out.nonce.toString('base64'),
-      tag: out.tag.toString('base64'),
-      createdAt: record.createdAt ?? out.createdAt ?? out.created_at ?? new Date().toISOString(),
-    };
-  });
-
-  const reencryptedStored = reencrypted.map((e) => {
-    const payload = JSON.stringify({ key: e.key, encrypted: e.encrypted, iv: e.iv });
-    const fingerprint = createHash('sha256').update(payload).digest('hex');
-    return { ...e, fingerprint };
-  });
-
-  const stateBackup = `${statePath}.bak-${process.pid}-${Date.now()}`;
-  const entriesBackup = `${entriesPath}.bak-${process.pid}-${Date.now()}`;
-
-  copyFileSync(statePath, stateBackup);
-  if (existsSync(entriesPath)) {
-    copyFileSync(entriesPath, entriesBackup);
-  }
-
-  const tmpState = `${statePath}.tmp-${process.pid}-${Date.now()}`;
-  const tmpEntries = `${entriesPath}.tmp-${process.pid}-${Date.now()}`;
-
   try {
+    const reencrypted = decrypted.map((record) => {
+      const out = bridge.newContract.vault_store!(newVault, record.key, record.plaintext);
+      return {
+        id: out.id,
+        key: out.key,
+        encrypted: out.ciphertext.toString('base64'),
+        iv: out.nonce.toString('base64'),
+        tag: out.tag.toString('base64'),
+        createdAt: record.createdAt ?? out.createdAt ?? out.created_at ?? new Date().toISOString(),
+      };
+    });
+
+    const reencryptedStored = reencrypted.map((e) => {
+      const payload = JSON.stringify({ key: e.key, encrypted: e.encrypted, iv: e.iv });
+      const fingerprint = createHash('sha256').update(payload).digest('hex');
+      return { ...e, fingerprint };
+    });
+
     const pepper = getVaultPepper(rawEnv);
-    if (pepper.length < 12) {
+    if (pepper.length < 12)
       throw new Error('MEMPHIS_VAULT_PEPPER must be at least 12 characters to write v2 state.');
-    }
     const wrapped = serializeVaultStateV2(newVault, pepper);
-    // Sprint 2.2 (#275): create with 0600 at write time (closes umask race).
-    writeFileSync(tmpState, JSON.stringify(wrapped, null, 2), { mode: 0o600 });
-    try {
-      chmodSync(tmpState, 0o600);
-    } catch {
-      // chmod non-fatal
-    }
-
-    mkdirSync(dirname(entriesPath), { recursive: true });
-    writeFileSync(tmpEntries, JSON.stringify(reencryptedStored, null, 2));
-    try {
-      chmodSync(tmpEntries, 0o600);
-    } catch {
-      // chmod non-fatal
-    }
-
-    // Fsync both tmp files before the first rename (#145). writeFileSync
-    // doesn't guarantee durability until the buffer is flushed to disk —
-    // a crash between writeFileSync and renameSync could leave a torn
-    // tmp that the catch-block rollback then restores from a half-written
-    // state. Explicit fsync here closes that window.
-    fsyncFile(tmpState);
-    fsyncFile(tmpEntries);
-
-    renameSync(tmpState, statePath);
-    try {
-      renameSync(tmpEntries, entriesPath);
-    } catch (entriesRenameErr) {
-      copyFileSync(stateBackup, statePath);
-      throw entriesRenameErr;
-    }
-
-    activeVault = normalizeVault(newVault);
-
-    try {
-      unlinkSync(stateBackup);
-    } catch {
-      // backup cleanup non-fatal
-    }
-    if (existsSync(entriesBackup)) {
-      try {
-        unlinkSync(entriesBackup);
-      } catch {
-        // backup cleanup non-fatal
-      }
-    }
-
-    return {
-      statePath,
-      entriesPath,
-      rotatedCount: reencryptedStored.length,
-    };
-  } catch (err) {
-    try {
-      if (existsSync(tmpState)) unlinkSync(tmpState);
-    } catch {
-      /* noop */
-    }
-    try {
-      if (existsSync(tmpEntries)) unlinkSync(tmpEntries);
-    } catch {
-      /* noop */
-    }
-    if (existsSync(stateBackup)) {
-      try {
-        copyFileSync(stateBackup, statePath);
-        unlinkSync(stateBackup);
-      } catch {
-        /* noop — backup still on disk for manual recovery */
-      }
-    }
-    if (existsSync(entriesBackup)) {
-      try {
-        copyFileSync(entriesBackup, entriesPath);
-        unlinkSync(entriesBackup);
-      } catch {
-        /* noop */
-      }
-    }
-    throw err;
+    mkdirSync(dirname(entriesPath), { recursive: true, mode: 0o700 });
+    commitConfigurationTransaction(journalPath, [
+      {
+        path: statePath,
+        content: JSON.stringify(wrapped, null, 2),
+        expectedHash: originalStateHash,
+      },
+      {
+        path: entriesPath,
+        content: JSON.stringify(reencryptedStored, null, 2),
+        expectedHash: originalEntriesHash,
+      },
+    ]);
+    return { statePath, entriesPath, rotatedCount: reencryptedStored.length };
+  } finally {
+    resetActiveVault();
+    for (const record of decrypted) record.plaintext.fill(0);
+    newVault.master_key.fill(0);
   }
 }

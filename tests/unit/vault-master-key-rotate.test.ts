@@ -1,4 +1,5 @@
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -142,6 +143,36 @@ describe('rotateVaultMasterKey', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mv4-mkrotate-missing-'));
     const env = makeEnv(dir);
     expect(() => rotateVaultMasterKey(env)).toThrow(/vault state not found/i);
+  });
+
+  it('clears plaintext and the new key when re-encryption fails before publication', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mv4-mkrotate-store-fail-'));
+    const env = makeEnv(dir);
+    vaultInit({ passphrase: 'p', recovery_question: 'q', recovery_answer: 'a' }, env);
+    saveVaultEntry(vaultEncrypt('first', 'synthetic-first', env), env);
+    saveVaultEntry(vaultEncrypt('second', 'synthetic-second', env), env);
+    const beforeState = readFileSync(env.MEMPHIS_VAULT_STATE_PATH!);
+    const beforeEntries = readFileSync(env.MEMPHIS_VAULT_ENTRIES_PATH!);
+    const bridge = createRequire(import.meta.url)(env.RUST_CHAIN_BRIDGE_PATH!);
+    const originalStore = bridge.vault_store;
+    const plaintexts: Buffer[] = [];
+    let newKey: Buffer | undefined;
+    bridge.vault_store = (vault: { master_key: Buffer }, key: string, plaintext: Buffer) => {
+      newKey = vault.master_key;
+      plaintexts.push(plaintext);
+      if (plaintexts.length === 2) throw new Error('synthetic re-encryption failure');
+      return originalStore(vault, key, plaintext);
+    };
+
+    expect(() => rotateVaultMasterKey(env)).toThrow('synthetic re-encryption failure');
+    expect(plaintexts).toHaveLength(2);
+    for (const plaintext of plaintexts)
+      expect(plaintext.equals(Buffer.alloc(plaintext.length))).toBe(true);
+    expect(newKey?.equals(Buffer.alloc(32))).toBe(true);
+    expect(readFileSync(env.MEMPHIS_VAULT_STATE_PATH!)).toEqual(beforeState);
+    expect(readFileSync(env.MEMPHIS_VAULT_ENTRIES_PATH!)).toEqual(beforeEntries);
+    resetActiveVault();
+    expect(vaultDecrypt(JSON.parse(beforeEntries.toString())[0], env)).toBe('synthetic-first');
   });
 
   it('tolerates a completely empty entries file (no entries to rotate)', () => {
