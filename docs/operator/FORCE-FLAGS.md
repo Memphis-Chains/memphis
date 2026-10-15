@@ -16,19 +16,27 @@ you understand which guard you are bypassing and why.
 
 ### What it overrides
 
-`memphis vault init` refuses every time `vault-state.json` is present
-and contains a salt + master key. The refusal exists because re-init
+`memphis vault init` refuses when `vault-state.json` is nonempty or unreadable,
+or when `vault-entries.json` contains entries or cannot be parsed as an empty
+array. Missing files, an empty state file and an empty entries array are valid
+for a fresh installation. The refusal exists because re-init
 generates a new master key, and old encrypted entries are unreadable
 under the new key — the vault would silently lose every secret without
 the guard.
 
 The guard fires from two paths:
 
-- `src/infra/storage/rust-vault-adapter.ts:553` — `refuseIfVaultStateExists`
-  reads `vault-state.json` directly, throws `VaultAlreadyInitializedError`
-  if both `salt` and an encrypted master key field exist.
-- `src/security/vault-boundary.ts:202` — `initializeVault` lists existing
+- `src/infra/storage/rust-vault-adapter.ts` — `vaultInit` holds the configuration
+  journal writer lock across recovery, state/entries checks, key generation
+  and atomic state publication. `refuseIfVaultDataExists` throws
+  `VaultAlreadyInitializedError` before bridge initialization.
+- `src/security/vault-boundary.ts` — `initializeVault` lists existing
   entries and refuses if any are present.
+
+The lock serializes cooperating processes using the same journal path. A busy
+lock can fail with a timeout; retry the operation after the other process exits.
+It does not coordinate external file editors or callers configured with different
+journals. The force flag bypasses the data guard, but never the lock.
 
 ### When to set it
 
