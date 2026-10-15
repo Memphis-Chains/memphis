@@ -59,3 +59,29 @@ rename syscall wrapper; production crypto and transaction code are not mocked.
 This verifies process crashes, not sudden host power loss or filesystem hardware
 failure. No live credential is rotated. Generic concurrent credential writers,
 full native/TS configuration provenance and all S1 acceptance still need review.
+
+
+## Concurrent credential writers — subsequent verification
+
+A deterministic two-process regression reproduced an accepted stale ciphertext:
+a writer encrypted an entry, another process rotated the master key, then the
+first writer appended its old ciphertext successfully. That success left an
+unreadable entry. The regression now requires rejection without changing the
+entries file, followed by successful fresh encryption in the original process.
+This exercises cache invalidation as well as publication safety.
+
+Entry append and delete now acquire the same configured SQLite journal lock as
+rotation. Before appending to an initialized vault, the entry must decrypt under
+the current state while that lock is held. Publication uses the private atomic
+writer. Unreadable existing JSON is rejected on mutation instead of becoming an
+empty list that could overwrite existing credentials. Recovery reads inside a
+synchronous writer callback reuse its ownership; nested write transactions are
+rejected, and callback failure clears ownership.
+
+The concurrent fixture starts three independent native-encryption writers and
+checks all twelve added entries plus the two originals from a fresh process.
+Writers must share the configured journal path. External file editors, mixed
+runtime-root configurations, concurrent initialization and native reader snapshot
+consistency are not covered by this lock contract. A rejected stale write must
+be retried from encryption, not by resubmitting the old encrypted entry; a stale
+pepper configuration requires reloading configuration first.
