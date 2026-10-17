@@ -9,7 +9,10 @@ import { createIsolatedTestRuntime } from '../helpers/isolated-runtime.js';
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
 const script = ['--import', 'tsx', 'tests/helpers/vault-rotation-process.mts'];
-const reader = resolve('target/debug/examples/vault-read-fixture');
+const reader = resolve(
+  process.env.CARGO_TARGET_DIR ?? 'target',
+  'debug/examples/vault-read-fixture',
+);
 function fixture() {
   expect(
     existsSync(reader),

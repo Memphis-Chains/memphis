@@ -36,7 +36,10 @@ describe('test runtime isolation', () => {
     writeFileSync(
       bridge,
       `module.exports = {
-      vault_init_full: () => ({ vault: { salt: Buffer.alloc(32, 1), master_key: Buffer.alloc(32, 2) }, did: 'did:test', qa_question: 'q' }),
+      vault_load_state: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_load_state,
+      vault_parse_entries: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_parse_entries,
+      vault_decode_entry: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_decode_entry,
+  vault_init_full: () => ({ vault: { salt: Buffer.alloc(32, 1), master_key: Buffer.alloc(32, 2) }, did: 'did:test', qa_question: 'q' }),
       vault_store: () => {}, vault_retrieve: () => {}
     };`,
     );

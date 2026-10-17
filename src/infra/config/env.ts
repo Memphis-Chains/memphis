@@ -9,6 +9,7 @@ import { AppConfig, envSchema } from './schema.js';
 import { resolveVaultSecrets } from './vault-resolve.js';
 import { errorTemplates } from '../../core/errors.js';
 import { resolveInstallRoot } from '../runtime/install-root.js';
+import { resolveVaultJournals } from '../storage/vault-paths.js';
 
 /**
  * Load `.env` at module import time. Replaces the old
@@ -46,7 +47,11 @@ export function loadDotEnvFromInstallRoot(rawEnv: NodeJS.ProcessEnv = process.en
   // explicitly.
   const explicit = rawEnv.MEMPHIS_ENV_FILE?.trim();
   if (explicit && explicit.length > 0) {
-    return loadIfValid(resolve(explicit));
+    return loadIfValid(resolve(explicit), rawEnv);
+  }
+  const root = rawEnv.MEMPHIS_RUNTIME_ROOT?.trim();
+  if (root) {
+    return loadIfValid(resolve(root, '.env'), rawEnv);
   }
   let envPath: string;
   try {
@@ -58,12 +63,26 @@ export function loadDotEnvFromInstallRoot(rawEnv: NodeJS.ProcessEnv = process.en
     // file load, which is correct.
     return null;
   }
-  return loadIfValid(envPath);
+  return loadIfValid(envPath, rawEnv);
 }
 
-function loadIfValid(envPath: string): string | null {
-  const recovered = recoverConfigurationTransaction(envPath);
-  if (recovered) {
+function loadIfValid(envPath: string, rawEnv: NodeJS.ProcessEnv): string | null {
+  let fileValues: NodeJS.ProcessEnv = {};
+  try {
+    fileValues = dotenv.parse(readFileSync(envPath, 'utf8'));
+  } catch {
+    // Missing/unreadable dotenv still follows the normal loader error path.
+  }
+  const inherited = Object.fromEntries(
+    Object.entries({ ...process.env, ...rawEnv }).filter(([, value]) => value !== undefined),
+  );
+  const journals = resolveVaultJournals({
+    ...fileValues,
+    ...inherited,
+    MEMPHIS_ENV_FILE: envPath,
+  });
+  const recovered = recoverConfigurationTransaction(journals.paths);
+  if (recovered && existsSync(envPath)) {
     // A systemd EnvironmentFile may have loaded the pre-recovery pepper.
     // Update only the transaction-owned key; preserve other explicit env overrides.
     const values = dotenv.parse(readFileSync(envPath, 'utf8'));
@@ -86,6 +105,9 @@ function loadIfValid(envPath: string): string | null {
     console.warn(`[memphis-config] Failed to load ${envPath}: ${result.error.message}`);
     return null;
   }
+  // Propagate the file actually loaded, including install-root discovery. Every
+  // subsequent adapter and native child must use the same compatibility journal.
+  process.env.MEMPHIS_ENV_FILE = envPath;
   return envPath;
 }
 

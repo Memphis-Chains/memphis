@@ -16,6 +16,9 @@ function makeBridge(dir: string) {
   writeFileSync(
     bridgePath,
     `module.exports = {
+  vault_load_state: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_load_state,
+  vault_parse_entries: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_parse_entries,
+  vault_decode_entry: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_decode_entry,
   vault_init_full: () => ({
     vault: { salt: Buffer.alloc(32, 1), master_key: Buffer.alloc(32, 2) },
     did: 'did:memphis:test',
@@ -130,7 +133,7 @@ describe('vault state migration v1 -> v2', () => {
     expect(perms).toBe(0o600);
   });
 
-  it('corrupt v2 state returns null gracefully', () => {
+  it('classifies malformed v2 state without treating it as uninitialized', () => {
     const dir = mkdtempSync(join(tmpdir(), 'vault-mig-corrupt-'));
     const bridgePath = makeBridge(dir);
     const rawEnv = makeEnv(dir, bridgePath);
@@ -148,8 +151,8 @@ describe('vault state migration v1 -> v2', () => {
       }),
     );
 
-    // Should not throw, just fail to load
-    expect(() => vaultEncrypt('k', 'hello', rawEnv)).toThrow(/vault not initialized/);
+    // A malformed state has its own safe diagnostic.
+    expect(() => vaultEncrypt('k', 'hello', rawEnv)).toThrow(/VAULT_STATE_MALFORMED/);
   });
 
   it('v2 state with wrong pepper fails to load', () => {
@@ -168,6 +171,6 @@ describe('vault state migration v1 -> v2', () => {
       MEMPHIS_VAULT_PEPPER: 'wrong-pepper-0123456789',
     } as NodeJS.ProcessEnv;
 
-    expect(() => vaultEncrypt('k', 'hello', wrongEnv)).toThrow(/vault not initialized/);
+    expect(() => vaultEncrypt('k', 'hello', wrongEnv)).toThrow(/VAULT_STATE_AUTH_FAILED/);
   });
 });

@@ -4,6 +4,10 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import {
+  applyFirstRunPreview,
+  buildMinimalBaselinePreview,
+} from '../../src/onboarding/first-run.js';
 import { runCli } from '../helpers/cli.js';
 
 vi.mock('../../src/infra/auth/operator-gate.js', () => ({
@@ -60,8 +64,11 @@ module.exports = {
       .map((row, index) => ({ id: row.id, score: 0.99 - index * 0.01, text_preview: row.text.slice(0, 80) }));
     return JSON.stringify({ ok: true, data: { query, count: hits.length, hits } });
   },
+  vaultLoadState: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_load_state,
+  vaultParseEntries: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_parse_entries,
+  vaultDecodeEntry: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_decode_entry,
   vaultInitFull: (passphrase, question) => ({
-    vault: { salt: Buffer.from('salt-salt-salt-1234'), master_key: Buffer.from(passphrase.padEnd(32, '!').slice(0, 32)) },
+    vault: { salt: Buffer.alloc(32, 1), master_key: Buffer.from(passphrase.padEnd(32, '!').slice(0, 32)) },
     did: 'did:memphis:test-smoke',
     qa_question: question,
   }),
@@ -206,7 +213,35 @@ describe('full workflow e2e', () => {
 
   it('ask -> recall via session in temp dir', async () => {
     const workDir = mkdtempSync(join(tmpdir(), 'mv4-e2e-ask-'));
-    const env = { DEFAULT_PROVIDER: 'local-fallback' };
+    const env = {
+      DEFAULT_PROVIDER: 'local-fallback',
+      RUST_CHAIN_ENABLED: 'true',
+      RUST_CHAIN_BRIDGE_PATH: writeRuntimeBridge(workDir),
+      MEMPHIS_DATA_DIR: join(workDir, '.memphis'),
+      MEMPHIS_ENV_FILE: join(workDir, '.env'),
+      MEMPHIS_VAULT_STATE_PATH: join(workDir, 'vault-state.json'),
+      MEMPHIS_VAULT_ENTRIES_PATH: join(workDir, 'vault-entries.json'),
+      MEMPHIS_VAULT_PEPPER: 'synthetic-session-test-pepper',
+    };
+    writeFileSync(env.MEMPHIS_ENV_FILE, '');
+    // Ask requires an initialized runtime. Build its fixture explicitly rather
+    // than relying on the preceding test's data or bypassing the startup gate.
+    await runCli(
+      [
+        'vault',
+        'init',
+        '--passphrase',
+        'SyntheticPassphrase!123',
+        '--recovery-question',
+        'fixture?',
+        '--recovery-answer',
+        'synthetic',
+        '--json',
+      ],
+      { cwd: workDir, env },
+    );
+
+    await applyFirstRunPreview(buildMinimalBaselinePreview(env), env);
 
     const ask1 = parseCliJson<{ session: string }>(
       await runCli(

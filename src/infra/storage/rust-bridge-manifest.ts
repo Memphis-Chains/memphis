@@ -15,6 +15,9 @@ const BRIDGE_EXPORT_ALIASES = {
   vault_init_full: ['vault_init_full', 'vaultInitFull'],
   vault_store: ['vault_store', 'vaultStore'],
   vault_retrieve: ['vault_retrieve', 'vaultRetrieve'],
+  vault_load_state: ['vault_load_state', 'vaultLoadState'],
+  vault_parse_entries: ['vault_parse_entries', 'vaultParseEntries'],
+  vault_decode_entry: ['vault_decode_entry', 'vaultDecodeEntry'],
   embed_store: ['embed_store', 'embedStore'],
   embed_store_many: ['embed_store_many', 'embedStoreMany'],
   embed_flush: ['embed_flush', 'embedFlush'],
@@ -51,6 +54,9 @@ export const DEFAULT_REQUIRED_RUST_BRIDGE_EXPORTS = [
   'vault_init_full',
   'vault_store',
   'vault_retrieve',
+  'vault_load_state',
+  'vault_parse_entries',
+  'vault_decode_entry',
   'embed_store',
   'embed_store_many',
   'embed_flush',
@@ -153,7 +159,9 @@ export function assessRustBridgeManifestStatus(
 
   const manifestFn = resolution.resolved.bridge_manifest;
   const manifest = typeof manifestFn === 'function' ? readBridgeManifest(manifestFn) : undefined;
-  const manifestRequired = manifest?.requiredExports?.length ? manifest.requiredExports : requiredExports;
+  const manifestRequired = manifest?.requiredExports?.length
+    ? manifest.requiredExports
+    : requiredExports;
   const effectiveRequired = uniqueStrings([
     ...requiredExports,
     ...manifestRequired.filter(isKnownBridgeExport),
@@ -211,7 +219,9 @@ export function assessRustBridgeManifestStatus(
   };
 }
 
-function readBridgeManifest(manifestFn: (...args: unknown[]) => unknown): RustBridgeManifest | undefined {
+function readBridgeManifest(
+  manifestFn: (...args: unknown[]) => unknown,
+): RustBridgeManifest | undefined {
   try {
     const raw = manifestFn();
     if (typeof raw !== 'string') return undefined;
