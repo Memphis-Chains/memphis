@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 
 import { resetActiveVault, rotateVaultStatePepper, vaultDecrypt } from './rust-vault-adapter.js';
 import { listVaultEntries, verifyVaultEntry } from './vault-entry-store.js';
-import { resolveVaultPath } from './vault-paths.js';
+import { resolveVaultJournals, resolveVaultPath } from './vault-paths.js';
 import {
   commitConfigurationTransaction,
   configurationFileHash,
@@ -24,7 +24,8 @@ export function rotateVaultPepperAndConfig(
   const quote = ["'", '"', '`'].find((candidate) => !newPepper.includes(candidate));
   if (!quote) throw new Error('Pepper cannot contain every dotenv quoting delimiter');
   const envPath = resolveDotEnvPath(rawEnv);
-  recoverConfigurationTransaction(envPath);
+  const journals = resolveVaultJournals({ ...rawEnv, MEMPHIS_ENV_FILE: envPath }).paths;
+  recoverConfigurationTransaction(journals);
   const envContent = readFileSync(envPath, 'utf8');
   if (dotenv.parse(envContent).MEMPHIS_VAULT_PEPPER !== oldPepper)
     throw new Error('Persisted pepper differs from the supplied old pepper; reload configuration');
@@ -53,7 +54,7 @@ export function rotateVaultPepperAndConfig(
     // Round-trip before preparing durable intent: quoting must not alter bytes.
     if (dotenv.parse(nextEnv).MEMPHIS_VAULT_PEPPER !== newPepper)
       throw new Error('Pepper dotenv round-trip failed');
-    commitConfigurationTransaction(envPath, [
+    commitConfigurationTransaction(journals, [
       { path: statePath, content: readFileSync(staged, 'utf8'), expectedHash: stateHash },
       { path: envPath, content: nextEnv, expectedHash: envHash },
     ]);

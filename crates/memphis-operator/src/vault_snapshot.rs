@@ -20,9 +20,9 @@ impl VaultReadGuard {
         config: &OperatorConfig,
         effective_state: &Path,
     ) -> Result<Self, OperatorError> {
-        // Older TS callers journal under the state path; configured rotations
-        // journal under the dotenv path. Lock both for compatibility. Every
-        // native reader uses the same order; each TS writer holds only one.
+        // New TS intent uses the state journal; older rotations used dotenv.
+        // Both surfaces lock the entire set in canonical path order, preserving
+        // pending recovery and coordination with either historical journal.
         let mut bases = vec![
             config.vault_state_path.clone(),
             effective_state.to_path_buf(),
@@ -30,10 +30,16 @@ impl VaultReadGuard {
         if let Some(path) = config
             .raw_env
             .get("MEMPHIS_ENV_FILE")
+            .map(|p| p.trim())
             .filter(|p| !p.is_empty())
         {
             bases.push(PathBuf::from(path));
-        } else if let Some(root) = config.raw_env.get("MEMPHIS_RUNTIME_ROOT") {
+        } else if let Some(root) = config
+            .raw_env
+            .get("MEMPHIS_RUNTIME_ROOT")
+            .map(|p| p.trim())
+            .filter(|p| !p.is_empty())
+        {
             bases.push(PathBuf::from(root).join(".env"));
         }
         let cwd = std::env::current_dir().map_err(|_| failure())?;
@@ -205,6 +211,51 @@ mod tests {
         let guard = VaultReadGuard::acquire(&config, &config.vault_state_path).unwrap();
         assert_eq!(guard.0.len(), 1);
         drop(guard);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn blank_explicit_path_uses_trimmed_runtime_root() {
+        let (root, mut config) = fixture();
+        fs::write(&config.vault_state_path, "{}").unwrap();
+        config
+            .raw_env
+            .insert("MEMPHIS_ENV_FILE".into(), "  ".into());
+        config.raw_env.insert(
+            "MEMPHIS_RUNTIME_ROOT".into(),
+            format!(" {} ", root.display()),
+        );
+        let guard = VaultReadGuard::acquire(&config, &config.vault_state_path).unwrap();
+        let connection = Connection::open(root.join(".env.transactions/journal.sqlite")).unwrap();
+        connection.busy_timeout(Duration::ZERO).unwrap();
+        assert!(connection.execute_batch("BEGIN IMMEDIATE").is_err());
+        drop(guard);
+        connection
+            .execute_batch("BEGIN IMMEDIATE; ROLLBACK")
+            .unwrap();
+        drop(connection);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn trimmed_explicit_path_takes_precedence_over_runtime_root() {
+        let (root, mut config) = fixture();
+        fs::write(&config.vault_state_path, "{}").unwrap();
+        config.raw_env.insert(
+            "MEMPHIS_ENV_FILE".into(),
+            format!(" {} ", root.join("custom.env").display()),
+        );
+        config
+            .raw_env
+            .insert("MEMPHIS_RUNTIME_ROOT".into(), root.display().to_string());
+        let guard = VaultReadGuard::acquire(&config, &config.vault_state_path).unwrap();
+        assert!(!root.join(".env.transactions").exists());
+        let connection =
+            Connection::open(root.join("custom.env.transactions/journal.sqlite")).unwrap();
+        connection.busy_timeout(Duration::ZERO).unwrap();
+        assert!(connection.execute_batch("BEGIN IMMEDIATE").is_err());
+        drop(guard);
+        drop(connection);
         fs::remove_dir_all(root).unwrap();
     }
 }

@@ -1,7 +1,15 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -10,6 +18,7 @@ import {
   commitConfigurationTransaction,
   configurationFileHash,
   recoverConfigurationTransaction,
+  withConfigurationSnapshot,
   withConfigurationWriteLock,
 } from '../../src/infra/config/config-transaction.js';
 
@@ -32,6 +41,115 @@ function fixture() {
   };
 }
 describe('durable multi-file configuration transaction', () => {
+  it('reuses snapshot locks, rejects expansion and releases them after a reader fails', () => {
+    const { env, state } = fixture();
+    expect(() =>
+      withConfigurationSnapshot(env, () => {
+        expect(withConfigurationSnapshot(env, () => 'same snapshot')).toBe('same snapshot');
+        expect(() => withConfigurationSnapshot([env, state], () => undefined)).toThrow(/expand/);
+        expect(() => withConfigurationWriteLock(env, () => undefined)).toThrow(/Nested/);
+        throw new Error('synthetic reader failure');
+      }),
+    ).toThrow('synthetic reader failure');
+    withConfigurationWriteLock([env, state], () => {
+      expect(withConfigurationSnapshot([state, env], () => 'reused writer')).toBe('reused writer');
+    });
+  });
+
+  it.each(['dotenv', 'state'])(
+    'recovers pending intent from the historical %s journal',
+    (source) => {
+      const { env, state, updates } = fixture();
+      expect(() =>
+        commitConfigurationTransaction(source === 'dotenv' ? env : state, updates, () => {
+          throw new Error('interrupt');
+        }),
+      ).toThrow('interrupt');
+      expect(recoverConfigurationTransaction([state, env])).toBe(true);
+      expect(readFileSync(state, 'utf8')).toBe('new-encrypted-state');
+      expect(readFileSync(env, 'utf8')).toBe('new-env');
+      expect(recoverConfigurationTransaction([state, env])).toBe(false);
+    },
+  );
+
+  it('uses the designated primary for intent while holding every compatibility lock', () => {
+    const { env, state, updates } = fixture();
+    expect(() =>
+      commitConfigurationTransaction([state, env], updates, () => {
+        throw new Error('interrupt');
+      }),
+    ).toThrow('interrupt');
+    for (const [base, expected] of [
+      [state, 1],
+      [env, 0],
+    ] as const) {
+      const db = new Database(join(`${base}.transactions`, 'journal.sqlite'));
+      expect(
+        db.prepare("SELECT COUNT(*) AS count FROM transactions WHERE status = 'prepared'").get(),
+      ).toEqual({ count: expected });
+      db.close();
+    }
+    expect(recoverConfigurationTransaction([state, env])).toBe(true);
+    withConfigurationWriteLock([state, env], () => {
+      expect(recoverConfigurationTransaction([env, state])).toBe(false);
+      for (const base of [state, env]) {
+        const db = new Database(join(`${base}.transactions`, 'journal.sqlite'));
+        db.pragma('busy_timeout = 0');
+        try {
+          expect(() => db.exec('BEGIN IMMEDIATE')).toThrow(/locked/);
+        } finally {
+          db.close();
+        }
+      }
+    });
+  });
+
+  it('deduplicates symlink aliases and rejects expansion of a held lock set', () => {
+    const { env, state } = fixture();
+    const aliasRoot = join(dirname(env), 'alias');
+    symlinkSync(dirname(env), aliasRoot, 'dir');
+    const alias = join(aliasRoot, '.env');
+    withConfigurationWriteLock([env, alias], () => {
+      expect(recoverConfigurationTransaction([alias, env])).toBe(false);
+      expect(() => recoverConfigurationTransaction([env, state])).toThrow(/expand/);
+      expect(() => withConfigurationWriteLock(alias, () => undefined)).toThrow(/Nested/);
+    });
+    expect(recoverConfigurationTransaction([env, alias])).toBe(false);
+  });
+
+  it('refuses ambiguous pending generations before publishing either journal', () => {
+    const { env, state, updates } = fixture();
+    expect(() =>
+      commitConfigurationTransaction(env, updates, () => {
+        throw new Error('interrupt');
+      }),
+    ).toThrow('interrupt');
+    writeFileSync(state, 'old-encrypted-state');
+    writeFileSync(env, 'old-env');
+    mkdirSync(`${state}.transactions`);
+    const legacy = new Database(join(`${state}.transactions`, 'journal.sqlite'));
+    legacy.exec(
+      'CREATE TABLE transactions (id INTEGER PRIMARY KEY, status TEXT NOT NULL, updates TEXT NOT NULL, previous TEXT NOT NULL, created_at TEXT NOT NULL)',
+    );
+    legacy
+      .prepare(
+        "INSERT INTO transactions(status, updates, previous, created_at) VALUES ('prepared', ?, '[]', 'fixture')",
+      )
+      .run(JSON.stringify(updates));
+    legacy.close();
+    expect(() => recoverConfigurationTransaction([state, env])).toThrow(
+      /multiple configuration journals/,
+    );
+    expect(readFileSync(state, 'utf8')).toBe('old-encrypted-state');
+    expect(readFileSync(env, 'utf8')).toBe('old-env');
+    for (const base of [env, state]) {
+      const db = new Database(join(`${base}.transactions`, 'journal.sqlite'));
+      db.pragma('busy_timeout = 0');
+      db.exec('BEGIN IMMEDIATE; ROLLBACK');
+      db.close();
+    }
+  });
+
   it('allows recovery reads under the writer lock and releases ownership after failure', () => {
     const { env, updates } = fixture();
     expect(() =>

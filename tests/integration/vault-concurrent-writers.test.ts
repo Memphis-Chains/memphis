@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createIsolatedTestRuntime } from '../helpers/isolated-runtime.js';
@@ -43,6 +44,38 @@ function fixture() {
 }
 
 describe('vault writers and rotation', () => {
+  it('retries a decoded snapshot when rotation finishes before cache publication', async () => {
+    const { root, env } = fixture();
+    const ready = join(root, 'state-ready');
+    const release = join(root, 'state-release');
+    const reader = launch(env, 'hold-state-load', ready, release);
+    try {
+      const deadline = Date.now() + 20000;
+      while (!existsSync(ready)) {
+        expect(Date.now()).toBeLessThan(deadline);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      // Slow crypto must not keep another process from acquiring the journals.
+      for (const base of [env.MEMPHIS_VAULT_STATE_PATH!, env.MEMPHIS_ENV_FILE!]) {
+        const db = new Database(join(`${base}.transactions`, 'journal.sqlite'));
+        db.pragma('busy_timeout = 0');
+        try {
+          db.exec('BEGIN IMMEDIATE; ROLLBACK');
+        } finally {
+          db.close();
+        }
+      }
+      run(env, 'rotate-clean');
+      writeFileSync(release, 'continue');
+      const result = await reader.done;
+      expect(result.code, result.stderr).toBe(0);
+      run(env, 'read-many', '3');
+    } finally {
+      if (reader.child.exitCode === null) reader.child.kill('SIGKILL');
+      await reader.done;
+    }
+  }, 90000);
+
   it('rejects an entry encrypted before another process rotates and allows a fresh retry', async () => {
     const { root, env } = fixture();
     const ready = join(root, 'ready');

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { syncBuiltinESMExports } from 'node:module';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
 
 const [mode, operation, point] = process.argv.slice(2);
 const oldPepper = 'synthetic-original-pepper-for-crash-test';
@@ -24,9 +24,32 @@ if (mode === 'init') {
     recovery_answer: 'synthetic',
   });
   for (const [key, secret] of secrets) saveVaultEntry(vaultEncrypt(key, secret));
-} else if (mode === 'hold-entry') {
+} else if (mode === 'hold-entry' || mode === 'hold-state-load') {
+  if (mode === 'hold-state-load') {
+    const bridge = createRequire(import.meta.url)(process.env.RUST_CHAIN_BRIDGE_PATH!);
+    const load = bridge.vault_load_state;
+    bridge.vault_load_state = (...args: unknown[]) => {
+      const loaded = load(...args);
+      bridge.vault_load_state = load;
+      fs.writeFileSync(operation, 'decoded-state');
+      const deadline = Date.now() + 25000;
+      while (!fs.existsSync(point)) {
+        assert.ok(Date.now() < deadline, 'Fixture state-load release deadline exceeded');
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+      }
+      return loaded;
+    };
+  }
   const entry = vaultEncrypt('racer', 'synthetic-racer');
-  fs.writeFileSync(operation, 'ready');
+  if (mode === 'hold-state-load') {
+    // Rotation happened while the decoded old key was paused. The adapter must
+    // retry its snapshot and encrypt with the new key before returning.
+    const stored = saveVaultEntry(entry);
+    assert.equal(vaultDecrypt(stored), 'synthetic-racer');
+    console.log('VAULT_FIXTURE_OK');
+    process.exit(0);
+  }
+  if (mode === 'hold-entry') fs.writeFileSync(operation, 'ready');
   const deadline = Date.now() + 25000;
   while (!fs.existsSync(point)) {
     assert.ok(Date.now() < deadline, 'Fixture release deadline exceeded');

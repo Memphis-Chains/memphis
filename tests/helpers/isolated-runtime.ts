@@ -36,7 +36,8 @@ export function createIsolatedTestRuntime(parent: NodeJS.ProcessEnv, repoRoot: s
     MEMPHIS_QUEUE_WAL_PATH: join(data, 'queue.wal'),
     DATABASE_URL: `file:${join(data, 'memphis.db')}`,
     RUST_CHAIN_ENABLED: 'true',
-    RUST_CHAIN_BRIDGE_PATH: join(repoRoot, 'crates', 'memphis-napi'),
+    RUST_CHAIN_BRIDGE_PATH:
+      parent.MEMPHIS_TEST_NATIVE_BRIDGE ?? join(repoRoot, 'crates', 'memphis-napi'),
     RUST_EMBED_PERSIST_PATH: join(data, 'embed-index.json'),
     MEMPHIS_API_TOKEN: '',
     MEMPHIS_RATE_LIMIT_SENSITIVE_MAX: '10',
@@ -46,7 +47,11 @@ export function createIsolatedTestRuntime(parent: NodeJS.ProcessEnv, repoRoot: s
     MEMPHIS_SURFACE_TELEGRAM_DEFAULT_CONSENT: 'local-only',
     MEMPHIS_DEFAULT_CONSENT: 'local-only',
   });
-  for (const key of ['MEMPHIS_STRICT_VITEST_RACE', 'MEMPHIS_QUIET_TEST_LOGS']) {
+  for (const key of [
+    'MEMPHIS_STRICT_VITEST_RACE',
+    'MEMPHIS_QUIET_TEST_LOGS',
+    'MEMPHIS_TEST_NATIVE_BRIDGE',
+  ]) {
     if (parent[key] !== undefined) env[key] = parent[key];
   }
   return { root, env };

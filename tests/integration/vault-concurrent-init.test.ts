@@ -14,7 +14,11 @@ function fixture(journal: string) {
   const fixture = createIsolatedTestRuntime(process.env, resolve('.'));
   roots.push(fixture.root);
   fixture.env.MEMPHIS_VAULT_PEPPER = 'synthetic-init-pepper-for-concurrency';
-  if (journal === 'state') delete fixture.env.MEMPHIS_ENV_FILE;
+  if (journal === 'state') {
+    delete fixture.env.MEMPHIS_ENV_FILE;
+    delete fixture.env.MEMPHIS_RUNTIME_ROOT;
+  }
+  if (journal === 'root') delete fixture.env.MEMPHIS_ENV_FILE;
   return fixture;
 }
 
@@ -54,7 +58,7 @@ function run(env: NodeJS.ProcessEnv, mode: string) {
 }
 
 describe('concurrent vault initialization', () => {
-  it.each(['dotenv', 'state'])(
+  it.each(['dotenv', 'state', 'root', 'mixed'])(
     'preserves the first key with the %s journal',
     async (journal) => {
       const { root, env } = fixture(journal);
@@ -65,7 +69,12 @@ describe('concurrent vault initialization', () => {
       try {
         await waitFor(ready);
         const started = join(root, 'second-started');
-        const second = launch(env, 'reject', started);
+        const secondEnv = { ...env };
+        if (journal === 'mixed') {
+          delete secondEnv.MEMPHIS_ENV_FILE;
+          delete secondEnv.MEMPHIS_RUNTIME_ROOT;
+        }
+        const second = launch(secondEnv, 'reject', started);
         workers.push(second);
         await waitFor(started);
         await new Promise((resolve) => setTimeout(resolve, 250));

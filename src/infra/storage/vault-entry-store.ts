@@ -2,9 +2,14 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-import { vaultDecrypt, type VaultEntry } from './rust-vault-adapter.js';
+import {
+  parseVaultEntries,
+  VaultEntryError,
+  vaultDecrypt,
+  type VaultEntry,
+} from './rust-vault-adapter.js';
 import { healSensitiveFilePerms } from './secure-file.js';
-import { resolveVaultPath } from './vault-paths.js';
+import { resolveVaultJournals, resolveVaultPath } from './vault-paths.js';
 import { secureCompare } from '../../security/constant-time.js';
 import { withConfigurationWriteLock } from '../config/config-transaction.js';
 import { writePrivateAtomicFile } from '../config/private-atomic-file.js';
@@ -23,48 +28,21 @@ function computeFingerprint(entry: Pick<VaultEntry, 'key' | 'encrypted' | 'iv'>)
   return createHash('sha256').update(payload).digest('hex');
 }
 
-function readAll(path: string, strict = false): StoredVaultEntry[] {
-  if (!existsSync(path)) return [];
-  // Heal-on-load: existing operator installs from before PR #275
-  // started enforcing 0600 may still have group/world-readable
-  // vault-entries.json on disk (664 was the umask default).
-  // Tighten silently with a one-time warn so the next CLI invocation
-  // already fixes it without operator intervention.
-  healSensitiveFilePerms(path);
+function readAll(
+  path: string,
+  rawEnv: NodeJS.ProcessEnv,
+  key?: string,
+  latest = false,
+): StoredVaultEntry[] {
+  let raw: string;
   try {
-    const raw = readFileSync(path, 'utf8');
-    if (!raw.trim()) {
-      if (strict) throw new Error('Empty vault entries');
-      return [];
-    }
-    const parsed = JSON.parse(raw) as StoredVaultEntry[];
-    if (!Array.isArray(parsed)) throw new Error('Invalid vault entries');
-    if (
-      strict &&
-      parsed.some(
-        (entry) =>
-          !entry ||
-          typeof entry.key !== 'string' ||
-          typeof entry.encrypted !== 'string' ||
-          typeof entry.iv !== 'string',
-      )
-    ) {
-      throw new Error('Invalid vault entry record');
-    }
-
-    // migration-safe normalization: older records may miss fingerprint
-    return parsed.map((item) => ({
-      ...item,
-      fingerprint:
-        typeof item.fingerprint === 'string' && item.fingerprint.length > 0
-          ? item.fingerprint
-          : computeFingerprint(item),
-    }));
-  } catch {
-    if (strict)
-      throw new Error('Vault entries are unreadable; refusing to overwrite existing data');
-    return [];
+    raw = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(readFileSync(path));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw new VaultEntryError('VAULT_ENTRIES_UNREADABLE');
   }
+  healSensitiveFilePerms(path);
+  return parseVaultEntries(raw, rawEnv, key, latest);
 }
 
 function writeAll(path: string, entries: StoredVaultEntry[]): void {
@@ -80,17 +58,13 @@ function writeAll(path: string, entries: StoredVaultEntry[]): void {
   writePrivateAtomicFile(path, JSON.stringify(entries, null, 2));
 }
 
-function journalPath(rawEnv: NodeJS.ProcessEnv): string {
-  return rawEnv.MEMPHIS_ENV_FILE || resolveVaultPath('vault-state.json', rawEnv);
-}
-
 export function saveVaultEntry(
   entry: VaultEntry,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): StoredVaultEntry {
-  return withConfigurationWriteLock(journalPath(rawEnv), () => {
+  return withConfigurationWriteLock(resolveVaultJournals(rawEnv).paths, () => {
     const path = getStorePath(rawEnv);
-    const all = readAll(path, true);
+    const all = readAll(path, rawEnv);
     // Encryption can precede a concurrent key rotation. Validate under the same
     // lock used for publication so stale ciphertext never enters the store.
     if (existsSync(resolveVaultPath('vault-state.json', rawEnv))) {
@@ -118,17 +92,14 @@ export function listVaultEntries(
   key?: string,
 ): StoredVaultEntry[] {
   const path = getStorePath(rawEnv);
-  const all = readAll(path);
-  if (!key) return all;
-  return all.filter((e) => e.key === key);
+  return readAll(path, rawEnv, key || undefined);
 }
 
 export function getLatestVaultEntry(
   key: string,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): StoredVaultEntry | undefined {
-  const entries = listVaultEntries(rawEnv, key);
-  return entries.at(-1);
+  return readAll(getStorePath(rawEnv), rawEnv, key, true)[0];
 }
 
 export function verifyVaultEntry(entry: StoredVaultEntry): boolean {
@@ -140,9 +111,9 @@ export function deleteVaultEntriesByKey(
   key: string,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): { removedCount: number; remainingCount: number; path: string } {
-  return withConfigurationWriteLock(journalPath(rawEnv), () => {
+  return withConfigurationWriteLock(resolveVaultJournals(rawEnv).paths, () => {
     const path = getStorePath(rawEnv);
-    const all = readAll(path, true);
+    const all = readAll(path, rawEnv);
     const kept = all.filter((entry) => entry.key !== key);
     const removedCount = all.length - kept.length;
     writeAll(path, kept);

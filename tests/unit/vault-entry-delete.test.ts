@@ -31,6 +31,7 @@ function fixture(entries: Array<{ key: string; id?: string }>): {
   );
   return {
     env: {
+      RUST_CHAIN_BRIDGE_PATH: process.env.RUST_CHAIN_BRIDGE_PATH,
       MEMPHIS_VAULT_ENTRIES_PATH: entriesPath,
       MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
       MEMPHIS_ENV_FILE: join(dir, '.env'),
@@ -69,8 +70,8 @@ describe('deleteVaultEntriesByKey', () => {
     writeFileSync(entriesPath, content);
     expect(() =>
       saveVaultEntry({ key: 'fixture', encrypted: 'ciphertext', iv: 'iv' }, env),
-    ).toThrow(/refusing to overwrite/);
-    expect(() => deleteVaultEntriesByKey('missing', env)).toThrow(/refusing to overwrite/);
+    ).toThrow(/VAULT_ENTRIES_MALFORMED/);
+    expect(() => deleteVaultEntriesByKey('missing', env)).toThrow(/VAULT_ENTRIES_MALFORMED/);
     expect(readFileSync(entriesPath, 'utf8')).toBe(content);
   });
 });

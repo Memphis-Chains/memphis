@@ -60,6 +60,7 @@ function makeSandbox(): Sandbox {
     statePath,
     entriesPath,
     env: {
+      RUST_CHAIN_BRIDGE_PATH: process.env.RUST_CHAIN_BRIDGE_PATH,
       MEMPHIS_VAULT_STATE_PATH: statePath,
       MEMPHIS_VAULT_ENTRIES_PATH: entriesPath,
       MEMPHIS_VAULT_PEPPER: 'test-pepper-bulletproof-12345',
