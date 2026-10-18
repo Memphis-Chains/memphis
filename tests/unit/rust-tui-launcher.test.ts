@@ -45,9 +45,10 @@ describe('runRustTui', () => {
     });
 
     expect(spawnMock).toHaveBeenCalledTimes(1);
-    const [command, args] = spawnMock.mock.calls[0];
+    const [command, args, options] = spawnMock.mock.calls[0];
     expect(String(command)).toContain('memphis-tui');
     expect(args).toEqual([]);
+    expect(options.env.MEMPHIS_ENV_FILE).toBe(process.env.MEMPHIS_ENV_FILE);
   });
 
   it('falls back to cargo without injecting legacy HTTP env', async () => {

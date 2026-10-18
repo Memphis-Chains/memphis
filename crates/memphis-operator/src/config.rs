@@ -12,6 +12,10 @@ const DEFAULT_DATABASE_URL: &str = "file:./data/memphis.db";
 #[derive(Debug, Clone)]
 pub struct OperatorConfig {
     pub raw_env: HashMap<String, String>,
+    pub runtime_root: PathBuf,
+    pub runtime_root_source: String,
+    pub env_file_path: Option<PathBuf>,
+    pub config_generation: u64,
     pub data_dir: PathBuf,
     pub database_path: PathBuf,
     pub case_index_path: PathBuf,
@@ -43,8 +47,24 @@ impl OperatorConfig {
             .map(|(key, value)| (key.into(), value.into()))
             .collect::<HashMap<String, String>>();
 
-        let data_dir = resolve_data_dir(&env_map);
-        let database_path = resolve_database_path(&env_map);
+        let runtime_root = env_map
+            .get("MEMPHIS_RUNTIME_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+        let runtime_root_source = env_map
+            .get("MEMPHIS_RUNTIME_ROOT_SOURCE")
+            .cloned()
+            .unwrap_or_else(|| "native-default".to_string());
+        let env_file_path = env_map
+            .get("MEMPHIS_ENV_FILE")
+            .map(|path| resolve_config_path(path, &runtime_root));
+        let config_generation = env_map
+            .get("MEMPHIS_CONFIG_GENERATION")
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0);
+
+        let data_dir = resolve_data_dir(&env_map, &runtime_root);
+        let database_path = resolve_database_path(&env_map, &runtime_root);
         let case_index_path = data_dir.join("case-index.sqlite");
         // Align with src/infra/storage/vault-paths.ts: vault files live under
         // data_dir (i.e. ~/.memphis/) by default. The previous Rust defaults
@@ -57,25 +77,30 @@ impl OperatorConfig {
         // default-resolution step.
         let vault_state_path = env_map
             .get("MEMPHIS_VAULT_STATE_PATH")
-            .map(PathBuf::from)
+            .map(|path| resolve_config_path(path, &runtime_root))
             .unwrap_or_else(|| data_dir.join("vault-state.json"));
         let vault_entries_path = env_map
             .get("MEMPHIS_VAULT_ENTRIES_PATH")
-            .map(PathBuf::from)
+            .map(|path| resolve_config_path(path, &runtime_root))
             .unwrap_or_else(|| data_dir.join("vault-entries.json"));
         let embed_persist_path = env_map
             .get("RUST_EMBED_PERSIST_PATH")
-            .map(PathBuf::from)
+            .map(|path| resolve_config_path(path, &runtime_root))
             .unwrap_or_else(|| data_dir.join("embed").join("index-v1.json"));
         let embed_persist_enabled = parse_bool(
             env_map
                 .get("RUST_EMBED_PERSIST_ENABLED")
                 .map(String::as_str),
             false,
-        ) || embed_persist_path.exists();
+        ) || embed_persist_path.exists()
+            || embed_persist_path.with_extension("ndjson").exists();
 
         Self {
             raw_env: env_map.clone(),
+            runtime_root,
+            runtime_root_source,
+            env_file_path,
+            config_generation,
             data_dir,
             database_path,
             case_index_path,
@@ -135,28 +160,36 @@ impl OperatorConfig {
     }
 }
 
-fn expand_home(input: &str) -> PathBuf {
+fn expand_home(input: &str, home: &str) -> PathBuf {
     if input == "~" {
-        return PathBuf::from(env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+        return PathBuf::from(home);
     }
 
     if let Some(suffix) = input.strip_prefix("~/") {
-        return PathBuf::from(env::var("HOME").unwrap_or_else(|_| ".".to_string())).join(suffix);
+        return PathBuf::from(home).join(suffix);
     }
 
     PathBuf::from(input)
 }
 
-fn resolve_data_dir(env_map: &HashMap<String, String>) -> PathBuf {
+fn resolve_data_dir(env_map: &HashMap<String, String>, runtime_root: &Path) -> PathBuf {
     let configured = env_map
         .get("MEMPHIS_DATA_DIR")
         .map(String::as_str)
         .unwrap_or(DEFAULT_MEMPHIS_DATA_DIR);
 
-    absolute_path(expand_home(configured))
+    let home = env_map
+        .get("HOME")
+        .cloned()
+        .or_else(|| env::var("HOME").ok())
+        .unwrap_or_else(|| ".".to_string());
+    resolve_config_path(
+        &expand_home(configured, &home).to_string_lossy(),
+        runtime_root,
+    )
 }
 
-fn resolve_database_path(env_map: &HashMap<String, String>) -> PathBuf {
+fn resolve_database_path(env_map: &HashMap<String, String>, runtime_root: &Path) -> PathBuf {
     let database_url = env_map
         .get("DATABASE_URL")
         .map(String::as_str)
@@ -167,16 +200,15 @@ fn resolve_database_path(env_map: &HashMap<String, String>) -> PathBuf {
         .unwrap_or(database_url)
         .to_string();
 
-    absolute_path(PathBuf::from(raw))
+    resolve_config_path(&raw, runtime_root)
 }
 
-fn absolute_path(path: PathBuf) -> PathBuf {
+fn resolve_config_path(path: &str, runtime_root: &Path) -> PathBuf {
+    let path = PathBuf::from(path);
     if path.is_absolute() {
         path
     } else {
-        env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join(path)
+        runtime_root.join(path)
     }
 }
 
@@ -238,11 +270,16 @@ pub fn format_path(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::OperatorConfig;
+    use std::path::PathBuf;
 
     #[test]
     fn derives_paths_and_embed_defaults() {
         let config = OperatorConfig::from_iter([
             ("HOME", "/tmp/home"),
+            ("MEMPHIS_RUNTIME_ROOT", "/tmp/runtime"),
+            ("MEMPHIS_RUNTIME_ROOT_SOURCE", "env-override"),
+            ("MEMPHIS_ENV_FILE", "/tmp/runtime/.env"),
+            ("MEMPHIS_CONFIG_GENERATION", "42"),
             ("MEMPHIS_DATA_DIR", "~/runtime"),
             ("DATABASE_URL", "file:./data/custom.db"),
             ("RUST_EMBED_MODE", "ollama"),
@@ -253,5 +290,20 @@ mod tests {
         assert!(config.database_path.ends_with("data/custom.db"));
         assert!(config.embed_persist_enabled);
         assert_eq!(config.default_provider, "ollama");
+        assert_eq!(config.runtime_root, PathBuf::from("/tmp/runtime"));
+        assert_eq!(config.runtime_root_source, "env-override");
+        assert_eq!(
+            config.env_file_path,
+            Some(PathBuf::from("/tmp/runtime/.env"))
+        );
+        assert_eq!(config.config_generation, 42);
+        assert_eq!(
+            config.vault_state_path,
+            PathBuf::from("/tmp/home/runtime/vault-state.json")
+        );
+        assert_eq!(
+            config.database_path,
+            PathBuf::from("/tmp/runtime/data/custom.db")
+        );
     }
 }

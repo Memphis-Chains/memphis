@@ -234,6 +234,9 @@ describe('managed app manifests', () => {
       bridgePath,
       `let _vault = null;
 module.exports = {
+  vault_load_state: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_load_state,
+  vault_parse_entries: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_parse_entries,
+  vault_decode_entry: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_decode_entry,
   vault_init_full: () => {
     _vault = { salt: Buffer.alloc(32, 1), masterKey: Buffer.alloc(32, 2) };
     return { vault: _vault, did: 'did:memphis:apps', qa_question: 'pet?' };
@@ -367,6 +370,9 @@ module.exports = {
       bridgePath,
       `let _vault = null;
 module.exports = {
+  vault_load_state: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_load_state,
+  vault_parse_entries: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_parse_entries,
+  vault_decode_entry: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_decode_entry,
   vault_init_full: () => {
     _vault = { salt: Buffer.alloc(32, 1), masterKey: Buffer.alloc(32, 2) };
     return { vault: _vault, did: 'did:memphis:apps-file', qa_question: 'pet?' };
