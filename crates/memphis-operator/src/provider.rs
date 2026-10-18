@@ -3031,7 +3031,7 @@ mod tests {
 
         assert!(error
             .to_string()
-            .contains("vault entry failed integrity check"));
+            .contains("VAULT_ENTRY_INTEGRITY_FAILED"));
     }
 
     #[test]

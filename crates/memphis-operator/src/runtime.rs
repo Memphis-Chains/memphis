@@ -1,22 +1,21 @@
 use std::{fs, path::Path};
 
-use aes_gcm::{
-    aead::{Aead, KeyInit},
-    Aes256Gcm, Nonce,
-};
-use base64::{engine::general_purpose::STANDARD, Engine as _};
-use chrono::{DateTime, Utc};
 use memphis_case_index::CaseIndex;
 use memphis_core::case_entry::CaseQuery;
 use memphis_embed::{EmbedPersistenceLoadState, EmbedPipeline};
-use memphis_vault::{types::VaultEntry, Vault};
+use memphis_vault::{
+    state::{load_persisted_state, VaultStateError},
+    entries::{load_entries as load_vault_entries, select_entries, EntryError, StoredEntry},
+    Vault,
+};
 use rusqlite::{params, Connection};
-use scrypt::{scrypt, Params as ScryptParams};
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use serde::Serialize;
 use thiserror::Error;
 
 use crate::config::{format_path, OperatorConfig};
+
+#[path = "vault_snapshot.rs"]
+mod vault_snapshot;
 
 #[derive(Debug, Error)]
 pub enum OperatorError {
@@ -32,6 +31,10 @@ pub enum OperatorError {
     Json(String),
     #[error("vault: {0}")]
     Vault(String),
+    #[error("vault: {0}")]
+    VaultState(#[from] VaultStateError),
+    #[error("vault: {0}")]
+    VaultEntry(#[from] EntryError),
     #[error("embed: {0}")]
     Embed(String),
     /// The provider rejected the request because the prompt + history exceeded
@@ -485,18 +488,20 @@ impl OperatorRuntime {
     }
 
     pub fn read_vault_secret(&self, key: &str) -> Result<VaultSecretView, OperatorError> {
+        let _snapshot = vault_snapshot::VaultReadGuard::acquire(
+            &self.config,
+            &resolve_vault_state_path(&self.config),
+        )?;
         let vault = load_vault(&self.config, false)?
             .expect("strict vault load should return a vault instance");
 
         let entries = load_vault_entries(&self.config.vault_entries_path)?;
-        let entry = entries
-            .into_iter()
-            .filter(|entry| entry.key == key)
-            .last()
-            .ok_or_else(|| OperatorError::Vault(format!("vault key not found: {key}")))?;
+        let entry = select_entries(entries, Some(key), true)
+            .pop()
+            .ok_or(EntryError::NotFound)?;
 
         let key = entry.key.clone();
-        let created_at = entry.created_at.clone();
+        let created_at = entry.created_at.clone().unwrap_or_default();
         let plaintext = read_vault_entry_plaintext(&vault, entry)?;
 
         Ok(VaultSecretView {
@@ -641,6 +646,10 @@ impl OperatorRuntime {
     }
 
     fn load_vault_summary(&self) -> Result<VaultSummary, OperatorError> {
+        let _snapshot = vault_snapshot::VaultReadGuard::acquire(
+            &self.config,
+            &resolve_vault_state_path(&self.config),
+        )?;
         let state_version = read_vault_state_version(&self.config.vault_state_path);
         let entries = load_vault_entries(&self.config.vault_entries_path)?;
         Ok(VaultSummary {
@@ -657,10 +666,10 @@ impl OperatorRuntime {
                 .into_iter()
                 .rev()
                 .map(|entry| VaultEntryMetadata {
-                    key: entry.key,
-                    created_at: entry.created_at,
-                    fingerprint: entry.fingerprint,
-                    integrity_ok: entry.integrity_ok,
+                    key: entry.key.clone(),
+                    created_at: entry.created_at.clone().unwrap_or_default(),
+                    fingerprint: entry.fingerprint.clone().unwrap_or_default(),
+                    integrity_ok: entry.integrity_ok(),
                     id: entry.id,
                 })
                 .collect(),
@@ -1037,139 +1046,6 @@ fn persistence_label(state: EmbedPersistenceLoadState) -> &'static str {
     }
 }
 
-#[derive(Debug)]
-enum VaultState {
-    V1 {
-        salt: [u8; 32],
-        master_key: [u8; 32],
-    },
-    V2 {
-        salt: [u8; 32],
-        encrypted_master_key: Vec<u8>,
-        iv: Vec<u8>,
-        tag: Vec<u8>,
-    },
-}
-
-#[derive(Debug, Deserialize)]
-struct PersistedVaultStateV1 {
-    salt: String,
-    #[serde(rename = "masterKey")]
-    master_key: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct PersistedVaultStateV2 {
-    salt: String,
-    #[serde(rename = "encryptedMasterKey")]
-    encrypted_master_key: String,
-    iv: String,
-    tag: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct StoredVaultEntry {
-    key: String,
-    encrypted: String,
-    iv: String,
-    #[serde(default)]
-    tag: Option<String>,
-    #[serde(default)]
-    id: Option<String>,
-    #[serde(rename = "createdAt")]
-    created_at: String,
-    fingerprint: String,
-}
-
-impl StoredVaultEntry {
-    fn integrity_ok(&self) -> bool {
-        // Key order must match TypeScript JSON.stringify({key, encrypted, iv})
-        // which uses insertion order, NOT alphabetical (serde_json default).
-        let payload = format!(
-            r#"{{"key":"{}","encrypted":"{}","iv":"{}"}}"#,
-            self.key, self.encrypted, self.iv
-        );
-        let digest = Sha256::digest(payload.as_bytes());
-        format!("{digest:x}") == self.fingerprint
-    }
-
-    fn to_vault_entry(&self) -> Result<VaultEntry, OperatorError> {
-        let ciphertext = decode_base64(self.encrypted.as_str())?;
-        let nonce = decode_base64(self.iv.as_str())?;
-        let tag = match self.tag.as_deref() {
-            Some(value) if !value.trim().is_empty() => decode_base64(value)?,
-            _ => Vec::new(),
-        };
-        let created_at = DateTime::parse_from_rfc3339(self.created_at.as_str())
-            .map(|value| value.with_timezone(&Utc))
-            .map_err(|error| OperatorError::Vault(error.to_string()))?;
-
-        Ok(VaultEntry {
-            id: self
-                .id
-                .clone()
-                .unwrap_or_else(|| format!("entry-{}", created_at.timestamp_millis())),
-            key: self.key.clone(),
-            ciphertext,
-            nonce,
-            tag,
-            created_at,
-        })
-    }
-}
-
-fn load_vault_entries(path: &Path) -> Result<Vec<StoredVaultEntryWithIntegrity>, OperatorError> {
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let raw = fs::read_to_string(path).map_err(|error| OperatorError::Io(error.to_string()))?;
-    if raw.trim().is_empty() {
-        return Ok(Vec::new());
-    }
-    let entries = serde_json::from_str::<Vec<StoredVaultEntry>>(raw.as_str())
-        .map_err(|error| OperatorError::Json(error.to_string()))?;
-    Ok(entries
-        .into_iter()
-        .map(|entry| StoredVaultEntryWithIntegrity {
-            integrity_ok: entry.integrity_ok(),
-            key: entry.key,
-            encrypted: entry.encrypted,
-            iv: entry.iv,
-            tag: entry.tag,
-            id: entry.id,
-            created_at: entry.created_at,
-            fingerprint: entry.fingerprint,
-        })
-        .collect())
-}
-
-#[derive(Debug, Clone)]
-struct StoredVaultEntryWithIntegrity {
-    key: String,
-    encrypted: String,
-    iv: String,
-    tag: Option<String>,
-    id: Option<String>,
-    created_at: String,
-    fingerprint: String,
-    integrity_ok: bool,
-}
-
-impl StoredVaultEntryWithIntegrity {
-    fn to_vault_entry(&self) -> Result<VaultEntry, OperatorError> {
-        StoredVaultEntry {
-            key: self.key.clone(),
-            encrypted: self.encrypted.clone(),
-            iv: self.iv.clone(),
-            tag: self.tag.clone(),
-            id: self.id.clone(),
-            created_at: self.created_at.clone(),
-            fingerprint: self.fingerprint.clone(),
-        }
-        .to_vault_entry()
-    }
-}
-
 fn read_vault_state_version(path: &Path) -> Option<u8> {
     let raw = fs::read_to_string(path).ok()?;
     let parsed = serde_json::from_str::<serde_json::Value>(raw.as_str()).ok()?;
@@ -1193,7 +1069,13 @@ fn read_vault_state_version(path: &Path) -> Option<u8> {
 /// many times per process (chat init, status probes, vault reads), and
 /// printing the same notice 4+ times per TUI launch is hostile.
 fn resolve_vault_state_path(config: &OperatorConfig) -> std::path::PathBuf {
-    if config.vault_state_path.exists() {
+    // Explicit configuration must never silently select another vault.
+    if config
+        .raw_env
+        .get("MEMPHIS_VAULT_STATE_PATH")
+        .is_some_and(|p| !p.trim().is_empty())
+        || config.vault_state_path.exists()
+    {
         return config.vault_state_path.clone();
     }
     if let Some(parent) = config.vault_entries_path.parent() {
@@ -1242,7 +1124,7 @@ fn emit_fallback_notice_once(message: &str) {
 /// Decrypted vault handle, memoised on the bytes it was derived from.
 ///
 /// 2026-09-30: `load_vault` runs `scrypt(N=16384, r=8, p=1)` via
-/// `decrypt_master_key_v2`. That is ~4 s on this operator's hardware and
+/// the shared persisted-state reader. That is ~4 s on this operator's hardware and
 /// it is by design - the parameter is the vault's brute-force defence.
 /// But it was being paid once PER PROVIDER LOOKUP: `resolve_provider`
 /// calls it for minimax, deepseek and glm independently, so building the
@@ -1334,7 +1216,8 @@ pub(crate) fn vault_derivation_count() -> (usize, usize) {
 pub(crate) fn clear_vault_derivation_cache() {
     use std::sync::Mutex;
     use std::sync::OnceLock;
-    static CACHE: OnceLock<Mutex<std::collections::HashMap<String, Option<Vault>>>> = OnceLock::new();
+    static CACHE: OnceLock<Mutex<std::collections::HashMap<String, Option<Vault>>>> =
+        OnceLock::new();
     if let Some(cache) = CACHE.get() {
         cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
     }
@@ -1353,82 +1236,32 @@ fn hex_digest(bytes: &[u8]) -> String {
 
 fn load_vault(config: &OperatorConfig, optional: bool) -> Result<Option<Vault>, OperatorError> {
     let state_path = resolve_vault_state_path(config);
-    if optional && !state_path.exists() {
-        // Silent-split detection: if the entries file exists at a different
-        // path than the missing state file, the operator probably set
-        // MEMPHIS_VAULT_ENTRIES_PATH but not MEMPHIS_VAULT_STATE_PATH (or
-        // vice versa) — the runtime then cannot decrypt the entries even
-        // though `vault list` (TS path) reads them fine. Surface a loud
-        // diagnostic instead of silently returning None.
-        if config.vault_entries_path.exists() {
-            return Err(OperatorError::Vault(format!(
-                "vault path split: entries exist at {} but state is missing at {} \
-                 (and no fallback found at ~/.memphis/vault-state.json or beside the \
-                 entries file). Set MEMPHIS_VAULT_STATE_PATH explicitly.",
-                config.vault_entries_path.display(),
-                config.vault_state_path.display(),
-            )));
+    let pepper = std::env::var("MEMPHIS_VAULT_PEPPER").unwrap_or_default();
+    match load_persisted_state(&state_path, &pepper) {
+        Ok(state) => Ok(Some(state.vault)),
+        Err(VaultStateError::Missing) if optional && !config.vault_entries_path.exists() => {
+            Ok(None)
         }
-        return Ok(None);
+        Err(error) => Err(error.into()),
     }
-
-    let state = load_vault_state(&state_path)?;
-    let vault = match state {
-        VaultState::V1 { salt, master_key } => Vault::from_parts(salt, master_key),
-        VaultState::V2 {
-            salt,
-            encrypted_master_key,
-            iv,
-            tag,
-        } => {
-            let pepper = std::env::var("MEMPHIS_VAULT_PEPPER")
-                .map_err(|_| OperatorError::Vault("MEMPHIS_VAULT_PEPPER missing".to_string()))?;
-            if pepper.trim().len() < 12 {
-                return Err(OperatorError::Vault(
-                    "MEMPHIS_VAULT_PEPPER too short (min 12 chars)".to_string(),
-                ));
-            }
-            let master_key = decrypt_master_key_v2(
-                pepper.as_str(),
-                encrypted_master_key.as_slice(),
-                iv.as_slice(),
-                tag.as_slice(),
-            )?;
-            Vault::from_parts(salt, master_key)
-        }
-    };
-
-    Ok(Some(vault))
 }
 
-fn read_vault_entry_plaintext(
-    vault: &Vault,
-    entry: StoredVaultEntryWithIntegrity,
-) -> Result<String, OperatorError> {
-    if !entry.integrity_ok {
-        return Err(OperatorError::Vault(format!(
-            "vault entry failed integrity check: {}",
-            entry.key
-        )));
-    }
-
-    let plaintext = vault
-        .retrieve(&entry.to_vault_entry()?)
-        .map_err(|error| OperatorError::Vault(error.to_string()))?;
-
-    String::from_utf8(plaintext).map_err(|error| OperatorError::Vault(error.to_string()))
+fn read_vault_entry_plaintext(vault: &Vault, entry: StoredEntry) -> Result<String, OperatorError> {
+    entry.decrypt_text(vault).map_err(Into::into)
 }
 
 pub(crate) fn try_read_vault_secret_plaintext(
     config: &OperatorConfig,
     key: &str,
 ) -> Result<Option<String>, OperatorError> {
+    let _snapshot =
+        vault_snapshot::VaultReadGuard::acquire(config, &resolve_vault_state_path(config))?;
     let Some(vault) = load_vault_cached(config, true)? else {
         return Ok(None);
     };
 
     let entries = load_vault_entries(&config.vault_entries_path)?;
-    let Some(entry) = entries.into_iter().filter(|entry| entry.key == key).last() else {
+    let Some(entry) = select_entries(entries, Some(key), true).pop() else {
         return Ok(None);
     };
 
@@ -1438,80 +1271,6 @@ pub(crate) fn try_read_vault_secret_plaintext(
     }
 
     Ok(Some(plaintext))
-}
-
-fn load_vault_state(path: &Path) -> Result<VaultState, OperatorError> {
-    let raw = fs::read_to_string(path).map_err(|error| OperatorError::Io(error.to_string()))?;
-    let parsed = serde_json::from_str::<serde_json::Value>(raw.as_str())
-        .map_err(|error| OperatorError::Json(error.to_string()))?;
-
-    if parsed
-        .get("version")
-        .and_then(|value| value.as_u64())
-        .map(|value| value == 2)
-        .unwrap_or(false)
-    {
-        let state = serde_json::from_value::<PersistedVaultStateV2>(parsed)
-            .map_err(|error| OperatorError::Json(error.to_string()))?;
-        return Ok(VaultState::V2 {
-            salt: decode_array32(state.salt.as_str())?,
-            encrypted_master_key: decode_base64(state.encrypted_master_key.as_str())?,
-            iv: decode_base64(state.iv.as_str())?,
-            tag: decode_base64(state.tag.as_str())?,
-        });
-    }
-
-    let state = serde_json::from_value::<PersistedVaultStateV1>(parsed)
-        .map_err(|error| OperatorError::Json(error.to_string()))?;
-    Ok(VaultState::V1 {
-        salt: decode_array32(state.salt.as_str())?,
-        master_key: decode_array32(state.master_key.as_str())?,
-    })
-}
-
-fn decode_base64(value: &str) -> Result<Vec<u8>, OperatorError> {
-    STANDARD
-        .decode(value)
-        .map_err(|error| OperatorError::Vault(error.to_string()))
-}
-
-fn decode_array32(value: &str) -> Result<[u8; 32], OperatorError> {
-    let bytes = decode_base64(value)?;
-    bytes
-        .as_slice()
-        .try_into()
-        .map_err(|_| OperatorError::Vault("expected 32-byte base64 value".to_string()))
-}
-
-fn decrypt_master_key_v2(
-    pepper: &str,
-    encrypted_master_key: &[u8],
-    iv: &[u8],
-    tag: &[u8],
-) -> Result<[u8; 32], OperatorError> {
-    let params =
-        ScryptParams::new(14, 8, 1, 32).map_err(|error| OperatorError::Vault(error.to_string()))?;
-    let mut key = [0u8; 32];
-    scrypt(
-        pepper.as_bytes(),
-        b"memphis-vault-state-v2",
-        &params,
-        &mut key,
-    )
-    .map_err(|error| OperatorError::Vault(error.to_string()))?;
-
-    let cipher = Aes256Gcm::new_from_slice(key.as_slice())
-        .map_err(|error| OperatorError::Vault(error.to_string()))?;
-    let nonce = Nonce::from_slice(iv);
-    let mut payload = encrypted_master_key.to_vec();
-    payload.extend_from_slice(tag);
-    let plaintext = cipher
-        .decrypt(nonce, payload.as_slice())
-        .map_err(|_| OperatorError::Vault("failed to decrypt vault state".to_string()))?;
-    plaintext
-        .as_slice()
-        .try_into()
-        .map_err(|_| OperatorError::Vault("vault state master key had invalid length".to_string()))
 }
 
 #[cfg(test)]
@@ -1565,6 +1324,39 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.path);
         }
+    }
+
+    #[test]
+    fn optional_vault_only_treats_missing_state_without_entries_as_absent() {
+        let dir = TestRuntimeDir::new("optional-state-errors");
+        let state = dir.path.join("state.json");
+        let entries = dir.path.join("entries.json");
+        let env = [
+            (
+                "MEMPHIS_VAULT_STATE_PATH",
+                state.to_string_lossy().into_owned(),
+            ),
+            (
+                "MEMPHIS_VAULT_ENTRIES_PATH",
+                entries.to_string_lossy().into_owned(),
+            ),
+        ];
+        let config = crate::OperatorConfig::from_iter(env);
+        assert!(matches!(super::load_vault(&config, true), Ok(None)));
+        fs::write(&entries, "[]").unwrap();
+        assert!(matches!(
+            super::load_vault(&config, true),
+            Err(super::OperatorError::VaultState(
+                super::VaultStateError::Missing
+            ))
+        ));
+        fs::write(&state, "{synthetic-private-sentinel").unwrap();
+        assert!(matches!(
+            super::load_vault(&config, true),
+            Err(super::OperatorError::VaultState(
+                super::VaultStateError::Malformed
+            ))
+        ));
     }
 
     #[test]
