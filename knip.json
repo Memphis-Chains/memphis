@@ -21,6 +21,8 @@
     "benchmarks/performance-suite.ts",
     "sites/**",
     "tests/helpers/concurrent-writer.mjs",
-    "scripts/backup-db-snapshot.d.mts"
+    "scripts/backup-db-snapshot.d.mts",
+    "tests/helpers/vault-init-process.mts",
+    "tests/helpers/vault-rotation-process.mts"
   ]
 }
