@@ -38,7 +38,34 @@ describe('loadDotEnvFromInstallRoot', () => {
     const loaded = loadDotEnvFromInstallRoot({ MEMPHIS_ENV_FILE: envPath });
 
     expect(loaded).toBe(envPath);
+    expect(process.env.MEMPHIS_ENV_FILE).toBe(envPath);
     expect(process.env[SENTINEL]).toBe('loaded-from-explicit-path');
+  });
+
+  it('pins the discovered runtime-root file even if dotenv advertises another path', () => {
+    const envPath = join(scratch, '.env');
+    writeFileSync(
+      join(scratch, 'package.json'),
+      JSON.stringify({ name: '@memphis-chains/memphis' }),
+    );
+    writeFileSync(envPath, 'MEMPHIS_ENV_FILE=/tmp/unrelated-fixture.env\n');
+    const loaded = loadDotEnvFromInstallRoot({ MEMPHIS_RUNTIME_ROOT: scratch });
+    expect(loaded).toBe(envPath);
+    expect(process.env.MEMPHIS_ENV_FILE).toBe(envPath);
+  });
+
+  it('honors an explicit runtime root without requiring a package manifest', () => {
+    const envPath = join(scratch, '.env');
+    writeFileSync(envPath, `${SENTINEL}=runtime-only\n`);
+    expect(loadDotEnvFromInstallRoot({ MEMPHIS_RUNTIME_ROOT: scratch })).toBe(envPath);
+    expect(process.env[SENTINEL]).toBe('runtime-only');
+    expect(process.env.MEMPHIS_ENV_FILE).toBe(envPath);
+  });
+
+  it('does not fall back to the checkout dotenv when the explicit runtime root is absent', () => {
+    expect(loadDotEnvFromInstallRoot({ MEMPHIS_RUNTIME_ROOT: join(scratch, 'absent') })).toBeNull();
+    expect(process.env[SENTINEL]).toBeUndefined();
+    expect(process.env.MEMPHIS_ENV_FILE).toBeUndefined();
   });
 
   it('returns null when MEMPHIS_ENV_FILE points at a non-existent path', () => {
