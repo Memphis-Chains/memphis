@@ -1,13 +1,15 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import dotenv from 'dotenv';
 
+import { recoverConfigurationTransaction } from './config-transaction.js';
 import { applyConfigProfile, validateProductionSafety } from './profiles.js';
 import { AppConfig, envSchema } from './schema.js';
 import { resolveVaultSecrets } from './vault-resolve.js';
 import { errorTemplates } from '../../core/errors.js';
 import { resolveInstallRoot } from '../runtime/install-root.js';
+import { resolveVaultJournals } from '../storage/vault-paths.js';
 
 /**
  * Load `.env` at module import time. Replaces the old
@@ -34,9 +36,7 @@ import { resolveInstallRoot } from '../runtime/install-root.js';
  * Operators can still force a specific file via `MEMPHIS_ENV_FILE`;
  * absence of a `.env` anywhere is valid (everything via env vars).
  */
-export function loadDotEnvFromInstallRoot(
-  rawEnv: NodeJS.ProcessEnv = process.env,
-): string | null {
+export function loadDotEnvFromInstallRoot(rawEnv: NodeJS.ProcessEnv = process.env): string | null {
   // DELIBERATELY NOT routing through `resolveDotEnvPath` here:
   // that helper catches install-root discovery errors and returns
   // `resolve('.env')` so config writes have SOMEWHERE to go, but
@@ -47,7 +47,11 @@ export function loadDotEnvFromInstallRoot(
   // explicitly.
   const explicit = rawEnv.MEMPHIS_ENV_FILE?.trim();
   if (explicit && explicit.length > 0) {
-    return loadIfValid(resolve(explicit));
+    return loadIfValid(resolve(explicit), rawEnv);
+  }
+  const root = rawEnv.MEMPHIS_RUNTIME_ROOT?.trim();
+  if (root) {
+    return loadIfValid(resolve(root, '.env'), rawEnv);
   }
   let envPath: string;
   try {
@@ -59,10 +63,32 @@ export function loadDotEnvFromInstallRoot(
     // file load, which is correct.
     return null;
   }
-  return loadIfValid(envPath);
+  return loadIfValid(envPath, rawEnv);
 }
 
-function loadIfValid(envPath: string): string | null {
+function loadIfValid(envPath: string, rawEnv: NodeJS.ProcessEnv): string | null {
+  let fileValues: NodeJS.ProcessEnv = {};
+  try {
+    fileValues = dotenv.parse(readFileSync(envPath, 'utf8'));
+  } catch {
+    // Missing/unreadable dotenv still follows the normal loader error path.
+  }
+  const inherited = Object.fromEntries(
+    Object.entries({ ...process.env, ...rawEnv }).filter(([, value]) => value !== undefined),
+  );
+  const journals = resolveVaultJournals({
+    ...fileValues,
+    ...inherited,
+    MEMPHIS_ENV_FILE: envPath,
+  });
+  const recovered = recoverConfigurationTransaction(journals.paths);
+  if (recovered && existsSync(envPath)) {
+    // A systemd EnvironmentFile may have loaded the pre-recovery pepper.
+    // Update only the transaction-owned key; preserve other explicit env overrides.
+    const values = dotenv.parse(readFileSync(envPath, 'utf8'));
+    if (values.MEMPHIS_VAULT_PEPPER !== undefined)
+      process.env.MEMPHIS_VAULT_PEPPER = values.MEMPHIS_VAULT_PEPPER;
+  }
   if (!existsSync(envPath)) {
     return null;
   }
@@ -76,11 +102,12 @@ function loadIfValid(envPath: string): string | null {
     // Parse or permission failure on the resolved file — surface it
     // on stderr so the operator notices, and return null so callers
     // don't think env was loaded. (Codex P2 on #225.)
-    console.warn(
-      `[memphis-config] Failed to load ${envPath}: ${result.error.message}`,
-    );
+    console.warn(`[memphis-config] Failed to load ${envPath}: ${result.error.message}`);
     return null;
   }
+  // Propagate the file actually loaded, including install-root discovery. Every
+  // subsequent adapter and native child must use the same compatibility journal.
+  process.env.MEMPHIS_ENV_FILE = envPath;
   return envPath;
 }
 
@@ -365,11 +392,12 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): AppConfig {
  * back-compat shim for the ~40 in-tree consumers that don't need the
  * extra signal (CLI commands, tests, MCP tool harness).
  */
-export function loadConfigDetailed(
-  rawEnv: NodeJS.ProcessEnv = process.env,
-): { config: AppConfig; degradedReasons: string[] } {
+export function loadConfigDetailed(rawEnv: NodeJS.ProcessEnv = process.env): {
+  config: AppConfig;
+  degradedReasons: string[];
+} {
   const config = loadConfig(rawEnv);
-  const degradedReasons = (config as AppConfig & { __degradedReasons?: string[] })
-    .__degradedReasons ?? [];
+  const degradedReasons =
+    (config as AppConfig & { __degradedReasons?: string[] }).__degradedReasons ?? [];
   return { config, degradedReasons };
 }

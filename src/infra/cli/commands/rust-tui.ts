@@ -9,6 +9,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { resolveDotEnvPath } from '../../config/dotenv-file.js';
 import type { CliContext } from '../context.js';
 
 const PROJECT_ROOT = resolve(fileURLToPath(new URL('../../../../', import.meta.url)));
@@ -41,6 +42,7 @@ export async function runRustTui(context: CliContext): Promise<void> {
   // Force UTF-8 locale for proper Polish/Unicode character rendering
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    MEMPHIS_ENV_FILE: resolveDotEnvPath(process.env),
     LANG: 'en_US.UTF-8',
     LC_ALL: 'en_US.UTF-8',
     LC_CTYPE: 'en_US.UTF-8',

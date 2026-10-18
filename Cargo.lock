@@ -1428,6 +1428,7 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "argon2",
+ "base64 0.22.1",
  "base64-url",
  "bs58",
  "chrono",
@@ -1437,6 +1438,7 @@ dependencies = [
  "memphis-core",
  "memphis-embed",
  "rand 0.8.6",
+ "scrypt",
  "serde",
  "serde_json",
  "sha2",

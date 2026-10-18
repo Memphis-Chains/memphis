@@ -37,6 +37,8 @@ function envFor(dataDir: string): NodeJS.ProcessEnv {
   return {
     HOME: dataDir,
     MEMPHIS_DATA_DIR: dataDir,
+    MEMPHIS_ENV_FILE: join(dataDir, '.env'),
+    MEMPHIS_VAULT_STATE_PATH: join(dataDir, 'vault-state.json'),
     MEMPHIS_VAULT_ENTRIES_PATH: join(dataDir, 'vault-entries.json'),
     MEMPHIS_VAULT_PEPPER: 'test-pepper-0123456789abcdef',
   };
@@ -99,11 +101,7 @@ describe('CLI vault init refuse-on-nonempty', () => {
         fingerprint: 'fp-1',
       },
     ];
-    writeFileSync(
-      join(dataDir, 'vault-entries.json'),
-      JSON.stringify(fakeEntries),
-      'utf8',
-    );
+    writeFileSync(join(dataDir, 'vault-entries.json'), JSON.stringify(fakeEntries), 'utf8');
 
     const result = await runCliResult(initArgs(), { env: envFor(dataDir) });
     expect(result.status).not.toBe(0);
@@ -132,15 +130,9 @@ describe('CLI vault init refuse-on-nonempty', () => {
         fingerprint: 'fp-1',
       },
     ];
-    writeFileSync(
-      join(dataDir, 'vault-entries.json'),
-      JSON.stringify(fakeEntries),
-      'utf8',
-    );
+    writeFileSync(join(dataDir, 'vault-entries.json'), JSON.stringify(fakeEntries), 'utf8');
 
-    const out = JSON.parse(
-      await runCli(initArgs(['--force-reinit']), { env: envFor(dataDir) }),
-    );
+    const out = JSON.parse(await runCli(initArgs(['--force-reinit']), { env: envFor(dataDir) }));
     expect(out.ok).toBe(true);
     expect(out.vault).toBeDefined();
   }, 30_000);
