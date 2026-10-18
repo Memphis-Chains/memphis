@@ -57,6 +57,8 @@ export function resolveVaultPath(file: VaultFile, rawEnv: NodeJS.ProcessEnv): st
     if (explicit.startsWith('/') || /^[A-Za-z]:[\\/]/.test(explicit)) {
       return resolve(explicit);
     }
+    const runtimeRoot = rawEnv.MEMPHIS_RUNTIME_ROOT?.trim();
+    if (runtimeRoot) return resolve(runtimeRoot, explicit);
     try {
       return resolve(resolveInstallRoot({ rawEnv }), explicit);
     } catch {
@@ -101,4 +103,27 @@ export function resolveVaultPath(file: VaultFile, rawEnv: NodeJS.ProcessEnv): st
  */
 export function __resetVaultPathWarnings(): void {
   warnedLegacy.clear();
+}
+
+export interface VaultJournalSelection {
+  /** Stable primary for new intent, followed by the historical dotenv base. */
+  paths: readonly string[];
+  dotenvPath: string | null;
+  dotenvSource: 'explicit' | 'runtime-root' | 'none';
+}
+
+/** Standalone TS and native must receive the same explicit file or runtime root.
+ * The startup loader pins a discovered dotenv file before vault operations.
+ * Never discover a different working-directory dotenv from this storage layer.
+ */
+export function resolveVaultJournals(rawEnv: NodeJS.ProcessEnv): VaultJournalSelection {
+  const state = resolveVaultPath('vault-state.json', rawEnv);
+  const explicit = rawEnv.MEMPHIS_ENV_FILE?.trim();
+  const root = rawEnv.MEMPHIS_RUNTIME_ROOT?.trim();
+  const dotenvPath = explicit ? resolve(explicit) : root ? resolve(root, '.env') : null;
+  return {
+    paths: [...new Set(dotenvPath ? [state, dotenvPath] : [state])],
+    dotenvPath,
+    dotenvSource: explicit ? 'explicit' : root ? 'runtime-root' : 'none',
+  };
 }

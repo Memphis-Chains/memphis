@@ -20,7 +20,15 @@
  * BEFORE bridge load to prevent any state mutation.
  */
 
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -52,6 +60,7 @@ function makeSandbox(): Sandbox {
     statePath,
     entriesPath,
     env: {
+      RUST_CHAIN_BRIDGE_PATH: process.env.RUST_CHAIN_BRIDGE_PATH,
       MEMPHIS_VAULT_STATE_PATH: statePath,
       MEMPHIS_VAULT_ENTRIES_PATH: entriesPath,
       MEMPHIS_VAULT_PEPPER: 'test-pepper-bulletproof-12345',
@@ -156,6 +165,43 @@ describe('vaultInit — state-file guard', () => {
         },
         env,
       ),
+    ).not.toThrow(VaultAlreadyInitializedError);
+  });
+
+  it.each(['{broken', '{}', 'null', '[]'])(
+    'preserves nonempty state even if invalid: %s',
+    (raw) => {
+      writeFileSync(sb.statePath, raw);
+      expect(() =>
+        vaultInit({ passphrase: 'p', recovery_question: 'q', recovery_answer: 'a' }, sb.env),
+      ).toThrow(VaultAlreadyInitializedError);
+      expect(readFileSync(sb.statePath, 'utf8')).toBe(raw);
+    },
+  );
+
+  it('refuses an unreadable state instead of treating it as absent', () => {
+    mkdirSync(sb.statePath);
+    expect(() =>
+      vaultInit({ passphrase: 'p', recovery_question: 'q', recovery_answer: 'a' }, sb.env),
+    ).toThrow(VaultAlreadyInitializedError);
+  });
+
+  it.each(['{broken', '{}', '', '[{"encrypted":"orphan"}]'])(
+    'preserves orphan or unreadable entries: %s',
+    (raw) => {
+      writeFileSync(sb.entriesPath, raw);
+      expect(() =>
+        vaultInit({ passphrase: 'p', recovery_question: 'q', recovery_answer: 'a' }, sb.env),
+      ).toThrow(VaultAlreadyInitializedError);
+      expect(readFileSync(sb.entriesPath, 'utf8')).toBe(raw);
+      expect(existsSync(sb.statePath)).toBe(false);
+    },
+  );
+
+  it('allows an empty entries array on a fresh installation', () => {
+    writeFileSync(sb.entriesPath, '[]');
+    expect(() =>
+      vaultInit({ passphrase: 'p', recovery_question: 'q', recovery_answer: 'a' }, sb.env),
     ).not.toThrow(VaultAlreadyInitializedError);
   });
 

@@ -4,7 +4,10 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { deleteVaultEntriesByKey } from '../../src/infra/storage/vault-entry-store.js';
+import {
+  deleteVaultEntriesByKey,
+  saveVaultEntry,
+} from '../../src/infra/storage/vault-entry-store.js';
 
 function fixture(entries: Array<{ key: string; id?: string }>): {
   env: NodeJS.ProcessEnv;
@@ -26,7 +29,15 @@ function fixture(entries: Array<{ key: string; id?: string }>): {
       })),
     ),
   );
-  return { env: { MEMPHIS_VAULT_ENTRIES_PATH: entriesPath } as NodeJS.ProcessEnv, entriesPath };
+  return {
+    env: {
+      RUST_CHAIN_BRIDGE_PATH: process.env.RUST_CHAIN_BRIDGE_PATH,
+      MEMPHIS_VAULT_ENTRIES_PATH: entriesPath,
+      MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
+      MEMPHIS_ENV_FILE: join(dir, '.env'),
+    } as NodeJS.ProcessEnv,
+    entriesPath,
+  };
 }
 
 describe('deleteVaultEntriesByKey', () => {
@@ -52,5 +63,15 @@ describe('deleteVaultEntriesByKey', () => {
     const result = deleteVaultEntriesByKey('missing_key', env);
     expect(result.removedCount).toBe(0);
     expect(result.remainingCount).toBe(1);
+  });
+
+  it.each(['{broken', '{}', ''])('refuses to replace unreadable entries: %j', (content) => {
+    const { env, entriesPath } = fixture([]);
+    writeFileSync(entriesPath, content);
+    expect(() =>
+      saveVaultEntry({ key: 'fixture', encrypted: 'ciphertext', iv: 'iv' }, env),
+    ).toThrow(/VAULT_ENTRIES_MALFORMED/);
+    expect(() => deleteVaultEntriesByKey('missing', env)).toThrow(/VAULT_ENTRIES_MALFORMED/);
+    expect(readFileSync(entriesPath, 'utf8')).toBe(content);
   });
 });

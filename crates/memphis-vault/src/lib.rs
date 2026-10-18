@@ -1,7 +1,9 @@
 pub mod crypto;
 pub mod did;
+pub mod entries;
 pub mod error;
 pub mod keyring;
+pub mod state;
 pub mod two_factor;
 pub mod types;
 pub mod vault;
