@@ -159,6 +159,23 @@ export type HealthPayload = {
     totalFailures: number;
     totalDrills: number;
   };
+  /**
+   * The offsite copy — the one that exists because this machine might not.
+   *
+   * The local backup above says nothing about it: a drive that is unplugged,
+   * a copy that failed verification, a timer that stopped. All of those left
+   * the previous state of this host silently failing, so the state the copy
+   * step writes is read here and reported.
+   */
+  offsiteBackup?: {
+    status: string;
+    detail: string;
+    updatedAt: string | null;
+    mount: string;
+    archive: string;
+    ageMs: number | null;
+    isStale: boolean;
+  };
   selfGovernance: SelfGovernanceSnapshot;
   /**
    * Phase 4.2 (autopilot 2026-05-08): tier-3 elevated-session counts.
@@ -376,6 +393,7 @@ export async function buildHealthPayload(
   const { getScheduledBackupState } = await import('../runtime/scheduled-backup.js');
   const backupReport = getScheduledBackupState(rawEnv);
   const { listBackups } = await import('../cli/commands/backup.js');
+  const { readOffsiteBackupState } = await import('../cli/commands/offsite-backup-state.js');
   const backupArchives = await listBackups().catch(() => ({ backups: [], totalSize: 0 }));
   const latestBackupArchive = backupArchives.backups[0];
   const { evaluateSlos } = await import('../../observability/slo-evaluator.js');
@@ -447,6 +465,7 @@ export async function buildHealthPayload(
     providerBreakers: providerBreakers.length > 0 ? providerBreakers : undefined,
     turnAdmission,
     backups,
+    offsiteBackup: readOffsiteBackupState(),
     selfGovernance,
     tier3: readTier3Snapshot(rawEnv),
     demo: readDemoReadinessSnapshot(rawEnv),

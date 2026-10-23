@@ -177,6 +177,15 @@ describe('scripts/backup-to-usb.sh — resolves the CLI before calling it', () =
   it('survives a context with no USER set (set -u)', () => {
     // `$USER` under `set -u` aborted the script with rc=1 and an unbound
     // variable error, before the mount probe could report its own code 2.
+    //
+    // The contract is that the script gets PAST the `$USER` reference and
+    // reports a mount problem of its own — not which one. This assertion used
+    // to require exit 2 and the text "no USB mount found", which only held
+    // while no backup drive happened to be plugged into the machine running
+    // the test: with the drive mounted the script reached the archive check
+    // and exited 1 instead, and the test failed for a reason that had
+    // nothing to do with the code under test. The exit code depends on what
+    // is plugged in; the absence of the crash does not.
     const run = spawnSync(
       'bash',
       ['-c', `HOME=${JSON.stringify(tmpdir())} bash ${JSON.stringify(usbScript)}`],
@@ -188,9 +197,10 @@ describe('scripts/backup-to-usb.sh — resolves the CLI before calling it', () =
       },
     );
     expect(run.stderr).not.toContain('unbound variable');
-    // Reaching the mount probe is the contract: exit 2 = "no mount", which
-    // is what this host genuinely reports right now.
-    expect(run.status).toBe(2);
-    expect(run.stderr).toContain('no USB mount found');
+    // One of the script's own outcomes, not a crash and not a signal.
+    expect([1, 2, 3]).toContain(run.status);
+    expect(run.stderr).toMatch(
+      /no USB mount found|no published archives|no write access|failed verify|memphis CLI not found/,
+    );
   });
 });
