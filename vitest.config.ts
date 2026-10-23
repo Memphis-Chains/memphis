@@ -3,6 +3,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     silent: 'passed-only',
+    setupFiles: ['tests/setup-isolation.ts'],
     // 15s was below what the I/O-bound suites actually need. doctor-v2
     // runs 12 full scans at ~6.5s each; cli.ask-session takes 11s alone.
     // On a 4-core host a 544-file run pushes both past 15s and they fail

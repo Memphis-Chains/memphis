@@ -75,6 +75,9 @@ describe('rust vault adapter status', () => {
     writeFileSync(
       bridgePath,
       `module.exports = {
+  vault_load_state: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_load_state,
+  vault_parse_entries: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_parse_entries,
+  vault_decode_entry: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_decode_entry,
   vault_init_full: () => ({
     vault: { salt: Buffer.alloc(32, 1), master_key: Buffer.alloc(32, 2) },
     did: 'did:memphis:test',
@@ -98,6 +101,7 @@ describe('rust vault adapter status', () => {
       RUST_CHAIN_BRIDGE_PATH: bridgePath,
       MEMPHIS_VAULT_PEPPER: '0123456789abcdef',
       MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
+      MEMPHIS_VAULT_ENTRIES_PATH: join(dir, 'vault-entries.json'),
     } as NodeJS.ProcessEnv;
 
     const init = vaultInit(
@@ -117,6 +121,15 @@ describe('rust vault adapter status', () => {
 
     const plaintext = vaultDecrypt(encrypted, rawEnv);
     expect(plaintext).toBe('hello');
+    // A warm cache must not let the old key bypass a changed pepper or root.
+    expect(() =>
+      vaultDecrypt(encrypted, { ...rawEnv, MEMPHIS_VAULT_PEPPER: 'different-pepper-1234' }),
+    ).toThrow();
+    expect(vaultDecrypt(encrypted, rawEnv)).toBe('hello');
+    expect(() =>
+      vaultDecrypt(encrypted, { ...rawEnv, MEMPHIS_VAULT_STATE_PATH: join(dir, 'missing.json') }),
+    ).toThrow();
+    expect(vaultDecrypt(encrypted, rawEnv)).toBe('hello');
   });
 
   it('keeps compatibility with historical camelCase vault bridge exports', () => {
@@ -125,6 +138,9 @@ describe('rust vault adapter status', () => {
     writeFileSync(
       bridgePath,
       `module.exports = {
+  vaultLoadState: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_load_state,
+  vaultParseEntries: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_parse_entries,
+  vaultDecodeEntry: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_decode_entry,
   vaultInitFull: () => ({
     vault: { salt: Buffer.alloc(32, 1), master_key: Buffer.alloc(32, 2) },
     did: 'did:memphis:compat',
@@ -148,6 +164,7 @@ describe('rust vault adapter status', () => {
       RUST_CHAIN_BRIDGE_PATH: bridgePath,
       MEMPHIS_VAULT_PEPPER: '0123456789abcdef',
       MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
+      MEMPHIS_VAULT_ENTRIES_PATH: join(dir, 'vault-entries.json'),
     } as NodeJS.ProcessEnv;
 
     const init = vaultInit(
@@ -173,6 +190,9 @@ describe('rust vault adapter status', () => {
     writeFileSync(
       bridgePath,
       `module.exports = {
+  vault_load_state: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_load_state,
+  vault_parse_entries: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_parse_entries,
+  vault_decode_entry: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_decode_entry,
   vault_init_full: () => ({
     vault: { salt: Buffer.alloc(32, 1), masterKey: Buffer.alloc(32, 2) },
     did: 'did:memphis:masterkey',
@@ -196,6 +216,7 @@ describe('rust vault adapter status', () => {
       RUST_CHAIN_BRIDGE_PATH: bridgePath,
       MEMPHIS_VAULT_PEPPER: '0123456789abcdef',
       MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
+      MEMPHIS_VAULT_ENTRIES_PATH: join(dir, 'vault-entries.json'),
     } as NodeJS.ProcessEnv;
 
     const init = vaultInit(
@@ -240,6 +261,7 @@ describe('rust vault adapter status', () => {
           RUST_CHAIN_BRIDGE_PATH: bridgePath,
           MEMPHIS_VAULT_PEPPER: '0123456789abcdef',
           MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
+          MEMPHIS_VAULT_ENTRIES_PATH: join(dir, 'vault-entries.json'),
         } as NodeJS.ProcessEnv,
       ),
     ).toThrow('legacy init failed');

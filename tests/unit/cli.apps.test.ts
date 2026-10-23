@@ -17,21 +17,22 @@ vi.mock('../../src/infra/auth/operator-gate.js', () => ({
   requireOperatorAuth: vi.fn(async () => true),
 }));
 
-vi.mock('../../src/infra/storage/rust-vault-adapter.js', () => ({
+vi.mock('../../src/infra/storage/rust-vault-adapter.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/infra/storage/rust-vault-adapter.js')>()),
   vaultInit: vi.fn(() => ({ did: 'did:memphis:test' })),
   vaultEncrypt: vi.fn((key: string, plaintext: string) => ({
     id: `entry-${Date.now()}`,
     key,
-    ciphertext: Buffer.from(plaintext).toString('base64'),
-    nonce: Buffer.alloc(12, 3).toString('base64'),
+    encrypted: Buffer.from(plaintext).toString('base64'),
+    iv: Buffer.alloc(12, 3).toString('base64'),
     tag: Buffer.alloc(16, 4).toString('base64'),
     createdAt: new Date().toISOString(),
   })),
-  vaultDecrypt: vi.fn((entry: { ciphertext: string | Buffer }) => {
-    if (typeof entry.ciphertext === 'string') {
-      return Buffer.from(entry.ciphertext, 'base64').toString();
+  vaultDecrypt: vi.fn((entry: { encrypted: string | Buffer }) => {
+    if (typeof entry.encrypted === 'string') {
+      return Buffer.from(entry.encrypted, 'base64').toString();
     }
-    return entry.ciphertext.toString();
+    return entry.encrypted.toString();
   }),
   getRustVaultAdapterStatus: vi.fn(() => ({
     rustEnabled: true,
@@ -325,6 +326,9 @@ function resolveDataDir(envJson) {
 }
 function normalizeChain(name) { const t = String(name || '').trim(); return ALIASES[t] || t; }
 module.exports = {
+  vault_load_state: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_load_state,
+  vault_parse_entries: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_parse_entries,
+  vault_decode_entry: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_decode_entry,
   vault_init_full: () => ({
     vault: { salt: Buffer.alloc(32, 1), masterKey: Buffer.alloc(32, 2) },
     did: 'did:memphis:cli-apps',
@@ -424,6 +428,9 @@ function resolveDataDir(envJson) {
 }
 function normalizeChain(name) { const t = String(name || '').trim(); return ALIASES[t] || t; }
 module.exports = {
+  vault_load_state: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_load_state,
+  vault_parse_entries: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_parse_entries,
+  vault_decode_entry: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_decode_entry,
   vault_init_full: () => ({
     vault: { salt: Buffer.alloc(32, 1), masterKey: Buffer.alloc(32, 2) },
     did: 'did:memphis:cli-apps-file',

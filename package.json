@@ -37,7 +37,7 @@
     "test:rust": "./scripts/run-rust.sh test --workspace",
     "test:smoke": "./scripts/smoke-test.sh",
     "test:smoke:acceptance": "./scripts/smoke-test.sh",
-    "build:rust": "./scripts/run-rust.sh build --workspace",
+    "build:rust": "./scripts/run-rust.sh build --workspace --lib --bins --examples",
     "build:rust:release": "./scripts/run-rust.sh build -p memphis-napi --release",
     "build": "npm run build:rust && tsc -p tsconfig.json",
     "build:release": "npm run build:rust:release && tsc -p tsconfig.json",
