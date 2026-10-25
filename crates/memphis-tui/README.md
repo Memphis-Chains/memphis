@@ -6,6 +6,9 @@ Native ratatui-based terminal cockpit. The active operator console (replaces the
 
 `cargo run -p memphis-tui` (or via the CLI: `memphis tui`).
 
+Use `memphis tui --input="Your prompt"` to submit an initial message and
+continue in the interactive console. The native binary accepts `--input "Your prompt"`.
+
 Tabs: Overview · Chat · Memory · Sessions · Vault · Cases · System.
 
 Status bar shows: cognitive mode (A-E), provider/model, PULSE health, session id.

@@ -11,7 +11,10 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::{runtime::try_read_vault_secret_plaintext, OperatorConfig, OperatorError};
+use crate::{
+    openai_codex::CodexBridge, runtime::try_read_vault_secret_plaintext, OperatorConfig,
+    OperatorError,
+};
 
 /// Sanitize a string for JSON serialization.
 /// JSON only supports `\uXXXX` and `\\` escapes. Invalid `\xNN` (1-digit hex)
@@ -116,6 +119,10 @@ pub enum ChatMessage {
         content: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         tool_calls: Vec<ChatToolCall>,
+        /// Opaque MiniMax M3.1 Flash interleaved-thinking state. This stays
+        /// in memory for the next tool round and is never rendered to users.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reasoning_content: Option<String>,
     },
     Tool {
         tool_call_id: String,
@@ -170,15 +177,25 @@ pub struct ChatRequestOptions {
     pub system_prompt: Option<String>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
+    /// MiniMax-M3.1-Flash-specific override from operator configuration.
+    pub minimax_reasoning_effort: Option<String>,
+    /// Modern MiniMax output limit; includes hidden thinking tokens.
+    pub minimax_max_completion_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ChatCompletion {
     pub content: String,
+    /// Opaque reasoning state returned separately by MiniMax M3.1 Flash.
+    pub reasoning_content: Option<String>,
     pub model: String,
     pub provider: String,
     pub tool_calls: Vec<ChatToolCall>,
     pub token_usage: Option<TokenUsageSummary>,
+    /// Context window the Codex account granted, when stricter than the
+    /// model's declared capability. Mirrors the TypeScript provider so both
+    /// surfaces trim history against the same account limit.
+    pub effective_context_window: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -202,6 +219,7 @@ pub struct ModelCapabilitySummary {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ProviderKind {
+    OpenAiCodex,
     LocalFallback,
     SharedLlm,
     DecentralizedLlm,
@@ -212,8 +230,9 @@ enum ProviderKind {
     Anthropic,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ProviderRuntime {
+    codex: Option<CodexBridge>,
     kind: ProviderKind,
     name: String,
     base_url: Option<String>,
@@ -228,9 +247,43 @@ pub struct ProviderRuntime {
     timeout_ms: u64,
 }
 
+impl std::fmt::Debug for ProviderRuntime {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ProviderRuntime")
+            .field("kind", &self.kind)
+            .field("name", &self.name)
+            .field("configured", &self.is_configured())
+            .finish_non_exhaustive()
+    }
+}
+
 impl ProviderRuntime {
     pub fn default_model(&self) -> &str {
         self.default_model.as_str()
+    }
+
+    /// The model a request will actually use: the requested one, or the
+    /// provider default, normalised the same way `chat` and
+    /// `chat_stream_with_cancel` normalise it. One helper, so the context
+    /// guard and the provider can never disagree about the model.
+    pub(crate) fn effective_model(&self, requested: Option<&str>) -> String {
+        let requested_model = requested
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| self.default_model());
+        if self.kind == ProviderKind::Minimax {
+            normalize_minimax_model_id(requested_model)
+        } else {
+            requested_model.to_string()
+        }
+    }
+
+    /// Context window the model declares. `None` means the provider does not
+    /// publish one; the caller then relies on the account limit alone.
+    pub(crate) fn declared_context_window_tokens(&self, model: &str) -> Option<u64> {
+        self.model_capability(model)
+            .context_window_tokens
+            .map(u64::from)
     }
 
     /// Borrow the api_key or fail with an operator-actionable hint.
@@ -280,22 +333,25 @@ impl ProviderRuntime {
         opts: &ChatRequestOptions,
         tools: &[ChatToolDefinition],
     ) -> Result<ChatCompletion, OperatorError> {
-        let model = opts
-            .model
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or(self.default_model());
+        let normalized_model = self.effective_model(opts.model.as_deref());
+        let model = normalized_model.as_str();
 
         match self.kind {
+            ProviderKind::OpenAiCodex => {
+                self.codex_bridge()?
+                    .chat(messages, opts, tools, model, None, |_| {})
+            }
             ProviderKind::LocalFallback => {
                 let input = build_generate_input_from_chat(messages, opts, tools);
                 let content = format!("Fallback response: {input}");
                 Ok(ChatCompletion {
                     content: content.clone(),
+                    reasoning_content: None,
                     model: model.to_string(),
                     provider: self.name.clone(),
                     tool_calls: Vec::new(),
                     token_usage: Some(estimated_text_usage(input.as_str(), content.as_str())),
+                    effective_context_window: None,
                 })
             }
             ProviderKind::SharedLlm | ProviderKind::DecentralizedLlm => {
@@ -350,13 +406,14 @@ impl ProviderRuntime {
     where
         F: FnMut(ChatStreamEvent),
     {
-        let model = opts
-            .model
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or(self.default_model());
+        let normalized_model = self.effective_model(opts.model.as_deref());
+        let model = normalized_model.as_str();
 
         match self.kind {
+            ProviderKind::OpenAiCodex => {
+                self.codex_bridge()?
+                    .chat(messages, opts, tools, model, cancel_flag, on_event)
+            }
             ProviderKind::LocalFallback => {
                 ensure_not_cancelled(cancel_flag)?;
                 let input = build_generate_input_from_chat(messages, opts, tools);
@@ -373,10 +430,12 @@ impl ProviderRuntime {
                 emit_text_chunks(content.as_str(), cancel_flag, None, &mut on_event)?;
                 Ok(ChatCompletion {
                     content,
+                    reasoning_content: None,
                     model: model.to_string(),
                     provider: self.name.clone(),
                     tool_calls: Vec::new(),
                     token_usage: Some(token_usage),
+                    effective_context_window: None,
                 })
             }
             ProviderKind::SharedLlm | ProviderKind::DecentralizedLlm => {
@@ -537,6 +596,7 @@ impl ProviderRuntime {
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_string(),
+            reasoning_content: None,
             model: model.to_string(),
             provider: self.name.clone(),
             tool_calls: parse_tool_calls(message.get("tool_calls").unwrap_or(&Value::Null)),
@@ -551,6 +611,7 @@ impl ProviderRuntime {
                         .unwrap_or_default(),
                 ))
             }),
+            effective_context_window: None,
         })
     }
 
@@ -669,10 +730,12 @@ impl ProviderRuntime {
 
         Ok(ChatCompletion {
             content,
+            reasoning_content: None,
             model: resolved_model,
             provider: self.name.clone(),
             tool_calls,
             token_usage,
+            effective_context_window: None,
         })
     }
 
@@ -688,7 +751,13 @@ impl ProviderRuntime {
         let api_key = self.require_api_key()?;
         let provider_messages = messages
             .iter()
-            .map(message_to_provider_json)
+            .map(|message| {
+                if self.kind == ProviderKind::Minimax {
+                    minimax_message_to_provider_json(message)
+                } else {
+                    message_to_provider_json(message)
+                }
+            })
             .collect::<Vec<_>>();
         let all_messages = if let Some(system_prompt) = opts.system_prompt.as_deref() {
             let mut combined =
@@ -701,13 +770,7 @@ impl ProviderRuntime {
 
         let body = post_json(
             format!("{}/chat/completions", base_url).as_str(),
-            json!({
-                "model": model,
-                "messages": all_messages,
-                "temperature": opts.temperature.unwrap_or(0.7),
-                "max_tokens": opts.max_tokens.unwrap_or(2048),
-                "tools": build_tools_json(tools),
-            }),
+            openai_compatible_request_body(self.kind, model, all_messages, opts, tools, false),
             Some(api_key),
             self.timeout_ms,
             &[],
@@ -725,6 +788,10 @@ impl ProviderRuntime {
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_string(),
+            reasoning_content: message
+                .get("reasoning_content")
+                .and_then(Value::as_str)
+                .map(ToString::to_string),
             model: model.to_string(),
             provider: self.name.clone(),
             tool_calls: parse_tool_calls(message.get("tool_calls").unwrap_or(&Value::Null)),
@@ -739,6 +806,7 @@ impl ProviderRuntime {
                         .unwrap_or_default(),
                 ))
             }),
+            effective_context_window: None,
         })
     }
 
@@ -759,7 +827,13 @@ impl ProviderRuntime {
         let api_key = self.require_api_key()?;
         let provider_messages = messages
             .iter()
-            .map(message_to_provider_json)
+            .map(|message| {
+                if self.kind == ProviderKind::Minimax {
+                    minimax_message_to_provider_json(message)
+                } else {
+                    message_to_provider_json(message)
+                }
+            })
             .collect::<Vec<_>>();
         let all_messages = if let Some(system_prompt) = opts.system_prompt.as_deref() {
             let mut combined =
@@ -772,14 +846,7 @@ impl ProviderRuntime {
 
         let response = post_response_with_provider(
             format!("{}/chat/completions", base_url).as_str(),
-            json!({
-                "model": model,
-                "messages": all_messages,
-                "temperature": opts.temperature.unwrap_or(0.7),
-                "max_tokens": opts.max_tokens.unwrap_or(2048),
-                "tools": build_tools_json(tools),
-                "stream": true,
-            }),
+            openai_compatible_request_body(self.kind, model, all_messages, opts, tools, true),
             Some(api_key),
             self.timeout_ms,
             &[("Accept", "text/event-stream")],
@@ -787,6 +854,7 @@ impl ProviderRuntime {
         )?;
         let reader = BufReader::new(response.into_reader());
         let mut content = String::new();
+        let mut reasoning_content = String::new();
         let mut resolved_model = model.to_string();
         let mut tool_call_accumulators = Vec::new();
         let mut token_usage = None;
@@ -852,6 +920,10 @@ impl ProviderRuntime {
                 }
             }
 
+            if let Some(token) = delta.get("reasoning_content").and_then(Value::as_str) {
+                reasoning_content.push_str(token);
+            }
+
             if let Some(tool_calls) = delta.get("tool_calls") {
                 apply_stream_tool_call_deltas(tool_calls, &mut tool_call_accumulators);
             }
@@ -871,10 +943,12 @@ impl ProviderRuntime {
 
         Ok(ChatCompletion {
             content,
+            reasoning_content: (!reasoning_content.is_empty()).then_some(reasoning_content),
             model: resolved_model,
             provider: self.name.clone(),
             tool_calls: finalize_stream_tool_calls(tool_call_accumulators),
             token_usage,
+            effective_context_window: None,
         })
     }
 
@@ -931,6 +1005,7 @@ impl ProviderRuntime {
 
         Ok(ChatCompletion {
             content,
+            reasoning_content: None,
             model: body
                 .get("model")
                 .and_then(Value::as_str)
@@ -939,6 +1014,7 @@ impl ProviderRuntime {
             provider: self.name.clone(),
             tool_calls,
             token_usage,
+            effective_context_window: None,
         })
     }
 
@@ -1146,16 +1222,27 @@ impl ProviderRuntime {
 
         Ok(ChatCompletion {
             content,
+            reasoning_content: None,
             model: resolved_model,
             provider: self.name.clone(),
             tool_calls: finalize_stream_tool_calls(tool_call_accumulators),
             token_usage,
+            effective_context_window: None,
         })
+    }
+
+    fn codex_bridge(&self) -> Result<&CodexBridge, OperatorError> {
+        self.codex
+            .as_ref()
+            .ok_or_else(|| OperatorError::Message("OpenAI Codex bridge is not configured".into()))
     }
 
     pub fn is_configured(&self) -> bool {
         match self.kind {
-            ProviderKind::LocalFallback | ProviderKind::Ollama | ProviderKind::Anthropic => true,
+            // Resolve local prerequisites before chat. A selected Codex
+            // provider fails explicitly instead of silently switching models.
+            ProviderKind::OpenAiCodex => self.codex.is_some(),
+            ProviderKind::LocalFallback | ProviderKind::Ollama => true,
             _ => self
                 .api_key
                 .as_deref()
@@ -1174,6 +1261,10 @@ impl ProviderRuntime {
 
     fn check_availability(&self) -> Result<(), String> {
         match self.kind {
+            ProviderKind::OpenAiCodex => self
+                .codex_bridge()
+                .map_err(|e| e.to_string())?
+                .check_availability(),
             ProviderKind::LocalFallback => Ok(()),
             ProviderKind::Ollama => {
                 let base_url = self
@@ -1229,6 +1320,12 @@ impl ProviderRuntime {
 
     fn list_models(&self) -> Vec<String> {
         match self.kind {
+            ProviderKind::OpenAiCodex => vec![
+                "astra-gtp6-max".into(),
+                "gpt-6-astra".into(),
+                "gpt-5.6-sol-max".into(),
+                "gpt-5.6-sol".into(),
+            ],
             ProviderKind::LocalFallback => vec!["local-fallback-v0".to_string()],
             ProviderKind::SharedLlm => vec![self.default_model.clone()],
             ProviderKind::DecentralizedLlm => vec![self.default_model.clone()],
@@ -1236,10 +1333,10 @@ impl ProviderRuntime {
                 .fetch_ollama_models()
                 .unwrap_or_else(|_| vec![self.default_model.clone()]),
             ProviderKind::Minimax => vec![
-                "MiniMax-M2.7".to_string(),
-                "abab5.5-chat".to_string(),
-                "abab6-chat".to_string(),
-                "abab6.5s-chat".to_string(),
+                // Officially available LLMs as of 2026-10-24. Retired M2.x
+                // ids remain usable only when explicitly configured.
+                MINIMAX_M31_FLASH_MODEL.to_string(),
+                "MiniMax-M3".to_string(),
             ],
             ProviderKind::Deepseek => vec![self.default_model.clone()],
             ProviderKind::Glm => vec![
@@ -1282,6 +1379,23 @@ impl ProviderRuntime {
     fn model_capability(&self, model: &str) -> ModelCapabilitySummary {
         let normalized = model.to_ascii_lowercase();
         let (context_window_tokens, supports_vision) = match self.kind {
+            ProviderKind::OpenAiCodex => (
+                if matches!(
+                    normalized.as_str(),
+                    "gpt-6-astra"
+                        | "astra-gtp6-max"
+                        | "astra-gpt6-max"
+                        | "gpt-6-astra-max"
+                        | "gpt-5.6-sol"
+                        | "gpt-5.6-sol-max"
+                        | "gpt-5.6-sol max"
+                ) {
+                    Some(1_050_000)
+                } else {
+                    None
+                },
+                false,
+            ),
             ProviderKind::LocalFallback => (Some(2048), false),
             ProviderKind::Ollama => (
                 Some(8192),
@@ -1295,7 +1409,7 @@ impl ProviderRuntime {
             ),
             ProviderKind::Minimax => (
                 Some(minimax_context_window_tokens(&normalized)),
-                openai_compatible_supports_vision(&normalized),
+                minimax_supports_vision(&normalized),
             ),
             ProviderKind::Deepseek => (Some(64000), false),
             ProviderKind::Glm => (
@@ -1343,17 +1457,51 @@ fn openai_compatible_supports_vision(model: &str) -> bool {
         || model.contains("glm-4v")
 }
 
+/// MiniMax M3 family is natively multimodal (text, image and video input
+/// through the OpenAI-compatible endpoint). Source:
+/// platform.minimax.io/docs/api-reference/text-openai-api.md — "Chat
+/// Completions support text, image, and video input for MiniMax-M3.1-Flash
+/// and MiniMax-M3".
+///
+/// This is deliberately a MiniMax-specific predicate rather than an
+/// addition to `openai_compatible_supports_vision`: that helper is shared
+/// with the shared/decentralized LLM and GLM providers, where a stray "m3"
+/// substring would mean something unrelated. The legacy M2 family and the
+/// abab* series are text-only.
+fn minimax_supports_vision(model: &str) -> bool {
+    // Normalise inside the predicate rather than relying on the caller.
+    // The configured model arrives from .env as "MiniMax-M3.1-Flash"
+    // (capitalised), so a case-sensitive `contains("m3")` would miss it —
+    // exactly the class of bug that left the M3 family on the 16k branch.
+    model.to_ascii_lowercase().contains("m3")
+}
+
 fn minimax_context_window_tokens(model: &str) -> u32 {
-    // MiniMax M2 / M2.7 supports 200k+ context per platform.minimax.chat
-    // documentation. The earlier hardcode of 32_000 was from an outdated
-    // spec — live M2.7 deployments through MiniMax's OpenAI-compatible
-    // endpoint accept the full window. Status bar showed `ctx:32k` while
-    // operator's session held >99k tokens without overflowing, which is
-    // how the discrepancy was caught (2026-05-08 TUI session).
+    // MiniMax ships three distinct context tiers, and the model name is
+    // the only thing that distinguishes them:
     //
-    // Kept aligned with the TS-side capability matrix entry in
-    // src/providers/capability-matrix.ts:201 (204_800 = 200 × 1024).
-    if model.contains("m2") {
+    //   - M3 family (M3, M3.1, M3.1-Flash, -Preview suffix): 1_000_000.
+    //     Source: platform.minimax.io/docs/api-reference/text-openai-api.md
+    //     ("MiniMax-M3.1-Flash | 1,000,000"), confirmed live on
+    //     2026-10-24 — a 999_209-token prompt was accepted (HTTP 200),
+    //     a 1_530_000-token prompt was rejected with
+    //     "invalid params, context window exceeds limit (2013)".
+    //   - M2 family (M2, M2.5, M2.7, -highspeed): 204_800.
+    //   - Legacy abab* series: 16_384.
+    //
+    // The earlier `if model.contains("m2")` test was a substring check,
+    // which is wrong twice over: it missed the whole M3 family (so
+    // `minimax-m3.1-flash` fell through to the 16k legacy branch and the
+    // TUI status bar read `ctx:16k` for a 1M-token model), and it would
+    // have matched a hypothetical "m2" anywhere in an unrelated name.
+    // Family matching is prefix-based, mirroring the TS-side
+    // `minimaxCapabilities` in src/providers/model-capabilities.ts, so
+    // point releases and preview suffixes inherit the family's window
+    // without needing a table update for every release.
+    let normalized = model.to_ascii_lowercase();
+    if normalized.contains("m3") {
+        1_000_000
+    } else if normalized.contains("m2") {
         204_800
     } else {
         // Older `abab*` series caps around 16k.
@@ -1386,6 +1534,7 @@ fn anthropic_messages_json(messages: &[ChatMessage]) -> Vec<Value> {
             ChatMessage::Assistant {
                 content,
                 tool_calls,
+                ..
             } => {
                 let mut blocks = Vec::new();
                 if !content.is_empty() {
@@ -1492,12 +1641,20 @@ fn resolve_vault_or_env_api_key(
     plaintext_env: &str,
 ) -> Result<Option<String>, OperatorError> {
     if let Some(vault_key) = config.env(vault_ref_env) {
-        if let Some(plaintext) = try_read_vault_secret_plaintext(config, vault_key)? {
+        if let Some(plaintext) = try_read_vault_secret_plaintext(config, vault_key.trim())? {
             return Ok(Some(plaintext));
         }
+        if config.env(plaintext_env).is_some() {
+            return Err(OperatorError::Vault(
+                "PROVIDER_CREDENTIAL_CONFLICT: configured vault entry is unavailable; repair the vault reference or remove it to select the plaintext credential".into(),
+            ));
+        }
+        return Ok(None);
     }
 
-    Ok(config.env(plaintext_env).map(ToString::to_string))
+    Ok(config
+        .env(plaintext_env)
+        .map(|value| value.trim().to_string()))
 }
 
 /// Operator-actionable hint emitted when `resolve_vault_or_env_api_key`
@@ -1549,7 +1706,7 @@ fn resolve_api_key_with_diagnostic(
 
 fn resolve_anthropic_api_key(config: &OperatorConfig) -> Result<Option<String>, OperatorError> {
     if let Some(vault_key) = config.env("ANTHROPIC_VAULT_KEY") {
-        if vault_key == "anthropic_oauth_refresh_token" {
+        if vault_key.trim() == "anthropic_oauth_refresh_token" {
             return Err(OperatorError::Message(
                 "native rust operator does not support ANTHROPIC_VAULT_KEY=anthropic_oauth_refresh_token; use ANTHROPIC_API_KEY or ANTHROPIC_VAULT_KEY=anthropic_api_key".to_string(),
             ));
@@ -1572,7 +1729,21 @@ pub fn resolve_provider(
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(30_000);
     match name {
+        "openai" => Ok(ProviderRuntime {
+            codex: Some(CodexBridge::from_config(config)?),
+            kind: ProviderKind::OpenAiCodex,
+            name: "openai".into(),
+            base_url: None,
+            api_key: None,
+            api_key_missing_hint: String::new(),
+            default_model: config
+                .env("OPENAI_MODEL")
+                .unwrap_or("astra-gtp6-max")
+                .into(),
+            timeout_ms,
+        }),
         "local-fallback" => Ok(ProviderRuntime {
+            codex: None,
             kind: ProviderKind::LocalFallback,
             name: "local-fallback".to_string(),
             base_url: None,
@@ -1590,6 +1761,7 @@ pub fn resolve_provider(
                 String::new()
             };
             Ok(ProviderRuntime {
+                codex: None,
                 kind: ProviderKind::SharedLlm,
                 name: "shared-llm".to_string(),
                 base_url: config.env("SHARED_LLM_API_BASE").map(ToString::to_string),
@@ -1614,6 +1786,7 @@ pub fn resolve_provider(
                 String::new()
             };
             Ok(ProviderRuntime {
+                codex: None,
                 kind: ProviderKind::DecentralizedLlm,
                 name: "decentralized-llm".to_string(),
                 base_url: config
@@ -1629,6 +1802,7 @@ pub fn resolve_provider(
             })
         }
         "ollama" => Ok(ProviderRuntime {
+            codex: None,
             kind: ProviderKind::Ollama,
             name: "ollama".to_string(),
             base_url: config
@@ -1646,7 +1820,13 @@ pub fn resolve_provider(
         "minimax" => {
             let (api_key, api_key_missing_hint) =
                 resolve_api_key_with_diagnostic(config, "MINIMAX_VAULT_KEY", "MINIMAX_API_KEY")?;
+            let minimax_timeout_ms = config
+                .env("MINIMAX_REQUEST_TIMEOUT_MS")
+                .and_then(|value| value.parse::<u64>().ok())
+                .filter(|value| (1_000..=86_400_000).contains(value))
+                .unwrap_or(timeout_ms);
             Ok(ProviderRuntime {
+                codex: None,
                 kind: ProviderKind::Minimax,
                 name: "minimax".to_string(),
                 base_url: config
@@ -1655,17 +1835,17 @@ pub fn resolve_provider(
                     .or_else(|| Some("https://api.minimax.io/v1".to_string())),
                 api_key,
                 api_key_missing_hint,
-                default_model: config
-                    .env("MINIMAX_MODEL")
-                    .unwrap_or("MiniMax-M2.7")
-                    .to_string(),
-                timeout_ms,
+                default_model: normalize_minimax_model_id(
+                    config.env("MINIMAX_MODEL").unwrap_or(MINIMAX_M31_FLASH_MODEL),
+                ),
+                timeout_ms: minimax_timeout_ms,
             })
         }
         "deepseek" => {
             let (api_key, api_key_missing_hint) =
                 resolve_api_key_with_diagnostic(config, "DEEPSEEK_VAULT_KEY", "DEEPSEEK_API_KEY")?;
             Ok(ProviderRuntime {
+                codex: None,
                 kind: ProviderKind::Deepseek,
                 name: "deepseek".to_string(),
                 base_url: config
@@ -1685,6 +1865,7 @@ pub fn resolve_provider(
             let (api_key, api_key_missing_hint) =
                 resolve_api_key_with_diagnostic(config, "GLM_VAULT_KEY", "GLM_API_KEY")?;
             Ok(ProviderRuntime {
+                codex: None,
                 kind: ProviderKind::Glm,
                 name: "glm".to_string(),
                 base_url: config
@@ -1705,6 +1886,7 @@ pub fn resolve_provider(
                 String::new()
             };
             Ok(ProviderRuntime {
+                codex: None,
                 kind: ProviderKind::Anthropic,
                 name: "anthropic".to_string(),
                 base_url: config
@@ -1728,6 +1910,7 @@ pub fn resolve_provider(
 
 pub fn configured_provider_statuses(config: &OperatorConfig) -> Vec<ProviderStatus> {
     [
+        "openai",
         "local-fallback",
         "shared-llm",
         "decentralized-llm",
@@ -1759,8 +1942,74 @@ fn build_tools_json(tools: &[ChatToolDefinition]) -> Vec<Value> {
         .collect()
 }
 
+const MINIMAX_M31_FLASH_MODEL: &str = "MiniMax-M3.1-Flash";
+const MINIMAX_M3_RECOMMENDED_COMPLETION_TOKENS: u32 = 131_072;
+const MINIMAX_M3_MAX_COMPLETION_TOKENS: u32 = 524_288;
+
+fn normalize_minimax_model_id(model: &str) -> String {
+    let trimmed = model.trim();
+    if trimmed.eq_ignore_ascii_case("MiniMax-M3.1-Flash-Preview") {
+        MINIMAX_M31_FLASH_MODEL.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn is_minimax_m31_flash(model: &str) -> bool {
+    normalize_minimax_model_id(model).eq_ignore_ascii_case(MINIMAX_M31_FLASH_MODEL)
+}
+
+fn minimax_reasoning_effort(opts: &ChatRequestOptions) -> &str {
+    match opts.minimax_reasoning_effort.as_deref().map(str::trim) {
+        Some(value @ ("low" | "medium" | "high" | "xhigh" | "max")) => value,
+        _ => "max",
+    }
+}
+
+fn openai_compatible_request_body(
+    kind: ProviderKind,
+    model: &str,
+    messages: Vec<Value>,
+    opts: &ChatRequestOptions,
+    tools: &[ChatToolDefinition],
+    stream: bool,
+) -> Value {
+    let mut payload = json!({
+        "model": model,
+        "messages": messages,
+        "tools": build_tools_json(tools),
+    });
+
+    if kind == ProviderKind::Minimax && is_minimax_m31_flash(model) {
+        let max_completion_tokens = opts
+            .minimax_max_completion_tokens
+            .or(opts.max_tokens)
+            .unwrap_or(MINIMAX_M3_RECOMMENDED_COMPLETION_TOKENS)
+            .clamp(1, MINIMAX_M3_MAX_COMPLETION_TOKENS);
+        payload["max_completion_tokens"] = json!(max_completion_tokens);
+        payload["reasoning_effort"] = json!(minimax_reasoning_effort(opts));
+        payload["reasoning_split"] = Value::Bool(true);
+        payload["thinking"] = json!({ "type": "adaptive" });
+        if stream {
+            payload["stream_options"] = json!({ "include_usage": true });
+        }
+    } else {
+        payload["temperature"] = json!(opts.temperature.unwrap_or(0.7));
+        payload["max_tokens"] = json!(opts.max_tokens.unwrap_or(2048));
+    }
+
+    if stream {
+        payload["stream"] = Value::Bool(true);
+    }
+    payload
+}
+
 fn message_to_provider_json(message: &ChatMessage) -> Value {
     build_message_json(message, ProviderMessageStyle::OpenAiCompatible)
+}
+
+fn minimax_message_to_provider_json(message: &ChatMessage) -> Value {
+    build_message_json(message, ProviderMessageStyle::Minimax)
 }
 
 /// Ollama's /api/chat accepts a superset of the OpenAI shape, but with one
@@ -1779,6 +2028,7 @@ fn ollama_message_to_json(message: &ChatMessage) -> Value {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ProviderMessageStyle {
     OpenAiCompatible,
+    Minimax,
     Ollama,
 }
 
@@ -1793,8 +2043,9 @@ fn build_message_json(message: &ChatMessage, style: ProviderMessageStyle) -> Val
         ChatMessage::Assistant {
             content,
             tool_calls,
+            reasoning_content,
         } => {
-            if tool_calls.is_empty() {
+            let mut output = if tool_calls.is_empty() {
                 json!({ "role": "assistant", "content": sanitize_for_json(content) })
             } else {
                 json!({
@@ -1804,7 +2055,8 @@ fn build_message_json(message: &ChatMessage, style: ProviderMessageStyle) -> Val
                         .iter()
                         .map(|call| {
                             let arguments: Value = match style {
-                                ProviderMessageStyle::OpenAiCompatible => Value::String(
+                                ProviderMessageStyle::OpenAiCompatible
+                                | ProviderMessageStyle::Minimax => Value::String(
                                     serde_json::to_string(&call.arguments)
                                         .unwrap_or_else(|_| "{}".to_string()),
                                 ),
@@ -1821,7 +2073,17 @@ fn build_message_json(message: &ChatMessage, style: ProviderMessageStyle) -> Val
                         })
                         .collect::<Vec<_>>(),
                 })
+            };
+            if style == ProviderMessageStyle::Minimax {
+                if let Some(reasoning_content) = reasoning_content
+                    .as_deref()
+                    .filter(|value| !value.is_empty())
+                {
+                    output["reasoning_content"] =
+                        Value::String(sanitize_for_json(reasoning_content));
+                }
             }
+            output
         }
         ChatMessage::Tool {
             tool_call_id,
@@ -1841,6 +2103,7 @@ fn serialize_message(message: &ChatMessage) -> String {
         ChatMessage::Assistant {
             content,
             tool_calls,
+            ..
         } => {
             if tool_calls.is_empty() {
                 format!("ASSISTANT: {content}")
@@ -2056,10 +2319,12 @@ fn parse_generate_provider_response(
         .to_string();
     ChatCompletion {
         content: output,
+        reasoning_content: None,
         model: resolved_model,
         provider: provider_name.to_string(),
         tool_calls: Vec::new(),
         token_usage: parse_generate_provider_usage(&body),
+        effective_context_window: None,
     }
 }
 
@@ -2756,6 +3021,132 @@ mod tests {
     // one dies when the corresponding line of `load_vault_cached` is
     // removed.
 
+    #[test]
+    fn vault_derivation_cache_evicts_replaced_and_failed_generations() {
+        let _env_lock = vault_env_lock().lock().expect("lock vault env");
+        crate::runtime::clear_vault_derivation_cache();
+        let dir = TestProviderDir::new("vault-cache-lifecycle");
+        write_v1_vault_secret(&dir, "minimax_api_key", "synthetic-cache-secret");
+        let mut config = dir.config(&[("MINIMAX_VAULT_KEY", "minimax_api_key")]);
+        let state = fs::read(dir.vault_state_path()).unwrap();
+        let (before, _) = crate::runtime::vault_derivation_count();
+        for generation in [1, 2, 1] {
+            config.config_generation = generation;
+            let provider = resolve_provider(&config, Some("minimax")).unwrap();
+            assert_eq!(provider.api_key.as_deref(), Some("synthetic-cache-secret"));
+        }
+        let (after, _) = crate::runtime::vault_derivation_count();
+        assert_eq!(
+            after - before,
+            3,
+            "only the current generation may remain cached"
+        );
+
+        for failure in ["malformed", "missing"] {
+            if failure == "missing" {
+                fs::remove_file(dir.vault_state_path()).unwrap();
+            } else {
+                fs::write(dir.vault_state_path(), "{synthetic-invalid-state").unwrap();
+            }
+            assert!(resolve_provider(&config, Some("minimax")).is_err());
+            let (failed, _) = crate::runtime::vault_derivation_count();
+            fs::write(dir.vault_state_path(), &state).unwrap();
+            resolve_provider(&config, Some("minimax")).unwrap();
+            let (restored, _) = crate::runtime::vault_derivation_count();
+            assert_eq!(restored - failed, 1, "{failure} must evict the old key");
+        }
+        crate::runtime::clear_vault_derivation_cache();
+    }
+
+    #[test]
+    fn vault_derivation_cache_does_not_retain_prior_state_bytes() {
+        let _env_lock = vault_env_lock().lock().expect("lock vault env");
+        crate::runtime::clear_vault_derivation_cache();
+        let dir = TestProviderDir::new("vault-cache-old-state");
+        write_v1_vault_secret(&dir, "minimax_api_key", "synthetic-cache-secret");
+        let config = dir.config(&[("MINIMAX_VAULT_KEY", "minimax_api_key")]);
+        let original = fs::read(dir.vault_state_path()).unwrap();
+        let mut replaced: Value = serde_json::from_slice(&original).unwrap();
+        replaced["salt"] = json!(STANDARD.encode([9_u8; 32]));
+        let (before, _) = crate::runtime::vault_derivation_count();
+        for bytes in [
+            &original,
+            &serde_json::to_vec(&replaced).unwrap(),
+            &original,
+        ] {
+            fs::write(dir.vault_state_path(), bytes).unwrap();
+            resolve_provider(&config, Some("minimax")).unwrap();
+        }
+        let (after, _) = crate::runtime::vault_derivation_count();
+        assert_eq!(after - before, 3, "replaced key material must be evicted");
+        crate::runtime::clear_vault_derivation_cache();
+    }
+
+    #[test]
+    fn vault_derivation_cache_observes_entry_replacement_and_removal_without_another_kdf() {
+        let _env_lock = vault_env_lock().lock().expect("lock vault env");
+        crate::runtime::clear_vault_derivation_cache();
+        let dir = TestProviderDir::new("vault-cache-entry-lifecycle");
+        let config = dir.config(&[("MINIMAX_VAULT_KEY", "minimax_api_key")]);
+        let (before, _) = crate::runtime::vault_derivation_count();
+        let mut original_state = None;
+        for value in ["synthetic-first", "synthetic-second"] {
+            write_v1_vault_secret(&dir, "minimax_api_key", value);
+            let state = fs::read(dir.vault_state_path()).unwrap();
+            if let Some(previous) = &original_state {
+                assert_eq!(&state, previous, "only the entry changes");
+            }
+            original_state = Some(state);
+            let provider = resolve_provider(&config, Some("minimax")).unwrap();
+            assert_eq!(provider.api_key.as_deref(), Some(value));
+        }
+        fs::write(dir.vault_entries_path(), "[]").unwrap();
+        let provider = resolve_provider(&config, Some("minimax")).unwrap();
+        assert!(
+            !provider.is_configured(),
+            "a removed entry cannot remain usable"
+        );
+        let (after, _) = crate::runtime::vault_derivation_count();
+        assert_eq!(
+            after - before,
+            1,
+            "entry changes do not require another KDF"
+        );
+        crate::runtime::clear_vault_derivation_cache();
+    }
+
+    #[test]
+    fn vault_derivation_cache_clear_forces_a_fresh_load() {
+        let _env_lock = vault_env_lock().lock().expect("lock vault env");
+        crate::runtime::clear_vault_derivation_cache();
+        let dir = TestProviderDir::new("vault-cache-explicit-clear");
+        write_v1_vault_secret(&dir, "minimax_api_key", "synthetic-cache-secret");
+        let config = dir.config(&[("MINIMAX_VAULT_KEY", "minimax_api_key")]);
+        let (before, hits_before) = crate::runtime::vault_derivation_count();
+        for _ in 0..2 {
+            let provider = resolve_provider(&config, Some("minimax")).expect("resolve fixture");
+            assert_eq!(provider.api_key.as_deref(), Some("synthetic-cache-secret"));
+        }
+        let (loaded, hits) = crate::runtime::vault_derivation_count();
+        assert_eq!(loaded - before, 1);
+        assert_eq!(hits - hits_before, 1);
+
+        crate::runtime::clear_vault_derivation_cache();
+        let provider = resolve_provider(&config, Some("minimax")).expect("resolve after clear");
+        assert_eq!(provider.api_key.as_deref(), Some("synthetic-cache-secret"));
+        let (reloaded, hits_after_clear) = crate::runtime::vault_derivation_count();
+        assert_eq!(
+            reloaded - loaded,
+            1,
+            "clear must evict the reader's cached handle"
+        );
+        assert_eq!(
+            hits_after_clear, hits,
+            "the first read after clear must miss"
+        );
+        crate::runtime::clear_vault_derivation_cache();
+    }
+
     /// Derive the same secret repeatedly. If the cache works this is one
     /// KDF, not three; the assertion is on the RESULT, not the clock, so
     /// it cannot flake under load. A timing assertion here would be
@@ -2770,7 +3161,12 @@ mod tests {
         // One vault, three entries - the shape that used to pay the KDF
         // three times.
         append_v2_vault_secret(&dir, "minimax_api_key", "k-minimax", "provider-test-pepper");
-        append_v2_vault_secret(&dir, "deepseek_api_key", "k-deepseek", "provider-test-pepper");
+        append_v2_vault_secret(
+            &dir,
+            "deepseek_api_key",
+            "k-deepseek",
+            "provider-test-pepper",
+        );
         append_v2_vault_secret(&dir, "glm_api_key", "k-glm", "provider-test-pepper");
 
         let config = dir.config(&[
@@ -2809,7 +3205,12 @@ mod tests {
 
         let dir = TestProviderDir::new("vault-cache-derivation-count");
         append_v2_vault_secret(&dir, "minimax_api_key", "k-minimax", "provider-test-pepper");
-        append_v2_vault_secret(&dir, "deepseek_api_key", "k-deepseek", "provider-test-pepper");
+        append_v2_vault_secret(
+            &dir,
+            "deepseek_api_key",
+            "k-deepseek",
+            "provider-test-pepper",
+        );
         append_v2_vault_secret(&dir, "glm_api_key", "k-glm", "provider-test-pepper");
 
         let config = dir.config(&[
@@ -2830,7 +3231,10 @@ mod tests {
             1,
             "three provider lookups must derive the master key once, not three times"
         );
-        assert!(hits >= 2, "at least two lookups must be served from the cache");
+        assert!(
+            hits >= 2,
+            "at least two lookups must be served from the cache"
+        );
 
         crate::runtime::clear_vault_derivation_cache();
     }
@@ -2846,7 +3250,12 @@ mod tests {
         crate::runtime::clear_vault_derivation_cache();
 
         let dir = TestProviderDir::new("vault-cache-state-rewrite");
-        write_v2_vault_secret(&dir, "minimax_api_key", "first-value", "provider-test-pepper");
+        write_v2_vault_secret(
+            &dir,
+            "minimax_api_key",
+            "first-value",
+            "provider-test-pepper",
+        );
         let config = dir.config(&[
             ("DEFAULT_PROVIDER", "minimax"),
             ("MINIMAX_VAULT_KEY", "minimax_api_key"),
@@ -2856,7 +3265,12 @@ mod tests {
         assert_eq!(first.api_key.as_deref(), Some("first-value"));
 
         // Rewrite the vault in place with a different secret.
-        write_v2_vault_secret(&dir, "minimax_api_key", "second-value", "provider-test-pepper");
+        write_v2_vault_secret(
+            &dir,
+            "minimax_api_key",
+            "second-value",
+            "provider-test-pepper",
+        );
 
         // `write_v2_vault_secret` reuses a fixed salt / master key / iv, so
         // the STATE file is byte-identical between the two writes - only the
@@ -2921,6 +3335,42 @@ mod tests {
     }
 
     #[test]
+    fn provider_debug_does_not_serialize_credential_material() {
+        let config = config_from(&[("MINIMAX_API_KEY", "synthetic-private-provider-value")]);
+        let provider = resolve_provider(&config, Some("minimax")).unwrap();
+        let diagnostic = format!("{provider:?}");
+        assert!(!diagnostic.contains("synthetic-private-provider-value"));
+        assert!(diagnostic.contains("Minimax"));
+    }
+
+    #[test]
+    fn resolve_openai_codex_without_vault_or_api_key() {
+        let config = config_from(&[
+            ("DEFAULT_PROVIDER", "openai"),
+            ("OPENAI_API_KEY", "synthetic-unused-api-key"),
+        ]);
+        let provider = resolve_provider(&config, Some("openai")).unwrap();
+        assert_eq!(provider.default_model(), "astra-gtp6-max");
+        assert!(provider.is_configured());
+        assert!(provider.api_key.is_none());
+        assert!(provider.list_models().contains(&"astra-gtp6-max".into()));
+        assert!(provider.list_models().contains(&"gpt-5.6-sol-max".into()));
+        assert_eq!(
+            provider
+                .model_capability("astra-gtp6-max")
+                .context_window_tokens,
+            Some(1_050_000)
+        );
+        assert_eq!(
+            provider
+                .model_capability("gpt-5.6-sol-max")
+                .context_window_tokens,
+            Some(1_050_000)
+        );
+        assert!(!format!("{provider:?}").contains("synthetic-unused-api-key"));
+    }
+
+    #[test]
     fn resolve_provider_supports_full_v1_set() {
         let config = config_from(&[
             ("DEFAULT_PROVIDER", "local-fallback"),
@@ -2970,7 +3420,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_provider_falls_back_to_minimax_plaintext_when_vault_entry_missing() {
+    fn resolve_provider_rejects_plaintext_when_explicit_vault_entry_is_missing() {
         let dir = TestProviderDir::new("minimax-plaintext-fallback");
         write_empty_v1_vault(&dir);
 
@@ -2979,10 +3429,114 @@ mod tests {
             ("MINIMAX_VAULT_KEY", "missing_minimax_api"),
             ("MINIMAX_API_KEY", "env-minimax-key"),
         ]);
-        let runtime = resolve_provider(&config, Some("minimax")).expect("provider runtime");
+        let error = resolve_provider(&config, Some("minimax")).expect_err("credential conflict");
+        assert!(error.to_string().contains("PROVIDER_CREDENTIAL_CONFLICT"));
+        assert!(!error.to_string().contains("env-minimax-key"));
+    }
 
-        assert_eq!(runtime.api_key.as_deref(), Some("env-minimax-key"));
-        assert!(runtime.is_configured());
+    #[test]
+    fn resolve_provider_alias_lifecycle_matches_the_shared_fixture() {
+        let _env_lock = vault_env_lock().lock().expect("lock vault env");
+        let cases: Vec<Value> = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/provider-vault-alias.synthetic.json"
+        ))
+        .unwrap();
+        for case in cases {
+            let provider = case["provider"].as_str().unwrap();
+            let reference = case["referenceEnv"].as_str().unwrap();
+            let plaintext = case["plaintextEnv"].as_str().unwrap();
+            let default_key = case["defaultKey"].as_str().unwrap();
+            let custom_key = case["customKey"].as_str().unwrap();
+            let dir = TestProviderDir::new("shared-alias-lifecycle");
+            write_v1_vault_secret(&dir, default_key, "synthetic-default");
+            let default_entries: Vec<Value> =
+                serde_json::from_slice(&fs::read(dir.vault_entries_path()).unwrap()).unwrap();
+            write_v1_vault_secret(&dir, custom_key, "synthetic-custom");
+            let custom_entries: Vec<Value> =
+                serde_json::from_slice(&fs::read(dir.vault_entries_path()).unwrap()).unwrap();
+            let mut entries = default_entries.clone();
+            entries.extend(custom_entries);
+            fs::write(
+                dir.vault_entries_path(),
+                serde_json::to_vec(&entries).unwrap(),
+            )
+            .unwrap();
+            let config = dir.config(&[
+                (reference, default_key),
+                (plaintext, "synthetic-plaintext-shadow"),
+            ]);
+            assert_eq!(
+                resolve_provider(&config, Some(provider))
+                    .unwrap()
+                    .api_key
+                    .as_deref(),
+                Some("synthetic-default")
+            );
+            let padded = format!(" {custom_key} ");
+            let config = dir.config(&[
+                (reference, &padded),
+                (plaintext, "synthetic-plaintext-shadow"),
+            ]);
+            assert_eq!(
+                resolve_provider(&config, Some(provider))
+                    .unwrap()
+                    .api_key
+                    .as_deref(),
+                Some("synthetic-custom")
+            );
+            write_v1_vault_secret(&dir, custom_key, "synthetic-replacement");
+            let replacement: Vec<Value> =
+                serde_json::from_slice(&fs::read(dir.vault_entries_path()).unwrap()).unwrap();
+            entries.extend(replacement.clone());
+            fs::write(
+                dir.vault_entries_path(),
+                serde_json::to_vec(&entries).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                resolve_provider(&config, Some(provider))
+                    .unwrap()
+                    .api_key
+                    .as_deref(),
+                Some("synthetic-replacement")
+            );
+            fs::write(
+                dir.vault_entries_path(),
+                serde_json::to_vec(&default_entries).unwrap(),
+            )
+            .unwrap();
+            let error = resolve_provider(&config, Some(provider))
+                .expect_err("explicit reference cannot fall back");
+            assert!(error.to_string().contains("PROVIDER_CREDENTIAL_CONFLICT"));
+            assert!(!error.to_string().contains("synthetic-plaintext-shadow"));
+            let missing = dir.config(&[(reference, custom_key)]);
+            assert!(!resolve_provider(&missing, Some(provider))
+                .unwrap()
+                .is_configured());
+            let mut corrupt = replacement[0].clone();
+            corrupt["fingerprint"] = json!("synthetic-invalid-fingerprint");
+            entries.push(corrupt);
+            fs::write(
+                dir.vault_entries_path(),
+                serde_json::to_vec(&entries).unwrap(),
+            )
+            .unwrap();
+            let error = resolve_provider(&config, Some(provider))
+                .expect_err("corrupt latest entry cannot fall back");
+            assert!(error.to_string().contains("VAULT_ENTRY_INTEGRITY_FAILED"));
+            let plain = dir.config(&[
+                (reference, "  "),
+                (plaintext, " synthetic-plaintext-shadow "),
+            ]);
+            assert_eq!(
+                resolve_provider(&plain, Some(provider))
+                    .unwrap()
+                    .api_key
+                    .as_deref(),
+                Some("synthetic-plaintext-shadow")
+            );
+        }
+        crate::runtime::clear_vault_derivation_cache();
     }
 
     #[test]
@@ -3029,9 +3583,7 @@ mod tests {
         ]);
         let error = resolve_provider(&config, Some("deepseek")).expect_err("provider error");
 
-        assert!(error
-            .to_string()
-            .contains("VAULT_ENTRY_INTEGRITY_FAILED"));
+        assert!(error.to_string().contains("VAULT_ENTRY_INTEGRITY_FAILED"));
     }
 
     #[test]
@@ -3090,15 +3642,17 @@ mod tests {
 
     #[test]
     fn resolve_provider_rejects_anthropic_oauth_refresh_token_vault_refs() {
-        let config = config_from(&[
-            ("DEFAULT_PROVIDER", "anthropic"),
-            ("ANTHROPIC_VAULT_KEY", "anthropic_oauth_refresh_token"),
-        ]);
-
-        let error = resolve_provider(&config, Some("anthropic")).expect_err("provider error");
-        assert!(error
-            .to_string()
-            .contains("native rust operator does not support ANTHROPIC_VAULT_KEY=anthropic_oauth_refresh_token"));
+        for reference in [
+            "anthropic_oauth_refresh_token",
+            "  anthropic_oauth_refresh_token  ",
+        ] {
+            let config = config_from(&[
+                ("DEFAULT_PROVIDER", "anthropic"),
+                ("ANTHROPIC_VAULT_KEY", reference),
+            ]);
+            let error = resolve_provider(&config, Some("anthropic")).expect_err("provider error");
+            assert!(error.to_string().contains("native rust operator does not support ANTHROPIC_VAULT_KEY=anthropic_oauth_refresh_token"));
+        }
     }
 
     #[test]
@@ -3115,6 +3669,7 @@ mod tests {
                         name: "memphis_search".to_string(),
                         arguments: json!({ "query": "hello" }),
                     }],
+                    reasoning_content: None,
                 },
             ],
             &ChatRequestOptions {
@@ -3196,16 +3751,65 @@ mod tests {
             super::minimax_context_window_tokens("minimax-m2.7"),
             204_800
         );
+        // 2026-10-24: this used to assert 16_384 with the note "uppercase
+        // input is not lowercased here — caller normalises before". That
+        // documented a real defect: the function was case-sensitive, so a
+        // capitalised model name fell through to the legacy branch. The
+        // predicate now normalises internally, and the family test below
+        // covers the M3 side of the same bug.
         assert_eq!(
             super::minimax_context_window_tokens("MiniMax-M2"),
-            16_384,
-            "uppercase input is not lowercased here — caller normalises before"
+            204_800,
+            "capitalised model names must resolve to the same family window"
         );
         assert_eq!(super::minimax_context_window_tokens("minimax-m2"), 204_800);
         assert_eq!(
             super::minimax_context_window_tokens("abab6.5s-chat"),
             16_384
         );
+    }
+
+    #[test]
+    fn minimax_m3_context_window_is_one_million() {
+        // Live bug 2026-10-24: the TUI status bar showed `ctx:16k` for
+        // the then-configured Preview alias of the 1M-token M3.1 model.
+        // The runtime now uses the GA `MiniMax-M3.1-Flash` id. The old
+        // predicate was `if model.contains("m2")`, a case-sensitive
+        // substring test that matched neither "MiniMax-M3.1-Flash" nor
+        // its lowercase form, so the whole M3 family fell through to the
+        // legacy abab* branch.
+        //
+        // Bracketed live against the real endpoint on 2026-10-24:
+        // 999_209 prompt tokens → HTTP 200, 1_530_000 → HTTP 400
+        // "invalid params, context window exceeds limit (2013)".
+        for model in [
+            "MiniMax-M3.1-Flash",
+            "MiniMax-M3.1-Flash-Preview",
+            "minimax-m3.1-flash",
+            "MiniMax-M3",
+            "minimax-m3",
+        ] {
+            assert_eq!(
+                super::minimax_context_window_tokens(model),
+                1_000_000,
+                "{model} must inherit the M3 family window"
+            );
+        }
+    }
+
+    #[test]
+    fn minimax_m3_family_is_multimodal() {
+        // M3.1-Flash accepts text, image and video input through the
+        // OpenAI-compatible endpoint. The legacy M2 family is text-only.
+        for model in ["minimax-m3.1-flash", "MiniMax-M3.1-Flash-Preview", "minimax-m3"] {
+            assert!(super::minimax_supports_vision(model), "{model} must be multimodal");
+        }
+        for model in ["minimax-m2.7", "MiniMax-M2.7", "abab6.5s-chat"] {
+            assert!(
+                !super::minimax_supports_vision(model),
+                "{model} must stay text-only"
+            );
+        }
     }
 
     #[test]
@@ -3318,6 +3922,7 @@ mod tests {
                 name: "memphis_recall".to_string(),
                 arguments: json!({"query": "hello"}),
             }],
+            reasoning_content: None,
         };
         let out = message_to_provider_json(&msg);
         let args = out
@@ -3331,6 +3936,81 @@ mod tests {
     }
 
     #[test]
+    fn minimax_m31_payload_uses_ga_thinking_contract() {
+        let opts = ChatRequestOptions {
+            temperature: Some(0.2),
+            max_tokens: Some(4_096),
+            minimax_reasoning_effort: Some("xhigh".to_string()),
+            minimax_max_completion_tokens: Some(131_072),
+            ..ChatRequestOptions::default()
+        };
+        let payload = openai_compatible_request_body(
+            ProviderKind::Minimax,
+            MINIMAX_M31_FLASH_MODEL,
+            vec![json!({ "role": "user", "content": "test" })],
+            &opts,
+            &[],
+            true,
+        );
+
+        assert_eq!(payload["max_completion_tokens"], json!(131_072));
+        assert_eq!(payload["reasoning_effort"], json!("xhigh"));
+        assert_eq!(payload["thinking"], json!({ "type": "adaptive" }));
+        assert_eq!(payload["reasoning_split"], json!(true));
+        assert_eq!(payload["stream_options"], json!({ "include_usage": true }));
+        assert!(payload.get("temperature").is_none());
+        assert!(payload.get("max_tokens").is_none());
+    }
+
+    #[test]
+    fn minimax_m31_payload_clamps_limit_and_rejects_none_effort() {
+        let opts = ChatRequestOptions {
+            minimax_reasoning_effort: Some("none".to_string()),
+            minimax_max_completion_tokens: Some(u32::MAX),
+            ..ChatRequestOptions::default()
+        };
+        let payload = openai_compatible_request_body(
+            ProviderKind::Minimax,
+            MINIMAX_M31_FLASH_MODEL,
+            Vec::new(),
+            &opts,
+            &[],
+            false,
+        );
+
+        assert_eq!(payload["max_completion_tokens"], json!(524_288));
+        assert_eq!(payload["reasoning_effort"], json!("max"));
+    }
+
+    #[test]
+    fn minimax_replays_reasoning_only_on_minimax_messages() {
+        let msg = ChatMessage::Assistant {
+            content: String::new(),
+            tool_calls: Vec::new(),
+            reasoning_content: Some("opaque state".to_string()),
+        };
+
+        assert_eq!(
+            minimax_message_to_provider_json(&msg)["reasoning_content"],
+            json!("opaque state")
+        );
+        assert!(message_to_provider_json(&msg)
+            .get("reasoning_content")
+            .is_none());
+        assert!(ollama_message_to_json(&msg)
+            .get("reasoning_content")
+            .is_none());
+    }
+
+    #[test]
+    fn minimax_preview_alias_normalizes_to_ga_model() {
+        assert_eq!(
+            normalize_minimax_model_id("MiniMax-M3.1-Flash-Preview"),
+            MINIMAX_M31_FLASH_MODEL
+        );
+    }
+
+    #[test]
     fn ollama_serializes_tool_call_arguments_as_object() {
         let msg = ChatMessage::Assistant {
             content: String::new(),
@@ -3339,6 +4019,7 @@ mod tests {
                 name: "memphis_recall".to_string(),
                 arguments: json!({"query": "hello"}),
             }],
+            reasoning_content: None,
         };
         let out = ollama_message_to_json(&msg);
         let args = out

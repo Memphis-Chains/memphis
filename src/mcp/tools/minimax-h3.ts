@@ -8,6 +8,8 @@
  * payload or response.
  */
 
+import { createHash } from 'node:crypto';
+
 import { readVaultSecretByKey } from '../../security/vault-boundary.js';
 
 const API_BASE = 'https://api.minimax.io';
@@ -30,23 +32,60 @@ export type MemphisMiniMaxH3Output = {
   task_id?: string;
   status?: string;
   url?: string;
-  data?: Record<string, unknown>;
+  /** Compatibility field containing only the same public task metadata. */
+  data?: { task_id: string; status?: string; content?: { url: string } };
   error?: string;
 };
 
-function errorText(status: number, body: string): string {
-  return `MiniMax-H3 API error: HTTP ${status}${body ? ` ${body.slice(0, 500)}` : ''}`;
-}
+type TaskMetadata = NonNullable<MemphisMiniMaxH3Output['data']>;
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function outputUrl(data: Record<string, unknown>): string | undefined {
-  const content = asRecord(data.content);
-  return typeof content.url === 'string' ? content.url : undefined;
+/** Provider payloads and exceptions are untrusted; never return them wholesale. */
+function projectTaskMetadata(
+  value: unknown,
+  input: MemphisMiniMaxH3Input,
+  apiKey: string,
+): TaskMetadata | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const data = value as Record<string, unknown>;
+  const taskId = data.task_id ?? (input.action === 'query' ? input.task_id : undefined);
+  if (typeof taskId !== 'string' || !taskId || taskId.length > 512) return undefined;
+  const status = data.status;
+  if (status !== undefined && (typeof status !== 'string' || status.length > 128)) return undefined;
+  let url: string | undefined;
+  if (data.content !== undefined) {
+    if (!data.content || typeof data.content !== 'object' || Array.isArray(data.content))
+      return undefined;
+    const candidate = (data.content as Record<string, unknown>).url;
+    if (candidate !== undefined) {
+      if (typeof candidate !== 'string' || candidate.length > 8192) return undefined;
+      try {
+        const parsed = new URL(candidate);
+        if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return undefined;
+      } catch {
+        return undefined;
+      }
+      url = candidate;
+    }
+  }
+  const projected: TaskMetadata = {
+    task_id: taskId,
+    ...(status === undefined ? {} : { status }),
+    ...(url === undefined ? {} : { content: { url } }),
+  };
+  // Reject a credential echo even in an otherwise allowed field. These checks
+  // cover common encodings/high-confidence fragments, not arbitrary transforms.
+  const variants = [
+    apiKey,
+    JSON.stringify(apiKey).slice(1, -1),
+    encodeURIComponent(apiKey),
+    Buffer.from(apiKey).toString('base64'),
+    Buffer.from(apiKey).toString('hex'),
+    createHash('sha256').update(apiKey).digest('hex'),
+  ];
+  if (apiKey.length >= 32) variants.push(apiKey.slice(0, 16), apiKey.slice(-16));
+  const serialized = JSON.stringify(projected);
+  if (variants.some((variant) => variant && serialized.includes(variant))) return undefined;
+  return projected;
 }
 
 function resolveVideoApiKey(rawEnv: NodeJS.ProcessEnv): string | undefined {
@@ -81,8 +120,12 @@ export async function runMemphisMiniMaxH3(
   }
 
   const controller = new AbortController();
-  const timeoutMs = Number(rawEnv.MINIMAX_H3_REQUEST_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
-  const timer = setTimeout(() => controller.abort(), Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS);
+  const configuredTimeout = Number(rawEnv.MINIMAX_H3_REQUEST_TIMEOUT_MS);
+  const timeoutMs =
+    Number.isFinite(configuredTimeout) && configuredTimeout > 0
+      ? Math.min(configuredTimeout, 120_000)
+      : DEFAULT_TIMEOUT_MS;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const request =
@@ -108,30 +151,45 @@ export async function runMemphisMiniMaxH3(
       ...request.init,
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       signal: controller.signal,
+      redirect: 'error',
     });
-    const body = await response.text();
-    if (!response.ok) return { ok: false, action: input.action, error: errorText(response.status, body) };
-
-    let data: Record<string, unknown>;
-    try {
-      data = asRecord(JSON.parse(body));
-    } catch {
-      return { ok: false, action: input.action, error: 'MiniMax-H3 returned invalid JSON.' };
+    if (!response.ok) {
+      const status =
+        Number.isInteger(response.status) && response.status >= 100 && response.status <= 599
+          ? response.status
+          : 502;
+      // Do not read the error body into a public message (it can echo auth).
+      try {
+        await response.body?.cancel();
+      } catch {
+        /* body cleanup is private */
+      }
+      return { ok: false, action: input.action, error: `MINIMAX_H3_HTTP_${status}` };
     }
-    const taskId = typeof data.task_id === 'string' ? data.task_id : input.action === 'query' ? input.task_id : undefined;
+    let data: TaskMetadata | undefined;
+    try {
+      data = projectTaskMetadata(await response.json(), input, apiKey);
+    } catch {
+      return { ok: false, action: input.action, error: 'MINIMAX_H3_INVALID_RESPONSE' };
+    }
+    if (!data) return { ok: false, action: input.action, error: 'MINIMAX_H3_INVALID_RESPONSE' };
     return {
       ok: true,
       action: input.action,
-      task_id: taskId,
-      status: typeof data.status === 'string' ? data.status : undefined,
-      url: outputUrl(data),
+      task_id: data.task_id,
+      status: data.status,
+      url: data.content?.url,
       data,
     };
   } catch (error) {
-    const message = error instanceof Error && error.name === 'AbortError'
-      ? `MiniMax-H3 request timed out after ${timeoutMs}ms.`
-      : `MiniMax-H3 request failed: ${error instanceof Error ? error.message : String(error)}`;
-    return { ok: false, action: input.action, error: message };
+    return {
+      ok: false,
+      action: input.action,
+      error:
+        error instanceof Error && error.name === 'AbortError'
+          ? 'MINIMAX_H3_TIMEOUT'
+          : 'MINIMAX_H3_REQUEST_FAILED',
+    };
   } finally {
     clearTimeout(timer);
   }

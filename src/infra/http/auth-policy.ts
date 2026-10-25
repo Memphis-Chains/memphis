@@ -6,6 +6,9 @@ export type EndpointAuthPolicy = {
 
 export const apiAuthPolicy: EndpointAuthPolicy[] = [
   { method: 'GET', path: '/dashboard', requiresAuth: false },
+  // Static operator surface: it ships no data of its own and asks the
+  // browser for the API token, which then gates every endpoint it calls.
+  { method: 'GET', path: '/portal', requiresAuth: false },
   { method: 'GET', path: '/health', requiresAuth: false },
   { method: 'GET', path: '/api/status', requiresAuth: false },
   { method: 'GET', path: '/v1/providers/health', requiresAuth: false },

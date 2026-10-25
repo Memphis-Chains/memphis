@@ -15,7 +15,9 @@ import { runAgentLoop } from '../../src/gateway/agent-runtime.js';
 import type { LlmClient, ToolExecutor } from '../../src/gateway/chat-types.js';
 import type { ChatToolCall, ChatToolDefinition } from '../../src/providers/index.js';
 
-function makeLlm(turns: Array<{ content: string; tool_calls?: ChatToolCall[] }>): LlmClient {
+function makeLlm(
+  turns: Array<{ content: string; tool_calls?: ChatToolCall[]; reasoning_content?: string }>,
+): LlmClient {
   let i = 0;
   return {
     async complete() {
@@ -190,5 +192,44 @@ describe('sprint 1.3 — honesty guard injection', () => {
     expect(systemHintIdx).toBeGreaterThan(-1);
     expect(toolMsgIdx).toBeGreaterThan(-1);
     expect(systemHintIdx).toBeLessThan(toolMsgIdx);
+  });
+
+  it('preserves opaque MiniMax reasoning state across a tool round only', async () => {
+    const toolCall: ChatToolCall = { id: 'c-reason', name: 'memphis_journal', arguments: {} };
+    const seenMessages: Parameters<LlmClient['complete']>[0]['messages'][] = [];
+    let turn = 0;
+    const llm: LlmClient = {
+      async complete(input) {
+        seenMessages.push(input.messages);
+        turn += 1;
+        return turn === 1
+          ? {
+              content: '',
+              tool_calls: [toolCall],
+              reasoning_content: 'private interleaved state',
+            }
+          : { content: 'Saved.' };
+      },
+    };
+
+    await runAgentLoop({
+      systemPrompt: 'system',
+      messages: [{ role: 'user', content: 'remember this' }],
+      llm,
+      toolExecutor: makeExecutor({
+        memphis_journal: () => JSON.stringify({ ok: true }),
+      }),
+    });
+
+    expect(seenMessages).toHaveLength(2);
+    expect(seenMessages[1]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'assistant',
+          reasoning_content: 'private interleaved state',
+          tool_calls: [toolCall],
+        }),
+      ]),
+    );
   });
 });

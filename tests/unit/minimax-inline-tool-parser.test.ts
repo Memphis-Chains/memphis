@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { MinimaxProvider } from '../../src/providers/index.js';
+import {
+  MinimaxProvider,
+  normalizeMinimaxModelId,
+  resolveMinimaxM31GenerationConfig,
+} from '../../src/providers/index.js';
 
 /**
  * MiniMax M2.7 sometimes emits agent-mode XML in `content` instead of
@@ -172,5 +176,107 @@ describe('MinimaxProvider — system-role coalescing', () => {
     globalThis.fetch = originalFetch;
 
     expect(captured!.messages.filter((m) => m.role === 'system')).toHaveLength(0);
+  });
+});
+
+describe('MinimaxProvider — MiniMax-M3.1-Flash GA contract', () => {
+  const originalFetch = globalThis.fetch;
+
+  it('normalizes the retired Preview alias to the GA model id', () => {
+    expect(normalizeMinimaxModelId('MiniMax-M3.1-Flash-Preview')).toBe('MiniMax-M3.1-Flash');
+    expect(normalizeMinimaxModelId('MiniMax-M3.1-Flash')).toBe('MiniMax-M3.1-Flash');
+  });
+
+  it('uses adaptive thinking and the modern completion-token field', async () => {
+    let captured: Record<string, unknown> | undefined;
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      captured = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: 'done',
+                reasoning_content: 'private reasoning state',
+              },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }) as unknown as typeof fetch;
+
+    const provider = new MinimaxProvider({
+      apiKey: 'test',
+      model: 'MiniMax-M3.1-Flash-Preview',
+      rawEnv: {
+        MINIMAX_REASONING_EFFORT: 'xhigh',
+        MINIMAX_MAX_COMPLETION_TOKENS: '131072',
+      },
+    });
+    const response = await provider.chat([{ role: 'user', content: 'solve this' }], {
+      temperature: 0.2,
+      maxTokens: 4096,
+    });
+    globalThis.fetch = originalFetch;
+
+    expect(captured).toMatchObject({
+      model: 'MiniMax-M3.1-Flash',
+      max_completion_tokens: 131072,
+      reasoning_effort: 'xhigh',
+      reasoning_split: true,
+      thinking: { type: 'adaptive' },
+    });
+    expect(captured).not.toHaveProperty('temperature');
+    expect(captured).not.toHaveProperty('max_tokens');
+    expect(response.reasoning_content).toBe('private reasoning state');
+  });
+
+  it('replays reasoning_content with the assistant tool-call message', async () => {
+    let captured: { messages: Array<Record<string, unknown>> } | undefined;
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      captured = JSON.parse((init as RequestInit).body as string) as {
+        messages: Array<Record<string, unknown>>;
+      };
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    const provider = new MinimaxProvider({
+      apiKey: 'test',
+      model: 'MiniMax-M3.1-Flash',
+      rawEnv: { MINIMAX_MAX_COMPLETION_TOKENS: '131072' },
+    });
+    await provider.chat([
+      { role: 'user', content: 'inspect it' },
+      {
+        role: 'assistant',
+        content: '',
+        reasoning_content: 'tool-selection state',
+        tool_calls: [{ id: 'call_1', name: 'memphis_code_read', arguments: { path: 'README.md' } }],
+      },
+      { role: 'tool', tool_call_id: 'call_1', content: 'file contents' },
+    ]);
+    globalThis.fetch = originalFetch;
+
+    const assistant = captured!.messages.find((message) => message.role === 'assistant');
+    expect(assistant).toMatchObject({
+      content: null,
+      reasoning_content: 'tool-selection state',
+    });
+    expect(assistant?.tool_calls).toBeDefined();
+  });
+
+  it('defaults invalid reasoning effort to max and clamps the model ceiling', () => {
+    expect(
+      resolveMinimaxM31GenerationConfig(undefined, {
+        MINIMAX_REASONING_EFFORT: 'none',
+        MINIMAX_MAX_COMPLETION_TOKENS: '999999',
+      }),
+    ).toEqual({ maxCompletionTokens: 524288, reasoningEffort: 'max' });
   });
 });

@@ -130,7 +130,8 @@ describe('rust vault adapter status', () => {
       vaultDecrypt(encrypted, { ...rawEnv, MEMPHIS_VAULT_STATE_PATH: join(dir, 'missing.json') }),
     ).toThrow();
     expect(vaultDecrypt(encrypted, rawEnv)).toBe('hello');
-  });
+    // Failure invalidation deliberately requires fresh native KDFs on retry.
+  }, 90000);
 
   it('keeps compatibility with historical camelCase vault bridge exports', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mv4-vault-adapter-camel-'));

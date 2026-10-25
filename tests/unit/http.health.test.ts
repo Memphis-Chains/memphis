@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -236,5 +236,103 @@ describe('http health payload', () => {
         }),
       }),
     ]);
+  });
+
+  // ─── embed_index_dimension ──────────────────────────────────────────
+  // The dim-mismatch failure mode is silent: `OllamaProvider` pads or
+  // truncates the provider vector to the configured dim without warning,
+  // and `cosine_similarity` returns 0.0 for unequal lengths. A stale
+  // RUST_EMBED_DIM therefore yields a structurally valid index that
+  // scores every query at zero, with nothing in the logs saying why.
+
+  describe('embed_index_dimension', () => {
+    function writeIndex(indexPath: string, contents: string): void {
+      mkdirSync(dirname(indexPath), { recursive: true });
+      writeFileSync(indexPath, contents, 'utf8');
+    }
+
+    async function dimensionFor(indexPath: string, dim: string | undefined) {
+      const dataDir = mkdtempSync(join(tmpdir(), 'memphis-health-dim-data-'));
+      const envFile = join(dataDir, '.env');
+      const dbPath = join(dataDir, 'memphis.db');
+      writeFileSync(envFile, 'NODE_ENV=test\n', 'utf8');
+      const client = createSqliteClient(`file:${dbPath}`);
+      runMigrations(client);
+      client.close();
+
+      const payload = await buildHealthPayload(makeConfig(`file:${dbPath}`), {
+        MEMPHIS_DATA_DIR: dataDir,
+        MEMPHIS_ENV_FILE: envFile,
+        RUST_CHAIN_ENABLED: 'false',
+        RUST_EMBED_MODE: 'local',
+        RUST_EMBED_DIM: dim,
+        RUST_EMBED_PERSIST_PATH: indexPath,
+      });
+      return payload.checks.embed_index_dimension;
+    }
+
+    it('passes when the configured dim matches the index', async () => {
+      const indexPath = join(
+        mkdtempSync(join(tmpdir(), 'memphis-health-dim-ok-')),
+        'index-v1.json',
+      );
+      writeIndex(indexPath, JSON.stringify({ version: 1, dim: 768, docs: [] }));
+
+      const check = await dimensionFor(indexPath, '768');
+      expect(check.status).toBe('ok');
+      expect(check.message).toContain('768');
+    });
+
+    it('fails when the configured dim disagrees with the index', async () => {
+      // The exact shape hit during this audit: config said 32 while the
+      // index had been written by a real 768-dim provider.
+      const indexPath = join(
+        mkdtempSync(join(tmpdir(), 'memphis-health-dim-bad-')),
+        'index-v1.json',
+      );
+      writeIndex(indexPath, JSON.stringify({ version: 1, dim: 768, docs: [] }));
+
+      const check = await dimensionFor(indexPath, '32');
+      expect(check.status).toBe('fail');
+      expect(check.message).toContain('dim mismatch');
+      expect(check.message).toContain('config=32');
+      expect(check.message).toContain('index=768');
+      expect(check.fixAction).toContain('RUST_EMBED_DIM=768');
+      expect(check.fixAction).toContain('embed reindex');
+    });
+
+    it('treats a missing index as a clean state, not a failure', async () => {
+      const indexPath = join(
+        mkdtempSync(join(tmpdir(), 'memphis-health-dim-missing-')),
+        'index-v1.json',
+      );
+
+      const check = await dimensionFor(indexPath, '768');
+      expect(check.status).toBe('ok');
+      expect(check.message).toContain('no persisted index');
+    });
+
+    it('does not mislabel a corrupt index as a dimension mismatch', async () => {
+      const indexPath = join(
+        mkdtempSync(join(tmpdir(), 'memphis-health-dim-corrupt-')),
+        'index-v1.json',
+      );
+      writeIndex(indexPath, '{not json');
+
+      const check = await dimensionFor(indexPath, '768');
+      expect(check.status).toBe('ok');
+      expect(check.message).toContain('not readable');
+    });
+
+    it('defaults the configured dim to 32 when unset or unusable', async () => {
+      const indexPath = join(
+        mkdtempSync(join(tmpdir(), 'memphis-health-dim-default-')),
+        'index-v1.json',
+      );
+      writeIndex(indexPath, JSON.stringify({ version: 1, dim: 32, docs: [] }));
+
+      expect((await dimensionFor(indexPath, undefined)).status).toBe('ok');
+      expect((await dimensionFor(indexPath, 'not-a-number')).status).toBe('ok');
+    });
   });
 });

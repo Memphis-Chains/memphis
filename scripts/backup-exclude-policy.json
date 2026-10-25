@@ -22,6 +22,8 @@
     "--exclude=*/.github-pat*",
     "--exclude=.github-pat*",
     "--exclude=*/*.lock",
+    "--exclude=*.lock",
+    "--exclude=*.transactions",
     "--exclude=*/memphis.pid",
     "--exclude=memphis.pid",
     "--exclude=*/boot-failures.json*",

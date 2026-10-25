@@ -4,13 +4,15 @@ use memphis_case_index::CaseIndex;
 use memphis_core::case_entry::CaseQuery;
 use memphis_embed::{EmbedPersistenceLoadState, EmbedPipeline};
 use memphis_vault::{
-    state::{load_persisted_state, VaultStateError},
     entries::{load_entries as load_vault_entries, select_entries, EntryError, StoredEntry},
+    state::{decode_persisted_state, VaultStateError},
     Vault,
 };
 use rusqlite::{params, Connection};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use thiserror::Error;
+use zeroize::Zeroizing;
 
 use crate::config::{format_path, OperatorConfig};
 
@@ -160,11 +162,21 @@ pub struct VaultEntryMetadata {
     pub id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Serialize)]
 pub struct VaultSecretView {
     pub key: String,
     pub created_at: String,
     pub plaintext: String,
+}
+
+// Debug is a diagnostic projection; serialized credential contracts stay unchanged.
+impl std::fmt::Debug for VaultSecretView {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VaultSecretView")
+            .field("key", &self.key)
+            .field("created_at", &self.created_at)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -488,26 +500,20 @@ impl OperatorRuntime {
     }
 
     pub fn read_vault_secret(&self, key: &str) -> Result<VaultSecretView, OperatorError> {
-        let _snapshot = vault_snapshot::VaultReadGuard::acquire(
-            &self.config,
-            &resolve_vault_state_path(&self.config),
-        )?;
-        let vault = load_vault(&self.config, false)?
-            .expect("strict vault load should return a vault instance");
-
-        let entries = load_vault_entries(&self.config.vault_entries_path)?;
-        let entry = select_entries(entries, Some(key), true)
-            .pop()
-            .ok_or(EntryError::NotFound)?;
-
-        let key = entry.key.clone();
-        let created_at = entry.created_at.clone().unwrap_or_default();
-        let plaintext = read_vault_entry_plaintext(&vault, entry)?;
-
-        Ok(VaultSecretView {
-            key,
-            created_at,
-            plaintext,
+        with_vault_read_snapshot(&self.config, false, |vault| {
+            let vault = vault.expect("strict vault load should return a vault instance");
+            let entries = load_vault_entries(&self.config.vault_entries_path)?;
+            let entry = select_entries(entries, Some(key), true)
+                .pop()
+                .ok_or(EntryError::NotFound)?;
+            let key = entry.key.clone();
+            let created_at = entry.created_at.clone().unwrap_or_default();
+            let plaintext = read_vault_entry_plaintext(&vault, entry)?;
+            Ok(VaultSecretView {
+                key,
+                created_at,
+                plaintext,
+            })
         })
     }
 
@@ -547,18 +553,24 @@ impl OperatorRuntime {
 
         // Fingerprint before touching the index: stat is cheap, the read
         // is 107 MB.
-        let fingerprint = std::fs::metadata(&persistence.index_path)
+        let sibling = persistence.index_path.with_extension("ndjson");
+        let active_path = if sibling.exists() {
+            &sibling
+        } else {
+            &persistence.index_path
+        };
+        let fingerprint = std::fs::metadata(active_path)
             .map(|meta| {
                 let mtime = meta
                     .modified()
                     .ok()
                     .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs())
+                    .map(|d| d.as_nanos())
                     .unwrap_or(0);
                 format!("{}:{mtime}", meta.len())
             })
             .unwrap_or_else(|_| "missing".to_string());
-        let cache_key = format!("{}|{fingerprint}", persistence.index_path.display());
+        let cache_key = format!("{}|{fingerprint}", active_path.display());
 
         {
             let guard = cache.lock().unwrap_or_else(|e| e.into_inner());
@@ -567,16 +579,19 @@ impl OperatorRuntime {
             }
         }
 
-        let pipeline = EmbedPipeline::with_persistence(
-            self.config.embed_config.clone(),
-            persistence,
-        )
-        .map_err(|error| OperatorError::Embed(error.to_string()))?;
-        let stats = (pipeline.len(), pipeline.persistence_load_state());
-        cache
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(cache_key, stats.clone());
+        let metadata = memphis_embed::metadata::inspect_index(&persistence.index_path);
+        let state = match metadata.state.as_str() {
+            "loaded" => memphis_embed::EmbedPersistenceLoadState::Loaded,
+            "empty" => memphis_embed::EmbedPersistenceLoadState::Empty,
+            "missing" => memphis_embed::EmbedPersistenceLoadState::Missing,
+            _ => memphis_embed::EmbedPersistenceLoadState::Corrupt,
+        };
+        let stats = (metadata.documents, state);
+        let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.len() >= 16 {
+            guard.clear();
+        }
+        guard.insert(cache_key, stats.clone());
         Ok(stats)
     }
 
@@ -1016,8 +1031,10 @@ fn open_sqlite(path: &Path) -> Result<Connection, OperatorError> {
     // rust side opens the same memphis.db the node writers use. Without this
     // PRAGMA, any write transaction holding a lock would surface as a hard
     // "database is locked" instead of waiting up to 5s like the TS adapter.
-    conn.pragma_update(None, "busy_timeout", 5000i64).map_err(|e| OperatorError::Sqlite(e.to_string()))?;
-    conn.pragma_update(None, "journal_mode", "WAL").map_err(|e| OperatorError::Sqlite(e.to_string()))?;
+    conn.pragma_update(None, "busy_timeout", 5000i64)
+        .map_err(|e| OperatorError::Sqlite(e.to_string()))?;
+    conn.pragma_update(None, "journal_mode", "WAL")
+        .map_err(|e| OperatorError::Sqlite(e.to_string()))?;
     Ok(conn)
 }
 
@@ -1121,6 +1138,19 @@ fn emit_fallback_notice_once(message: &str) {
     }
 }
 
+struct CachedVault {
+    fingerprint: [u8; 32],
+    vault: Vault,
+}
+
+// Only the current handle survives. Replaced/error generations drop their
+// Vault immediately, which zeroizes its master key.
+type VaultDerivationCache = std::sync::Mutex<Option<CachedVault>>;
+
+// Readers and explicit invalidation must address the same cache instance.
+static VAULT_DERIVATION_CACHE: std::sync::OnceLock<VaultDerivationCache> =
+    std::sync::OnceLock::new();
+
 /// Decrypted vault handle, memoised on the bytes it was derived from.
 ///
 /// 2026-09-30: `load_vault` runs `scrypt(N=16384, r=8, p=1)` via
@@ -1142,50 +1172,112 @@ fn emit_fallback_notice_once(message: &str) {
 ///
 /// Measured after: `provider_statuses` 10.6 s -> ~3.5 s, `--check-only`
 /// 15.6 s -> ~4.5 s.
+struct VaultInputs {
+    fingerprint: [u8; 32],
+    state: Zeroizing<Vec<u8>>,
+    pepper: Zeroizing<String>,
+}
+
+fn read_vault_inputs(
+    config: &OperatorConfig,
+    optional: bool,
+) -> Result<Option<VaultInputs>, OperatorError> {
+    let state_path = resolve_vault_state_path(config);
+    let state = match fs::read(&state_path) {
+        Ok(bytes) => Zeroizing::new(bytes),
+        Err(error) => {
+            clear_vault_derivation_cache();
+            if error.kind() == std::io::ErrorKind::NotFound {
+                return if optional && !config.vault_entries_path.exists() {
+                    Ok(None)
+                } else {
+                    Err(VaultStateError::Missing.into())
+                };
+            }
+            return Err(VaultStateError::Unreadable.into());
+        }
+    };
+    let pepper = Zeroizing::new(std::env::var("MEMPHIS_VAULT_PEPPER").unwrap_or_default());
+    let mut identity = Sha256::new();
+    // Internal only: this digest includes credential material. Never log it.
+    for bytes in [
+        state_path.as_os_str().as_encoded_bytes(),
+        pepper.as_bytes(),
+        &config.config_generation.to_le_bytes(),
+        state.as_slice(),
+    ] {
+        identity.update((bytes.len() as u64).to_le_bytes());
+        identity.update(bytes);
+    }
+    Ok(Some(VaultInputs {
+        fingerprint: identity.finalize().into(),
+        state,
+        pepper,
+    }))
+}
+
+fn acquire_vault_snapshot(
+    config: &OperatorConfig,
+) -> Result<vault_snapshot::VaultReadGuard, OperatorError> {
+    vault_snapshot::VaultReadGuard::acquire(config, &resolve_vault_state_path(config))
+        .inspect_err(|_| clear_vault_derivation_cache())
+}
+
+/// Capture inputs under the journal locks, derive outside them, then validate
+/// again before selecting/decrypting an entry. An expensive KDF must not hold
+/// every other process's configuration lock or publish an old key as new state.
+fn with_vault_read_snapshot<T>(
+    config: &OperatorConfig,
+    optional: bool,
+    read: impl FnOnce(Option<Vault>) -> Result<T, OperatorError>,
+) -> Result<T, OperatorError> {
+    let cache = VAULT_DERIVATION_CACHE.get_or_init(Default::default);
+    for _ in 0..3 {
+        let snapshot = acquire_vault_snapshot(config)?;
+        let Some(inputs) = read_vault_inputs(config, optional)? else {
+            return read(None);
+        };
+        {
+            let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(hit) = guard
+                .as_ref()
+                .filter(|hit| hit.fingerprint == inputs.fingerprint)
+            {
+                CACHE_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let vault = hit.vault.clone();
+                drop(guard);
+                return read(Some(vault));
+            }
+            *guard = None;
+        }
+        drop(snapshot);
+        DERIVATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let loaded = decode_persisted_state(&inputs.state, &inputs.pepper);
+        let _snapshot = acquire_vault_snapshot(config)?;
+        let Some(current) = read_vault_inputs(config, optional)? else {
+            return read(None);
+        };
+        if inputs.fingerprint != current.fingerprint {
+            continue;
+        }
+        let vault = loaded?.vault;
+        *cache.lock().unwrap_or_else(|e| e.into_inner()) = Some(CachedVault {
+            fingerprint: inputs.fingerprint,
+            vault: vault.clone(),
+        });
+        return read(Some(vault));
+    }
+    Err(OperatorError::Vault(
+        "vault state changed during loading; retry operation".into(),
+    ))
+}
+
+#[cfg(test)]
 fn load_vault_cached(
     config: &OperatorConfig,
     optional: bool,
 ) -> Result<Option<Vault>, OperatorError> {
-    use std::collections::HashMap;
-    use std::sync::Mutex;
-    use std::sync::OnceLock;
-
-    static CACHE: OnceLock<Mutex<HashMap<String, Option<Vault>>>> = OnceLock::new();
-    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-
-    let state_path = resolve_vault_state_path(config);
-    if optional && !state_path.exists() {
-        return load_vault(config, optional);
-    }
-
-    // Fingerprint: the state file's bytes plus the pepper that unlocks it.
-    // Both are required - the bytes alone are not enough (a wrong pepper
-    // derives a different key) and the pepper alone is not enough (a
-    // rotation changes the bytes). The pepper is hashed, not truncated to
-    // its length: two different peppers of equal length must not collide
-    // onto the same cache entry.
-    let state_bytes = std::fs::read(&state_path).unwrap_or_default();
-    let pepper = std::env::var("MEMPHIS_VAULT_PEPPER").unwrap_or_default();
-    let fingerprint = format!(
-        "{}|{}|{}",
-        state_path.display(),
-        hex_digest(&state_bytes),
-        hex_digest(pepper.as_bytes()),
-    );
-
-    {
-        let guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(hit) = guard.get(&fingerprint) {
-            CACHE_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            return Ok(hit.clone());
-        }
-    }
-
-    DERIVATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let decrypted = load_vault(config, optional)?;
-    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-    guard.insert(fingerprint, decrypted.clone());
-    Ok(decrypted)
+    with_vault_read_snapshot(config, optional, Ok)
 }
 
 /// How many times the scrypt KDF actually ran, and how many times the
@@ -1214,35 +1306,8 @@ pub(crate) fn vault_derivation_count() -> (usize, usize) {
 // Used only by `provider::tests`, which live in the same crate.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn clear_vault_derivation_cache() {
-    use std::sync::Mutex;
-    use std::sync::OnceLock;
-    static CACHE: OnceLock<Mutex<std::collections::HashMap<String, Option<Vault>>>> =
-        OnceLock::new();
-    if let Some(cache) = CACHE.get() {
-        cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
-    }
-}
-
-fn hex_digest(bytes: &[u8]) -> String {
-    // Short, dependency-free fingerprint. Not a security boundary: it only
-    // has to distinguish "the state file changed" from "it did not".
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in bytes {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    format!("{hash:016x}-{}", bytes.len())
-}
-
-fn load_vault(config: &OperatorConfig, optional: bool) -> Result<Option<Vault>, OperatorError> {
-    let state_path = resolve_vault_state_path(config);
-    let pepper = std::env::var("MEMPHIS_VAULT_PEPPER").unwrap_or_default();
-    match load_persisted_state(&state_path, &pepper) {
-        Ok(state) => Ok(Some(state.vault)),
-        Err(VaultStateError::Missing) if optional && !config.vault_entries_path.exists() => {
-            Ok(None)
-        }
-        Err(error) => Err(error.into()),
+    if let Some(cache) = VAULT_DERIVATION_CACHE.get() {
+        *cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 }
 
@@ -1254,23 +1319,20 @@ pub(crate) fn try_read_vault_secret_plaintext(
     config: &OperatorConfig,
     key: &str,
 ) -> Result<Option<String>, OperatorError> {
-    let _snapshot =
-        vault_snapshot::VaultReadGuard::acquire(config, &resolve_vault_state_path(config))?;
-    let Some(vault) = load_vault_cached(config, true)? else {
-        return Ok(None);
-    };
-
-    let entries = load_vault_entries(&config.vault_entries_path)?;
-    let Some(entry) = select_entries(entries, Some(key), true).pop() else {
-        return Ok(None);
-    };
-
-    let plaintext = read_vault_entry_plaintext(&vault, entry)?;
-    if plaintext.trim().is_empty() {
-        return Ok(None);
-    }
-
-    Ok(Some(plaintext))
+    with_vault_read_snapshot(config, true, |vault| {
+        let Some(vault) = vault else {
+            return Ok(None);
+        };
+        let entries = load_vault_entries(&config.vault_entries_path)?;
+        let Some(entry) = select_entries(entries, Some(key), true).pop() else {
+            return Ok(None);
+        };
+        let plaintext = read_vault_entry_plaintext(&vault, entry)?;
+        if plaintext.trim().is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(plaintext))
+    })
 }
 
 #[cfg(test)]
@@ -1342,17 +1404,17 @@ mod tests {
             ),
         ];
         let config = crate::OperatorConfig::from_iter(env);
-        assert!(matches!(super::load_vault(&config, true), Ok(None)));
+        assert!(matches!(super::load_vault_cached(&config, true), Ok(None)));
         fs::write(&entries, "[]").unwrap();
         assert!(matches!(
-            super::load_vault(&config, true),
+            super::load_vault_cached(&config, true),
             Err(super::OperatorError::VaultState(
                 super::VaultStateError::Missing
             ))
         ));
         fs::write(&state, "{synthetic-private-sentinel").unwrap();
         assert!(matches!(
-            super::load_vault(&config, true),
+            super::load_vault_cached(&config, true),
             Err(super::OperatorError::VaultState(
                 super::VaultStateError::Malformed
             ))
@@ -1587,5 +1649,21 @@ mod tests {
         assert_eq!(result.count, 1);
         assert_eq!(result.exact_hits[0].chain, "journal");
         assert!(result.exact_hits[0].snippet.contains("precise"));
+    }
+    #[test]
+    fn credential_debug_vault_secret_view_omits_plaintext() {
+        let secret = "synthetic-native-private-debug-material";
+        let value = super::VaultSecretView {
+            key: "first".into(),
+            created_at: "2026-10-18T00:00:00Z".into(),
+            plaintext: secret.into(),
+        };
+        for debug in [format!("{value:?}"), format!("{value:#?}")] {
+            assert!(!debug.contains(secret));
+            assert!(!debug.contains(&secret[..16]));
+            assert!(!debug.contains(&secret[secret.len() - 16..]));
+        }
+        // This remains an explicit authorized export type, not a diagnostic DTO.
+        assert_eq!(serde_json::to_value(&value).unwrap()["plaintext"], secret);
     }
 }

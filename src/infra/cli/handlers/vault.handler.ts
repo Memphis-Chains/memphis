@@ -764,17 +764,19 @@ async function handleVaultMasterKeyRotate(context: CliContext): Promise<boolean>
       json,
     );
     return true;
-  } catch (err) {
+  } catch {
     writeSecurityAudit({
       action: 'vault.master-key-rotate',
       status: 'error',
       details: {
         surface: 'cli',
         command: 'vault master-key-rotate',
-        reason: err instanceof Error ? err.message : 'unknown_error',
+        reason: 'rotation_not_completed',
       },
     });
-    throw err;
+    throw new Error(
+      'VAULT_MASTER_KEY_ROTATION_FAILED: rotation did not complete; retain the private transaction journal and run memphis doctor before retrying.',
+    );
   }
 }
 

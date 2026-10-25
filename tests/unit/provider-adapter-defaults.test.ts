@@ -33,4 +33,21 @@ describe('providerToLlmClient', () => {
     expect(options.temperature).toBeUndefined();
     expect(options.maxTokens).toBeUndefined();
   });
+
+  it('keeps MiniMax reasoning state opaque while forwarding it to the agent loop', async () => {
+    const chat = vi.fn(async () => ({
+      content: '',
+      tool_calls: [{ id: 'call_1', name: 'memphis_code_read', arguments: { path: 'README.md' } }],
+      reasoning_content: 'private interleaved state',
+    }));
+    const llm = providerToLlmClient({ chat } as never);
+
+    const result = await llm.complete({
+      system: 'system',
+      messages: [{ role: 'user', content: 'inspect' }],
+    });
+
+    expect(result.reasoning_content).toBe('private interleaved state');
+    expect(result.content).toBe('');
+  });
 });

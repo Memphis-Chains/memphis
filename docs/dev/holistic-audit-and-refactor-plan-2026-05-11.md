@@ -15,7 +15,7 @@
 - **Provider cascade**: fallbackProvider=ollama (was local-fallback stub), per-model max_tokens clamp
 - **Training stack** (today): Python 3.11 venv + torch 2.3.1+cu118 + transformers 4.43.4 + peft + accelerate, Kartograf v4 corpus (5168 train + 573 eval + 5133 pairs), env-driven DeBERTa-v3-large override, scheduled overnight training 23:00 CEST
 
-**Today's vault incident** (recovery story documented in `docs/roadmap/2026-05-11-post-autonomy-todo-and-gap.md`): vault re-init z fresh passphrase + Q&A. Operator passphrase hash matches `mE/\/\phi$`.
+**Today's vault incident** (recovery story documented in `docs/roadmap/2026-05-11-post-autonomy-todo-and-gap.md`): vault re-init z fresh passphrase + Q&A. Credential material omitted; its historical exposure and current validity require separate verification.
 
 ---
 

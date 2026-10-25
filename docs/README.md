@@ -51,6 +51,7 @@ docs so the claims stay auditable:
 
 ## Current roadmap
 
+- **[Memphis repair and refactor sprints, 2026-10-12](plans/2026-10-12-memphis-refactor/README.md)** — current operator-requested Omarchy recovery baseline, credential/policy audit, architecture, S0–S9 backlog, validation and recovery runbook
 - **[ROADMAP-CURRENT.md](ROADMAP-CURRENT.md)** — the live roadmap
 - **[../docs/roadmap/current-priorities.md](roadmap/current-priorities.md)** — this week's auto-generated priorities, regenerated every Tuesday from the real state of issues, PRs, branches and CI
 

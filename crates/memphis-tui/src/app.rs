@@ -582,6 +582,10 @@ pub struct AppState {
     pub provider_statuses: Vec<ProviderStatus>,
     last_token_usage: Option<TokenUsageSummary>,
     live_token_usage: Option<TokenUsageSummary>,
+    /// Account-granted context window observed on a completed turn. Lower
+    /// than the declared model capability, so pressure reads against the real
+    /// ceiling instead of the advertised one.
+    account_context_window: Option<u32>,
     live_output_chars: Option<usize>,
     /// Trailing `\n` / `\r` run held from the previous streamed chunk,
     /// waiting to be re-emitted once the next chunk confirms it was a
@@ -612,6 +616,7 @@ impl AppState {
             provider_statuses: Vec::new(),
             last_token_usage: None,
             live_token_usage: None,
+            account_context_window: None,
             live_output_chars: None,
             stream_trailing_newlines: String::new(),
             last_telegram_send: None,
@@ -1593,12 +1598,39 @@ impl AppState {
                 // signal instead of firing on every chunk boundary.
                 self.stream_trailing_newlines.clear();
                 self.chat_session_id = exchange.session_id;
+                // Max presets carry reasoning effort. Keep them across turns
+                // even though the transport reports the canonical model.
+                let selected_model = self.selected_model_name();
+                let keep_reasoning_preset = exchange.provider == "openai"
+                    && self.selected_provider_name() == "openai"
+                    && matches!(
+                        (exchange.model.as_str(), selected_model.as_str()),
+                        (
+                            "gpt-6-astra",
+                            "astra-gtp6-max" | "astra-gpt6-max" | "gpt-6-astra-max"
+                        ) | (
+                            "gpt-5.6-sol",
+                            "gpt-5.6-sol-max" | "gpt-5.6-Sol Max"
+                        )
+                    );
                 self.chat_provider = Some(exchange.provider.clone());
-                self.chat_model = Some(exchange.model.clone());
+                if keep_reasoning_preset {
+                    self.chat_model = Some(selected_model);
+                } else {
+                    self.chat_model = Some(exchange.model.clone());
+                }
                 self.last_token_usage = exchange
                     .token_usage
                     .clone()
                     .or_else(|| self.live_token_usage.clone());
+                // Only ever narrow: a provider may not widen the model's limit.
+                if let Some(account_window) = exchange.effective_context_window {
+                    let account_window = account_window.min(u64::from(u32::MAX)) as u32;
+                    self.account_context_window = Some(match self.account_context_window {
+                        Some(previous) => previous.min(account_window),
+                        None => account_window,
+                    });
+                }
                 self.live_token_usage = None;
                 self.live_output_chars = None;
                 if exchange.degraded {
@@ -3161,20 +3193,103 @@ impl AppState {
             return;
         }
 
-        let rows = self
-            .provider_statuses
-            .iter()
-            .flat_map(|provider| {
-                let mut lines = vec![info(format!("Provider: {}", provider.name))];
-                lines.extend(
-                    provider
-                        .models
-                        .iter()
-                        .map(|model| plain(format!("- {model}"))),
-                );
-                lines
-            })
-            .collect::<Vec<_>>();
+        let active_provider = self.selected_provider_name();
+        let active_model = self.selected_model_name();
+        let mut providers = self.provider_statuses.iter().collect::<Vec<_>>();
+        providers.sort_by_key(|provider| {
+            if provider.name.eq_ignore_ascii_case(&active_provider) {
+                0
+            } else if provider.configured {
+                1
+            } else {
+                2
+            }
+        });
+
+        let mut rows = vec![info(format!("Active: {active_provider} / {active_model}"))];
+        for provider in providers {
+            let (state, provider_tone) = if provider.configured && provider.available {
+                ("[up]", LineTone::Success)
+            } else if provider.configured {
+                ("[down][!]", LineTone::Warning)
+            } else {
+                ("[nocfg]", LineTone::Dim)
+            };
+            rows.push(styled(
+                format!(
+                    "Provider: {} {state}  default={}",
+                    provider.name, provider.default_model
+                ),
+                provider_tone,
+            ));
+
+            if provider.models.is_empty() {
+                rows.push(dim("  No models reported."));
+                continue;
+            }
+
+            for model in &provider.models {
+                let is_active = provider.name.eq_ignore_ascii_case(&active_provider)
+                    && model_ids_match(model, &active_model);
+                let is_default = model_ids_match(model, &provider.default_model);
+                let marker = if is_active {
+                    "●"
+                } else if is_default {
+                    "◆"
+                } else {
+                    "○"
+                };
+                let capability = provider
+                    .model_capabilities
+                    .iter()
+                    .find(|capability| model_ids_match(&capability.model, model));
+                let capability_text = capability
+                    .map(|capability| {
+                        format!(
+                            "ctx:{}  stream={}  vision={}",
+                            capability
+                                .context_window_tokens
+                                .map(format_token_count)
+                                .unwrap_or_else(|| "?".to_string()),
+                            if capability.supports_streaming {
+                                "yes"
+                            } else {
+                                "no"
+                            },
+                            if capability.supports_vision {
+                                "yes"
+                            } else {
+                                "no"
+                            }
+                        )
+                    })
+                    .unwrap_or_else(|| "ctx:?  stream=?  vision=?".to_string());
+                let mut labels = Vec::new();
+                if is_active {
+                    labels.push("active");
+                }
+                if is_default {
+                    labels.push("default");
+                }
+                let label_suffix = if labels.is_empty() {
+                    String::new()
+                } else {
+                    format!("  [{}]", labels.join(", "))
+                };
+                let model_tone = if is_active {
+                    LineTone::Success
+                } else if provider.configured {
+                    LineTone::Plain
+                } else {
+                    LineTone::Dim
+                };
+                rows.push(styled(
+                    format!("  {marker} {model:<26} {capability_text}{label_suffix}"),
+                    model_tone,
+                ));
+            }
+        }
+        rows.push(dim("Switch with /provider <name>, then /model <id>."));
 
         for row in rows {
             self.append_line(row);
@@ -3810,7 +3925,13 @@ impl AppState {
         let model = self.selected_model_name();
         let context_window_tokens = self
             .selected_model_capability()
-            .and_then(|capability| capability.context_window_tokens);
+            .and_then(|capability| capability.context_window_tokens)
+            .map(|declared| match self.account_context_window {
+                // An account may only narrow the declared window.
+                Some(account) => declared.min(account),
+                None => declared,
+            })
+            .or(self.account_context_window);
         let context_pressure = derive_context_pressure_summary(
             context_window_tokens,
             self.live_token_usage
@@ -3958,6 +4079,24 @@ fn format_token_count(tokens: u32) -> String {
     } else {
         tokens.to_string()
     }
+}
+
+fn model_ids_match(left: &str, right: &str) -> bool {
+    fn comparable(model: &str) -> String {
+        let normalized = model
+            .trim()
+            .to_ascii_lowercase()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join("-");
+        match normalized.as_str() {
+            "astra-gpt6-max" | "gpt-6-astra-max" => "astra-gtp6-max".to_string(),
+            "minimax-m3.1-flash-preview" => "minimax-m3.1-flash".to_string(),
+            _ => normalized,
+        }
+    }
+
+    comparable(left) == comparable(right)
 }
 
 fn estimate_tokens_from_chars(chars: usize) -> u32 {
@@ -5209,6 +5348,214 @@ mod tests {
             app.status_bar_text("14:32:05"),
             "○ [Mode:A] shared-llm/default · ctx:? · tok:? · cancelling native chat (provider wait) · PULSE:unknown · session:primary::operator:local · 14:32:05"
         );
+    }
+
+    #[test]
+    fn astra_max_alias_survives_completed_turns() {
+        for preset in ["astra-gtp6-max", "astra-gpt6-max", "gpt-6-astra-max"] {
+            let mut app = AppState::new(config());
+            app.chat_provider = Some("openai".into());
+            app.chat_model = Some(preset.into());
+            for _ in 0..2 {
+                app.apply_worker_event(WorkerEvent::ChatCompleted(serde_json::from_value(serde_json::json!({
+                    "session_id": "synthetic-codex", "provider": "openai", "model": "gpt-6-astra",
+                    "reply": "fixture", "messages": []
+                })).unwrap()));
+                assert_eq!(app.chat_model.as_deref(), Some(preset));
+            }
+        }
+    }
+
+    #[test]
+    fn gpt_56_sol_max_alias_survives_completed_turns() {
+        for preset in ["gpt-5.6-sol-max", "gpt-5.6-Sol Max"] {
+            let mut app = AppState::new(config());
+            app.chat_provider = Some("openai".into());
+            app.chat_model = Some(preset.into());
+            for _ in 0..2 {
+                app.apply_worker_event(WorkerEvent::ChatCompleted(
+                    serde_json::from_value(serde_json::json!({
+                        "session_id": "synthetic-codex", "provider": "openai", "model": "gpt-5.6-sol",
+                        "reply": "fixture", "messages": []
+                    }))
+                    .unwrap(),
+                ));
+                assert_eq!(app.chat_model.as_deref(), Some(preset));
+            }
+        }
+    }
+
+    #[test]
+    fn models_rows_highlight_active_model_and_show_runtime_capabilities() {
+        let mut app = AppState::new(config());
+        app.chat_provider = Some("minimax".into());
+        app.chat_model = Some("MiniMax-M3.1-Flash".into());
+        app.provider_statuses = vec![
+            ProviderStatus {
+                name: "openai".into(),
+                configured: true,
+                available: true,
+                default_model: "gpt-5.6-sol-max".into(),
+                models: vec!["gpt-5.6-sol-max".into(), "gpt-5.6-sol".into()],
+                model_capabilities: vec![
+                    ModelCapabilitySummary {
+                        model: "gpt-5.6-sol-max".into(),
+                        context_window_tokens: Some(1_050_000),
+                        supports_streaming: true,
+                        supports_vision: false,
+                    },
+                    ModelCapabilitySummary {
+                        model: "gpt-5.6-sol".into(),
+                        context_window_tokens: Some(1_050_000),
+                        supports_streaming: true,
+                        supports_vision: false,
+                    },
+                ],
+                error: None,
+            },
+            ProviderStatus {
+                name: "minimax".into(),
+                configured: true,
+                available: true,
+                default_model: "MiniMax-M3.1-Flash".into(),
+                models: vec!["MiniMax-M3.1-Flash".into(), "MiniMax-M3".into()],
+                model_capabilities: vec![
+                    ModelCapabilitySummary {
+                        model: "MiniMax-M3.1-Flash".into(),
+                        context_window_tokens: Some(1_000_000),
+                        supports_streaming: true,
+                        supports_vision: true,
+                    },
+                    ModelCapabilitySummary {
+                        model: "MiniMax-M3".into(),
+                        context_window_tokens: Some(1_000_000),
+                        supports_streaming: true,
+                        supports_vision: true,
+                    },
+                ],
+                error: None,
+            },
+        ];
+
+        app.append_model_rows();
+
+        let lines = app
+            .output_buffer
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>();
+        assert!(lines
+            .iter()
+            .any(|line| *line == "Active: minimax / MiniMax-M3.1-Flash"));
+        let minimax_header = lines
+            .iter()
+            .position(|line| line.starts_with("Provider: minimax"))
+            .expect("minimax provider header");
+        let openai_header = lines
+            .iter()
+            .position(|line| line.starts_with("Provider: openai"))
+            .expect("openai provider header");
+        assert!(
+            minimax_header < openai_header,
+            "active provider must be first"
+        );
+        assert!(lines.iter().any(|line| {
+            line.contains("● MiniMax-M3.1-Flash")
+                && line.contains("ctx:1000k")
+                && line.contains("stream=yes")
+                && line.contains("vision=yes")
+                && line.contains("[active, default]")
+        }));
+        assert!(lines.iter().any(|line| {
+            line.contains("◆ gpt-5.6-sol-max")
+                && line.contains("stream=yes")
+                && line.contains("vision=no")
+                && line.contains("[default]")
+        }));
+        assert!(lines
+            .iter()
+            .any(|line| *line == "Switch with /provider <name>, then /model <id>."));
+    }
+
+    #[test]
+    fn model_row_matching_normalizes_supported_display_aliases() {
+        assert!(super::model_ids_match("gpt-5.6-Sol Max", "gpt-5.6-sol-max"));
+        assert!(super::model_ids_match(
+            "MiniMax-M3.1-Flash-Preview",
+            "MiniMax-M3.1-Flash"
+        ));
+        assert!(super::model_ids_match("astra-gpt6-max", "astra-gtp6-max"));
+        assert!(!super::model_ids_match("gpt-5.6-sol", "gpt-5.6-sol-max"));
+    }
+
+    #[test]
+    fn astra_default_alias_survives_completed_turn() {
+        let mut app = AppState::new(config());
+        app.chat_provider = Some("openai".into());
+        app.provider_statuses.push(crate::client::ProviderStatus {
+            name: "openai".into(),
+            configured: true,
+            available: true,
+            default_model: "astra-gtp6-max".into(),
+            models: vec![],
+            model_capabilities: vec![],
+            error: None,
+        });
+        app.apply_worker_event(WorkerEvent::ChatCompleted(serde_json::from_value(serde_json::json!({
+            "session_id":"synthetic-codex", "provider":"openai", "model":"gpt-6-astra", "reply":"fixture", "messages":[]
+        })).unwrap()));
+        assert_eq!(app.chat_model.as_deref(), Some("astra-gtp6-max"));
+    }
+
+    #[test]
+    fn account_context_window_narrows_but_never_widens_the_status_bar_limit() {
+        let mut app = AppState::new(config());
+        let astra = ProviderStatus {
+            name: "openai".into(),
+            configured: true,
+            available: true,
+            default_model: "astra-gtp6-max".into(),
+            models: vec![],
+            model_capabilities: vec![
+                ModelCapabilitySummary {
+                    model: "astra-gtp6-max".into(),
+                    context_window_tokens: Some(1_050_000),
+                    supports_streaming: true,
+                    supports_vision: false,
+                },
+                ModelCapabilitySummary {
+                    model: "gpt-6-astra".into(),
+                    context_window_tokens: Some(1_050_000),
+                    supports_streaming: true,
+                    supports_vision: false,
+                },
+            ],
+            error: None,
+        };
+        app.provider_statuses.push(astra.clone());
+        app.chat_provider = Some("openai".into());
+        app.chat_model = Some("astra-gtp6-max".into());
+
+        // Before any turn the status bar shows the declared model limit.
+        assert_eq!(
+            app.status_bar_context().context_window_tokens,
+            Some(1_050_000)
+        );
+
+        // The account grants less: the status bar must follow the account.
+        app.apply_worker_event(WorkerEvent::ChatCompleted(serde_json::from_value(serde_json::json!({
+            "session_id":"synthetic-codex","provider":"openai","model":"gpt-6-astra",
+            "reply":"fixture","messages":[],"effective_context_window":272000
+        })).unwrap()));
+        assert_eq!(app.status_bar_context().context_window_tokens, Some(272_000));
+
+        // A provider claiming MORE than the account/declared limit must not
+        // raise the ceiling: widening would hide real pressure.
+        app.apply_worker_event(WorkerEvent::ChatCompleted(serde_json::from_value(serde_json::json!({
+            "session_id":"synthetic-codex","provider":"openai","model":"gpt-6-astra",
+            "reply":"fixture","messages":[],"effective_context_window":9000000
+        })).unwrap()));
+        assert_eq!(app.status_bar_context().context_window_tokens, Some(272_000));
     }
 
     #[test]

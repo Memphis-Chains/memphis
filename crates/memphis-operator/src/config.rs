@@ -9,7 +9,7 @@ use memphis_embed::{EmbedConfig, EmbedMode, EmbedPersistenceConfig};
 const DEFAULT_MEMPHIS_DATA_DIR: &str = "~/.memphis";
 const DEFAULT_DATABASE_URL: &str = "file:./data/memphis.db";
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OperatorConfig {
     pub raw_env: HashMap<String, String>,
     pub runtime_root: PathBuf,
@@ -29,6 +29,19 @@ pub struct OperatorConfig {
     pub rust_bridge_path: String,
     pub matrix_enabled: bool,
     pub telegram_enabled: bool,
+}
+
+// Debug is a diagnostic projection; serialized credential contracts stay unchanged.
+impl std::fmt::Debug for OperatorConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OperatorConfig")
+            .field("config_generation", &self.config_generation)
+            .field("rust_chain_enabled", &self.rust_chain_enabled)
+            .field("matrix_enabled", &self.matrix_enabled)
+            .field("telegram_enabled", &self.telegram_enabled)
+            .field("embed_config", &self.embed_config)
+            .finish_non_exhaustive()
+    }
 }
 
 impl OperatorConfig {
@@ -124,6 +137,12 @@ impl OperatorConfig {
                         .map(String::as_str),
                     8000,
                 ),
+                // Same env var the TypeScript provider reads
+                // (`src/providers/index.ts`). Without it the Rust side omits
+                // `keep_alive` from the Ollama request, so the server
+                // unloads the model after 5 idle minutes and every embed
+                // pays a cold load.
+                provider_keep_alive: trim_opt(env_map.get("OLLAMA_KEEP_ALIVE")),
             },
             default_provider: env_map
                 .get("DEFAULT_PROVIDER")
@@ -305,5 +324,30 @@ mod tests {
             config.database_path,
             PathBuf::from("/tmp/runtime/data/custom.db")
         );
+    }
+    #[test]
+    fn credential_debug_operator_config_omits_environment_values() {
+        let secret = "synthetic-native-private-debug-material";
+        let config = OperatorConfig::from_iter([
+            ("MEMPHIS_RUNTIME_ROOT", "/synthetic-runtime"),
+            ("HOME", "/synthetic-home"),
+            ("MEMPHIS_VAULT_PEPPER", secret),
+            ("MINIMAX_API_KEY", secret),
+            ("SYNTHETIC_UNKNOWN_FIELD", secret),
+            ("MEMPHIS_CONFIG_GENERATION", "7"),
+        ]);
+        for debug in [format!("{config:?}"), format!("{config:#?}")] {
+            assert!(!debug.contains(secret));
+            assert!(!debug.contains(&secret[..16]));
+            assert!(!debug.contains(&secret[secret.len() - 16..]));
+        }
+        assert_eq!(
+            config
+                .raw_env
+                .get("MEMPHIS_VAULT_PEPPER")
+                .map(String::as_str),
+            Some(secret)
+        );
+        assert_eq!(config.config_generation, 7);
     }
 }

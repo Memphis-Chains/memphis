@@ -23,11 +23,16 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import { resolveDotEnvPath } from './dotenv-file.js';
-import { classifyField, type MutabilityTier } from './mutability.js';
+import { classifyField, listKnownFields, type MutabilityTier } from './mutability.js';
 import { runPostApplyHooks, type PostApplyHookOutcome } from './post-apply-hooks.js';
+import { advanceRuntimeConfigGeneration } from './runtime-config-snapshot.js';
 import { envSchema } from './schema.js';
+import { getDataDir } from '../../config/paths.js';
+import { resetActiveVault } from '../storage/rust-vault-adapter.js';
+import { resolveVaultPath } from '../storage/vault-paths.js';
 
 export type FieldChangeStatus = 'applied' | 'rejected-cold' | 'unchanged' | 'invalid';
 
@@ -43,6 +48,7 @@ export interface FieldChange {
 export interface HotReloadResult {
   ok: boolean;
   envPath: string;
+  /** Computed changes; when ok=false the entire plan remains unapplied. */
   changes: FieldChange[];
   appliedCount: number;
   rejectedColdCount: number;
@@ -63,15 +69,33 @@ export interface HotReloadOptions {
   allowCold?: boolean;
   /** Optional override of the env object used for diffing. Defaults to `process.env`. */
   baseEnv?: NodeJS.ProcessEnv;
-  /** When true, treat secret fields as visible in the diff (tier-3 only). */
+  /** Reserved for compatibility; public reload results always remain redacted. */
   includeSecretValues?: boolean;
 }
 
 const SECRET_REDACTION = '***redacted***';
+const KNOWN_CONFIG_FIELDS = new Set(listKnownFields().map(({ key }) => key));
+
+function hasUrlCredentials(key: string, value: string): boolean {
+  try {
+    const url = new URL(value);
+    // Query/fragment values are opaque and may also carry credentials.
+    return Boolean(url.username || url.password || url.search || url.hash);
+  } catch {
+    // An invalid endpoint can still contain a password. Parsing failure does
+    // not make its raw text safe diagnostic data.
+    return /(?:^|_)(?:URL|URI|ENDPOINT)$|_API_BASE$/.test(key);
+  }
+}
 
 export function redactFieldValue(key: string, value: string | undefined): string {
   if (value === undefined || value === null || value === '') return '';
-  if (classifyField(key) === 'secret') return SECRET_REDACTION;
+  if (
+    !KNOWN_CONFIG_FIELDS.has(key) ||
+    classifyField(key) === 'secret' ||
+    hasUrlCredentials(key, value)
+  )
+    return SECRET_REDACTION;
   return value;
 }
 
@@ -121,6 +145,21 @@ function computeFieldChange(
     return { key, tier, status: 'unchanged' };
   }
 
+  // A pepper swap changes how the persisted state is authenticated. It is
+  // never a hot reload, even with allowCold: only rotation/startup can supply
+  // a matching state and configuration. This also avoids an init/reload race.
+  if (key === 'MEMPHIS_VAULT_PEPPER') {
+    return {
+      key,
+      tier,
+      status: 'rejected-cold',
+      oldValue: baseValue,
+      newValue: incomingValue,
+      reason:
+        'ROTATION_REQUIRED: use memphis vault pepper-rotate; restart processes after rotation.',
+    };
+  }
+
   if (tier === 'cold' && !allowCold) {
     return {
       key,
@@ -163,7 +202,22 @@ export function computeReloadPlan(options: HotReloadOptions = {}): HotReloadResu
 
   for (const [key, newValue] of Object.entries(fileValues)) {
     const oldValue = baseEnv[key];
-    changes.push(computeFieldChange(key, oldValue, newValue, allowCold));
+    // Startup pins absolute paths. A relative spelling of the same path in
+    // dotenv is not a change and must not block unrelated warm reloads.
+    let comparableValue = newValue;
+    if (newValue.trim()) {
+      const candidate = { ...baseEnv, [key]: newValue };
+      if (key === 'MEMPHIS_VAULT_STATE_PATH') {
+        comparableValue = resolveVaultPath('vault-state.json', candidate);
+      } else if (key === 'MEMPHIS_VAULT_ENTRIES_PATH') {
+        comparableValue = resolveVaultPath('vault-entries.json', candidate);
+      } else if (key === 'MEMPHIS_DATA_DIR') {
+        comparableValue = getDataDir(candidate);
+      } else if (key === 'MEMPHIS_RUNTIME_ROOT' || key === 'MEMPHIS_ENV_FILE') {
+        comparableValue = resolve(newValue.trim());
+      }
+    }
+    changes.push(computeFieldChange(key, oldValue, comparableValue, allowCold));
   }
 
   const applied = changes.filter((c) => c.status === 'applied');
@@ -238,6 +292,10 @@ export function applyReloadPlan(
     }
     applied.push(change.key);
   }
+  if (applied.length > 0) {
+    resetActiveVault();
+    advanceRuntimeConfigGeneration();
+  }
   return { applied, skipped };
 }
 
@@ -259,7 +317,7 @@ export function redactReloadResult(result: HotReloadResult): HotReloadResult {
  */
 export async function performHotReload(options: HotReloadOptions = {}): Promise<HotReloadResult> {
   const plan = computeReloadPlan(options);
-  if (!plan.ok) return redactReloadResult(plan);
+  if (!plan.ok) return redactReloadResult({ ...plan, appliedCount: 0 });
   applyReloadPlan(plan, options);
   const hookOutcomes = await runPostApplyHooks({
     changes: plan.changes
@@ -281,7 +339,7 @@ export async function performHotReload(options: HotReloadOptions = {}): Promise<
  */
 export function performHotReloadSync(options: HotReloadOptions = {}): HotReloadResult {
   const plan = computeReloadPlan(options);
-  if (!plan.ok) return redactReloadResult(plan);
+  if (!plan.ok) return redactReloadResult({ ...plan, appliedCount: 0 });
   applyReloadPlan(plan, options);
   return redactReloadResult(plan);
 }

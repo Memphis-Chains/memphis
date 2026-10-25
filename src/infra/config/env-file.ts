@@ -1,7 +1,7 @@
-import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { resolveInstallRoot } from '../runtime/install-root.js';
+import { mutateDotEnvFile, resolveDotEnvPath } from './dotenv-file.js';
 
 export interface EnvFileMutation {
   key: string;
@@ -40,7 +40,7 @@ export interface EnvFileMutation {
  * (NOT cwd) so `upsertEnvVars` creates it in the right place.
  */
 export function findEnvFile(): string {
-  return resolve(resolveInstallRoot(), '.env');
+  return resolveDotEnvPath();
 }
 
 function renderLine({ key, value }: EnvFileMutation): string {
@@ -57,28 +57,21 @@ export function upsertEnvVars(
   envPath: string = findEnvFile(),
 ): { path: string; written: EnvFileMutation[] } {
   const absolute = resolve(envPath);
-  let content = existsSync(absolute) ? readFileSync(absolute, 'utf8') : '';
+  return mutateDotEnvFile(absolute, mutations, process.env, (existing) => {
+    let content = existing;
 
-  for (const mutation of mutations) {
-    const regex = new RegExp(`^${escapeForRegex(mutation.key)}=.*$`, 'm');
-    const nextLine = renderLine(mutation);
-    if (regex.test(content)) {
-      content = content.replace(regex, nextLine);
-    } else {
-      content = (content.trimEnd().length > 0 ? `${content.trimEnd()}\n` : '') + `${nextLine}\n`;
+    for (const mutation of mutations) {
+      const regex = new RegExp(`^${escapeForRegex(mutation.key)}=.*$`, 'm');
+      const nextLine = renderLine(mutation);
+      if (regex.test(content)) {
+        content = content.replace(regex, () => nextLine);
+      } else {
+        content = (content.trimEnd().length > 0 ? `${content.trimEnd()}\n` : '') + `${nextLine}\n`;
+      }
     }
-  }
 
-  const tmpPath = `${absolute}.tmp-${process.pid}-${Date.now()}`;
-  writeFileSync(tmpPath, content, 'utf8');
-  try {
-    chmodSync(tmpPath, 0o600);
-  } catch {
-    // chmod non-fatal on some platforms
-  }
-  renameSync(tmpPath, absolute);
-
-  return { path: absolute, written: mutations };
+    return { content, result: { path: absolute, written: mutations } };
+  });
 }
 
 function escapeForRegex(value: string): string {
@@ -96,32 +89,27 @@ export function removeEnvVars(
   envPath: string = findEnvFile(),
 ): { path: string; removed: string[] } {
   const absolute = resolve(envPath);
-  if (!existsSync(absolute)) return { path: absolute, removed: [] };
-  let content = readFileSync(absolute, 'utf8');
-  const removed: string[] = [];
+  return mutateDotEnvFile(
+    absolute,
+    keys.map((key) => ({ key })),
+    process.env,
+    (existing) => {
+      let content = existing;
+      const removed: string[] = [];
 
-  for (const key of keys) {
-    // Match `KEY=...` line plus its trailing newline so we don't leave
-    // empty lines behind.
-    const regex = new RegExp(`^${escapeForRegex(key)}=.*(\\r?\\n)?`, 'm');
-    if (regex.test(content)) {
-      content = content.replace(regex, '');
-      removed.push(key);
-    }
-  }
+      for (const key of keys) {
+        // Match `KEY=...` line plus its trailing newline so we don't leave
+        // empty lines behind.
+        const regex = new RegExp(`^${escapeForRegex(key)}=.*(\\r?\\n)?`, 'm');
+        if (regex.test(content)) {
+          content = content.replace(regex, '');
+          removed.push(key);
+        }
+      }
 
-  if (removed.length === 0) return { path: absolute, removed: [] };
-
-  const tmpPath = `${absolute}.tmp-${process.pid}-${Date.now()}`;
-  writeFileSync(tmpPath, content, 'utf8');
-  try {
-    chmodSync(tmpPath, 0o600);
-  } catch {
-    // chmod non-fatal on some platforms
-  }
-  renameSync(tmpPath, absolute);
-
-  return { path: absolute, removed };
+      return { content, result: { path: absolute, removed }, write: removed.length > 0 };
+    },
+  );
 }
 
 export interface EnvVaultKeyReference {

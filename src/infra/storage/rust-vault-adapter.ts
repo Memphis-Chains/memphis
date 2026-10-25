@@ -354,42 +354,75 @@ function vaultCacheIdentity(rawEnv: NodeJS.ProcessEnv): string {
     );
   }
   return createHash('sha256')
-    .update(path)
-    .update('\0')
-    .update(getVaultPepper(rawEnv))
-    .update('\0')
+    .update(JSON.stringify([path, getVaultPepper(rawEnv), rawEnv.MEMPHIS_CONFIG_GENERATION ?? '0']))
     .update(state)
     .digest('hex');
 }
 
 function getActiveVaultOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): JsVault {
+  try {
+    return loadActiveVault(rawEnv);
+  } catch (error) {
+    // A missing, unreadable or rejected replacement must release the old key,
+    // even if this attempt never reaches the native decoder.
+    resetActiveVault();
+    throw error;
+  }
+}
+
+function loadActiveVault(rawEnv: NodeJS.ProcessEnv): JsVault {
   const journals = resolveVaultJournals(rawEnv).paths;
   for (let attempt = 0; attempt < 3; attempt++) {
     const snapshot = withConfigurationSnapshot(journals, () => {
       const identity = vaultCacheIdentity(rawEnv);
-      return { identity, vault: activeVaultIdentity === identity ? activeVault : null };
+      if (activeVaultIdentity !== identity) resetActiveVault();
+      return { identity, vault: activeVault };
     });
     if (snapshot.vault) return normalizeVault(snapshot.vault);
 
     // Do the expensive KDF outside the lock, then validate the snapshot before
     // publishing its key. A rotation must never give an old key a new identity.
     const loaded = readVaultState(rawEnv);
-    const current = withConfigurationSnapshot(journals, () => {
-      if (vaultCacheIdentity(rawEnv) !== snapshot.identity) return null;
-      if (loaded.version === 1 && getVaultPepper(rawEnv).length >= 12) {
-        persistVaultState(loaded.vault, rawEnv);
-        writeSecurityAudit({
-          action: 'vault.state.upgrade',
-          status: 'allowed',
-          details: { from: 'v1', to: 'v2', reason: 'transparent upgrade on load' },
-        });
-      }
-      activeVault = normalizeVault(loaded.vault);
-      activeVaultIdentity = vaultCacheIdentity(rawEnv);
-      return activeVault;
+    let published = false;
+    try {
+      const current = withConfigurationSnapshot(journals, () => {
+        if (vaultCacheIdentity(rawEnv) !== snapshot.identity) return null;
+        if (loaded.version === 1 && getVaultPepper(rawEnv).length >= 12) {
+          persistVaultState(loaded.vault, rawEnv);
+          writeSecurityAudit({
+            action: 'vault.state.upgrade',
+            status: 'allowed',
+            details: { from: 'v1', to: 'v2', reason: 'transparent upgrade on load' },
+          });
+        }
+        const identity = vaultCacheIdentity(rawEnv);
+        activeVault = normalizeVault(loaded.vault);
+        activeVaultIdentity = identity;
+        published = true;
+        return activeVault;
+      });
+      if (current) return current;
+    } finally {
+      if (!published) getVaultMasterKey(loaded.vault).fill(0);
+    }
+  }
+  throw new Error('Vault state changed during loading; retry operation');
+}
+
+/** Preload outside the lock, then pin state and entry reads to that generation. */
+export function withVaultReadSnapshot<T>(
+  read: () => T,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): T {
+  const journals = resolveVaultJournals(rawEnv).paths;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    getActiveVaultOrThrow(rawEnv);
+    const identity = activeVaultIdentity;
+    const snapshot = withConfigurationSnapshot(journals, () => {
+      if (vaultCacheIdentity(rawEnv) !== identity) return { current: false } as const;
+      return { current: true, value: read() } as const;
     });
-    if (current) return current;
-    getVaultMasterKey(loaded.vault).fill(0);
+    if (snapshot.current) return snapshot.value;
   }
   throw new Error('Vault state changed during loading; retry operation');
 }
@@ -613,14 +646,26 @@ function initializeVaultUnderLock(
     );
     const vault = normalizeVault(result.vault);
     persistVaultState(vault, rawEnv);
+    resetActiveVault();
     activeVault = vault;
+    activeVaultIdentity = vaultCacheIdentity(rawEnv);
     return { version: 1, did: result.did };
   }
 
   if (typeof bridge.legacyContract.vault_init_json === 'function') {
-    return parseEnvelope<{ version: number; did: string }>(
+    const result = parseEnvelope<unknown>(
       bridge.legacyContract.vault_init_json(JSON.stringify(input)),
     );
+    // A TS type assertion does not strip private fields from a legacy ABI result.
+    // Keep the public result explicit; the Rust compatibility payload is unchanged.
+    if (!result || typeof result !== 'object') {
+      throw new Error('invalid legacy vault initialization result');
+    }
+    const { version, did } = result as Record<string, unknown>;
+    if ((version !== 1 && version !== 2) || typeof did !== 'string' || !did.trim()) {
+      throw new Error('invalid legacy vault initialization result');
+    }
+    return { version, did };
   }
 
   throw new Error('vault_init_full unavailable');
@@ -675,10 +720,9 @@ export function vaultDecrypt(entry: VaultEntry, rawEnv: NodeJS.ProcessEnv = proc
   );
 }
 
-/**
- * Reset the in-memory active vault. For testing only.
- */
+/** Release key material after invalidation, rotation or a failed reload. */
 export function resetActiveVault(): void {
+  if (activeVault) getVaultMasterKey(activeVault).fill(0);
   activeVault = null;
   activeVaultIdentity = null;
 }
@@ -708,12 +752,14 @@ export function rotateVaultStatePepper(
 
   const { vault, version: fromVersion } = readVaultState(rawEnv, oldPepper);
 
-  const wrapped = serializeVaultStateV2(vault, newPepper);
-  writePrivateAtomicFile(statePath, JSON.stringify(wrapped, null, 2));
-
-  activeVault = normalizeVault(vault);
-
-  return { statePath, fromVersion, toVersion: 2 };
+  try {
+    const wrapped = serializeVaultStateV2(vault, newPepper);
+    writePrivateAtomicFile(statePath, JSON.stringify(wrapped, null, 2));
+    return { statePath, fromVersion, toVersion: 2 };
+  } finally {
+    getVaultMasterKey(vault).fill(0);
+    resetActiveVault();
+  }
 }
 
 export interface VaultMasterKeyRotateFailure {

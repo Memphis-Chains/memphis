@@ -3,11 +3,14 @@
  * no HTTP, no MCP client. Used when the gateway runs inside Memphis.
  */
 
+import { randomUUID } from 'node:crypto';
+
 import { recordAuthorizationDecision, resolveToolPolicy } from './authorization.js';
 import type { ToolExecutor } from './chat-types.js';
 import type { RollbackManager } from '../backup/rollback.js';
 import { AppError } from '../core/errors.js';
 import type { ChatToolCall, ChatToolDefinition } from '../providers/index.js';
+import { withOperatorContext } from '../security/operator-context.js';
 import { loadSoulManifest } from '../soul/manifest.js';
 import type { SoulManifest } from '../soul/types.js';
 import { createDevelopmentRuntimeTools } from './tool-executor/domains/development-tools.js';
@@ -254,6 +257,7 @@ async function executeTool(
 }
 
 export function createInProcessToolExecutor(deps: InProcessToolExecutorDeps = {}): ToolExecutor {
+  const instanceSession = randomUUID();
   const runtimeTools = createRuntimeTools(deps);
   const runtimeToolMap = new Map(runtimeTools.map((tool) => [tool.name, tool]));
   return {
@@ -261,7 +265,7 @@ export function createInProcessToolExecutor(deps: InProcessToolExecutorDeps = {}
       return runtimeTools.filter((tool) => tool.isEnabled());
     },
     execute(call: ChatToolCall): Promise<string> {
-      return executeTool(call, deps, runtimeToolMap);
+      return withOperatorContext({ surface: deps.surface ?? 'internal', subject: deps.sessionId ?? 'local-agent', sessionId: deps.conversationId ?? deps.sessionId ?? instanceSession }, () => executeTool(call, deps, runtimeToolMap));
     },
     maxParallel: deps.maxParallel ?? 4,
     withBinding(binding) {

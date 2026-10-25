@@ -2,10 +2,8 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import { maybeRotateAuditLog, resolveAuditLogPath } from './audit-rotation.js';
-import {
-  emitAuditWriteGuardWarning,
-  isAuditWriteAllowed,
-} from './audit-write-guard.js';
+import { emitAuditWriteGuardWarning, isAuditWriteAllowed } from './audit-write-guard.js';
+import { safeIoErrorCode } from '../storage/io-error-code.js';
 
 export interface SecurityAuditEvent {
   action: string;
@@ -38,16 +36,14 @@ export function writeSecurityAudit(
       maybeRotateAuditLog(rawEnv);
     } catch (rotationError) {
       process.stderr.write(
-        `[security-audit] rotation failed (continuing without rotation): ${
-          rotationError instanceof Error ? rotationError.message : 'unknown_error'
-        }\n`,
+        `[security-audit] rotation failed (${safeIoErrorCode(rotationError) ?? 'AUDIT_WRITE_FAILED'}); continuing without rotation\n`,
       );
     }
     const line = JSON.stringify({ ts: new Date().toISOString(), ...event });
     appendFileSync(path, `${line}\n`, 'utf8');
   } catch (error) {
     process.stderr.write(
-      `[security-audit] failed to write event ${event.action}: ${error instanceof Error ? error.message : 'unknown_error'}\n`,
+      `[security-audit] event write failed (${safeIoErrorCode(error) ?? 'AUDIT_WRITE_FAILED'})\n`,
     );
   }
 }
