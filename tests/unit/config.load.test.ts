@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import { loadConfig } from '../../src/infra/config/env.js';
+import { envSchema } from '../../src/infra/config/schema.js';
 
 describe('loadConfig', () => {
+  it.each(['low', 'medium', 'high', 'xhigh', 'max'])('accepts MiniMax effort %s', (effort) => {
+    const result = envSchema.shape.MINIMAX_REASONING_EFFORT.safeParse(effort);
+    expect(result.success).toBe(true);
+  });
+
+  it.each(['none', 'disabled', 'MAX', 'typo'])('rejects invalid MiniMax effort %s', (effort) => {
+    const result = envSchema.shape.MINIMAX_REASONING_EFFORT.safeParse(effort);
+    expect(result.success).toBe(false);
+  });
+
   it('loads valid local-fallback config', () => {
     const cfg = loadConfig({
       NODE_ENV: 'development',

@@ -30,9 +30,12 @@ function serializeMessage(message: ChatMessage): string {
     case 'user':
       return message.content;
     case 'assistant':
-      return message.tool_calls?.length
-        ? `${message.content}\n${JSON.stringify(message.tool_calls)}`
-        : message.content;
+      return (
+        (message.tool_calls?.length
+          ? `${message.content}\n${JSON.stringify(message.tool_calls)}`
+          : message.content) +
+        (message.reasoning_content !== undefined ? `\n${message.reasoning_content}` : '')
+      );
     case 'tool':
       return `${message.tool_call_id}\n${message.content}`;
   }

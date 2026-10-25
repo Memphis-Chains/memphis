@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { PROVIDER_NAMES } from '../../core/types.js';
+import { MINIMAX_REASONING_EFFORTS } from '../../providers/minimax/config.js';
 
 const boolFromString = z.preprocess((v) => {
   if (typeof v === 'boolean') return v;
@@ -101,6 +102,7 @@ export const envSchema = z.object({
   OLLAMA_KEEP_ALIVE: z.string().optional(),
   MINIMAX_API_KEY: z.string().optional(),
   MINIMAX_MODEL: z.string().optional(),
+  MINIMAX_REASONING_EFFORT: z.enum(MINIMAX_REASONING_EFFORTS).optional(),
   MINIMAX_BASE_URL: z.string().optional(),
   MINIMAX_VAULT_KEY: z.string().optional(),
   MINIMAX_VIDEO_VAULT_KEY: z.string().optional(),

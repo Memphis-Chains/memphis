@@ -4,6 +4,19 @@ import { buildSetupEnv, handleSetupCommand } from '../../src/infra/cli/commands/
 import type { CliContext } from '../../src/infra/cli/context.js';
 
 describe('setup env builder', () => {
+  it('selects stable MiniMax Flash for a new MiniMax setup', () => {
+    const built = buildSetupEnv({
+      envPath: '.env',
+      provider: 'minimax',
+      dataDirectory: './data',
+      embeddingMode: 'local',
+      embeddingModel: '',
+      vaultPepper: 'synthetic-test-pepper',
+    });
+    expect(built.env.MINIMAX_MODEL).toBe('MiniMax-M3.1-Flash');
+    expect(built.content).toContain('MINIMAX_MODEL=MiniMax-M3.1-Flash');
+  });
+
   it('builds a valid local-only setup with defaults', () => {
     const built = buildSetupEnv({
       envPath: '.env',

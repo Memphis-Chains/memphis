@@ -10,11 +10,20 @@
 // non-provider code reads (BRAVE_API_KEY etc.) still live in
 // env-registry as before.
 //
-import { createContextualLogger } from '../infra/logging/contextual.js';
+import { AppError } from '../core/errors.js';
 import { sanitizeForJsonRequest } from '../infra/security/sanitizers.js';
 import { readVaultSecretByKey } from '../security/vault-boundary.js';
 import { AnthropicProvider } from './anthropic/adapter.js';
 import { GlmProvider } from './glm/adapter.js';
+import {
+  DEFAULT_MINIMAX_MODEL,
+  DEFAULT_MINIMAX_MAX_COMPLETION_TOKENS,
+  MAX_MINIMAX_COMPLETION_TOKENS,
+  resolveMinimaxReasoningEffort,
+  type MinimaxReasoningEffort,
+} from './minimax/config.js';
+import { resolveModelCapabilitySnapshot } from './model-capabilities.js';
+import { createContextualLogger } from '../infra/logging/contextual.js';
 
 // Module-scoped logger for silent-catch sites — provider-internal causes
 // are surfaced to logs without changing the caller-facing return shape.
@@ -53,11 +62,19 @@ export interface ChatToolCall {
 export type ChatMessage =
   | { role: 'system'; content: string }
   | { role: 'user'; content: string }
-  | { role: 'assistant'; content: string; tool_calls?: ChatToolCall[] }
+  | {
+      role: 'assistant';
+      content: string;
+      tool_calls?: ChatToolCall[];
+      /** MiniMax continuation metadata; never render or fold into content. */
+      reasoning_content?: string;
+    }
   | { role: 'tool'; tool_call_id: string; content: string };
 
 export interface ChatResponse {
   content: string;
+  /** MiniMax continuation metadata, separate from the user-facing answer. */
+  reasoning_content?: string;
   model: string;
   provider: string;
   tokens?: {
@@ -71,10 +88,9 @@ export interface ChatResponse {
      */
     cache_creation?: number;
     /**
-     * Anthropic-only: tokens read from ephemeral cache on this turn.
-     * Non-zero on turns 2+ within the 5-min TTL window if the prefix
-     * is unchanged. Operator/budget telemetry uses this as the
-     * "caching is working" signal.
+     * Tokens read from the provider's prompt cache on this turn.
+     * Cache lifetime and eligibility are provider-specific. MiniMax
+     * counts these inside prompt/total, so do not add them again.
      */
     cache_read?: number;
   };
@@ -98,6 +114,8 @@ export interface ChatOptions {
   model?: string;
   temperature?: number;
   maxTokens?: number;
+  /** MiniMax-M3.1-Flash only. Other providers ignore this setting. */
+  reasoningEffort?: MinimaxReasoningEffort;
   systemPrompt?: string;
   tools?: ChatToolDefinition[];
   /** Ollama-only tuning (ignored by other providers). */
@@ -338,13 +356,25 @@ export class MinimaxProvider implements Provider {
   private apiKey: string;
   private model: string;
   private baseUrl: string;
+  private reasoningEffort: MinimaxReasoningEffort;
+  private rawEnv: NodeJS.ProcessEnv;
 
-  constructor(opts?: { apiKey?: string; model?: string; baseUrl?: string }) {
-    this.apiKey = opts?.apiKey || process.env.MINIMAX_API_KEY || '';
-    this.model = opts?.model || process.env.MINIMAX_MODEL || 'MiniMax-M2.7';
+  constructor(opts?: {
+    apiKey?: string;
+    model?: string;
+    baseUrl?: string;
+    reasoningEffort?: MinimaxReasoningEffort;
+    rawEnv?: NodeJS.ProcessEnv;
+  }) {
+    this.rawEnv = { ...(opts?.rawEnv ?? process.env) };
+    this.apiKey = opts?.apiKey || this.rawEnv.MINIMAX_API_KEY || '';
+    this.model = opts?.model || this.rawEnv.MINIMAX_MODEL || DEFAULT_MINIMAX_MODEL;
+    this.reasoningEffort = resolveMinimaxReasoningEffort(
+      opts?.reasoningEffort ?? this.rawEnv.MINIMAX_REASONING_EFFORT,
+    );
     this.baseUrl = (
       opts?.baseUrl ||
-      process.env.MINIMAX_BASE_URL ||
+      this.rawEnv.MINIMAX_BASE_URL ||
       'https://api.minimax.io/v1'
     ).replace(/\/$/, '');
   }
@@ -358,33 +388,9 @@ export class MinimaxProvider implements Provider {
   }
 
   async listModels(): Promise<string[]> {
-    // Current as of 2026-05-12. Source: https://platform.minimax.io/docs/guides/models-intro
-    // Listed newest-first so default-pick heuristics (first match) stay
-    // aligned with what the operator most likely wants. `MiniMax-*`
-    // capitalization mirrors the existing operator .env convention;
-    // the API also accepts the docs' lowercase form (`minimax-m2.7`).
-    return [
-      // M2.7 — current flagship, "recursive self-improvement" focused.
-      'MiniMax-M2.7',
-      'MiniMax-M2.7-highspeed',
-      // M2.5 — code generation + refactor optimized.
-      'MiniMax-M2.5',
-      'MiniMax-M2.5-highspeed',
-      // M2 — agentic + function calling, 200k input / 128k output context.
-      'MiniMax-M2',
-      // M2.1 — code + reasoning (legacy of M2 line).
-      'MiniMax-M2.1',
-      'MiniMax-M2.1-highspeed',
-      // m2-her — character / roleplay / emotional expression. Lowercase
-      // per docs since this id doesn't use the MiniMax- prefix.
-      'm2-her',
-      // Pre-M2 legacy text models (kept for explicit operator opt-in).
-      'MiniMax-M1',
-      'MiniMax-Text-01',
-      'abab6.5s-chat',
-      'abab6.5-chat',
-      'abab5.5-chat',
-    ];
+    // Stable text catalog (2026-10-19). Keep an explicit legacy selection
+    // visible without advertising retired IDs to new installations.
+    return [...new Set([DEFAULT_MINIMAX_MODEL, 'MiniMax-M3', this.model])];
   }
 
   defaultModel() {
@@ -393,6 +399,21 @@ export class MinimaxProvider implements Provider {
 
   async chat(messages: ChatMessage[], opts?: ChatOptions): Promise<ChatResponse> {
     const model = opts?.model || this.model;
+    const isM31Flash = /^MiniMax-M3\.1-Flash$/i.test(model);
+    const maxCompletionTokens =
+      opts?.maxTokens ?? (isM31Flash ? DEFAULT_MINIMAX_MAX_COMPLETION_TOKENS : 2048);
+    if (
+      isM31Flash &&
+      (!Number.isSafeInteger(maxCompletionTokens) ||
+        maxCompletionTokens < 1 ||
+        maxCompletionTokens > MAX_MINIMAX_COMPLETION_TOKENS)
+    ) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        `MiniMax-M3.1-Flash maxTokens must be an integer from 1 to ${MAX_MINIMAX_COMPLETION_TOKENS}`,
+        400,
+      );
+    }
 
     // MiniMax (M2.7+ chat/completions) rejects requests that contain a
     // `system` role anywhere except the very first message — operator hit
@@ -423,15 +444,20 @@ export class MinimaxProvider implements Provider {
           content: sanitizeForJsonRequest(m.content),
         };
       }
-      if (m.role === 'assistant' && m.tool_calls?.length) {
+      if (m.role === 'assistant') {
         return {
           role: 'assistant' as const,
-          content: m.content ? sanitizeForJsonRequest(m.content) : null,
-          tool_calls: m.tool_calls.map((tc) => ({
-            id: tc.id,
-            type: 'function' as const,
-            function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
-          })),
+          content: m.tool_calls?.length && !m.content ? null : sanitizeForJsonRequest(m.content),
+          ...(m.reasoning_content !== undefined ? { reasoning_content: m.reasoning_content } : {}),
+          ...(m.tool_calls?.length
+            ? {
+                tool_calls: m.tool_calls.map((tc) => ({
+                  id: tc.id,
+                  type: 'function' as const,
+                  function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
+                })),
+              }
+            : {}),
         };
       }
       return { role: m.role, content: sanitizeForJsonRequest(m.content) };
@@ -453,12 +479,50 @@ export class MinimaxProvider implements Provider {
     const body: Record<string, unknown> = {
       model,
       messages: allMessages,
-      temperature: opts?.temperature ?? 0.7,
-      max_tokens: opts?.maxTokens ?? 2048,
+      ...(isM31Flash
+        ? {
+            reasoning_effort: resolveMinimaxReasoningEffort(
+              opts?.reasoningEffort ?? this.reasoningEffort,
+            ),
+            max_completion_tokens: maxCompletionTokens,
+          }
+        : { temperature: opts?.temperature ?? 0.7, max_tokens: opts?.maxTokens ?? 2048 }),
     };
 
     if (mmTools?.length) {
       body.tools = mmTools;
+    }
+
+    // Each tool-loop iteration calls chat again. Check the complete wire history
+    // here, including reasoning and tool schemas, rather than only at turn entry.
+    // Never truncate continuation metadata or detach a call from its result.
+    // This is a conservative estimate, not a provider tokenizer or exact quota.
+    if (
+      isM31Flash ||
+      messages.some((m) => m.role === 'assistant' && m.reasoning_content !== undefined)
+    ) {
+      const contextWindowTokens =
+        resolveModelCapabilitySnapshot('minimax', model)?.contextWindowTokens ?? 32_000;
+      const estimatedInputTokens = Math.ceil(
+        JSON.stringify({ messages: allMessages, tools: mmTools }).length / 4,
+      );
+      if (
+        !Number.isSafeInteger(maxCompletionTokens) ||
+        maxCompletionTokens < 1 ||
+        estimatedInputTokens + maxCompletionTokens > Math.floor(contextWindowTokens * 0.92)
+      ) {
+        throw new AppError(
+          'VALIDATION_ERROR',
+          'MiniMax request exceeds the estimated context budget; reduce history or the completion limit',
+          400,
+          {
+            model,
+            estimatedInputTokens,
+            reservedOutputTokens: maxCompletionTokens,
+            contextWindowTokens,
+          },
+        );
+      }
     }
 
     // M2/M2.5/M2.7 family + m2-her use the OpenAI-compatible endpoint
@@ -478,7 +542,7 @@ export class MinimaxProvider implements Provider {
     // diagnostic ran into this twice in one session). Default 30 min covers
     // long reasoning sessions; operator can override per-task via env.
     const { MINIMAX_REQUEST_TIMEOUT_MS } = await import('../config/env-registry.js');
-    const timeoutMs = MINIMAX_REQUEST_TIMEOUT_MS.read(process.env);
+    const timeoutMs = MINIMAX_REQUEST_TIMEOUT_MS.read(this.rawEnv);
 
     let r: Response;
     try {
@@ -503,9 +567,11 @@ export class MinimaxProvider implements Provider {
 
     if (!r.ok) throw new Error(`Minimax error: ${r.status} ${await r.text()}`);
     const data = (await r.json()) as {
+      model?: string;
       choices?: Array<{
         message: {
           content: string | null;
+          reasoning_content?: string;
           tool_calls?: Array<{
             id: string;
             type: string;
@@ -514,7 +580,12 @@ export class MinimaxProvider implements Provider {
         };
         finish_reason?: string;
       }>;
-      usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+      usage?: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+        prompt_tokens_details?: { cached_tokens?: number };
+      };
     };
 
     const msg = data.choices?.[0]?.message;
@@ -568,13 +639,19 @@ export class MinimaxProvider implements Provider {
 
     return {
       content: inlineParse.cleaned || msg?.content || '',
-      model,
+      ...(typeof msg?.reasoning_content === 'string'
+        ? { reasoning_content: msg.reasoning_content }
+        : {}),
+      model: data.model || model,
       provider: 'minimax',
       tokens: data.usage
         ? {
             prompt: data.usage.prompt_tokens,
             completion: data.usage.completion_tokens,
             total: data.usage.total_tokens,
+            ...(data.usage.prompt_tokens_details?.cached_tokens !== undefined
+              ? { cache_read: data.usage.prompt_tokens_details.cached_tokens }
+              : {}),
           }
         : undefined,
       tool_calls: toolCalls?.length ? toolCalls : undefined,
@@ -1101,7 +1178,7 @@ export function defaultProviderConfig(): ProviderConfig {
       type: 'minimax',
       priority: 4,
       apiKey: minimaxKey,
-      model: process.env.MINIMAX_MODEL || 'MiniMax-M2.7',
+      model: process.env.MINIMAX_MODEL || DEFAULT_MINIMAX_MODEL,
     });
   }
 

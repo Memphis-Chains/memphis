@@ -1,5 +1,6 @@
 import { parseBool } from '../../core/env.js';
 import type { ProviderName } from '../../core/types.js';
+import { DEFAULT_MINIMAX_MODEL } from '../../providers/minimax/config.js';
 import { resolveModelCapabilitySnapshot } from '../../providers/model-capabilities.js';
 
 type ProviderType = 'local' | 'remote';
@@ -75,7 +76,7 @@ function resolveRemoteProviderConfig(
       return {
         baseUrl: firstNonEmpty(env.MINIMAX_BASE_URL, 'https://api.minimax.io/v1'),
         apiKey: firstNonEmpty(env.MINIMAX_API_KEY),
-        model: firstNonEmpty(env.MINIMAX_MODEL) ?? 'MiniMax-M2.7',
+        model: firstNonEmpty(env.MINIMAX_MODEL) ?? DEFAULT_MINIMAX_MODEL,
       };
     case 'deepseek':
       return {

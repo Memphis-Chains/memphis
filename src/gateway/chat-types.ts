@@ -8,7 +8,12 @@
 import type { ConversationContextService } from './conversation-context-service.js';
 import type { TokenUsage } from '../core/types.js';
 import type { RecallMode } from '../mcp/tools/recall.js';
-import type { ChatMessage, ChatToolDefinition, ChatToolCall } from '../providers/index.js';
+import type {
+  ChatMessage,
+  ChatToolDefinition,
+  ChatToolCall,
+  ChatOptions,
+} from '../providers/index.js';
 
 export type ChannelName = 'telegram' | 'discord' | 'terminal';
 
@@ -87,6 +92,8 @@ export type ToolCall = ChatToolCall;
 
 export type LlmResponse = {
   content: string;
+  /** Private MiniMax continuation field; never render as the assistant reply. */
+  reasoning_content?: string;
   tool_calls?: ChatToolCall[];
   usage?: TokenUsage;
   /**
@@ -111,6 +118,7 @@ export type LlmClient = {
      */
     temperature?: number;
     maxTokens?: number;
+    reasoningEffort?: ChatOptions['reasoningEffort'];
   }): Promise<LlmResponse>;
 };
 
