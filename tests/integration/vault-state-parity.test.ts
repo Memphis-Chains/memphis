@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { resetActiveVault, vaultDecrypt } from '../../src/infra/storage/rust-vault-adapter.js';
+import { readVaultSecretByKey } from '../../src/security/vault-boundary.js';
 import { createIsolatedTestRuntime } from '../helpers/isolated-runtime.js';
 
 const roots: string[] = [];
@@ -114,41 +115,49 @@ describe('shared Rust vault state contract through TS/NAPI and native', () => {
     ['version', 'VAULT_STATE_UNSUPPORTED_VERSION'],
     ['pepper', 'VAULT_PEPPER_REQUIRED'],
     ['authentication', 'VAULT_STATE_AUTH_FAILED'],
-  ])('agrees on %s errors and never prints supplied data', (kind, code) => {
-    const f = fixture();
-    const statePath = f.env.MEMPHIS_VAULT_STATE_PATH!;
-    const sentinel = 'synthetic-private-error-sentinel';
-    if (kind === 'missing' || kind === 'unreadable') {
-      rmSync(statePath);
-      if (kind === 'unreadable') mkdirSync(statePath);
-      // A valid sibling must not override an explicit missing path in native.
-      if (kind === 'missing') {
-        writeFileSync(statePath, JSON.stringify(golden));
-        f.env.MEMPHIS_VAULT_STATE_PATH = `${f.root}/missing-state.json`;
+  ])(
+    'agrees on %s errors and never prints supplied data',
+    (kind, code) => {
+      const f = fixture();
+      const statePath = f.env.MEMPHIS_VAULT_STATE_PATH!;
+      const sentinel = 'synthetic-private-error-sentinel';
+      if (kind === 'missing' || kind === 'unreadable') {
+        rmSync(statePath);
+        if (kind === 'unreadable') mkdirSync(statePath);
+        // A valid sibling must not override an explicit missing path in native.
+        if (kind === 'missing') {
+          writeFileSync(statePath, JSON.stringify(golden));
+          f.env.MEMPHIS_VAULT_STATE_PATH = `${f.root}/missing-state.json`;
+        }
       }
-    }
-    if (kind === 'malformed') writeFileSync(statePath, `{${sentinel}`);
-    if (kind === 'nonce')
-      writeFileSync(
-        statePath,
-        JSON.stringify({ ...golden, iv: Buffer.alloc(3).toString('base64') }),
+      if (kind === 'malformed') writeFileSync(statePath, `{${sentinel}`);
+      if (kind === 'nonce')
+        writeFileSync(
+          statePath,
+          JSON.stringify({ ...golden, iv: Buffer.alloc(3).toString('base64') }),
+        );
+      if (kind === 'version')
+        writeFileSync(statePath, JSON.stringify({ ...golden, version: 3, masterKey: sentinel }));
+      if (kind === 'pepper') delete f.env.MEMPHIS_VAULT_PEPPER;
+      if (kind === 'authentication') f.env.MEMPHIS_VAULT_PEPPER = sentinel;
+      const result = bridge.vault_load_state(
+        f.env.MEMPHIS_VAULT_STATE_PATH,
+        f.env.MEMPHIS_VAULT_PEPPER ?? '',
       );
-    if (kind === 'version')
-      writeFileSync(statePath, JSON.stringify({ ...golden, version: 3, masterKey: sentinel }));
-    if (kind === 'pepper') delete f.env.MEMPHIS_VAULT_PEPPER;
-    if (kind === 'authentication') f.env.MEMPHIS_VAULT_PEPPER = sentinel;
-    const result = bridge.vault_load_state(
-      f.env.MEMPHIS_VAULT_STATE_PATH,
-      f.env.MEMPHIS_VAULT_PEPPER ?? '',
-    );
-    expect(result.error_code).toBe(code);
-    expect(result.vault).toBeUndefined();
-    expect(JSON.stringify(result)).not.toContain(sentinel);
-    expect(() => vaultDecrypt(f.entry, f.env)).toThrow(code);
-    const rust = native(f.env);
-    expect(rust.signal).toBeNull();
-    expect(rust.status, rust.stderr).toBe(3);
-    expect(rust.stderr).toContain(code);
-    expect(rust.stderr + rust.stdout).not.toContain(sentinel);
-  });
+      expect(result.error_code).toBe(code);
+      expect(result.vault).toBeUndefined();
+      expect(JSON.stringify(result)).not.toContain(sentinel);
+      expect(() => vaultDecrypt(f.entry, f.env)).toThrow(code);
+      const secret = readVaultSecretByKey('first', { surface: 'system' }, f.env);
+      expect(secret.errorCode).toBe(code);
+      expect(secret.plaintext).toBeUndefined();
+      expect(JSON.stringify(secret)).not.toContain(sentinel);
+      const rust = native(f.env);
+      expect(rust.signal).toBeNull();
+      expect(rust.status, rust.stderr).toBe(3);
+      expect(rust.stderr).toContain(code);
+      expect(rust.stderr + rust.stdout).not.toContain(sentinel);
+    },
+    90000,
+  );
 });

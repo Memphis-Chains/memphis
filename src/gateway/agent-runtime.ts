@@ -258,6 +258,13 @@ export type AgentLoopResult = {
    * partial answer thinking it's complete.
    */
   finishReason?: string;
+  /**
+   * Smallest context window the provider reported across this loop's calls.
+   * An account may grant less than the model's declared capability, and
+   * turn-runtime uses this to trim history on subsequent turns instead of
+   * waiting for an upstream rejection.
+   */
+  effectiveContextWindow?: number;
 };
 
 function mergeTokenUsage(
@@ -320,6 +327,7 @@ export async function runAgentLoop(options: {
   const limits = options.loopLimits ?? DEFAULT_LOOP_LIMITS;
   let state = newLoopState();
   let usage: TokenUsage | undefined;
+  let effectiveContextWindow: number | undefined;
 
   const workingMessages = [...options.messages];
   // Sprint 0.2: snapshot of the most recent tool results, used by the
@@ -337,6 +345,16 @@ export async function runAgentLoop(options: {
       maxTokens: options.maxTokens,
     });
     usage = mergeTokenUsage(usage, response.usage);
+    if (
+      typeof response.effectiveContextWindow === 'number' &&
+      Number.isFinite(response.effectiveContextWindow) &&
+      response.effectiveContextWindow > 0
+    ) {
+      effectiveContextWindow =
+        effectiveContextWindow === undefined
+          ? response.effectiveContextWindow
+          : Math.min(effectiveContextWindow, response.effectiveContextWindow);
+    }
 
     void auditLlmCall('provider', response.tool_calls?.length ?? 0);
 
@@ -378,6 +396,7 @@ export async function runAgentLoop(options: {
       role: 'assistant',
       content: response.content,
       tool_calls: response.tool_calls,
+      reasoning_content: response.reasoning_content,
     });
 
     let halted = false;
@@ -525,6 +544,7 @@ export async function runAgentLoop(options: {
         messages: workingMessages,
         haltReason: state.halt_reason ?? undefined,
         usage,
+        ...(effectiveContextWindow !== undefined ? { effectiveContextWindow } : {}),
       };
     }
   }

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="pl" data-theme="auto">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memphis Portal</title>
+<style>
+/* Memphis Portal — single file, no build step, no dependencies.
+   Talks to the local Memphis HTTP server on :3000. The token is never
+   written to disk or a cookie: it lives in sessionStorage so closing the
+   tab forgets it, and it is sent only as an Authorization header. */
+:root {
+  --bg: #101215; --panel: #171a1f; --panel-2: #1e2229; --line: #2a2f37;
+  --fg: #e6e9ef; --fg-dim: #9aa4b2; --fg-faint: #6b7480;
+  --accent: #7aa2f7; --ok: #7ee787; --warn: #e3b341; --err: #ff7b72;
+  --radius: 10px; --gap: 14px;
+}
+[data-theme="light"] {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --line: #dfe3e8;
+  --fg: #1a1d21; --fg-dim: #5b6470; --fg-faint: #8a929c;
+  --accent: #3b6fd4; --ok: #1a7f37; --warn: #9a6700; --err: #cf222e;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--fg); min-height: 100vh;
+  font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  padding: 20px;
+}
+.wrap { max-width: 1180px; margin: 0 auto; }
+
+header { display: flex; align-items: center; gap: var(--gap); margin-bottom: 20px; flex-wrap: wrap; }
+h1 { font-size: 19px; font-weight: 650; letter-spacing: -0.01em; }
+.sub { color: var(--fg-faint); font-size: 12px; margin-top: 2px; }
+.spacer { flex: 1; }
+
+button, input, select, textarea { font: inherit; color: inherit; }
+.btn {
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--fg);
+  border-radius: 8px; padding: 7px 12px; cursor: pointer;
+}
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #0b0d10; font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.08); }
+
+input[type=text], input[type=password], textarea, select {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 11px; width: 100%; outline: none;
+}
+input:focus, textarea:focus { border-color: var(--accent); }
+
+.grid { display: grid; gap: var(--gap); grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); margin-bottom: var(--gap); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+.card h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--fg-faint); font-weight: 600; margin-bottom: 10px; }
+.kv { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.kv:last-child { border-bottom: none; }
+.kv .k { color: var(--fg-dim); font-size: 13px; }
+.kv .v { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; text-align: right; word-break: break-all; }
+
+.badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; border: 1px solid; }
+.b-ok { color: var(--ok); border-color: var(--ok); }
+.b-warn { color: var(--warn); border-color: var(--warn); }
+.b-err { color: var(--err); border-color: var(--err); }
+.b-dim { color: var(--fg-faint); border-color: var(--line); }
+
+.bars { display: flex; flex-direction: column; gap: 7px; }
+.bar-row { display: grid; grid-template-columns: 92px 1fr 46px; align-items: center; gap: 9px; font-size: 12px; }
+.bar-track { height: 7px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+.bar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+.bar-name { color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-val { text-align: right; font-family: ui-monospace, Menlo, monospace; color: var(--fg-dim); }
+
+section { margin-top: var(--gap); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+.row2 { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; margin-bottom: 12px; }
+label.lab { display: block; font-size: 12px; color: var(--fg-dim); margin-bottom: 5px; }
+.hint { font-size: 12px; color: var(--fg-faint); margin-top: 6px; }
+
+.hit { border-left: 2px solid var(--accent); padding: 9px 12px; margin-bottom: 9px; background: var(--panel-2); border-radius: 0 8px 8px 0; }
+.hit-meta { display: flex; gap: 9px; font-size: 11px; color: var(--fg-faint); margin-bottom: 4px; flex-wrap: wrap; }
+.hit-text { font-size: 13px; color: var(--fg); }
+
+.tokenbar { display: flex; gap: 9px; align-items: center; }
+.mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+.err-line { color: var(--err); font-size: 13px; padding: 9px 12px; background: var(--panel-2); border-radius: 8px; border: 1px solid var(--err); margin-bottom: var(--gap); }
+.tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.tab { padding: 6px 13px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; color: var(--fg-dim); font-size: 13px; }
+.tab.on { background: var(--panel-2); border-color: var(--line); color: var(--fg); }
+.hide { display: none; }
+footer { margin-top: 26px; color: var(--fg-faint); font-size: 11px; text-align: center; }
+.spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--fg-faint); border-top-color: var(--accent); border-radius: 50%; animation: sp 0.7s linear infinite; }
+@keyframes sp { to { transform: rotate(360deg) } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div>
+    <h1>Memphis Portal</h1>
+    <div class="sub" id="subtitle">lokalny runtime · 127.0.0.1:3000</div>
+  </div>
+  <div class="spacer"></div>
+  <button class="btn" id="themeBtn" title="Przełącz motyw">◐</button>
+  <button class="btn" id="refreshBtn">Odśwież</button>
+</header>
+
+<div id="errorBox" class="err-line hide"></div>
+
+<!-- ============ TOKEN ============ -->
+<section class="panel" id="tokenPanel">
+  <div class="row2">
+    <div>
+      <label class="lab">Token API (MEMPHIS_API_TOKEN)</label>
+      <div class="tokenbar">
+        <input type="password" id="tokenInput" placeholder="wklej token" autocomplete="off">
+        <button class="btn primary" id="saveToken">Zapisz</button>
+        <button class="btn" id="clearToken">Wyczyść</button>
+      </div>
+      <div class="hint">Trzymany w sessionStorage — znika po zamknięciu karty. Nigdy nie trafia na dysk ani do ciasteczek. Bez tokenu działa tylko widok statusu.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ STATUS ============ -->
+<div class="grid">
+  <div class="card">
+    <h2>Runtime</h2>
+    <div id="runtimeBox"><span class="spin"></span></div>
+  </div>
+  <div class="card">
+    <h2>Użycie procesu</h2>
+    <div id="memBox"><span class="spin"></span></div>
+  </div>
+  <div class="card">
+    <h2>Work queue</h2>
+    <div id="workBox"><span class="spin"></span></div>
+  </div>
+  <div class="card">
+    <h2>Agenci</h2>
+    <div id="agentBox"><span class="spin"></span></div>
+  </div>
+</div>
+
+<!-- ============ PROVIDERS / CHAINS ============ -->
+<div class="grid">
+  <div class="card">
+    <h2>Providerzy</h2>
+    <div id="provBox"><span class="spin"></span></div>
+  </div>
+  <div class="card">
+    <h2>Pamięć</h2>
+    <div id="adaptersBox"><span class="spin"></span></div>
+  </div>
+</div>
+
+<!-- ============ PAMIĘĆ: RECALL ============ -->
+<section class="panel">
+  <h2 style="font-size:11px;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg-faint);font-weight:600;margin-bottom:10px;">Pamięć semantyczna</h2>
+  <div class="tabs">
+    <div class="tab on" data-mode="recall">Recall</div>
+    <div class="tab" data-mode="search">Search</div>
+  </div>
+  <div class="row2">
+    <input type="text" id="q" placeholder="np. omarchy shim decyzja, Tauri, kredencje codex…">
+    <button class="btn primary" id="searchBtn">Szukaj</button>
+  </div>
+  <div class="hint" id="searchHint">Wymaga tokenu API.</div>
+  <div id="hits" style="margin-top:12px"></div>
+</section>
+
+<footer>Memphis Portal · dane lokalne, nic nie wychodzi z maszyny</footer>
+</div>
+
+<script>
+const API = "http://127.0.0.1:3000";
+const el = (id) => document.getElementById(id);
+const store = {
+  get token() { return sessionStorage.getItem("memphis.token") || ""; },
+  set token(v) { v ? sessionStorage.setItem("memphis.token", v) : sessionStorage.removeItem("memphis.token"); },
+};
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const nmb = (v) => (v === null || v === undefined || isNaN(v)) ? "—" : Number(v).toLocaleString("pl-PL");
+
+function showError(msg) { const b = el("errorBox"); if (!msg) { b.classList.add("hide"); return; } b.classList.remove("hide"); b.textContent = msg; }
+function authedHeaders() { const h = { "Content-Type": "application/json" }; if (store.token) h["Authorization"] = "Bearer " + store.token; return h; }
+
+async function get(path) {
+  const r = await fetch(API + path, { headers: authedHeaders() });
+  if (!r.ok) throw new Error(path + " → HTTP " + r.status);
+  return r.json();
+}
+async function post(path, body) {
+  const r = await fetch(API + path, { method: "POST", headers: authedHeaders(), body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(path + " → HTTP " + r.status);
+  return r.json();
+}
+
+const kv = (rows) => rows.map(([k, v]) => `<div class="kv"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>`).join("");
+const badge = (ok) => ok ? `<span class="badge b-ok">${esc(ok)}</span>` : `<span class="badge b-dim">${esc(ok || "—")}</span>`;
+
+/* ---------- theme ---------- */
+const applyTheme = (t) => { document.documentElement.dataset.theme = t; localStorage.setItem("memphis.theme", t); };
+el("themeBtn").onclick = () => applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+applyTheme(localStorage.getItem("memphis.theme") || "auto");
+if (matchMedia("(prefers-color-scheme: light)").matches && !localStorage.getItem("memphis.theme")) document.documentElement.dataset.theme = "light";
+
+/* ---------- token ---------- */
+el("tokenInput").value = store.token;
+el("saveToken").onclick = () => { store.token = el("tokenInput").value.trim(); showError(""); loadStatus(); loadMemory(""); };
+el("clearToken").onclick = () => { store.token = ""; el("tokenInput").value = ""; showError(""); loadStatus(); };
+el("tokenPanel").classList.toggle("hide", !!store.token);
+
+/* ---------- status ---------- */
+async function loadStatus() {
+  try {
+    const s = await get("/api/status");
+    // /api/status reports health as {color, message}; /health reports it as a
+    // flat `status`. Both are public and agree, so read the flat one for the
+    // badge and keep the richer object for its message.
+    const h = s.health || {};
+    let flat = null;
+    try { flat = await get("/health"); } catch { flat = null; }
+    const state = flat?.status || (h.color === "green" ? "healthy" : "unknown");
+    const hl = state === "healthy" ? "b-ok" : state === "degraded" ? "b-warn" : "b-err";
+    el("runtimeBox").innerHTML = kv([
+      ["Status", `<span class="badge ${hl}">${esc(state)}</span>`],
+      ["Wersja", esc(s.version || flat?.version)],
+      ["Czas pracy", `${Math.floor((s.uptimeSec || 0) / 60)} min`],
+      ["Szczegóły", esc(h.message || "—")],
+      ["Worker", badge(s.localWorker?.state)],
+      ["Scheduler", esc(s.scheduler?.effectiveTarget || "local")],
+    ]);
+    el("memBox").innerHTML = kv([
+      ["RSS", nmb(Math.round((s.memory?.rss || 0) / 1048576)) + " MB"],
+      ["Heap", nmb(Math.round((s.memory?.heapUsed || 0) / 1048576)) + " MB"],
+      ["External", nmb(Math.round((s.memory?.external || 0) / 1048576)) + " MB"],
+    ]);
+    const w = s.workPolling?.work || {};
+    el("workBox").innerHTML = kv([
+      ["Oczekujące", nmb(w.pending)],
+      ["W toku", nmb(w.leased)],
+      ["Gotowe", nmb(w.completed)],
+      ["Nieudane", nmb(w.failed)],
+    ]);
+    const a = s.agents || {};
+    el("agentBox").innerHTML = kv([
+      ["Online", nmb(a.online)], ["Łącznie", nmb(a.total)],
+    ]);
+    // providers is an array of {name, ok, latencyMs}, not a keyed object.
+    const provs = Array.isArray(s.providers) ? s.providers : Object.entries(s.providers || {}).map(([name, v]) => ({ name, ...(typeof v === "object" ? v : { ok: v }) }));
+    el("provBox").innerHTML = provs.length
+      ? kv(provs.map((pv) => [pv.name, `<span class="badge ${pv.ok ? "b-ok" : "b-err"}">${pv.ok ? esc(pv.latencyMs != null ? pv.latencyMs + " ms" : "ok") : "błąd"}</span>`]))
+      : `<span class="hint">brak danych</span>`;
+
+    // adapters carry {backend, bridgeLoaded, ...} — no `status` field to read.
+    const ad = s.adapters || {};
+    el("adaptersBox").innerHTML = kv(Object.entries(ad).map(([k, v]) => {
+      const loaded = typeof v === "object" && v ? (v.bridgeLoaded ?? v.loaded ?? v.vaultApiAvailable ?? v.embedApiAvailable) : v;
+      const note = typeof v === "object" && v && v.backend ? " · " + v.backend : "";
+      return [k, `<span class="badge ${loaded ? "b-ok" : "b-err"}">${loaded ? "loaded" : "brak"}</span>${esc(note)}`];
+    }));
+    el("subtitle").textContent = `${s.version || flat?.version || "?"} · ${state}`;
+  } catch (e) { showError("Status: " + e.message); }
+}
+
+/* ---------- memory ---------- */
+let mode = "recall";
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.remove("on"));
+  t.classList.add("on");
+  mode = t.dataset.mode;
+  el("searchHint").textContent = mode === "recall"
+    ? "Recall: wyszukiwanie semantyczne po treści łańcuchów."
+    : "Search: dokładne dopasowanie frazy w indeksie.";
+  el("hits").innerHTML = "";
+});
+
+async function loadMemory(query) {
+  const box = el("hits");
+  if (!query) { box.innerHTML = ""; return; }
+  if (!store.token) {
+    el("searchHint").textContent = "Wpisz token API powyżej, aby przeszukiwać pamięć.";
+    return;
+  }
+  box.innerHTML = `<span class="spin"></span>`;
+  try {
+    const path = mode === "recall" ? "/api/recall" : "/api/search";
+    const body = mode === "recall" ? { query, limit: 8 } : { query, topK: 8 };
+    const r = await post(path, body);
+    const hits = r.results?.hits || r.hits || r.results || [];
+    const list = Array.isArray(hits) ? hits : [];
+    if (!list.length) { box.innerHTML = `<span class="hint">Brak trafień dla „${esc(query)}”.</span>`; return; }
+    box.innerHTML = list.map((hit) => {
+      const score = hit.score ?? hit.relevance ?? null;
+      const chain = hit.chain || hit.blockId || "";
+      const tags = (hit.tags || []).filter(t => !String(t).startsWith("chain:"));
+      const text = hit.text_preview || hit.text || hit.content || "";
+      return `<div class="hit">
+        <div class="hit-meta">
+          ${chain ? `<span>${esc(chain)}</span>` : ""}
+          ${score !== null ? `<span>score ${Number(score).toFixed(3)}</span>` : ""}
+          ${tags.map(t => `<span>#${esc(t)}</span>`).join("")}
+        </div>
+        <div class="hit-text">${esc(text)}</div>
+      </div>`;
+    }).join("");
+    el("searchHint").textContent = `${list.length} trafień${r.results?.degraded ? " · wyszukiwanie zdegradowane" : ""}`;
+  } catch (e) {
+    box.innerHTML = `<span class="hint">Błąd: ${esc(e.message)}</span>`;
+  }
+}
+
+el("searchBtn").onclick = () => loadMemory(el("q").value.trim());
+el("q").addEventListener("keydown", (e) => { if (e.key === "Enter") loadMemory(el("q").value.trim()); });
+el("refreshBtn").onclick = () => { loadStatus(); if (el("q").value.trim()) loadMemory(el("q").value.trim()); };
+
+loadStatus();
+setInterval(loadStatus, 30000);
+</script>
+</body>
+</html>

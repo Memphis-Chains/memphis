@@ -193,9 +193,7 @@ export async function enrollProviderKey(
   if (provider === 'shared-llm' || provider === 'decentralized-llm') {
     const baseEnv =
       provider === 'shared-llm' ? 'SHARED_LLM_API_BASE' : 'DECENTRALIZED_LLM_API_BASE';
-    nextSteps.push(
-      `# ${provider} also needs ${baseEnv} set in .env to reach the remote endpoint.`,
-    );
+    nextSteps.push(`# ${provider} also needs ${baseEnv} set in .env to reach the remote endpoint.`);
   }
   nextSteps.push('memphis doctor        # verify the configuration');
 
@@ -227,6 +225,14 @@ export async function handleProviderCommand(context: CliContext): Promise<boolea
       usage: 'memphis provider add <provider> --api-key <key>',
       examples: SUPPORTED_PROVIDERS.map((p) => `memphis provider add ${p} --api-key <key>`),
       note: 'Anthropic OAuth is preferred over API key — use `memphis auth anthropic` for OAuth.',
+      codex: {
+        provider: 'openai',
+        login: 'codex login',
+        configuration: 'OPENAI_AUTH_MODE=codex',
+        model: 'astra-gtp6-max',
+        additionalModel: 'gpt-5.6-sol-max',
+        note: 'Uses the Codex login and account limits; no Memphis API key enrollment is required.',
+      },
     };
     print(result, json);
     return true;

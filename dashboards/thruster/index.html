@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Thruster</title>
+<style>
+:root{
+  --washi:#F5F0E4; --washi-2:#EDE5D3; --washi-3:#E3D8C0;
+  --sumi:#1C1815; --sumi-2:#4A423A; --sumi-3:#7A7065;
+  --shu:#B23A2E; --ai:#2F4A5F; --kin:#A8853C;
+  --line:rgba(28,24,21,.14);
+  --serif:"Noto Serif CJK JP","Noto Serif",serif;
+  --sans:"Noto Sans CJK JP","Liberation Sans",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--washi);color:var(--sumi);font-family:var(--sans);
+  font-size:16px;line-height:1.75;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:0 32px 96px}
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.55;
+  background-image:
+    radial-gradient(circle at 18% 22%, rgba(178,58,46,.05), transparent 45%),
+    radial-gradient(circle at 82% 78%, rgba(47,74,95,.05), transparent 45%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.05'/%3E%3C/svg%3E");}
+.seigaiha{position:fixed;left:0;right:0;bottom:0;height:150px;z-index:0;pointer-events:none;opacity:.55}
+main{position:relative;z-index:1}
+header{padding:72px 0 40px;position:relative}
+.eyebrow{font-family:var(--serif);font-size:13px;letter-spacing:.42em;color:var(--shu);
+  text-transform:uppercase;margin-bottom:22px;display:flex;align-items:center;gap:14px}
+.eyebrow::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
+h1{font-family:var(--serif);font-weight:600;font-size:clamp(52px,9vw,104px);
+  line-height:.95;letter-spacing:-.02em;margin-bottom:8px}
+h1 .gl{display:block;font-size:.26em;letter-spacing:.5em;color:var(--sumi-3);
+  font-weight:400;margin-top:20px}
+.lede{font-size:19px;color:var(--sumi-2);max-width:60ch;margin-top:28px}
+.kanji-vert{position:absolute;right:-6px;top:64px;writing-mode:vertical-rl;font-family:var(--serif);
+  font-size:26px;letter-spacing:.34em;color:var(--sumi-3);
+  border-left:1px solid var(--line);padding-left:18px}
+section{margin-top:72px}
+h2{font-family:var(--serif);font-weight:600;font-size:30px;margin-bottom:8px;
+  display:flex;align-items:baseline;gap:16px}
+h2 .num{font-size:13px;letter-spacing:.2em;color:var(--washi);background:var(--sumi);
+  padding:5px 11px;border-radius:2px;font-weight:400}
+.sub{color:var(--sumi-3);font-size:15px;margin-bottom:28px;font-style:italic}
+</style>
+</head>
+<body>
+<div class="wrap"><main>
+<header>
+  <div class="eyebrow">Fin Setup · Konfiguracja pletw</div>
+  <h1>Thruster<span class="gl">スラストラー</span></h1>
+  <div class="kanji-vert">三枚櫂</div>
+  <p class="lede">Trzy pletwy, jeden wynalazek, cztery dekady dominacji. Dwie pletwy boczne
+  trzymaja deske, jedna centralna cofnieta do tylu dokreca srodek — i robi to, czego
+  rail finy nie potrafia.</p>
+</header><style>
+.hero{display:grid;grid-template-columns:1fr 1.15fr;gap:48px;align-items:center;
+  background:linear-gradient(160deg,var(--washi-2),var(--washi));border:1px solid var(--line);
+  border-radius:3px;padding:40px;
+  box-shadow:0 1px 0 rgba(255,255,255,.6) inset, 0 12px 40px -28px rgba(28,24,21,.5)}
+.board{width:100%;max-width:290px;margin:0 auto;display:block}
+.key{list-style:none;font-size:15px}
+.key li{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
+.key li:last-child{border:0}
+.dot{width:9px;height:9px;border-radius:50%;flex:0 0 9px;margin-top:9px}
+.key b{display:block;font-family:var(--serif);font-size:16px;margin-bottom:2px}
+.key span{color:var(--sumi-3);font-size:14px}
+.tl{position:relative;padding-left:34px}
+.tl::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:1px;background:var(--line)}
+.ev{position:relative;padding:0 0 26px}
+.ev::before{content:"";position:absolute;left:-33px;top:9px;width:11px;height:11px;
+  border-radius:50%;background:var(--washi);border:1.5px solid var(--sumi-3)}
+.ev.key-ev::before{background:var(--shu);border-color:var(--shu);box-shadow:0 0 0 4px rgba(178,58,46,.14)}
+.ev .yr{font-family:var(--serif);font-size:14px;letter-spacing:.14em;color:var(--shu)}
+.ev h4{font-family:var(--serif);font-size:17px;font-weight:600;margin:3px 0}
+.ev p{font-size:14.5px;color:var(--sumi-2)}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.card{border:1px solid var(--line);border-radius:3px;padding:26px;background:var(--washi)}
+.card.good{border-top:3px solid var(--ai)}
+.card.bad{border-top:3px solid var(--shu)}
+.card h3{font-family:var(--serif);font-size:19px;margin-bottom:4px}
+.card .tag{font-size:11px;letter-spacing:.18em;text-transform:uppercase;padding:3px 9px;
+  border-radius:2px;display:inline-block;margin-bottom:12px}
+.good .tag{background:rgba(47,74,95,.12);color:var(--ai)}
+.bad .tag{background:rgba(178,58,46,.12);color:var(--shu)}
+.card p{font-size:14.5px;color:var(--sumi-2)}
+.card ul{margin:10px 0 0 18px;font-size:14px;color:var(--sumi-2)}
+.card li{margin:3px 0}
+.prov{border:1px solid var(--line);border-left:3px solid var(--kin);border-radius:3px;
+  padding:24px 26px;background:var(--washi-2);font-size:15px}
+.prov h4{font-family:var(--serif);margin-bottom:8px}
+.prov p{margin-bottom:10px;color:var(--sumi-2)}
+.prov p:last-child{margin:0}
+.prov em{color:var(--shu);font-style:normal;font-weight:600}
+.quote{font-family:var(--serif);font-size:23px;line-height:1.6;font-style:italic;color:var(--sumi);
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:30px 0;margin-top:36px}
+.quote cite{display:block;font-size:13px;font-style:normal;color:var(--sumi-3);
+  letter-spacing:.14em;margin-top:14px;font-family:var(--sans)}
+footer{margin-top:80px;padding-top:26px;border-top:1px solid var(--line);font-size:13px;
+  color:var(--sumi-3);display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+@media(max-width:820px){.hero,.duo{grid-template-columns:1fr}.kanji-vert{display:none}.wrap{padding:0 20px 64px}}
+</style>
+<section>
+  <h2><span class="num">01</span> Anatomia</h2>
+  <div class="sub">Układ trzech płetw widziany z góry</div>
+  <div class="hero"><svg class="board" viewBox="0 0 300 620">
+      <defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#1C1815"/><stop offset="100%" stop-color="#4A423A"/>
+      </linearGradient></defs>
+      <path d="M150 18 C 214 60, 258 168, 250 320 C 244 430, 214 520, 150 596
+               C 86 520, 56 430, 50 320 C 42 168, 86 60, 150 18 Z"
+            fill="url(#bg)" stroke="#1C1815" stroke-width="1.5"/>
+      <path d="M150 40 C 205 78, 244 175, 237 320 C 232 424, 204 508, 150 578
+               C 96 508, 68 424, 63 320 C 56 175, 95 78, 150 40 Z"
+            fill="none" stroke="#E3D8C0" stroke-opacity=".28" stroke-width="1"/>
+      <path d="M150 30 L150 588" stroke="#E3D8C0" stroke-opacity=".14"
+            stroke-width="1" stroke-dasharray="4 6"/>
+      <g fill="#2F4A5F">
+        <path d="M104 470 C 116 476, 120 512, 108 546 C 104 558, 98 558, 96 546
+                 C 88 512, 92 476, 104 470 Z"/>
+        <path d="M196 470 C 208 476, 212 512, 200 546 C 196 558, 190 558, 188 546
+                 C 180 512, 184 476, 196 470 Z"/>
+      </g>
+      <g fill="#B23A2E">
+        <path d="M150 486 C 163 493, 168 540, 154 578 C 150 590, 143 590, 140 578
+                 C 130 540, 137 493, 150 486 Z"/>
+      </g>
+      <g stroke="#A8853C" stroke-width="1" stroke-opacity=".55" fill="none">
+        <path d="M96 500 L60 512"/><path d="M204 500 L240 512"/>
+      </g>
+      <circle cx="52" cy="516" r="3" fill="#A8853C"/>
+      <circle cx="248" cy="516" r="3" fill="#A8853C"/>
+      <g font-family="Noto Serif CJK JP,serif" fill="#4A423A">
+        <text x="40" y="512" font-size="11">側</text>
+        <text x="250" y="512" font-size="11">側</text>
+        <text x="157" y="540" font-size="11">中</text>
+      </g>
+    </svg><ul class="key">
+      <li><span class="dot" style="background:#B23A2E"></span>
+        <div><b>Fin centralny</b><span>central fin · cofnięty najdalej do tyłu · dokręca środek deski w łuku</span></div></li>
+      <li><span class="dot" style="background:#2F4A5F"></span>
+        <div><b>Dwa rail finy</b><span>side fins · bliżej taila · trzymanie bez zjadania drive'u</span></div></li>
+      <li><span class="dot" style="background:#A8853C"></span>
+        <div><b>Tail luźny</b><span>tail luźny · obciążasz i trzymasz jak quada na powerstocku</span></div></li>
+      <li><span class="dot" style="background:#6E7F52"></span>
+        <div><b>Bonzer</b><span>bonzer · centralka w puszcze, głębsza · późniejsze udoskonalenie</span></div></li>
+    </ul>
+  </div>
+</section>
+<section>
+  <h2><span class="num">02</span> Dlaczego wygrał</h2>
+  <div class="sub">Twin fin robił jednym skrzydłem dwa zadania naraz. Thruster je rozdzielił.</div>
+  <div class="duo">
+    <div class="card bad">
+      <span class="tag">Problem · Twin fin</span>
+      <h3>Jedno skrzydło, dwa zadania</h3>
+      <p>Twin fin ciągnie w dwie strony jednocześnie. Wychodzi przeciętnie w obu sytuacjach.</p>
+      <ul>
+        <li>Na grzbiecie (trim) zjeżdża za dużo — deska ucieka do przodu</li>
+        <li>W łamaniu (turn) zjada za dużo wody — brakuje drive'u</li>
+      </ul>
+    </div>
+    <div class="card good">
+      <span class="tag">Rozwiązanie · Thruster</span>
+      <h3>Dwa zadania, trzy płetwy</h3>
+      <p>Rail finy biorą trzymanie, centralna dokręca środek. Nic nie robi na połowę.</p>
+      <ul>
+        <li>Trim: rail finy trzymają bez nadmiernego oporu</li>
+        <li>Turn: centralna daje kierunek, reszta zostaje na drive</li>
+      </ul>
+    </div>
+  </div>
+</section><section>
+  <h2><span class="num">03</span> Oś czasu</h2>
+  <div class="sub">Wszystkie daty z artykułu „Simon Anderson", Wikipedia</div>
+  <div class="tl">
+    <div class="ev"><div class="yr">1935</div><h4>Tom Blake</h4>
+      <p>Pierwsze stałe płetwy. 30×10 cm metalowy keel odnaleziony na motorówce w Waikiki.</p></div>
+    <div class="ev"><div class="yr">~1936</div><h4>Woody Brown</h4>
+      <p>Niezależnie dodaje stałą płetwę w San Diego. Funkcja staje się standardem w latach 50.</p></div>
+    <div class="ev"><div class="yr">1940</div><h4>Bob Simmons</h4>
+      <p>Twin fin równoległy. Pojawia się okresowo do dziś jako kontrapunkt dla thrustera.</p></div>
+    <div class="ev key-ev"><div class="yr">Październik 1980</div><h4>Simon Anderson</h4>
+      <p>Po zobaczeniu twin fina z „trigger point" wymyśla wersję trójpłetwową. Prototyp
+      wozi na Hawaje i Kalifornię.</p></div>
+    <div class="ev key-ev"><div class="yr">1981</div><h4>Potwierdzenie</h4>
+      <p>Na tej desce wygrywa Bells Beach Classic oraz World Surf League Offshore
+      Pipeline Masters.</p></div>
+    <div class="ev"><div class="yr">2000</div><h4>Australian Sports Medal</h4>
+      <p>Odznaczenie za wkład w projekt desek. W tym samym okresie przemawia o tym,
+      dlaczego wynalazku nie patentował.</p></div>
+    <div class="ev"><div class="yr">2011</div><h4>Surfer's Hall of Fame</h4>
+      <p>Autobiografia „Thrust: The Simon Anderson Story". Wcześniej, w 2010, US Blanks
+      na Sacred Craft Expo w San Diego.</p></div>
+  </div>
+  <blockquote class="quote">
+    „Surfing history took its biggest turn since polyurethane foam."
+    <cite>— Simon Anderson, za cytatem w artykule Wikipedia</cite>
+  </blockquote>
+</section><section>
+  <h2><span class="num">04</span> Skąd to wiem</h2>
+  <div class="sub">Proweniencja oddzielona od interpretacji — czytaj zgodnie z tym podziałem</div>
+  <div class="prov">
+    <h4>Potwierdzone źródłem</h4>
+    <p>Wszystkie daty i cytaty w sekcjach 01–03 pochodzą z artykułu
+    <em>„Simon Anderson"</em> w angielskiej Wikipedii, pobranego przez API w tej sesji.
+    Artykuł <em>„Surfboard fin"</em> potwierdza konfigurację trójpłetwową jako standard
+    od 1980 r.</p>
+    <h4 style="margin-top:18px">Moja interpretacja — nie źródło</h4>
+    <p>Sekcja 02 (podział zadań na trim i turn) oraz opis bonzera to <em>moja</em>
+    wiedza, nie cytat. Wikipedia mówi, że rail finy stabilizują i dają lift w
+    manewrach, ale nie przedstawia tej mechaniki w takim rozbiorze. Traktuj to jako
+    wyjaśnienie, nie jako fakt udokumentowany.</p>
+    <h4 style="margin-top:18px">Czego tu nie ma</h4>
+    <p>Doboru deski do konkretnego surfera. Zależy od fali, wagi, stylu i tego, czy
+    pływasz na powerstocku czy w małej fali. Tego nie zgadywałem i nie umiem
+    wiarygodnie podać.</p>
+  </div>
+</section>
+</main></div>
+<svg class="seigaiha" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" viewBox="0 0 1200 150">
+<defs><pattern id="seig" width="60" height="30" patternUnits="userSpaceOnUse">
+<path d="M0 30 Q15 8 30 30 T60 30" fill="none" stroke="#2F4A5F" stroke-opacity=".22" stroke-width="1.2"/>
+<path d="M0 22 Q15 0 30 22 T60 22" fill="none" stroke="#2F4A5F" stroke-opacity=".13" stroke-width="1"/>
+<path d="M0 38 Q15 16 30 38 T60 38" fill="none" stroke="#2F4A5F" stroke-opacity=".10" stroke-width="1"/>
+</pattern></defs><rect width="1200" height="150" fill="url(#seig)"/></svg>
+<footer>
+  <span>Thruster · 1980 · Simon Anderson</span>
+  <span>Źródła: Wikipedia — Simon Anderson, Surfboard fin</span>
+</footer>
+</body>
+</html>

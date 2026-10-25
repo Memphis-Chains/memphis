@@ -37,19 +37,10 @@ describe('per-provider listModels()', () => {
     );
   });
 
-  it('Minimax exposes M2.7 + M1 + Text-01 + abab legacy series', async () => {
+  it('Minimax exposes only the current M3 lineup', async () => {
     const p = new MinimaxProvider({ apiKey: 'test' });
     const models = await p.listModels();
-    expect(models).toEqual(
-      expect.arrayContaining([
-        'MiniMax-M2.7',
-        'MiniMax-M1',
-        'MiniMax-Text-01',
-        'abab6.5s-chat',
-        'abab6.5-chat',
-        'abab5.5-chat',
-      ]),
-    );
+    expect(models).toEqual(['MiniMax-M3.1-Flash', 'MiniMax-M3']);
   });
 
   it('GLM exposes 4.6 + 4.5-air alongside legacy 4-flash', async () => {

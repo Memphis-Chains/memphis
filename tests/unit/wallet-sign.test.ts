@@ -160,6 +160,31 @@ describe('memphis_wallet_sign', () => {
     expect(result.error).toMatch(/base64/);
   });
 
+  it.each([
+    new Error('synthetic-wallet-private-sentinel', { cause: new Error('nested-secret') }),
+    'synthetic-wallet-private-sentinel',
+    new VaultSecretUnavailableError('wallet_seed', 'synthetic-wallet-private-sentinel'),
+  ])('does not serialize a vault or signer failure', (failure) => {
+    withVaultSecret.mockImplementation(() => {
+      throw failure;
+    });
+    const result = runMemphisWalletSign({ keyName: 'wallet_seed', message: 'AAAA' });
+    expect(result.signed).toBe(false);
+    expect(result.signature).toBe('');
+    expect(JSON.stringify(result)).not.toContain('synthetic-wallet-private-sentinel');
+    expect(JSON.stringify(result)).not.toContain('nested-secret');
+    expect(storeDurableMemory).not.toHaveBeenCalled();
+  });
+
+  it('does not report the length of an invalid private seed', () => {
+    grantSecret(Buffer.alloc(17, 3).toString('base64'));
+    const result = runMemphisWalletSign({ keyName: 'wallet_seed', message: 'AAAA' });
+    expect(result.error).toMatch(/32-byte Ed25519 seed/);
+    expect(result.error).not.toContain('17');
+    expect(result.signature).toBe('');
+    expect(storeDurableMemory).not.toHaveBeenCalled();
+  });
+
   it('rejects an empty message', () => {
     grantSecret(SEED_B64);
     const result = runMemphisWalletSign({ keyName: 'wallet_seed', message: '' });

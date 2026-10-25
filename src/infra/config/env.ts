@@ -148,6 +148,11 @@ const PROVIDER_REQUIREMENTS: Array<{
   check?: ProviderCheck;
 }> = [
   {
+    provider: 'openai',
+    keys: ['OPENAI_AUTH_MODE'],
+    check: (config) => config.OPENAI_AUTH_MODE === 'codex' || config.DEFAULT_PROVIDER === 'openai',
+  },
+  {
     provider: 'anthropic',
     // Displayed in the `requireConfiguredProvider` warning message; the
     // actual gating is done by `check` below.

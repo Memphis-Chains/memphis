@@ -68,6 +68,12 @@ export const envSchema = z.object({
   ANTHROPIC_OAUTH_CLIENT_SECRET: z.string().optional(),
   ANTHROPIC_OAUTH_TOKEN_URL: z.string().optional(),
   ANTHROPIC_OAUTH_SECRET_VAULT_KEY: z.string().optional(),
+  // Codex manages its own ChatGPT login; Memphis never copies its OAuth tokens.
+  // Opt in with OPENAI_AUTH_MODE=codex or DEFAULT_PROVIDER=openai.
+  OPENAI_AUTH_MODE: z.enum(['codex']).optional(),
+  OPENAI_MODEL: z.string().trim().min(1).default('astra-gtp6-max'),
+  CODEX_BIN: z.string().trim().min(1).optional(),
+  OPENAI_CODEX_TIMEOUT_MS: z.coerce.number().int().min(1000).max(3_600_000).default(180_000),
   OPENAI_COMPATIBLE_API_BASE: z.string().optional(),
   OPENAI_COMPATIBLE_API_KEY: z.string().optional(),
   OPENAI_COMPATIBLE_MODEL: z.string().optional(),
@@ -104,6 +110,9 @@ export const envSchema = z.object({
   MINIMAX_BASE_URL: z.string().optional(),
   MINIMAX_VAULT_KEY: z.string().optional(),
   MINIMAX_VIDEO_VAULT_KEY: z.string().optional(),
+  MINIMAX_REASONING_EFFORT: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
+  MINIMAX_MAX_COMPLETION_TOKENS: z.coerce.number().int().min(1).max(524_288).optional(),
+  MINIMAX_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(86_400_000).optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
   DEEPSEEK_VAULT_KEY: z.string().optional(),
   DEEPSEEK_MODEL: z.string().optional(),

@@ -419,22 +419,25 @@ export function generateCompletionScript(shell: CompletionShell): string {
   return generateFishCompletionScript();
 }
 
-export function print(data: unknown, asJson: boolean): void {
+export function print(data: unknown, asJson: boolean, out: NodeJS.WriteStream = process.stdout): void {
+  const line = (text: string): void => {
+    out.write(`${text}\n`);
+  };
   if (asJson) {
-    console.log(JSON.stringify(data, null, 2));
+    line(JSON.stringify(data, null, 2));
     return;
   }
 
   if (typeof data === 'object' && data !== null) {
     for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
-      console.log(
+      line(
         `${k}: ${typeof v === 'object' && v !== null ? JSON.stringify(v, null, 2) : String(v)}`,
       );
     }
     return;
   }
 
-  console.log(String(data));
+  line(String(data));
 }
 
 export function printChat(data: {

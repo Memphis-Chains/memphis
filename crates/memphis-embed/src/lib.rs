@@ -1,6 +1,7 @@
 pub mod cache;
 pub mod chain_integration;
 pub mod error;
+pub mod metadata;
 pub mod pipeline;
 pub mod store;
 

@@ -39,11 +39,37 @@ function fixture() {
     fixture.env.MEMPHIS_ENV_FILE!,
     'MEMPHIS_VAULT_PEPPER=synthetic-original-pepper-for-crash-test\n',
   );
-  run(fixture.env, 'init');
+  run(fixture.env, 'seed');
   return fixture;
 }
 
 describe('vault writers and rotation', () => {
+  it.each(['hold-secret-selection', 'hold-bounded-selection'])(
+    'reads a consistent credential after rotation during %s',
+    async (mode) => {
+      const { root, env } = fixture();
+      const ready = join(root, 'secret-ready');
+      const release = join(root, 'secret-release');
+      const reader = launch(env, mode, ready, release);
+      try {
+        const deadline = Date.now() + 20000;
+        while (!existsSync(ready)) {
+          expect(Date.now()).toBeLessThan(deadline);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        run(env, 'rotate-clean');
+        writeFileSync(release, 'continue');
+        const result = await reader.done;
+        expect(result.code, result.stderr).toBe(0);
+        run(env, 'read-many', '2');
+      } finally {
+        if (reader.child.exitCode === null) reader.child.kill('SIGKILL');
+        await reader.done;
+      }
+    },
+    90000,
+  );
+
   it('retries a decoded snapshot when rotation finishes before cache publication', async () => {
     const { root, env } = fixture();
     const ready = join(root, 'state-ready');

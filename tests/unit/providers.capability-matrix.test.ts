@@ -21,13 +21,10 @@ describe('resolveModelCapabilitySnapshot', () => {
     });
   });
 
-  // 2026-10-01 regression. The M3 branch was `/^(minimax-)?m3$/i`,
-  // anchored at both ends, so it matched the bare name only. The
-  // operator's configured model is `MiniMax-M3.1-Flash-Preview`, which
-  // fell through to the 32k catch-all and reported `supportsVision:
-  // false` — a 31x understatement of the window on the model actually
-  // in use. The two tests above both passed the whole time.
+  // Keep the old Preview id only as a migration compatibility case. The GA
+  // configuration and advertised model id are MiniMax-M3.1-Flash.
   test.each([
+    'MiniMax-M3.1-Flash',
     'MiniMax-M3.1-Flash-Preview',
     'MiniMax-M3.1',
     'MiniMax-M3.2',
@@ -75,6 +72,17 @@ describe('resolveModelCapabilitySnapshot', () => {
 });
 
 describe('CapabilityMatrix', () => {
+  test('records the M3.1 Flash 512K hard output ceiling', () => {
+    const matrix = new CapabilityMatrix();
+    const minimax = matrix.getProvider('minimax');
+    expect(minimax?.models.find((model) => model.name === 'MiniMax-M3.1-Flash')).toMatchObject({
+      contextWindow: 1000000,
+      maxOutputTokens: 524288,
+      supportsVision: true,
+      supportsFunctionCalling: true,
+    });
+  });
+
   test('finds provider by requirements', () => {
     const matrix = new CapabilityMatrix();
 

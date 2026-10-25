@@ -6,12 +6,16 @@ import {
   parseVaultEntries,
   VaultEntryError,
   vaultDecrypt,
+  withVaultReadSnapshot,
   type VaultEntry,
 } from './rust-vault-adapter.js';
 import { healSensitiveFilePerms } from './secure-file.js';
 import { resolveVaultJournals, resolveVaultPath } from './vault-paths.js';
 import { secureCompare } from '../../security/constant-time.js';
-import { withConfigurationWriteLock } from '../config/config-transaction.js';
+import {
+  withConfigurationSnapshot,
+  withConfigurationWriteLock,
+} from '../config/config-transaction.js';
 import { writePrivateAtomicFile } from '../config/private-atomic-file.js';
 
 export interface StoredVaultEntry extends VaultEntry {
@@ -91,20 +95,39 @@ export function listVaultEntries(
   rawEnv: NodeJS.ProcessEnv = process.env,
   key?: string,
 ): StoredVaultEntry[] {
-  const path = getStorePath(rawEnv);
-  return readAll(path, rawEnv, key || undefined);
+  return withConfigurationSnapshot(resolveVaultJournals(rawEnv).paths, () =>
+    readAll(getStorePath(rawEnv), rawEnv, key || undefined),
+  );
 }
 
 export function getLatestVaultEntry(
   key: string,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): StoredVaultEntry | undefined {
-  return readAll(getStorePath(rawEnv), rawEnv, key, true)[0];
+  return withConfigurationSnapshot(
+    resolveVaultJournals(rawEnv).paths,
+    () => readAll(getStorePath(rawEnv), rawEnv, key, true)[0],
+  );
 }
 
 export function verifyVaultEntry(entry: StoredVaultEntry): boolean {
   const expected = computeFingerprint(entry);
   return secureCompare(expected, entry.fingerprint);
+}
+
+/** Selection and decryption must see the same recovered rotation snapshot. */
+export function readLatestVaultSecret(
+  key: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): { entry: StoredVaultEntry; plaintext: string } | undefined {
+  // Preserve missing-entry behavior even when no vault state exists yet.
+  const exists = getLatestVaultEntry(key, rawEnv);
+  if (!exists) return undefined;
+  return withVaultReadSnapshot(() => {
+    const entry = getLatestVaultEntry(key, rawEnv);
+    if (!entry) return undefined;
+    return { entry, plaintext: vaultDecrypt(entry, rawEnv) };
+  }, rawEnv);
 }
 
 export function deleteVaultEntriesByKey(

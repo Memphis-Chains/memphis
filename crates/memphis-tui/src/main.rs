@@ -134,6 +134,7 @@ struct CliArgs {
     check_only: bool,
     json: bool,
     run_command: Option<String>,
+    input: Option<String>,
 }
 
 impl CliArgs {
@@ -154,6 +155,19 @@ impl CliArgs {
             match value.as_str() {
                 "--check-only" => args.check_only = true,
                 "--json" => args.json = true,
+                "--input" => {
+                    let Some(input) = collected.get(index + 1) else {
+                        return Err("--input requires a non-empty input string.".to_string());
+                    };
+                    if input.trim().is_empty() {
+                        return Err("--input requires a non-empty input string.".to_string());
+                    }
+                    if args.input.is_some() {
+                        return Err("--input specified more than once.".to_string());
+                    }
+                    args.input = Some(input.clone());
+                    index += 1;
+                }
                 "--run-command" => {
                     let Some(command) = collected.get(index + 1) else {
                         return Err("--run-command requires an input string.".to_string());
@@ -171,6 +185,10 @@ impl CliArgs {
                 unknown => return Err(format!("unsupported memphis-tui flag: {unknown}")),
             }
             index += 1;
+        }
+
+        if args.input.is_some() && (args.check_only || args.run_command.is_some() || args.json) {
+            return Err("--input is only supported in interactive mode.".to_string());
         }
 
         if args.check_only && args.run_command.is_some() {
@@ -277,6 +295,11 @@ fn main() -> ExitCode {
     // entry reads are file-open + AES-GCM decrypt, safe to do concurrently
     // with the main thread (no shared mutable state, no locking required).
     let mut pending_refresh: Option<mpsc::Receiver<RefreshResult>> = None;
+
+    if let Some(input) = args.input {
+        app.input_buffer = input;
+        app.execute_input(&mut client);
+    }
 
     loop {
         app.poll_active_command();
@@ -452,7 +475,7 @@ fn spawn_refresh() -> mpsc::Receiver<RefreshResult> {
 }
 
 fn print_usage() {
-    println!("memphis-tui [--check-only --json] [--run-command '<input>' --json]");
+    println!("memphis-tui [--input '<prompt>'] [--check-only --json] [--run-command '<input>' --json]");
 }
 
 fn run_check_only(app: &AppState, client: &MemphisClient, json: bool) -> ExitCode {
@@ -670,6 +693,39 @@ mod tests {
         .unwrap();
         assert_eq!(args.run_command.as_deref(), Some("/config tools list"));
         assert!(args.json);
+    }
+
+    #[test]
+    fn parses_initial_input_without_changing_its_contents() {
+        let input = "--literal Sprawdź \"Omarchy\"\ndruga linia; $(nothing)";
+        let args = CliArgs::from_env_args(["memphis-tui", "--input", input]).unwrap();
+        assert_eq!(args.input.as_deref(), Some(input));
+    }
+
+    #[test]
+    fn rejects_missing_empty_or_repeated_initial_input() {
+        for argv in [
+            vec!["memphis-tui", "--input"],
+            vec!["memphis-tui", "--input", "   "],
+            vec!["memphis-tui", "--input", "first", "--input", "second"],
+        ] {
+            assert!(CliArgs::from_env_args(argv).unwrap_err().contains("--input"));
+        }
+    }
+
+    #[test]
+    fn rejects_initial_input_in_noninteractive_modes() {
+        for flags in [
+            vec!["--check-only"],
+            vec!["--json"],
+            vec!["--run-command", "/overview", "--json"],
+        ] {
+            let mut argv = vec!["memphis-tui", "--input", "hello"];
+            argv.extend(flags);
+            assert!(CliArgs::from_env_args(argv)
+                .unwrap_err()
+                .contains("only supported in interactive mode"));
+        }
     }
 
     #[test]

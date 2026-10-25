@@ -7,6 +7,8 @@
 //
 import { lstatSync } from 'node:fs';
 
+import { assertChainWriteAllowed } from './chain-write-guard.js';
+import { withChainWriteLock } from './chain-write-lock.js';
 import {
   hasRequiredBridgeExports,
   loadPlatformAwareBridge,
@@ -23,8 +25,13 @@ import { resolveRustBridgePath } from '../runtime/install-root.js';
 // Chains that count as audit/system surfaces. Writes to these from a
 // VITEST process must opt in via MEMPHIS_TEST_ALLOW_AUDIT_WRITE=1 or
 // they're refused (Block 1853 incident, 2026-05-12). Other chains
-// (journal, case, decisions, etc.) are unguarded — tests legitimately
-// produce those via the mocked chain adapter pattern.
+// (journal, case, decisions, etc.) are unguarded HERE — but they are
+// still covered by the path-level guard in chain-write-guard.ts, which
+// refuses any VITEST write that resolves outside the OS temp dir. The
+// 2026-10-24 journal pollution came from exactly that gap: a test
+// called the real appendBlock with a rawEnv that omitted
+// MEMPHIS_DATA_DIR, so the write landed in the operator's live
+// ~/.memphis chain.
 const AUDIT_GUARDED_CHAINS: ReadonlySet<string> = new Set(['system', 'security']);
 
 export type ChainBackend = 'ts-legacy' | 'rust-napi';
@@ -136,9 +143,6 @@ function getChainAllowlist(rawEnv: NodeJS.ProcessEnv = process.env): ReadonlySet
   }
   return DEFAULT_CHAIN_ALLOWLIST;
 }
-const APPEND_LOCK_FILE = '.append.lock';
-const APPEND_LOCK_RETRY_MS = 10;
-const APPEND_LOCK_MAX_ATTEMPTS = 200;
 
 export interface ChainBlock {
   index: number;
@@ -239,6 +243,7 @@ export async function appendBlock(
     },
     rawEnv,
   );
+  assertChainWriteAllowed(chainsDir, rawEnv);
   await fs.mkdir(chainsDir, { recursive: true });
 
   return withAppendLock(chainsDir, fs, path, async () => {
@@ -267,8 +272,12 @@ export async function appendBlock(
     const payload = JSON.stringify(block, null, 2);
 
     await fs.writeFile(tmpFilename, payload, 'utf8');
+    const staged = await fs.open(tmpFilename, 'r');
+    try { await staged.sync(); } finally { await staged.close(); }
     try {
       await fs.rename(tmpFilename, filename);
+      const directory = await fs.open(chainsDir, 'r');
+      try { await directory.sync(); } finally { await directory.close(); }
     } catch (error) {
       await fs.unlink(tmpFilename).catch(() => undefined);
       throw error;
@@ -983,49 +992,14 @@ function extractJsonObjects(raw: string): unknown[] {
   return out;
 }
 
-const APPEND_LOCK_STALE_MS = 30_000;
 
 export async function withAppendLock<T>(
   chainsDir: string,
-  fs: typeof import('node:fs/promises'),
-  path: typeof import('node:path'),
+  _fs: typeof import('node:fs/promises'),
+  _path: typeof import('node:path'),
   fn: () => Promise<T>,
 ): Promise<T> {
-  const lockPath = path.join(chainsDir, APPEND_LOCK_FILE);
-
-  for (let attempt = 0; attempt < APPEND_LOCK_MAX_ATTEMPTS; attempt += 1) {
-    try {
-      const lockHandle = await fs.open(lockPath, 'wx');
-      try {
-        return await fn();
-      } finally {
-        await lockHandle.close().catch(() => undefined);
-        await fs.unlink(lockPath).catch(() => undefined);
-      }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') {
-        throw error;
-      }
-      // Detect stale lock from a crashed process
-      try {
-        const lockStat = await fs.stat(lockPath);
-        if (Date.now() - lockStat.mtimeMs > APPEND_LOCK_STALE_MS) {
-          await fs.unlink(lockPath).catch(() => undefined);
-          continue;
-        }
-      } catch {
-        // lock file disappeared — retry immediately
-        continue;
-      }
-      await delay(APPEND_LOCK_RETRY_MS);
-    }
-  }
-
-  throw new Error(`chain append lock timeout for ${chainsDir}`);
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return withChainWriteLock(chainsDir, fn);
 }
 
 async function pruneTrailingEmptyBlockFiles(
