@@ -1,3 +1,5 @@
+import { DEFAULT_MINIMAX_MODEL } from './minimax/config.js';
+
 export interface ProviderCapabilities {
   name: string;
   models: ModelCapabilities[];
@@ -193,36 +195,30 @@ export class CapabilityMatrix {
       },
     });
 
+    // Default-model profile, verified against MiniMax's 2026-10-19 release.
+    // Prices are per 1k tokens (published per-million prices divided by 1000).
+    // Runtime budget caps are separate from the API's maximum output capacity.
     this.providers.set('minimax', {
       name: 'minimax',
       models: [
         {
-          name: 'MiniMax-M2.7',
-          contextWindow: 204800,
-          maxOutputTokens: 32768,
+          name: DEFAULT_MINIMAX_MODEL,
+          contextWindow: 1000000,
+          maxOutputTokens: 524288,
           supportsStreaming: true,
           supportsFunctionCalling: true,
-          supportsVision: false,
+          supportsVision: true,
           supportsJson: true,
         },
-        {
-          name: 'abab6.5s-chat',
-          contextWindow: 16384,
-          maxOutputTokens: 2048,
-          supportsStreaming: true,
-          supportsFunctionCalling: false,
-          supportsVision: false,
-          supportsJson: false,
-        },
       ],
-      supportedFeatures: ['streaming', 'function-calling', 'json-mode'],
+      supportedFeatures: ['streaming', 'function-calling', 'json-mode', 'vision'],
       rateLimits: {
         requestsPerMinute: 60,
         tokensPerMinute: 60000,
       },
       pricing: {
-        inputCostPer1k: 0.001,
-        outputCostPer1k: 0.003,
+        inputCostPer1k: 0.00015,
+        outputCostPer1k: 0.0006,
       },
       reliability: {
         uptimePercent: 99.0,

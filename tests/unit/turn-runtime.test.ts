@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   resetTurnTelemetryForTests,
   snapshotTurnTelemetry,
+  estimatePromptTokens,
 } from '../../src/infra/runtime/turn-telemetry.js';
 
 const runAgentLoop = vi.fn(async () => ({
@@ -246,6 +247,48 @@ describe('turn runtime', () => {
       userText: 'hello',
       assistantReply: 'Visible answer',
     });
+  });
+
+  it('retains reasoning only in continuation history, not the sent reply or durable memory', async () => {
+    runAgentLoop.mockImplementationOnce(async () => ({
+      reply: 'Visible answer',
+      messages: [
+        { role: 'user', content: 'hello' },
+        {
+          role: 'assistant',
+          content: 'Visible answer',
+          reasoning_content: 'private continuation marker',
+        },
+      ],
+    }));
+    const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
+    const sendReply = vi.fn(async () => undefined);
+    const memory = {
+      recall: vi.fn(async () => ({ items: [] })),
+      store: vi.fn(async () => undefined),
+      isAvailable: vi.fn(() => true),
+    };
+    const result = await runTurnRuntime({
+      input: 'hello',
+      messages: [],
+      llm: { complete: vi.fn() },
+      providerLabel: 'minimax',
+      model: 'MiniMax-M3.1-Flash',
+      memory,
+      memoryUserId: 'telegram:test',
+      surface: 'telegram',
+      sendReply,
+    });
+    expect(result.output).toBe('Visible answer');
+    expect(result.messages.at(-1)).toMatchObject({
+      reasoning_content: 'private continuation marker',
+    });
+    expect(sendReply).toHaveBeenCalledWith('Visible answer');
+    expect(memory.store).toHaveBeenCalled();
+    expect(JSON.stringify(memory.store.mock.calls)).not.toContain('private continuation marker');
+    expect(JSON.stringify(runPostResponseCognitivePass.mock.calls)).not.toContain(
+      'private continuation marker',
+    );
   });
 
   it('stamps real provider/model labels when MEMPHIS_PROVIDER_STAMP=1 (no fallback to "provider/unknown")', async () => {
@@ -725,6 +768,37 @@ describe('turn runtime', () => {
       runCall.messages.length < 4 ||
         serializedMessages.includes('[context trimmed: message shortened before provider call]'),
     ).toBe(true);
+  });
+
+  it('counts reasoning in estimates and refuses an oversized exchange before trimming it', async () => {
+    const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
+    const reasoning = 'x'.repeat(4_000_000);
+    const messages = [
+      { role: 'user' as const, content: 'lookup' },
+      {
+        role: 'assistant' as const,
+        content: '',
+        reasoning_content: reasoning,
+        tool_calls: [{ id: 'call-a', name: 'lookup', arguments: {} }],
+      },
+      { role: 'tool' as const, tool_call_id: 'call-a', content: '42' },
+    ];
+    expect(estimatePromptTokens({ messages })).toBeGreaterThan(1_000_000);
+    await expect(
+      runTurnRuntime({
+        input: 'continue',
+        messages,
+        llm: { complete: vi.fn() },
+        providerLabel: 'minimax',
+        model: 'MiniMax-M3.1-Flash',
+        surface: 'cli.chat',
+        cognitiveRuntimeEnabled: false,
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR', retriable: false });
+    expect(runAgentLoop).not.toHaveBeenCalled();
+    expect(messages).toHaveLength(3);
+    expect(messages[1].reasoning_content).toBe(reasoning);
+    expect(messages[2].tool_call_id).toBe('call-a');
   });
 
   it('blocks durable memory persistence when the transcript fails content scan', async () => {

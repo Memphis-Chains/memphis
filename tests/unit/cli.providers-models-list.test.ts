@@ -1,8 +1,31 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import { listModelsWithCapabilities } from '../../src/infra/cli/provider-capabilities.js';
 import { runCli } from '../helpers/cli.js';
 
 describe('CLI providers/models list', () => {
+  it.each([undefined, 'MiniMax-M3'])(
+    'keeps the configured MiniMax model when discovery fails: %s',
+    async (model) => {
+      const fetchMock = vi
+        .spyOn(globalThis, 'fetch')
+        .mockRejectedValue(new Error('synthetic offline'));
+      try {
+        const models = await listModelsWithCapabilities({
+          MINIMAX_API_KEY: 'synthetic-key',
+          MINIMAX_MODEL: model,
+          MINIMAX_BASE_URL: 'https://minimax.example.test/v1',
+        });
+        expect(models.find((entry) => entry.provider === 'minimax')).toMatchObject({
+          model: model ?? 'MiniMax-M3.1-Flash',
+          capabilities: { context_window: 1000000, supports_vision: true },
+        });
+      } finally {
+        fetchMock.mockRestore();
+      }
+    },
+  );
+
   it('prints configured providers as JSON', async () => {
     const out = await runCli(['providers', 'list', '--json'], {
       env: {

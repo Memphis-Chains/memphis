@@ -13,6 +13,12 @@ use serde_json::{json, Value};
 
 use crate::{runtime::try_read_vault_secret_plaintext, OperatorConfig, OperatorError};
 
+const DEFAULT_MINIMAX_MODEL: &str = "MiniMax-M3.1-Flash";
+const DEFAULT_MINIMAX_MAX_COMPLETION_TOKENS: u32 = 32_768;
+const MAX_MINIMAX_COMPLETION_TOKENS: u32 = 524_288;
+// Same estimated 92% context budget as the TypeScript MiniMax adapter.
+const MINIMAX_ESTIMATED_CONTEXT_BUDGET: u64 = 920_000;
+
 /// Sanitize a string for JSON serialization.
 /// JSON only supports `\uXXXX` and `\\` escapes. Invalid `\xNN` (1-digit hex)
 /// or incomplete `\x` escapes must be converted/removed or serde_json will
@@ -116,6 +122,9 @@ pub enum ChatMessage {
         content: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         tool_calls: Vec<ChatToolCall>,
+        /// In-memory continuation only; never persist in transcripts or generic JSON.
+        #[serde(skip)]
+        reasoning_content: Option<String>,
     },
     Tool {
         tool_call_id: String,
@@ -170,6 +179,7 @@ pub struct ChatRequestOptions {
     pub system_prompt: Option<String>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
+    pub reasoning_effort: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -179,6 +189,18 @@ pub struct ChatCompletion {
     pub provider: String,
     pub tool_calls: Vec<ChatToolCall>,
     pub token_usage: Option<TokenUsageSummary>,
+    /// MiniMax continuation metadata, separate from visible/streamed text.
+    pub reasoning_content: Option<String>,
+}
+
+impl ChatCompletion {
+    pub fn assistant_message(&self) -> ChatMessage {
+        ChatMessage::Assistant {
+            content: self.content.clone(),
+            tool_calls: self.tool_calls.clone(),
+            reasoning_content: self.reasoning_content.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -226,6 +248,7 @@ pub struct ProviderRuntime {
     api_key_missing_hint: String,
     default_model: String,
     timeout_ms: u64,
+    minimax_reasoning_effort: Option<String>,
 }
 
 impl ProviderRuntime {
@@ -291,6 +314,7 @@ impl ProviderRuntime {
                 let input = build_generate_input_from_chat(messages, opts, tools);
                 let content = format!("Fallback response: {input}");
                 Ok(ChatCompletion {
+                    reasoning_content: None,
                     content: content.clone(),
                     model: model.to_string(),
                     provider: self.name.clone(),
@@ -372,6 +396,7 @@ impl ProviderRuntime {
                 // latency to simulate; instant emit is the right UX.
                 emit_text_chunks(content.as_str(), cancel_flag, None, &mut on_event)?;
                 Ok(ChatCompletion {
+                    reasoning_content: None,
                     content,
                     model: model.to_string(),
                     provider: self.name.clone(),
@@ -532,6 +557,7 @@ impl ProviderRuntime {
         )?;
         let message = body.get("message").cloned().unwrap_or(Value::Null);
         Ok(ChatCompletion {
+            reasoning_content: None,
             content: message
                 .get("content")
                 .and_then(Value::as_str)
@@ -668,12 +694,88 @@ impl ProviderRuntime {
         }
 
         Ok(ChatCompletion {
+            reasoning_content: None,
             content,
             model: resolved_model,
             provider: self.name.clone(),
             tool_calls,
             token_usage,
         })
+    }
+
+    fn openai_request_payload(
+        &self,
+        messages: &[ChatMessage],
+        opts: &ChatRequestOptions,
+        tools: &[ChatToolDefinition],
+        model: &str,
+        stream: bool,
+    ) -> Result<Value, OperatorError> {
+        let mut all_messages = Vec::new();
+        if let Some(system_prompt) = opts.system_prompt.as_deref() {
+            all_messages
+                .push(json!({ "role": "system", "content": sanitize_for_json(system_prompt) }));
+        }
+        all_messages.extend(messages.iter().map(|message| {
+            let mut value = message_to_provider_json(message);
+            // Other providers must not receive MiniMax continuation metadata.
+            if self.kind == ProviderKind::Minimax {
+                if let ChatMessage::Assistant {
+                    reasoning_content: Some(reasoning),
+                    ..
+                } = message
+                {
+                    value["reasoning_content"] = json!(reasoning);
+                }
+            }
+            value
+        }));
+        let mut payload = json!({
+            "model": model,
+            "messages": all_messages,
+            "tools": build_tools_json(tools),
+        });
+        if self.kind == ProviderKind::Minimax && model.eq_ignore_ascii_case(DEFAULT_MINIMAX_MODEL) {
+            let max_tokens = opts
+                .max_tokens
+                .unwrap_or(DEFAULT_MINIMAX_MAX_COMPLETION_TOKENS);
+            if !(1..=MAX_MINIMAX_COMPLETION_TOKENS).contains(&max_tokens) {
+                return Err(OperatorError::Message(format!(
+                    "MiniMax-M3.1-Flash max_tokens must be from 1 to {MAX_MINIMAX_COMPLETION_TOKENS}"
+                )));
+            }
+            let effort = opts
+                .reasoning_effort
+                .as_deref()
+                .or(self.minimax_reasoning_effort.as_deref())
+                .unwrap_or("medium");
+            if !matches!(effort, "low" | "medium" | "high" | "xhigh" | "max") {
+                return Err(OperatorError::Message(
+                    "MiniMax reasoning effort must be low, medium, high, xhigh, or max".to_string(),
+                ));
+            }
+            payload["max_completion_tokens"] = json!(max_tokens);
+            payload["reasoning_effort"] = json!(effort);
+            // Count the exact request history (including reasoning and tool arguments)
+            // before every round. Refuse overflow without trimming a tool exchange.
+            let request_json = serde_json::to_string(&payload)
+                .map_err(|error| OperatorError::Json(error.to_string()))?;
+            let estimated_input = request_json.chars().count().div_ceil(4) as u64;
+            if estimated_input.saturating_add(u64::from(max_tokens))
+                > MINIMAX_ESTIMATED_CONTEXT_BUDGET
+            {
+                return Err(OperatorError::Message(
+                    "MiniMax-M3.1-Flash estimated context plus completion reserve exceeds the 920000-token budget; start a shorter conversation or lower the output budget".to_string(),
+                ));
+            }
+        } else {
+            payload["temperature"] = json!(opts.temperature.unwrap_or(0.7));
+            payload["max_tokens"] = json!(opts.max_tokens.unwrap_or(2048));
+        }
+        if stream {
+            payload["stream"] = json!(true);
+        }
+        Ok(payload)
     }
 
     #[allow(dead_code)]
@@ -686,28 +788,9 @@ impl ProviderRuntime {
         base_url: String,
     ) -> Result<ChatCompletion, OperatorError> {
         let api_key = self.require_api_key()?;
-        let provider_messages = messages
-            .iter()
-            .map(message_to_provider_json)
-            .collect::<Vec<_>>();
-        let all_messages = if let Some(system_prompt) = opts.system_prompt.as_deref() {
-            let mut combined =
-                vec![json!({ "role": "system", "content": sanitize_for_json(system_prompt) })];
-            combined.extend(provider_messages);
-            combined
-        } else {
-            provider_messages
-        };
-
         let body = post_json(
             format!("{}/chat/completions", base_url).as_str(),
-            json!({
-                "model": model,
-                "messages": all_messages,
-                "temperature": opts.temperature.unwrap_or(0.7),
-                "max_tokens": opts.max_tokens.unwrap_or(2048),
-                "tools": build_tools_json(tools),
-            }),
+            self.openai_request_payload(messages, opts, tools, model, false)?,
             Some(api_key),
             self.timeout_ms,
             &[],
@@ -720,6 +803,14 @@ impl ProviderRuntime {
             .cloned()
             .unwrap_or(Value::Null);
         Ok(ChatCompletion {
+            reasoning_content: if self.kind == ProviderKind::Minimax {
+                message
+                    .get("reasoning_content")
+                    .and_then(Value::as_str)
+                    .map(ToString::to_string)
+            } else {
+                None
+            },
             content: message
                 .get("content")
                 .and_then(Value::as_str)
@@ -757,29 +848,9 @@ impl ProviderRuntime {
     {
         ensure_not_cancelled(cancel_flag)?;
         let api_key = self.require_api_key()?;
-        let provider_messages = messages
-            .iter()
-            .map(message_to_provider_json)
-            .collect::<Vec<_>>();
-        let all_messages = if let Some(system_prompt) = opts.system_prompt.as_deref() {
-            let mut combined =
-                vec![json!({ "role": "system", "content": sanitize_for_json(system_prompt) })];
-            combined.extend(provider_messages);
-            combined
-        } else {
-            provider_messages
-        };
-
         let response = post_response_with_provider(
             format!("{}/chat/completions", base_url).as_str(),
-            json!({
-                "model": model,
-                "messages": all_messages,
-                "temperature": opts.temperature.unwrap_or(0.7),
-                "max_tokens": opts.max_tokens.unwrap_or(2048),
-                "tools": build_tools_json(tools),
-                "stream": true,
-            }),
+            self.openai_request_payload(messages, opts, tools, model, true)?,
             Some(api_key),
             self.timeout_ms,
             &[("Accept", "text/event-stream")],
@@ -787,6 +858,7 @@ impl ProviderRuntime {
         )?;
         let reader = BufReader::new(response.into_reader());
         let mut content = String::new();
+        let mut reasoning_content: Option<String> = None;
         let mut resolved_model = model.to_string();
         let mut tool_call_accumulators = Vec::new();
         let mut token_usage = None;
@@ -819,6 +891,12 @@ impl ProviderRuntime {
                 break;
             }
             let payload = serde_json::from_str::<Value>(data).map_err(|error| {
+                if self.kind == ProviderKind::Minimax {
+                    // SSE data can contain reasoning; never put it in operator errors.
+                    return OperatorError::Message(format!(
+                        "invalid provider stream payload: {error}"
+                    ));
+                }
                 let preview = if data.len() > 100 {
                     format!("{}...", &data[..100])
                 } else {
@@ -844,6 +922,13 @@ impl ProviderRuntime {
                 .cloned()
                 .unwrap_or(Value::Null);
 
+            if self.kind == ProviderKind::Minimax {
+                if let Some(reasoning) = delta.get("reasoning_content").and_then(Value::as_str) {
+                    reasoning_content
+                        .get_or_insert_with(String::new)
+                        .push_str(reasoning);
+                }
+            }
             if let Some(token) = delta.get("content").and_then(Value::as_str) {
                 if !token.is_empty() {
                     ensure_not_cancelled(cancel_flag)?;
@@ -870,6 +955,7 @@ impl ProviderRuntime {
         }
 
         Ok(ChatCompletion {
+            reasoning_content,
             content,
             model: resolved_model,
             provider: self.name.clone(),
@@ -930,6 +1016,7 @@ impl ProviderRuntime {
         });
 
         Ok(ChatCompletion {
+            reasoning_content: None,
             content,
             model: body
                 .get("model")
@@ -1145,6 +1232,7 @@ impl ProviderRuntime {
         }
 
         Ok(ChatCompletion {
+            reasoning_content: None,
             content,
             model: resolved_model,
             provider: self.name.clone(),
@@ -1235,12 +1323,13 @@ impl ProviderRuntime {
             ProviderKind::Ollama => self
                 .fetch_ollama_models()
                 .unwrap_or_else(|_| vec![self.default_model.clone()]),
-            ProviderKind::Minimax => vec![
-                "MiniMax-M2.7".to_string(),
-                "abab5.5-chat".to_string(),
-                "abab6-chat".to_string(),
-                "abab6.5s-chat".to_string(),
-            ],
+            ProviderKind::Minimax => {
+                let mut models = vec![DEFAULT_MINIMAX_MODEL.to_string(), "MiniMax-M3".to_string()];
+                if !models.contains(&self.default_model) {
+                    models.push(self.default_model.clone());
+                }
+                models
+            }
             ProviderKind::Deepseek => vec![self.default_model.clone()],
             ProviderKind::Glm => vec![
                 self.default_model.clone(),
@@ -1353,7 +1442,9 @@ fn minimax_context_window_tokens(model: &str) -> u32 {
     //
     // Kept aligned with the TS-side capability matrix entry in
     // src/providers/capability-matrix.ts:201 (204_800 = 200 × 1024).
-    if model.contains("m2") {
+    if model.eq_ignore_ascii_case(DEFAULT_MINIMAX_MODEL) {
+        1_000_000
+    } else if model.contains("m2") {
         204_800
     } else {
         // Older `abab*` series caps around 16k.
@@ -1386,6 +1477,7 @@ fn anthropic_messages_json(messages: &[ChatMessage]) -> Vec<Value> {
             ChatMessage::Assistant {
                 content,
                 tool_calls,
+                ..
             } => {
                 let mut blocks = Vec::new();
                 if !content.is_empty() {
@@ -1580,6 +1672,7 @@ pub fn resolve_provider(
             api_key_missing_hint: String::new(),
             default_model: "local-fallback-v0".to_string(),
             timeout_ms,
+            minimax_reasoning_effort: None,
         }),
         "shared-llm" => {
             let api_key = config.env("SHARED_LLM_API_KEY").map(ToString::to_string);
@@ -1601,6 +1694,7 @@ pub fn resolve_provider(
                     .unwrap_or("shared-llm")
                     .to_string(),
                 timeout_ms,
+                minimax_reasoning_effort: None,
             })
         }
         "decentralized-llm" => {
@@ -1626,6 +1720,7 @@ pub fn resolve_provider(
                     .unwrap_or("decentralized-llm")
                     .to_string(),
                 timeout_ms,
+                minimax_reasoning_effort: None,
             })
         }
         "ollama" => Ok(ProviderRuntime {
@@ -1642,6 +1737,7 @@ pub fn resolve_provider(
                 .unwrap_or("qwen2.5-coder:3b")
                 .to_string(),
             timeout_ms,
+            minimax_reasoning_effort: None,
         }),
         "minimax" => {
             let (api_key, api_key_missing_hint) =
@@ -1657,9 +1753,16 @@ pub fn resolve_provider(
                 api_key_missing_hint,
                 default_model: config
                     .env("MINIMAX_MODEL")
-                    .unwrap_or("MiniMax-M2.7")
+                    .unwrap_or(DEFAULT_MINIMAX_MODEL)
                     .to_string(),
-                timeout_ms,
+                timeout_ms: config
+                    .env("MINIMAX_REQUEST_TIMEOUT_MS")
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .filter(|value| (1000..=86_400_000).contains(value))
+                    .unwrap_or(timeout_ms),
+                minimax_reasoning_effort: config
+                    .env("MINIMAX_REASONING_EFFORT")
+                    .map(ToString::to_string),
             })
         }
         "deepseek" => {
@@ -1679,6 +1782,7 @@ pub fn resolve_provider(
                     .unwrap_or("deepseek-chat")
                     .to_string(),
                 timeout_ms,
+                minimax_reasoning_effort: None,
             })
         }
         "glm" => {
@@ -1695,6 +1799,7 @@ pub fn resolve_provider(
                 api_key_missing_hint,
                 default_model: config.env("GLM_MODEL").unwrap_or("glm-4-flash").to_string(),
                 timeout_ms,
+                minimax_reasoning_effort: None,
             })
         }
         "anthropic" => {
@@ -1718,6 +1823,7 @@ pub fn resolve_provider(
                     .unwrap_or("claude-sonnet-4-6")
                     .to_string(),
                 timeout_ms,
+                minimax_reasoning_effort: None,
             })
         }
         other => Err(OperatorError::Message(format!(
@@ -1793,6 +1899,7 @@ fn build_message_json(message: &ChatMessage, style: ProviderMessageStyle) -> Val
         ChatMessage::Assistant {
             content,
             tool_calls,
+            ..
         } => {
             if tool_calls.is_empty() {
                 json!({ "role": "assistant", "content": sanitize_for_json(content) })
@@ -1841,6 +1948,7 @@ fn serialize_message(message: &ChatMessage) -> String {
         ChatMessage::Assistant {
             content,
             tool_calls,
+            ..
         } => {
             if tool_calls.is_empty() {
                 format!("ASSISTANT: {content}")
@@ -2055,6 +2163,7 @@ fn parse_generate_provider_response(
         .unwrap_or(model)
         .to_string();
     ChatCompletion {
+        reasoning_content: None,
         content: output,
         model: resolved_model,
         provider: provider_name.to_string(),
@@ -2429,6 +2538,384 @@ mod tests {
         )
     }
 
+    #[test]
+    fn minimax_flash_defaults_effort_limits_and_explicit_models() {
+        let config = config_from(&[("MINIMAX_API_KEY", "synthetic")]);
+        let runtime = resolve_provider(&config, Some("minimax")).unwrap();
+        assert_eq!(runtime.default_model(), DEFAULT_MINIMAX_MODEL);
+        assert_eq!(runtime.list_models(), [DEFAULT_MINIMAX_MODEL, "MiniMax-M3"]);
+        assert_eq!(
+            runtime
+                .model_capability(DEFAULT_MINIMAX_MODEL)
+                .context_window_tokens,
+            Some(1_000_000)
+        );
+        let payload = runtime
+            .openai_request_payload(
+                &[],
+                &ChatRequestOptions::default(),
+                &[],
+                runtime.default_model(),
+                false,
+            )
+            .unwrap();
+        assert_eq!(payload["reasoning_effort"], "medium");
+        assert_eq!(payload["max_completion_tokens"], 32_768);
+        assert!(payload.get("temperature").is_none());
+        assert!(payload.get("max_tokens").is_none());
+        // TUI always supplies its own limit, including its unchanged 2048 fallback.
+        for max_tokens in [1, 2048, 4096, 32_768, 524_288] {
+            let options = ChatRequestOptions {
+                max_tokens: Some(max_tokens),
+                ..Default::default()
+            };
+            let payload = runtime
+                .openai_request_payload(&[], &options, &[], runtime.default_model(), false)
+                .unwrap();
+            assert_eq!(payload["max_completion_tokens"], max_tokens);
+        }
+
+        for effort in ["low", "medium", "high", "xhigh", "max"] {
+            let config = config_from(&[("MINIMAX_REASONING_EFFORT", effort)]);
+            let runtime = resolve_provider(&config, Some("minimax")).unwrap();
+            let payload = runtime
+                .openai_request_payload(
+                    &[],
+                    &ChatRequestOptions::default(),
+                    &[],
+                    runtime.default_model(),
+                    false,
+                )
+                .unwrap();
+            assert_eq!(payload["reasoning_effort"], effort);
+            let options = ChatRequestOptions {
+                reasoning_effort: Some("high".to_string()),
+                max_tokens: Some(4096),
+                ..Default::default()
+            };
+            let payload = runtime
+                .openai_request_payload(&[], &options, &[], runtime.default_model(), true)
+                .unwrap();
+            assert_eq!(payload["reasoning_effort"], "high");
+            assert_eq!(payload["max_completion_tokens"], 4096);
+        }
+        for effort in ["none", "", "invalid", "MAX"] {
+            let options = ChatRequestOptions {
+                reasoning_effort: Some(effort.to_string()),
+                ..Default::default()
+            };
+            assert!(runtime
+                .openai_request_payload(&[], &options, &[], runtime.default_model(), false)
+                .is_err());
+        }
+        for max_tokens in [0, 524_289, u32::MAX] {
+            let options = ChatRequestOptions {
+                max_tokens: Some(max_tokens),
+                ..Default::default()
+            };
+            assert!(runtime
+                .openai_request_payload(&[], &options, &[], runtime.default_model(), false)
+                .is_err());
+        }
+        for model in [
+            "MiniMax-M2.7",
+            "MiniMax-M3.1-Flash-Preview",
+            "custom-pinned-model",
+        ] {
+            let config = config_from(&[("MINIMAX_MODEL", model)]);
+            let runtime = resolve_provider(&config, Some("minimax")).unwrap();
+            assert_eq!(runtime.default_model(), model);
+            assert!(runtime.list_models().iter().any(|listed| listed == model));
+            let payload = runtime
+                .openai_request_payload(&[], &ChatRequestOptions::default(), &[], model, false)
+                .unwrap();
+            assert_eq!(payload["max_tokens"], 2048);
+            assert!(payload.get("reasoning_effort").is_none());
+            assert!(payload.get("max_completion_tokens").is_none());
+        }
+        // An explicit request model overrides the new runtime default too.
+        let payload = runtime
+            .openai_request_payload(
+                &[],
+                &ChatRequestOptions::default(),
+                &[],
+                "MiniMax-M2.7",
+                false,
+            )
+            .unwrap();
+        assert_eq!(payload["model"], "MiniMax-M2.7");
+        assert_eq!(payload["max_tokens"], 2048);
+    }
+
+    #[test]
+    fn minimax_tuning_does_not_change_other_providers_or_native_timeout_fallback() {
+        let config = config_from(&[
+            ("GEN_TIMEOUT_MS", "90000"),
+            ("MINIMAX_REQUEST_TIMEOUT_MS", "45000"),
+            ("MINIMAX_REASONING_EFFORT", "low"),
+        ]);
+        assert_eq!(
+            resolve_provider(&config, Some("minimax"))
+                .unwrap()
+                .timeout_ms,
+            45_000
+        );
+        let other = resolve_provider(&config, Some("deepseek")).unwrap();
+        assert_eq!(other.timeout_ms, 90_000);
+        let messages = [ChatMessage::Assistant {
+            content: "answer".to_string(),
+            tool_calls: Vec::new(),
+            reasoning_content: Some("private-continuation-fixture".to_string()),
+        }];
+        let payload = other
+            .openai_request_payload(
+                &messages,
+                &ChatRequestOptions::default(),
+                &[],
+                DEFAULT_MINIMAX_MODEL,
+                false,
+            )
+            .unwrap();
+        assert!(payload["messages"][0].get("reasoning_content").is_none());
+        assert!(payload.get("reasoning_effort").is_none());
+        assert_eq!(payload["max_tokens"], 2048);
+        assert!(payload.get("temperature").is_some());
+        assert!(!serde_json::to_string(&messages)
+            .unwrap()
+            .contains("private-continuation-fixture"));
+        assert!(ollama_message_to_json(&messages[0])
+            .get("reasoning_content")
+            .is_none());
+        assert!(anthropic_messages_json(&messages)[0]
+            .get("reasoning_content")
+            .is_none());
+        assert!(!serialize_message(&messages[0]).contains("private-continuation-fixture"));
+        for timeout in [None, Some("0"), Some("86400001"), Some("invalid")] {
+            let mut config = config_from(&[("GEN_TIMEOUT_MS", "90000")]);
+            if let Some(timeout) = timeout {
+                config.raw_env.insert(
+                    "MINIMAX_REQUEST_TIMEOUT_MS".to_string(),
+                    timeout.to_string(),
+                );
+            }
+            assert_eq!(
+                resolve_provider(&config, Some("minimax"))
+                    .unwrap()
+                    .timeout_ms,
+                90_000
+            );
+        }
+    }
+
+    fn fixture_http_server(
+        responses: Vec<(&'static str, String)>,
+    ) -> (String, thread::JoinHandle<Vec<Value>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let mut requests = Vec::new();
+            for (content_type, response) in responses {
+                let deadline = Instant::now() + Duration::from_secs(5);
+                let mut socket = loop {
+                    match listener.accept() {
+                        Ok((socket, _)) => break socket,
+                        Err(error)
+                            if error.kind() == ErrorKind::WouldBlock
+                                && Instant::now() < deadline =>
+                        {
+                            thread::sleep(Duration::from_millis(5))
+                        }
+                        Err(error) => panic!("synthetic fixture accept failed: {error}"),
+                    }
+                };
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut reader = BufReader::new(socket.try_clone().unwrap());
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                assert!(line.starts_with("POST /v1/chat/completions "));
+                let mut length = 0;
+                loop {
+                    line.clear();
+                    reader.read_line(&mut line).unwrap();
+                    if line == "\r\n" {
+                        break;
+                    }
+                    if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        length = value.trim().parse::<usize>().unwrap();
+                    }
+                }
+                assert!(length > 0 && length < 65_536);
+                let mut body = vec![0; length];
+                reader.read_exact(&mut body).unwrap();
+                requests.push(serde_json::from_slice(&body).unwrap());
+                let header = format!("HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", response.len());
+                socket.write_all(header.as_bytes()).unwrap();
+                socket.write_all(response.as_bytes()).unwrap();
+            }
+            requests
+        });
+        (format!("http://{address}/v1"), server)
+    }
+
+    #[test]
+    fn minimax_native_json_and_sse_preserve_tool_continuation_without_displaying_it() {
+        for streaming in [false, true] {
+            let tool = json!({ "id": "fixture-call", "index": 0, "type": "function",
+                "function": { "name": "fixture_read", "arguments": "{\"key\":\"smoke\"}" } });
+            let usage = json!({ "prompt_tokens": 12, "completion_tokens": 8, "total_tokens": 20 });
+            let responses = if streaming {
+                let frames = [
+                    json!({ "choices": [{ "delta": { "reasoning_content": "synthetic-" } }] }),
+                    json!({ "choices": [{ "delta": { "reasoning_content": "continuation", "tool_calls": [tool] } }], "usage": usage }),
+                ];
+                let first = frames
+                    .iter()
+                    .map(|frame| format!("data: {frame}\n\n"))
+                    .collect::<String>()
+                    + "data: [DONE]\n\n";
+                let second = format!(
+                    "data: {}\n\ndata: [DONE]\n\n",
+                    json!({ "choices": [{ "delta": { "content": "FIXTURE_OK" } }], "usage": usage })
+                );
+                vec![("text/event-stream", first), ("text/event-stream", second)]
+            } else {
+                vec![
+                    ("application/json", json!({ "choices": [{ "message": { "content": null,
+                        "reasoning_content": "synthetic-continuation", "tool_calls": [tool] } }], "usage": usage }).to_string()),
+                    ("application/json", json!({ "choices": [{ "message": { "content": "FIXTURE_OK" } }], "usage": usage }).to_string()),
+                ]
+            };
+            let (base_url, server) = fixture_http_server(responses);
+            let config = config_from(&[
+                ("MINIMAX_API_KEY", "synthetic-only"),
+                ("MINIMAX_BASE_URL", &base_url),
+                ("GEN_TIMEOUT_MS", "2000"),
+            ]);
+            let runtime = resolve_provider(&config, Some("minimax")).unwrap();
+            let options = ChatRequestOptions {
+                max_tokens: Some(4096),
+                ..Default::default()
+            };
+            let tools = [ChatToolDefinition {
+                name: "fixture_read".to_string(),
+                description: "Read a fixed in-memory value".to_string(),
+                input_schema: json!({ "type": "object" }),
+            }];
+            let mut messages = vec![ChatMessage::User {
+                content: "Read the synthetic fixture".to_string(),
+            }];
+            let mut visible = String::new();
+            let first = if streaming {
+                runtime
+                    .chat_stream_with_cancel(&messages, &options, &tools, None, |event| {
+                        if let ChatStreamEvent::Text(text) = event {
+                            visible.push_str(&text);
+                        }
+                    })
+                    .unwrap()
+            } else {
+                runtime.chat(&messages, &options, &tools).unwrap()
+            };
+            assert_eq!(
+                first.reasoning_content.as_deref(),
+                Some("synthetic-continuation")
+            );
+            assert!(first.content.is_empty());
+            assert!(visible.is_empty());
+            assert_eq!(first.tool_calls.len(), 1);
+            assert_eq!(first.tool_calls[0].arguments["key"], "smoke");
+            messages.push(first.assistant_message());
+            messages.push(ChatMessage::Tool {
+                tool_call_id: first.tool_calls[0].id.clone(),
+                content: "FIXTURE_OK".to_string(),
+            });
+            let second = if streaming {
+                runtime
+                    .chat_stream_with_cancel(&messages, &options, &tools, None, |_| {})
+                    .unwrap()
+            } else {
+                runtime.chat(&messages, &options, &tools).unwrap()
+            };
+            assert_eq!(second.content, "FIXTURE_OK");
+            assert_eq!(second.reasoning_content, None);
+            let requests = server.join().unwrap();
+            assert_eq!(requests.len(), 2);
+            assert_eq!(
+                requests[1]["messages"][1]["reasoning_content"],
+                "synthetic-continuation"
+            );
+            assert_eq!(
+                requests[1]["messages"][1]["tool_calls"][0]["id"],
+                "fixture-call"
+            );
+            assert_eq!(requests[1]["messages"][2]["tool_call_id"], "fixture-call");
+            for request in requests {
+                assert_eq!(request["model"], DEFAULT_MINIMAX_MODEL);
+                assert_eq!(request["max_completion_tokens"], 4096);
+                assert_eq!(request["reasoning_effort"], "medium");
+                assert!(request.get("temperature").is_none());
+                assert!(request.get("max_tokens").is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn minimax_context_guard_counts_reasoning_and_completion_reserve_before_network() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/v1", listener.local_addr().unwrap());
+        let config = config_from(&[("MINIMAX_API_KEY", "synthetic"), ("MINIMAX_BASE_URL", &url)]);
+        let runtime = resolve_provider(&config, Some("minimax")).unwrap();
+        let options = ChatRequestOptions {
+            max_tokens: Some(524_288),
+            ..Default::default()
+        };
+        let mut messages = vec![ChatMessage::Assistant {
+            content: String::new(),
+            tool_calls: vec![ChatToolCall {
+                id: "fixture-call".to_string(),
+                name: "fixture_read".to_string(),
+                arguments: json!({}),
+            }],
+            // ~425k input + 524288 output fits 1M but exceeds the shared 92% guard.
+            reasoning_content: Some("r".repeat(1_700_000)),
+        }];
+        messages.push(ChatMessage::Tool {
+            tool_call_id: "fixture-call".to_string(),
+            content: "ok".to_string(),
+        });
+        assert!(runtime
+            .chat(&messages, &options, &[])
+            .unwrap_err()
+            .to_string()
+            .contains("estimated context"));
+        assert!(runtime
+            .chat_stream_with_cancel(&messages, &options, &[], None, |_| {})
+            .unwrap_err()
+            .to_string()
+            .contains("estimated context"));
+        assert_eq!(listener.accept().unwrap_err().kind(), ErrorKind::WouldBlock);
+        // A smaller output reservation fits without removing reasoning or a tool row.
+        let options = ChatRequestOptions {
+            max_tokens: Some(4096),
+            ..Default::default()
+        };
+        let payload = runtime
+            .openai_request_payload(&messages, &options, &[], runtime.default_model(), false)
+            .unwrap();
+        assert_eq!(payload["messages"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            payload["messages"][0]["reasoning_content"]
+                .as_str()
+                .unwrap()
+                .len(),
+            1_700_000
+        );
+    }
+
     struct TestProviderDir {
         path: PathBuf,
     }
@@ -2770,7 +3257,12 @@ mod tests {
         // One vault, three entries - the shape that used to pay the KDF
         // three times.
         append_v2_vault_secret(&dir, "minimax_api_key", "k-minimax", "provider-test-pepper");
-        append_v2_vault_secret(&dir, "deepseek_api_key", "k-deepseek", "provider-test-pepper");
+        append_v2_vault_secret(
+            &dir,
+            "deepseek_api_key",
+            "k-deepseek",
+            "provider-test-pepper",
+        );
         append_v2_vault_secret(&dir, "glm_api_key", "k-glm", "provider-test-pepper");
 
         let config = dir.config(&[
@@ -2809,7 +3301,12 @@ mod tests {
 
         let dir = TestProviderDir::new("vault-cache-derivation-count");
         append_v2_vault_secret(&dir, "minimax_api_key", "k-minimax", "provider-test-pepper");
-        append_v2_vault_secret(&dir, "deepseek_api_key", "k-deepseek", "provider-test-pepper");
+        append_v2_vault_secret(
+            &dir,
+            "deepseek_api_key",
+            "k-deepseek",
+            "provider-test-pepper",
+        );
         append_v2_vault_secret(&dir, "glm_api_key", "k-glm", "provider-test-pepper");
 
         let config = dir.config(&[
@@ -2830,7 +3327,10 @@ mod tests {
             1,
             "three provider lookups must derive the master key once, not three times"
         );
-        assert!(hits >= 2, "at least two lookups must be served from the cache");
+        assert!(
+            hits >= 2,
+            "at least two lookups must be served from the cache"
+        );
 
         crate::runtime::clear_vault_derivation_cache();
     }
@@ -2846,7 +3346,12 @@ mod tests {
         crate::runtime::clear_vault_derivation_cache();
 
         let dir = TestProviderDir::new("vault-cache-state-rewrite");
-        write_v2_vault_secret(&dir, "minimax_api_key", "first-value", "provider-test-pepper");
+        write_v2_vault_secret(
+            &dir,
+            "minimax_api_key",
+            "first-value",
+            "provider-test-pepper",
+        );
         let config = dir.config(&[
             ("DEFAULT_PROVIDER", "minimax"),
             ("MINIMAX_VAULT_KEY", "minimax_api_key"),
@@ -2856,7 +3361,12 @@ mod tests {
         assert_eq!(first.api_key.as_deref(), Some("first-value"));
 
         // Rewrite the vault in place with a different secret.
-        write_v2_vault_secret(&dir, "minimax_api_key", "second-value", "provider-test-pepper");
+        write_v2_vault_secret(
+            &dir,
+            "minimax_api_key",
+            "second-value",
+            "provider-test-pepper",
+        );
 
         // `write_v2_vault_secret` reuses a fixed salt / master key / iv, so
         // the STATE file is byte-identical between the two writes - only the
@@ -3109,6 +3619,7 @@ mod tests {
                     content: "hello memphis".to_string(),
                 },
                 ChatMessage::Assistant {
+                    reasoning_content: None,
                     content: "working on it".to_string(),
                     tool_calls: vec![ChatToolCall {
                         id: "call-1".to_string(),
@@ -3312,6 +3823,7 @@ mod tests {
     #[test]
     fn openai_compatible_serializes_tool_call_arguments_as_string() {
         let msg = ChatMessage::Assistant {
+            reasoning_content: None,
             content: String::new(),
             tool_calls: vec![ChatToolCall {
                 id: "call_1".to_string(),
@@ -3333,6 +3845,7 @@ mod tests {
     #[test]
     fn ollama_serializes_tool_call_arguments_as_object() {
         let msg = ChatMessage::Assistant {
+            reasoning_content: None,
             content: String::new(),
             tool_calls: vec![ChatToolCall {
                 id: "call_1".to_string(),

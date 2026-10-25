@@ -28,6 +28,7 @@ describe('resolveModelCapabilitySnapshot', () => {
   // false` — a 31x understatement of the window on the model actually
   // in use. The two tests above both passed the whole time.
   test.each([
+    'MiniMax-M3.1-Flash',
     'MiniMax-M3.1-Flash-Preview',
     'MiniMax-M3.1',
     'MiniMax-M3.2',
@@ -75,6 +76,24 @@ describe('resolveModelCapabilitySnapshot', () => {
 });
 
 describe('CapabilityMatrix', () => {
+  test('routes a long multimodal request to the current MiniMax default', () => {
+    const matrix = new CapabilityMatrix();
+    const provider = matrix.findBestProvider({
+      minContextWindow: 900000,
+      needsVision: true,
+      needsFunctionCalling: true,
+    });
+    expect(provider?.name).toBe('minimax');
+    expect(provider?.models[0]).toMatchObject({
+      name: 'MiniMax-M3.1-Flash',
+      maxOutputTokens: 524288,
+    });
+    expect(provider?.pricing).toEqual({
+      inputCostPer1k: 0.00015,
+      outputCostPer1k: 0.0006,
+    });
+  });
+
   test('finds provider by requirements', () => {
     const matrix = new CapabilityMatrix();
 
