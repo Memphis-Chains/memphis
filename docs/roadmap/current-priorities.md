@@ -1,6 +1,6 @@
-# Priorytety — tydzień 2026-10-13 (auto, generowane z realnego stanu)
+# Priorytety — tydzień 2026-10-20 (auto, generowane z realnego stanu)
 
-Źródło: `cron tuesday-code.sh` · issue 36 otwartych · PR 0 · gałęzię 17
+Źródło: `cron tuesday-code.sh` · issue 36 otwartych · PR 1 · gałęzię 19
 
 > **Ten plik jest źródłem prawdy dla sesji kodowania.** Generowany wtorek 13:00
 > z realnego stanu (issue, PR, gałęzie, CI). Nie edytuj ręcznie.
@@ -21,17 +21,19 @@ Brak — albo wszystko zrobione, albo fixy nie mają `#NNN` w commicie.
 
 ## C. PR do review
 
-Brak otwartych PR.
+- [ ] **#686** [MERGEABLE] fix(vault,config): odzyskiwanie transakcji i serializacja zapisó
 
 ## D. Gałęzie poza main
 
 | gałąź | commity | ostatni | stan |
 |---|---|---|---|
+| `fork/fix-embed-persistence-and-chain-parse` | +7 | 2026-10-17 | MERGEABLE |
 | `chore/final-metrics` | +1 | 2026-10-11 | CONFLICT x1 → sites/memphis-v5/index.html |
 | `chore/final-metrics-2` | +1 | 2026-10-11 | CONFLICT x1 → sites/memphis-v5/index.html |
 | `chore/site-metrics-sync` | +1 | 2026-10-12 | MERGEABLE |
 | `ci/automerge-ruleset-and-notes` | +2 | 2026-10-10 | CONFLICT x3 → .github/workflows/automerge.yml, tests/ops/automerge-decision-contract.test.ts |
 | `docs/handoff-2026-10-10` | +4 | 2026-10-10 | CONFLICT x4 → .github/workflows/automerge.yml, .gitignore |
+| `feat/vault-transaction-recovery` | +9 | 2026-10-18 | MERGEABLE |
 | `fix/automerge-second-trigger` | +1 | 2026-10-10 | CONFLICT x3 → .github/workflows/automerge.yml, tests/ops/automerge-decision-contract.test.ts |
 | `fix/backup-exclusions-and-atomic-publish` | +21 | 2026-10-12 | CONFLICT x2 → scripts/scheduled-backup-runner.mjs |
 | `fix/minimax-m3-family-capabilities` | +1 | 2026-10-01 | MERGEABLE |
@@ -47,8 +49,7 @@ Brak otwartych PR.
 
 ## E. CI — czerwone
 
-- **2×** `Telegram smoke test`
-- **2×** `ci`
+- **5×** `Telegram smoke test`
 
 ## F. DO WERYFIKACJI PRZEZ OPERATORA
 
