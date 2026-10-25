@@ -75,9 +75,16 @@ if [ "$free_mb" -lt "$MIN_FREE_MB" ]; then
 fi
 
 # 4. Find latest valid backup (verify must pass)
-latest=$(ls -t "$LOCAL_BACKUP_DIR"/*.tar.gz 2>/dev/null | head -1 || true)
+# Select by newest PUBLISHED archive. A crash mid-archive leaves a
+# `*.tar.gz.partial` behind, and plain `ls -t *.tar.gz | head -1` would pick
+# the truncated file, refuse to copy it, and keep refusing on every run until
+# an operator deleted it by hand. `-prune` removes those from consideration
+# before sorting.
+PARTIAL_SUFFIX='.partial'
+latest=$(find "$LOCAL_BACKUP_DIR" -maxdepth 1 -type f -name "*.tar.gz" ! -name "*${PARTIAL_SUFFIX}" -printf '%T@ %p\n' 2>/dev/null \
+    | sort -rn | head -1 | cut -d' ' -f2- || true)
 if [ -z "$latest" ]; then
-    echo "[backup-to-usb] ERROR: no archives in $LOCAL_BACKUP_DIR" >&2
+    echo "[backup-to-usb] ERROR: no published archives in $LOCAL_BACKUP_DIR" >&2
     exit 1
 fi
 
@@ -116,6 +123,7 @@ dest="$USB_DIR/$(basename "$latest")"
 if [ -f "$dest" ]; then
     dest_sha=$(sha256sum "$dest" | cut -d' ' -f1)
     if [ "$src_sha" = "$dest_sha" ]; then
+        chmod 600 "$dest" 2>/dev/null || true
         echo "[backup-to-usb] already up to date: $dest"
         exit 0
     fi
@@ -124,6 +132,21 @@ fi
 if ! cp "$latest" "$dest"; then
     echo "[backup-to-usb] ERROR: copy $latest -> $dest failed" >&2
     exit 3
+fi
+
+# Copy the digest sidecar too. Without it the offsite archive has no expected
+# checksum, so `memphis backup verify` on the USB copy cannot tell a good copy
+# from a corrupted one — the offsite copy exists precisely for the case where
+# the local machine is gone.
+sidecar="$latest.sha256"
+if [ -f "$sidecar" ]; then
+    if ! cp "$sidecar" "$dest.sha256"; then
+        echo "[backup-to-usb] ERROR: copy $sidecar -> $dest.sha256 failed" >&2
+        exit 3
+    fi
+    chmod 600 "$dest" "$dest.sha256" 2>/dev/null || true
+else
+    echo "[backup-to-usb] WARNING: no sidecar for $(basename "$latest"); offsite copy is unverifiable" >&2
 fi
 
 # 6. Rotate: keep last $USB_KEEP valid archives on USB

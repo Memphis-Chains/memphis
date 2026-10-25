@@ -173,6 +173,12 @@ export default [
       'sites/**',
       'public/**',
       'sites/memphis-v5/**',
+      // Git-ignored scratch. `tmp/` holds ad-hoc measurement scripts and
+      // leftovers from aborted runs; it is in .gitignore (line 253) precisely
+      // because nothing in it belongs in the repo. Linting it made the
+      // pre-commit gate red on files no commit contains, which is how a
+      // gate that cannot be passed gets bypassed instead of fixed.
+      'tmp/**',
     ],
   },
 ];
