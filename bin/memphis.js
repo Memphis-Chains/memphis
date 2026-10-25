@@ -84,5 +84,17 @@ try {
   if (stack) {
     console.error('[ERROR] Stack:', stack);
   }
-  process.exit(1);
+  // Preserve integrity/hardening exit codes so systemd's
+  // RestartPreventExitStatus can stop a permanent startup failure.
+  // Keep the resolver lazy: a missing/broken build must still exit cleanly.
+  let exitCode = 1;
+  try {
+    const { resolveExitCode } = await import(
+      resolve(packageRoot, 'dist/infra/runtime/exit-codes.js')
+    );
+    exitCode = resolveExitCode(error);
+  } catch {
+    // An import-time failure may also make the resolver unavailable.
+  }
+  process.exit(exitCode);
 }

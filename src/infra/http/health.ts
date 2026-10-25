@@ -47,6 +47,7 @@ export type HealthPayload = {
     rust_bridge: CheckResult;
     data_dir: CheckResult;
     embedding_provider: CheckResult;
+    embed_index_dimension: CheckResult;
   };
   runtime: RuntimeHealthSnapshot;
   surfacePolicies: SurfacePolicy[];
@@ -342,6 +343,67 @@ async function checkEmbeddingProvider(rawEnv: NodeJS.ProcessEnv): Promise<CheckR
   }
 }
 
+/**
+ * Compare the configured embedding dimension against the dimension of the
+ * persisted index on disk.
+ *
+ * A mismatch is the silent failure mode this exists for: `OllamaProvider`
+ * truncates or pads the provider's vector to the configured `dim` without
+ * warning (`crates/memphis-embed/src/pipeline.rs`, `vector.truncate(dim)`),
+ * and `cosine_similarity` returns 0.0 for vectors of unequal length. So a
+ * stale `RUST_EMBED_DIM` produces a structurally valid index that scores
+ * every query at zero — recall returns hits, but none of them mean
+ * anything. Neither `/health` nor any log line said so.
+ *
+ * `getTensorStatus` already computes this as `legacyDimMismatch`; it just
+ * was not surfaced on the surface operators actually watch.
+ */
+async function checkEmbedIndexDimension(rawEnv: NodeJS.ProcessEnv): Promise<CheckResult> {
+  const persistPath =
+    rawEnv.RUST_EMBED_PERSIST_PATH?.trim() ||
+    resolve(rawEnv.HOME ?? '.', '.memphis', 'embed', 'index-v1.json');
+
+  const rawDim = Number(rawEnv.RUST_EMBED_DIM);
+  const configuredDim = Number.isFinite(rawDim) && rawDim > 0 ? Math.trunc(rawDim) : 32;
+
+  if (!existsSync(persistPath)) {
+    return { status: 'ok', message: 'no persisted index yet (clean state)' };
+  }
+
+  let onDiskDim: unknown;
+  try {
+    const parsed = JSON.parse(readFileSync(persistPath, 'utf8')) as { dim?: unknown };
+    onDiskDim = parsed.dim;
+  } catch {
+    // A corrupt index is not a dimension mismatch. Leave it to the
+    // dedicated corruption paths rather than mislabel the cause here.
+    return { status: 'ok', message: 'index present but not readable as JSON' };
+  }
+
+  if (typeof onDiskDim !== 'number') {
+    return { status: 'ok', message: 'index present without a dim field' };
+  }
+
+  if (onDiskDim === configuredDim) {
+    return {
+      status: 'ok',
+      message: `dim=${configuredDim} matches index`,
+    };
+  }
+
+  return {
+    status: 'fail',
+    message: `dim mismatch: config=${configuredDim} index=${onDiskDim}`,
+    fixAction:
+      `RUST_EMBED_DIM=${configuredDim} but ${persistPath} holds dim=${onDiskDim}. ` +
+      'Queries embed to a different width than the stored vectors, so cosine ' +
+      'similarity scores 0 and recall matches nothing meaningful. ' +
+      `Set RUST_EMBED_DIM=${onDiskDim} to match the existing index, or rebuild it: ` +
+      '`memphis embed reindex` (warm the provider first, and run it in a process ' +
+      'that has actually loaded the new .env).',
+  };
+}
+
 export async function buildHealthPayload(
   config: AppConfig,
   rawEnv: NodeJS.ProcessEnv = process.env,
@@ -362,6 +424,7 @@ export async function buildHealthPayload(
     rust_bridge: checkRustBridge(rawEnv, runtime),
     data_dir: checkDataDir(rawEnv),
     embedding_provider: await checkEmbeddingProvider(rawEnv),
+    embed_index_dimension: await checkEmbedIndexDimension(rawEnv),
   };
 
   const requiredHealthy = checks.database.status === 'ok' && checks.data_dir.status === 'ok';

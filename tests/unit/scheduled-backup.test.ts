@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -16,6 +20,43 @@ describe('scheduled backup loop (Phase 1.2 production sprint)', () => {
   afterEach(() => {
     vi.useRealTimers();
     __resetScheduledBackupForTests();
+  });
+
+  it('retains success and drill evidence across restart for a cron schedule without an interval timer', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'backup-state-'));
+    const rawEnv = { MEMPHIS_DATA_DIR: root };
+    try {
+      const directory = join(root, 'config', 'scheduler');
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(
+        join(directory, 'tasks.json'),
+        JSON.stringify([{ enabled: true, command: { type: 'builtin', job: 'scheduled-backup' } }]),
+      );
+      const createBackupFn = vi.fn(async () => ({
+        backupPath: '/tmp/synthetic.tar.gz',
+        file: 'synthetic.tar.gz',
+        size: 12,
+      }));
+      const handle = startScheduledBackupLoop({
+        rawEnv,
+        schedule: 'cron',
+        createBackupFn,
+        drillFn: async () => {},
+        cleanFn: async () => {},
+      });
+      await handle.tickNow({ forceDrill: true });
+      handle.stop();
+      __resetScheduledBackupForTests();
+      const snapshot = getScheduledBackupState(rawEnv);
+      expect(snapshot.state.enabled).toBe(true);
+      expect(snapshot.state.totalSuccess).toBe(1);
+      expect(snapshot.state.lastDrillOk).toBe(true);
+      expect(snapshot.state.lastSuccessFile).toBe('synthetic.tar.gz');
+      vi.advanceTimersByTime(24 * 60 * 60 * 1000);
+      expect(createBackupFn).toHaveBeenCalledOnce();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('does NOT start when MEMPHIS_BACKUP_INTERVAL_MS unset (operator opt-in only)', () => {
@@ -96,6 +137,7 @@ describe('scheduled backup loop (Phase 1.2 production sprint)', () => {
   });
 
   it('failed restore-drill is recorded and alerts (lastDrillOk=false)', async () => {
+    const cleanFn = vi.fn(async () => {});
     const handle = startScheduledBackupLoop({
       rawEnv: {
         MEMPHIS_BACKUP_INTERVAL_MS: String(MIN_BACKUP_INTERVAL_MS),
@@ -106,7 +148,7 @@ describe('scheduled backup loop (Phase 1.2 production sprint)', () => {
         file: 'x.tar.gz',
         size: 100,
       }),
-      cleanFn: async () => {},
+      cleanFn,
       drillFn: async () => {
         throw new Error('archive corrupt');
       },
@@ -116,6 +158,7 @@ describe('scheduled backup loop (Phase 1.2 production sprint)', () => {
     expect(s.totalSuccess).toBe(1);
     expect(s.lastDrillOk).toBe(false);
     expect(s.lastDrillError).toMatch(/archive corrupt/);
+    expect(cleanFn).not.toHaveBeenCalled();
   });
 
   it('records failure on createBackup throw', async () => {

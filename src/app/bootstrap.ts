@@ -34,6 +34,7 @@ import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
 import { checkOllama, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
 import { resolveDotEnvPath } from '../infra/config/dotenv-file.js';
 import { loadConfigDetailed } from '../infra/config/env.js';
+import { initializeRuntimeConfigSnapshot } from '../infra/config/runtime-config-snapshot.js';
 import type { AppConfig } from '../infra/config/schema.js';
 import { createHttpServer } from '../infra/http/server.js';
 import { startAlertSuppressionFlushLoop } from '../infra/logging/alert-runtime.js';
@@ -186,6 +187,7 @@ export async function bootstrap(): Promise<void> {
     throw new AppError('CONFIG_ERROR', rust.detail, 500, rust.meta, rust.fix);
   }
 
+  initializeRuntimeConfigSnapshot();
   const { config, degradedReasons: configDegradedReasons } = loadConfigDetailed();
   const rustBridgeManifest = assessRustBridgeManifestStatus(process.env);
   if (!rustBridgeManifest.ok) {

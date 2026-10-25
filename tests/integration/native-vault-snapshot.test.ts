@@ -25,7 +25,7 @@ function fixture() {
     fixture.env.MEMPHIS_ENV_FILE!,
     `MEMPHIS_VAULT_PEPPER=${fixture.env.MEMPHIS_VAULT_PEPPER}\n`,
   );
-  const init = spawnSync(process.execPath, [...script, 'init'], {
+  const init = spawnSync(process.execPath, [...script, 'seed'], {
     env: fixture.env,
     encoding: 'utf8',
     timeout: 30000,

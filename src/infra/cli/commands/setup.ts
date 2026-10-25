@@ -267,7 +267,7 @@ export function buildSetupEnv(answers: SetupAnswers): {
     case 'minimax':
       env.DEFAULT_PROVIDER = 'minimax';
       if (providerBaseUrl) env.MINIMAX_BASE_URL = providerBaseUrl;
-      env.MINIMAX_MODEL = 'MiniMax-M2.7'; // default model
+      env.MINIMAX_MODEL = 'MiniMax-M3.1-Flash'; // 1M context, multimodal
       // MINIMAX_VAULT_KEY auto-set by `vault add minimax_api_key`. See
       // anthropic case above for rationale.
       break;

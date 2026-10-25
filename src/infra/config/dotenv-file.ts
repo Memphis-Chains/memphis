@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+import { parse } from 'dotenv';
+
 import { withConfigurationWriteLock } from './config-transaction.js';
 import { writePrivateAtomicFile } from './private-atomic-file.js';
 import { resolveInstallRoot } from '../runtime/install-root.js';
@@ -33,13 +35,45 @@ function assertGenericConfigMutation(keys: readonly string[], rawEnv: NodeJS.Pro
   }
 }
 
-function configurationWriteJournals(
-  keys: readonly string[],
+/** Shared boundary for generic dotenv writers, including the legacy CLI helpers. */
+export function mutateDotEnvFile<T>(
   envPath: string,
+  mutations: readonly { key: string; value?: string }[],
   rawEnv: NodeJS.ProcessEnv,
-): string | readonly string[] {
-  if (!keys.includes('MEMPHIS_VAULT_PEPPER')) return envPath;
-  return resolveVaultJournals({ ...rawEnv, MEMPHIS_ENV_FILE: envPath }).paths;
+  mutate: (existing: string) => { content: string; result: T; write?: boolean },
+): T {
+  // Validate the complete batch before recovery or publication. Keys must not
+  // smuggle an assignment; values must not introduce additional dotenv lines.
+  for (const { key, value } of mutations) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      throw new Error('Invalid configuration key.');
+    }
+    if (value !== undefined && /[\r\n]/.test(value)) {
+      throw new Error('Configuration value must not contain newline characters.');
+    }
+  }
+  const journals = resolveVaultJournals({ ...rawEnv, MEMPHIS_ENV_FILE: envPath }).paths;
+  return withConfigurationWriteLock(journals, () => {
+    // Even unrelated edits must recover pending rotations first, or they can
+    // change the expected dotenv bytes and prevent the rotation from recovering.
+    // Checking after recovery also serializes the guard with initialization.
+    assertGenericConfigMutation(
+      mutations.map(({ key }) => key),
+      rawEnv,
+    );
+    const existing = existsSync(envPath) ? readFileSync(envPath, 'utf8') : '';
+    const next = mutate(existing);
+    if (next.write !== false) {
+      // Separate values containing quotes can consume existing lines without
+      // containing a newline themselves. Compare the effective pepper as well
+      // as the requested keys, before publishing any part of the batch.
+      if (parse(existing).MEMPHIS_VAULT_PEPPER !== parse(next.content).MEMPHIS_VAULT_PEPPER) {
+        assertGenericConfigMutation(['MEMPHIS_VAULT_PEPPER'], rawEnv);
+      }
+      writePrivateAtomicFile(envPath, next.content);
+    }
+    return next.result;
+  });
 }
 
 export function setDotEnvValues(
@@ -47,13 +81,9 @@ export function setDotEnvValues(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): { path: string; updatedKeys: string[] } {
   const envPath = resolveDotEnvPath(rawEnv);
-  const keys = Object.keys(values);
-  return withConfigurationWriteLock(configurationWriteJournals(keys, envPath, rawEnv), () => {
-    // Check after acquiring both the state and dotenv journals. Otherwise a
-    // generic pepper write could race vault initialization and strand the
-    // just-created vault with a different pepper.
-    assertGenericConfigMutation(keys, rawEnv);
-    const existing = existsSync(envPath) ? readFileSync(envPath, 'utf8').split(/\r?\n/) : [];
+  const mutations = Object.entries(values).map(([key, value]) => ({ key, value }));
+  return mutateDotEnvFile(envPath, mutations, rawEnv, (content) => {
+    const existing = content ? content.split(/\r?\n/) : [];
     const nextLines = [...existing];
     const updatedKeys: string[] = [];
 
@@ -69,8 +99,7 @@ export function setDotEnvValues(
     }
 
     const serialized = `${nextLines.filter((line, index, lines) => !(index === lines.length - 1 && line === '')).join('\n')}\n`;
-    writePrivateAtomicFile(envPath, serialized);
-    return { path: envPath, updatedKeys };
+    return { content: serialized, result: { path: envPath, updatedKeys } };
   });
 }
 
@@ -79,19 +108,22 @@ export function unsetDotEnvValues(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): { path: string; removedKeys: string[] } {
   const envPath = resolveDotEnvPath(rawEnv);
-  return withConfigurationWriteLock(configurationWriteJournals(keys, envPath, rawEnv), () => {
-    assertGenericConfigMutation(keys, rawEnv);
-    const existing = existsSync(envPath) ? readFileSync(envPath, 'utf8').split(/\r?\n/) : [];
-    const keySet = new Set(keys);
-    const filtered = existing.filter((line) => {
-      const eq = line.indexOf('=');
-      if (eq <= 0) return true;
-      const key = line.slice(0, eq).trim();
-      return !keySet.has(key);
-    });
+  return mutateDotEnvFile(
+    envPath,
+    keys.map((key) => ({ key })),
+    rawEnv,
+    (content) => {
+      const existing = content ? content.split(/\r?\n/) : [];
+      const keySet = new Set(keys);
+      const filtered = existing.filter((line) => {
+        const eq = line.indexOf('=');
+        if (eq <= 0) return true;
+        const key = line.slice(0, eq).trim();
+        return !keySet.has(key);
+      });
 
-    const serialized = `${filtered.filter((line, index, lines) => !(index === lines.length - 1 && line === '')).join('\n')}\n`;
-    writePrivateAtomicFile(envPath, serialized);
-    return { path: envPath, removedKeys: [...keySet] };
-  });
+      const serialized = `${filtered.filter((line, index, lines) => !(index === lines.length - 1 && line === '')).join('\n')}\n`;
+      return { content: serialized, result: { path: envPath, removedKeys: [...keySet] } };
+    },
+  );
 }

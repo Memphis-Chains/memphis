@@ -68,10 +68,16 @@ export function base58Encode(bytes: Uint8Array): string {
   return out === '' ? '1' : out;
 }
 
+class WalletSeedError extends Error {
+  constructor(readonly code: 'format' | 'size') {
+    super('Wallet seed validation failed');
+  }
+}
+
 function base64ToBytes(value: string): Buffer {
   const normalized = value.trim();
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) {
-    throw new Error('seed is not valid base64');
+    throw new WalletSeedError('format');
   }
   return Buffer.from(normalized, 'base64');
 }
@@ -126,27 +132,24 @@ export function runMemphisWalletSign(input: WalletSignInput): WalletSignOutput {
       { surface: 'mcp', route: 'wallet:sign' },
       (plaintext): { publicKey: string; signature: string } => {
         const seed = base64ToBytes(plaintext);
-        if (seed.length !== SEED_BYTES) {
-          throw new Error(
-            `vault key "${input.keyName}" must hold a ${SEED_BYTES}-byte Ed25519 seed, got ${seed.length} bytes`,
-          );
+        let encoded: Buffer | undefined;
+        try {
+          if (seed.length !== SEED_BYTES) throw new WalletSeedError('size');
+          encoded = seedToPkcs8(seed);
+          const privateKey = createPrivateKey({ key: encoded, format: 'der', type: 'pkcs8' });
+          const publicKey = createPublicKey(privateKey);
+          const rawPublic = publicKey
+            .export({ format: 'der', type: 'spki' })
+            .subarray(-PUBLIC_KEY_BYTES);
+          const signature = cryptoSign(null, message, privateKey);
+          return {
+            publicKey: base58Encode(new Uint8Array(rawPublic)),
+            signature: signature.toString('base64'),
+          };
+        } finally {
+          seed.fill(0);
+          encoded?.fill(0);
         }
-
-        const privateKey = createPrivateKey({
-          key: seedToPkcs8(seed),
-          format: 'der',
-          type: 'pkcs8',
-        });
-        const publicKey = createPublicKey(privateKey);
-        const rawPublic = publicKey
-          .export({ format: 'der', type: 'spki' })
-          .subarray(-PUBLIC_KEY_BYTES);
-        const signature = cryptoSign(null, message, privateKey);
-
-        return {
-          publicKey: base58Encode(new Uint8Array(rawPublic)),
-          signature: signature.toString('base64'),
-        };
       },
     );
 
@@ -177,8 +180,17 @@ export function runMemphisWalletSign(input: WalletSignInput): WalletSignOutput {
     return result;
   } catch (e) {
     if (e instanceof VaultSecretUnavailableError) {
-      return { ...base, error: e.message };
+      return { ...base, error: 'Vault signing key unavailable. Run: memphis doctor' };
     }
-    return { ...base, error: e instanceof Error ? e.message : String(e) };
+    if (e instanceof WalletSeedError) {
+      return {
+        ...base,
+        error:
+          e.code === 'size'
+            ? 'Signing key must hold a 32-byte Ed25519 seed.'
+            : 'Signing key must hold a valid base64 Ed25519 seed.',
+      };
+    }
+    return { ...base, error: 'WALLET_SIGN_FAILED: signing could not be completed.' };
   }
 }

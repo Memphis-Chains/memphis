@@ -1,25 +1,47 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const writeSecurityAudit = vi.fn();
-const vaultDecrypt = vi.fn();
-const vaultEncrypt = vi.fn();
-const vaultInit = vi.fn();
-const getLatestVaultEntry = vi.fn();
-const listVaultEntries = vi.fn();
-const saveVaultEntry = vi.fn();
-const verifyVaultEntry = vi.fn();
+import { AppError } from '../../src/core/errors.js';
+import { VaultEntryError, VaultStateError } from '../../src/infra/storage/rust-vault-adapter.js';
+
+const {
+  writeSecurityAudit,
+  vaultDecrypt,
+  vaultEncrypt,
+  vaultInit,
+  getLatestVaultEntry,
+  listVaultEntries,
+  saveVaultEntry,
+  verifyVaultEntry,
+} = vi.hoisted(() => ({
+  writeSecurityAudit: vi.fn(),
+  vaultDecrypt: vi.fn(),
+  vaultEncrypt: vi.fn(),
+  vaultInit: vi.fn(),
+  getLatestVaultEntry: vi.fn(),
+  listVaultEntries: vi.fn(),
+  saveVaultEntry: vi.fn(),
+  verifyVaultEntry: vi.fn(),
+}));
 
 vi.mock('../../src/infra/logging/security-audit.js', () => ({
   writeSecurityAudit,
 }));
 
-vi.mock('../../src/infra/storage/rust-vault-adapter.js', () => ({
+vi.mock('../../src/infra/storage/rust-vault-adapter.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/infra/storage/rust-vault-adapter.js')>()),
   vaultDecrypt,
   vaultEncrypt,
   vaultInit,
 }));
 
-vi.mock('../../src/infra/storage/vault-entry-store.js', () => ({
+vi.mock('../../src/infra/storage/vault-entry-store.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/infra/storage/vault-entry-store.js')>()),
+  readLatestVaultSecret: (key: string, env: NodeJS.ProcessEnv) => {
+    const entry = getLatestVaultEntry(key, env);
+    if (!entry) return undefined;
+    if (!verifyVaultEntry(entry)) throw new VaultEntryError('VAULT_ENTRY_INTEGRITY_FAILED');
+    return { entry, plaintext: vaultDecrypt(entry, env) };
+  },
   getLatestVaultEntry,
   listVaultEntries,
   saveVaultEntry,
@@ -64,6 +86,120 @@ describe('vault boundary', () => {
     );
     expect(writeSecurityAudit.mock.calls[0][0].details).not.toHaveProperty('plaintext');
     expect(writeSecurityAudit.mock.calls[0][0].details).not.toHaveProperty('message');
+  });
+
+  it('drops secret-derived hashes and nested error details from audit', async () => {
+    const { auditVaultOperation } = await import('../../src/security/vault-boundary.js');
+    auditVaultOperation({ surface: 'mcp' }, 'bounded-use', 'error', {
+      key: 'test-reference',
+      reason: 'vault_decrypt_failed',
+      plaintextHash: 'synthetic-hash',
+      causeMessage: 'synthetic-secret',
+      nested: { value: 'synthetic-secret' },
+    });
+    const serialized = JSON.stringify(writeSecurityAudit.mock.calls);
+    expect(serialized).not.toContain('synthetic-secret');
+    expect(serialized).not.toContain('synthetic-hash');
+    expect(serialized).toContain('vault_decrypt_failed');
+  });
+
+  it('projects audit fields by meaning instead of accepting arbitrary primitive strings', async () => {
+    const { auditVaultOperation } = await import('../../src/security/vault-boundary.js');
+    const sentinel = 'synthetic-private-audit-value';
+    auditVaultOperation({ surface: 'mcp' }, 'bounded-use', 'error', {
+      key: 'test-reference',
+      reason: sentinel,
+      source: sentinel,
+      probe: sentinel,
+      count: sentinel,
+      found: sentinel,
+      version: sentinel,
+      did: sentinel,
+    });
+    expect(JSON.stringify(writeSecurityAudit.mock.calls)).not.toContain(sentinel);
+    expect(writeSecurityAudit.mock.calls[0][0].details).toMatchObject({
+      key: 'test-reference',
+      surface: 'mcp',
+    });
+  });
+
+  it('retains a valid audit IP and rejects arbitrary forwarded-header text', async () => {
+    const { auditVaultOperation } = await import('../../src/security/vault-boundary.js');
+    const sentinel = 'synthetic-private-header-value';
+    auditVaultOperation({ surface: 'http', ip: sentinel }, 'bounded-use', 'error', {
+      reason: 'vault_decrypt_failed',
+    });
+    auditVaultOperation({ surface: 'http', ip: '127.0.0.1' }, 'bounded-use', 'error', {
+      reason: 'vault_decrypt_failed',
+    });
+    expect(JSON.stringify(writeSecurityAudit.mock.calls)).not.toContain(sentinel);
+    expect(writeSecurityAudit.mock.calls[1][0].ip).toBe('127.0.0.1');
+  });
+
+  it('does not propagate an initialization exception, cause or nested credential text', async () => {
+    const { initializeVault } = await import('../../src/security/vault-boundary.js');
+    const sentinel = 'synthetic-private-initialization-value';
+    listVaultEntries.mockReturnValue([]);
+    vaultInit.mockImplementation(() => {
+      throw new Error(sentinel, { cause: { headers: { Authorization: sentinel } } });
+    });
+    let failure: Error | undefined;
+    try {
+      initializeVault(
+        { passphrase: sentinel, recovery_question: 'fixture?', recovery_answer: sentinel },
+        { surface: 'http', route: '/v1/vault/init' },
+      );
+    } catch (error) {
+      failure = error as Error;
+    }
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure?.message).toContain('Vault initialization failed');
+    expect(
+      JSON.stringify({
+        message: failure?.message,
+        cause: failure?.cause,
+        stack: failure?.stack,
+        audit: writeSecurityAudit.mock.calls,
+      }),
+    ).not.toContain(sentinel);
+  });
+
+  it('retains safe initialization failure codes without copying exception details', async () => {
+    const { initializeVault } = await import('../../src/security/vault-boundary.js');
+    const sentinel = 'synthetic-private-typed-error-value';
+    listVaultEntries.mockReturnValue([]);
+    const stateError = new VaultStateError('VAULT_PEPPER_REQUIRED');
+    stateError.message = sentinel;
+    const bridgeError = new AppError(
+      'BRIDGE_UNAVAILABLE',
+      sentinel,
+      503,
+      { headers: sentinel },
+      undefined,
+      new Error(sentinel),
+    );
+    for (const original of [stateError, bridgeError]) {
+      vaultInit.mockImplementation(() => {
+        throw original;
+      });
+      let failure: (Error & { code?: string }) | undefined;
+      try {
+        initializeVault(
+          { passphrase: 'synthetic', recovery_question: 'fixture?', recovery_answer: 'synthetic' },
+          { surface: 'http', route: '/v1/vault/init' },
+        );
+      } catch (error) {
+        failure = error as typeof failure;
+      }
+      expect(failure?.code).toBe(original.code);
+      expect(
+        JSON.stringify({
+          message: failure?.message,
+          cause: failure?.cause,
+          audit: writeSecurityAudit.mock.calls,
+        }),
+      ).not.toContain(sentinel);
+    }
   });
 
   it('lists metadata without decrypting plaintext', async () => {
@@ -255,5 +391,63 @@ describe('vault boundary', () => {
 
     dateNow.mockRestore();
     randomSpy.mockRestore();
+  });
+  it.each([
+    ['state', 'VAULT_STATE_AUTH_FAILED'],
+    ['entry', 'VAULT_ENTRY_AUTH_FAILED'],
+    ['bridge', 'BRIDGE_LOAD_FAILURE'],
+    ['unknown', 'VAULT_SECRET_READ_FAILED'],
+    ['tampered', 'VAULT_STATE_READER_UNAVAILABLE'],
+  ])('keeps %s error classification consistent across facade operations', async (kind, code) => {
+    const { readVaultSecretByKey, decryptVaultEntryValue, withVaultSecret } =
+      await import('../../src/security/vault-boundary.js');
+    const sentinel = 'synthetic-private-reader-classification';
+    const entry = {
+      key: 'first',
+      id: 'fixture',
+      encrypted: 'synthetic-ciphertext',
+      iv: 'synthetic-nonce',
+      createdAt: '2026-10-18T00:00:00Z',
+      fingerprint: 'synthetic-ciphertext-fingerprint',
+    };
+    getLatestVaultEntry.mockReturnValue(entry);
+    verifyVaultEntry.mockReturnValue(true);
+    let original: Error;
+    if (kind === 'state' || kind === 'tampered')
+      original = new VaultStateError('VAULT_STATE_AUTH_FAILED');
+    else if (kind === 'entry') original = new VaultEntryError('VAULT_ENTRY_AUTH_FAILED');
+    else if (kind === 'bridge')
+      original = new AppError('BRIDGE_LOAD_FAILURE', sentinel, 503, undefined, undefined, {
+        secret: sentinel,
+      });
+    else original = new Error(sentinel, { cause: { authorization: sentinel } });
+    original.message = sentinel;
+    if (kind === 'tampered') Object.defineProperty(original, 'code', { value: sentinel });
+    vaultDecrypt.mockImplementation(() => {
+      throw original;
+    });
+    const named = readVaultSecretByKey('first', { surface: 'system' });
+    const raw = decryptVaultEntryValue(entry, { surface: 'system' });
+    let bounded: (Error & { errorCode?: string }) | undefined;
+    try {
+      withVaultSecret('first', { surface: 'system' }, (value) => value);
+    } catch (error) {
+      bounded = error as typeof bounded;
+    }
+    expect(named.errorCode).toBe(code);
+    expect(raw).toMatchObject({ ok: false, errorCode: code });
+    expect(bounded?.errorCode).toBe(code);
+    expect(
+      JSON.stringify({
+        named,
+        raw,
+        bounded: {
+          message: bounded?.message,
+          errorCode: bounded?.errorCode,
+          cause: bounded?.cause,
+        },
+        audit: writeSecurityAudit.mock.calls,
+      }),
+    ).not.toContain(sentinel);
   });
 });

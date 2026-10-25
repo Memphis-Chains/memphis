@@ -75,10 +75,14 @@ async function handleServeCommand(context: CliContext): Promise<boolean> {
   }
 
   clearMcpServeState();
-  print(
-    { ok: true, mode: 'mcp-serve-stopped', reason: stopState.stopRequested ? 'signal' : 'timeout' },
-    context.args.json,
-  );
+  const stopPayload = {
+    ok: true,
+    mode: 'mcp-serve-stopped',
+    reason: stopState.stopRequested ? 'signal' : 'timeout',
+  };
+  // Same channel rule as runStdioServe: on stdio the JSON-RPC stream owns
+  // stdout, so the lifecycle line must not share it.
+  print(stopPayload, context.args.json, selectedTransport === 'stdio' ? process.stderr : process.stdout);
   return true;
 }
 
@@ -196,7 +200,16 @@ async function runStdioServe(
     startedAt: new Date().toISOString(),
     mode: 'running',
   });
-  print({ ok: true, mode: 'mcp-serve', transport: 'stdio', durationMs: runMs }, context.args.json);
+  // Stdout is the JSON-RPC channel owned by StdioServerTransport. A status
+  // line written here lands in the middle of the protocol stream, and every
+  // strict MCP client rejects the frame as invalid JSON — the handshake breaks
+  // before tools/list is ever answered. Diagnostics go to stderr, which the
+  // transport does not own.
+  print(
+    { ok: true, mode: 'mcp-serve', transport: 'stdio', durationMs: runMs },
+    context.args.json,
+    process.stderr,
+  );
   await waitForServeStop(runMs, stopState);
 }
 

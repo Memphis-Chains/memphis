@@ -11,6 +11,7 @@ import {
   getLatestVaultEntry,
   listVaultEntries,
 } from '../../src/infra/storage/vault-entry-store.js';
+import { readVaultSecretByKey, withVaultSecret } from '../../src/security/vault-boundary.js';
 import { createIsolatedTestRuntime } from '../helpers/isolated-runtime.js';
 
 const roots: string[] = [];
@@ -73,6 +74,11 @@ function assertReadable(
   const entry = getLatestVaultEntry(key, env);
   expect(entry).toBeDefined();
   expect(vaultDecrypt(entry!, env)).toBe(expected);
+  expect(readVaultSecretByKey(key, { surface: 'system' }, env)).toMatchObject({
+    found: true,
+    plaintext: expected,
+  });
+  expect(withVaultSecret(key, { surface: 'system' }, (value) => value, env)).toBe(expected);
   const result = native(env, key, expected);
   expect(result.status, result.stderr).toBe(0);
 }
@@ -123,6 +129,9 @@ describe('shared stored vault entry contract', () => {
       const f = fixture();
       writeFileSync(f.env.MEMPHIS_VAULT_ENTRIES_PATH!, raw);
       expect(() => listVaultEntries(f.env)).toThrow('VAULT_ENTRIES_MALFORMED');
+      const secret = readVaultSecretByKey('first', { surface: 'system' }, f.env);
+      expect(secret.errorCode).toBe('VAULT_ENTRIES_MALFORMED');
+      expect(JSON.stringify(secret)).not.toContain('private-sentinel');
       const result = native(f.env);
       expect(result.status).toBe(3);
       expect(result.stderr).toContain('VAULT_ENTRIES_MALFORMED');
@@ -162,6 +171,22 @@ describe('shared stored vault entry contract', () => {
     bad.fingerprint = kind === 'fingerprint' ? 'private-sentinel' : fingerprint(bad);
     const f = fixture([encrypted(), bad]);
     expect(() => vaultDecrypt(getLatestVaultEntry('first', f.env)!, f.env)).toThrow(code);
+    const secret = readVaultSecretByKey('first', { surface: 'system' }, f.env);
+    expect(secret.errorCode).toBe(code);
+    expect(secret.plaintext).toBeUndefined();
+    expect(JSON.stringify(secret)).not.toContain('private-sentinel');
+    let called = false;
+    expect(() =>
+      withVaultSecret(
+        'first',
+        { surface: 'system' },
+        () => {
+          called = true;
+        },
+        f.env,
+      ),
+    ).toThrow();
+    expect(called).toBe(false);
     const result = native(f.env);
     expect(result.status).toBe(3);
     expect(result.stderr).toContain(code);
@@ -171,6 +196,18 @@ describe('shared stored vault entry contract', () => {
     const f = fixture([]);
     if (kind === 'missing') rmSync(f.env.MEMPHIS_VAULT_ENTRIES_PATH!);
     expect(getLatestVaultEntry('first', f.env)).toBeUndefined();
+    rmSync(f.env.MEMPHIS_VAULT_STATE_PATH!);
+    expect(readVaultSecretByKey('first', { surface: 'system' }, f.env)).toEqual({
+      found: false,
+      key: 'first',
+    });
+    writeFileSync(
+      f.env.MEMPHIS_VAULT_STATE_PATH!,
+      JSON.stringify({
+        salt: Buffer.alloc(32, 1).toString('base64'),
+        masterKey: Buffer.alloc(32, 2).toString('base64'),
+      }),
+    );
     const result = native(f.env);
     expect(result.status).toBe(3);
     expect(result.stderr).toContain('VAULT_ENTRY_NOT_FOUND');

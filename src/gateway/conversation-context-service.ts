@@ -107,6 +107,12 @@ export type ConversationPromptOverlay = {
     endSequence: number;
   }>;
   trimRecentMessagesTo?: number;
+  /**
+   * Context window the provider's account granted on an earlier turn of this
+   * conversation. Persisted with the session-memory snapshot so trimming on
+   * the next turn respects a limit stricter than the model's declared one.
+   */
+  effectiveContextWindow?: number;
 };
 
 export type ConversationRefreshResult = {
@@ -512,6 +518,8 @@ export class ConversationContextService {
           KEEP_RECENT_MESSAGES)
         : undefined;
 
+    const persistedWindow = asPositiveInteger(snapshot?.metadata?.effectiveContextWindow);
+
     return {
       sessionMemory: snapshot?.summaryText || undefined,
       compactions: compactions.map((item) => ({
@@ -520,6 +528,7 @@ export class ConversationContextService {
         endSequence: item.endSequence,
       })),
       trimRecentMessagesTo,
+      ...(persistedWindow !== undefined ? { effectiveContextWindow: persistedWindow } : {}),
     };
   }
 
@@ -567,6 +576,7 @@ export class ConversationContextService {
       return false;
     }
 
+    const accountWindow = asPositiveInteger(input.telemetry?.effectiveContextWindow);
     this.sessionMemoryRepository.save({
       conversationId: input.conversationId,
       actorId: input.actorId,
@@ -583,6 +593,10 @@ export class ConversationContextService {
           observedMessages: totalMessages,
         },
         telemetry: policy.telemetrySnapshot,
+        // Persist the account limit so the NEXT turn trims to it. The
+        // provider only reports this after a completed turn, so it cannot be
+        // known before the first request of a conversation.
+        ...(accountWindow !== undefined ? { effectiveContextWindow: accountWindow } : {}),
       },
     });
     return true;

@@ -5,6 +5,8 @@
 // themselves use env-registry. Per Sprint ι policy, file-level
 // disable instead of accessor-bloat.
 //
+import { existsSync } from 'node:fs';
+
 import { loadOperatorConfig, validateOperatorPassphrase } from '../../infra/auth/operator-gate.js';
 import { setDotEnvValues } from '../../infra/config/dotenv-file.js';
 import {
@@ -21,6 +23,7 @@ import {
 } from '../../infra/config/mutability.js';
 import { envSchema } from '../../infra/config/schema.js';
 import { getLatestVaultEntry } from '../../infra/storage/vault-entry-store.js';
+import { resolveVaultPath } from '../../infra/storage/vault-paths.js';
 
 export interface MemphisConfigShowOutput {
   fields: Array<{ key: string; tier: MutabilityTier }>;
@@ -38,8 +41,8 @@ export interface MemphisConfigShowOutput {
  * `envSchema` and classified in `mutability.ts`. Without this whitelist,
  * a caller could pass any env var name (e.g. an operator-only legacy
  * credential not tracked in the schema) and the response would echo the
- * value verbatim because `redactFieldValue` only masks keys it knows are
- * `secret`. Defense-in-depth: this tool is for inspecting Memphis runtime
+ * value verbatim. The shared redactor now also masks unknown values and
+ * credential-bearing URLs; this whitelist still limits introspection to Memphis runtime
  * config, not for arbitrary `process.env` exfiltration.
  */
 export function runMemphisConfigShow(input: { key?: string } = {}): MemphisConfigShowOutput {
@@ -83,8 +86,7 @@ export function runMemphisConfigShow(input: { key?: string } = {}): MemphisConfi
         const vaultKey = vaultKeyEnv.trim();
         const entry = getLatestVaultEntry(vaultKey, process.env);
         if (entry) {
-          values[name] =
-            `<vault-resolved via ${provPrefix}_VAULT_KEY=${vaultKey}>`;
+          values[name] = `<vault-resolved via ${provPrefix}_VAULT_KEY=${vaultKey}>`;
         } else {
           values[name] =
             `<vault-key-missing: ${provPrefix}_VAULT_KEY=${vaultKey} but no vault entry "${vaultKey}">`;
@@ -125,6 +127,7 @@ export type MemphisConfigSetOutcome =
   | {
       ok: false;
       reason:
+        | 'vault-rotation-required'
         | 'cold-field'
         | 'secret-no-passphrase'
         | 'secret-bad-passphrase'
@@ -184,6 +187,19 @@ export function runMemphisConfigSet(input: {
       reason: 'unknown-key',
       key,
       message: `unknown config key: ${key}`,
+    };
+  }
+
+  if (
+    key === 'MEMPHIS_VAULT_PEPPER' &&
+    existsSync(resolveVaultPath('vault-state.json', process.env))
+  ) {
+    return {
+      ok: false,
+      reason: 'vault-rotation-required',
+      key,
+      tier,
+      message: 'Initialized vault: use memphis vault pepper-rotate to change the pepper.',
     };
   }
 

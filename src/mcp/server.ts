@@ -1,3 +1,5 @@
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
@@ -84,6 +86,7 @@ import { runMemphisWalletSign } from './tools/wallet-sign.js';
 import { runMemphisWebFetch } from './tools/web-fetch.js';
 import { runMemphisWebSearch } from './tools/web-search.js';
 import { RollbackManager } from '../backup/rollback.js';
+import { stableStringify } from '../core/stable-stringify.js';
 import { resolveToolPolicy } from '../gateway/authorization.js';
 import {
   TOOL_REGISTRY,
@@ -99,6 +102,7 @@ import {
   SqliteToolPermissionRepository,
   type ToolPolicy,
 } from '../infra/storage/sqlite/repositories/tool-permission-repository.js';
+import { withOperatorContext } from '../security/operator-context.js';
 import { ensureSoulManifest } from '../soul/manifest.js';
 import type { SoulManifest } from '../soul/types.js';
 
@@ -305,31 +309,38 @@ function redactForStorage(
   return copy;
 }
 
-function withApprovalGate<T extends Record<string, unknown>>(
+const approvalBindingKey = randomBytes(32);
+type CallerExtra = { sessionId?: string; authInfo?: { clientId: string } };
+
+function withScopedApprovalGate<T extends Record<string, unknown>>(
+  serverSession: string,
   toolName: string,
   policy: ToolPolicy,
   approvals: SqliteToolCallApprovalRepository,
   handler: (args: T) => Promise<ToolResult>,
   redactFields: readonly string[] = [],
-): (args: T) => Promise<ToolResult> {
-  if (policy === 'allow') return handler;
-
-  return async (args: T) => {
+): (args: T, extra?: CallerExtra) => Promise<ToolResult> {
+  return async (args: T, extra?: CallerExtra) => {
+    const subject = extra?.authInfo?.clientId ?? 'local-mcp';
+    const sessionId = extra?.sessionId ?? serverSession;
+    const callerId = JSON.stringify(['mcp', subject, sessionId]);
+    const execute = () => withOperatorContext({ surface: 'mcp', subject, sessionId }, () => handler(args));
+    if (policy === 'deny') return pendingResult({ approved: false, reason: 'policy-denied' });
+    if (policy === 'allow') return execute();
+    const operationArgs = { ...args };
+    delete operationArgs.approval_request_id;
+    const binding = createHmac('sha256', approvalBindingKey).update(stableStringify(operationArgs)).digest('hex');
     const approvalRequestId = (args as Record<string, unknown>).approval_request_id as
       | string
       | undefined;
 
     // If caller provides an approval_request_id, check if it's approved
     if (approvalRequestId) {
-      const approved = approvals.findApproved(approvalRequestId);
-      if (approved && approved.toolName === toolName) {
-        approvals.markUsed(approvalRequestId);
-        return handler(args);
-      }
+      if (approvals.consumeScoped(approvalRequestId, toolName, callerId, binding)) return execute();
 
       // Check if it exists but isn't approved yet
       const existing = approvals.get(approvalRequestId);
-      if (existing) {
+      if (existing && existing.callerId === callerId) {
         return pendingResult({
           approved: false,
           requestId: existing.requestId,
@@ -344,7 +355,8 @@ function withApprovalGate<T extends Record<string, unknown>>(
     // leak the operator passphrase or similar secrets.
     const request = approvals.createRequest({
       toolName,
-      arguments: redactForStorage(args as Record<string, unknown>, redactFields),
+      callerId,
+      arguments: { ...redactForStorage(operationArgs, redactFields), _approval_binding: binding },
     });
 
     return pendingResult({
@@ -364,6 +376,11 @@ export function createMemphisMcpServer(
     name: 'memphis-mcp',
     version: '0.3.4',
   });
+  const serverSession = randomUUID();
+  const withApprovalGate = <T extends Record<string, unknown>>(
+    toolName: string, policy: ToolPolicy, approvals: SqliteToolCallApprovalRepository,
+    handler: (args: T) => Promise<ToolResult>, redactFields: readonly string[] = [],
+  ) => withScopedApprovalGate(serverSession, toolName, policy, approvals, handler, redactFields);
 
   const { permissions, approvals } = getRepos(rawEnv);
   const evolveDeps = getEvolveDeps(rawEnv);

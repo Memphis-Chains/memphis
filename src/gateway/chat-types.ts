@@ -88,6 +88,11 @@ export type ToolCall = ChatToolCall;
 export type LlmResponse = {
   content: string;
   tool_calls?: ChatToolCall[];
+  /**
+   * Opaque MiniMax reasoning state for interleaved tool use. Kept only in
+   * the live message loop; it is neither user-visible nor durable memory.
+   */
+  reasoning_content?: string;
   usage?: TokenUsage;
   /**
    * Provider-reported reason the response ended (e.g. 'stop',
@@ -96,6 +101,12 @@ export type LlmResponse = {
    * truncation and surface a warning to the operator.
    */
   finishReason?: string;
+  /**
+   * Context window the provider's account granted on this call, when stricter
+   * than the model's declared capability. Carried to turn-runtime so history
+   * trimming follows the account, not the advertised limit.
+   */
+  effectiveContextWindow?: number;
 };
 
 export type LlmClient = {

@@ -820,3 +820,133 @@ describe('turn runtime', () => {
     getModeSpy.mockRestore();
   });
 });
+
+describe('account context window', () => {
+  beforeEach(() => {
+    resetTurnTelemetryForTests();
+    runAgentLoop.mockReset();
+    runAgentLoop.mockImplementation(async () => ({
+      reply: 'assistant raw reply',
+      messages: [
+        { role: 'user', content: 'placeholder user' },
+        { role: 'assistant', content: 'assistant raw reply' },
+      ],
+      usage: { inputTokens: 32, outputTokens: 14, totalTokens: 46 },
+    }));
+  });
+
+  it('measures remaining context against the account limit, not the declared model limit', async () => {
+    const { buildRuntimeTelemetry } = await import('../../src/infra/runtime/turn-telemetry.js');
+
+    const declared = buildRuntimeTelemetry({
+      provider: 'openai',
+      model: 'astra-gtp6-max',
+      messages: [{ role: 'user', content: 'hi' }],
+      usage: { inputTokens: 1000, outputTokens: 10, totalTokens: 1010 },
+    });
+    // The declared model ceiling is 1050000, but the account may be granted
+    // less, so the effective value is at most that. Assert the rule, not a
+    // machine-specific number: the local account catalog is consulted.
+    expect(declared.contextWindowTokens).toBeLessThanOrEqual(1_050_000);
+    expect(declared.contextWindowTokens).toBeGreaterThan(0);
+
+    const accountAware = buildRuntimeTelemetry({
+      provider: 'openai',
+      model: 'astra-gtp6-max',
+      messages: [{ role: 'user', content: 'hi' }],
+      usage: { inputTokens: 1000, outputTokens: 10, totalTokens: 1010 },
+      effectiveContextWindow: 258400,
+    });
+
+    // The account grants less, and that smaller limit must win.
+    expect(accountAware.contextWindowTokens).toBe(258400);
+    // remainingContextTokens subtracts the estimated prompt size, not reported
+    // usage: the guard runs before the provider answers.
+    expect(accountAware.remainingContextTokens).toBe(258400 - accountAware.estimatedPromptTokens);
+    // Without the override the local account catalog already narrows the
+    // ceiling, so the override must not make it any larger.
+    expect(accountAware.remainingContextTokens).toBeLessThanOrEqual(
+      declared.remainingContextTokens ?? Number.POSITIVE_INFINITY,
+    );
+  });
+
+  it('never raises the declared limit when a provider overstates its account window', async () => {
+    const { buildRuntimeTelemetry } = await import('../../src/infra/runtime/turn-telemetry.js');
+
+    const telemetry = buildRuntimeTelemetry({
+      provider: 'openai',
+      model: 'astra-gtp6-max',
+      messages: [{ role: 'user', content: 'hi' }],
+      usage: { inputTokens: 10, outputTokens: 1, totalTokens: 11 },
+      effectiveContextWindow: 2000000,
+    });
+
+    // A provider may not widen the ceiling, whatever it claims.
+    expect(telemetry.contextWindowTokens).toBeLessThanOrEqual(1_050_000);
+  });
+});
+
+describe('account context window trims real history', () => {
+  beforeEach(() => {
+    resetTurnTelemetryForTests();
+    runAgentLoop.mockReset();
+    runAgentLoop.mockImplementation(async (call: { messages: unknown[] }) => ({
+      reply: 'assistant raw reply',
+      messages: [
+        ...(call.messages as Array<Record<string, unknown>>),
+        { role: 'assistant', content: 'assistant raw reply' },
+      ],
+      usage: { inputTokens: 32, outputTokens: 14, totalTokens: 46 },
+    }));
+  });
+
+  const openaiProvider = {
+    name: 'openai',
+    isConfigured: () => true,
+    isAvailable: async () => true,
+    listModels: async () => ['astra-gtp6-max'],
+    defaultModel: () => 'astra-gtp6-max',
+    healthCheck: async () => ({ name: 'openai', ok: true }),
+    chat: vi.fn(),
+    generate: vi.fn(),
+  };
+
+  it('trims history to the account window even though the model declares more', async () => {
+    const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
+    // ~400k tokens of history: under the declared 1050000, over a 272000 account.
+    const huge = 'x'.repeat(400_000);
+    const messages: Array<{ role: string; content: string }> = [
+      { role: 'user', content: huge },
+      { role: 'assistant', content: huge },
+      { role: 'user', content: huge },
+      { role: 'assistant', content: huge },
+    ];
+
+    // A limit above what the history needs keeps every message.
+    await runTurnRuntime({
+      input: 'summarize',
+      messages,
+      provider: openaiProvider,
+      surface: 'http.chat.generate',
+      effectiveContextWindow: 2_000_000,
+    });
+    const beforeGuard = runAgentLoop.mock.calls[0]?.[0] as { messages: unknown[] };
+    const untouchedLength = beforeGuard.messages.length;
+
+    // A limit below what the history needs drops messages before the call.
+    runAgentLoop.mockClear();
+    await runTurnRuntime({
+      input: 'summarize',
+      messages,
+      provider: openaiProvider,
+      surface: 'http.chat.generate',
+      effectiveContextWindow: 50_000,
+    });
+    const afterGuard = runAgentLoop.mock.calls[0]?.[0] as { messages: unknown[] };
+    expect(afterGuard.messages.length).toBeLessThan(untouchedLength);
+    // The history really is shorter, not merely re-indexed.
+    const totalChars = (list: unknown[]) =>
+      list.reduce((sum, m) => sum + String((m as { content?: string }).content ?? '').length, 0);
+    expect(totalChars(afterGuard.messages)).toBeLessThan(totalChars(beforeGuard.messages));
+  });
+});

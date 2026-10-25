@@ -20,3 +20,5 @@ base64 = "0.22"
 scrypt = "0.11"
 ureq = { version = "2", features = ["json"] }
 regex = "1"
+zeroize = "1"
+libc = "0.2"

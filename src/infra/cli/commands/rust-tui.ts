@@ -9,7 +9,10 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { resolveDotEnvPath } from '../../config/dotenv-file.js';
+import {
+  nativeRuntimeEnvironment,
+  resolveRuntimeConfigSnapshot,
+} from '../../config/runtime-config-snapshot.js';
 import type { CliContext } from '../context.js';
 
 const PROJECT_ROOT = resolve(fileURLToPath(new URL('../../../../', import.meta.url)));
@@ -40,9 +43,11 @@ function resolveRustTuiBinary(): string | undefined {
 
 export async function runRustTui(context: CliContext): Promise<void> {
   // Force UTF-8 locale for proper Polish/Unicode character rendering
+  const snapshot = resolveRuntimeConfigSnapshot(process.env, {
+    rootHint: { path: PROJECT_ROOT, source: 'binary-path' },
+  });
   const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    MEMPHIS_ENV_FILE: resolveDotEnvPath(process.env),
+    ...nativeRuntimeEnvironment(snapshot, process.env),
     LANG: 'en_US.UTF-8',
     LC_ALL: 'en_US.UTF-8',
     LC_CTYPE: 'en_US.UTF-8',
@@ -51,6 +56,9 @@ export async function runRustTui(context: CliContext): Promise<void> {
   const binary = resolveRustTuiBinary();
   const command = binary ?? 'cargo';
   const runtimeArgs = [];
+  if (context.args.input !== undefined) {
+    runtimeArgs.push('--input', context.args.input);
+  }
   if (context.args.checkOnly) {
     runtimeArgs.push('--check-only');
     if (context.args.json) {

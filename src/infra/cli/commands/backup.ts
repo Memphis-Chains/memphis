@@ -4,6 +4,7 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  lstatSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -353,6 +354,7 @@ function collectFallbackArchiveEntries(root: string, relativePath = '.'): Backup
       }
     }
 
+    if (entry.name.endsWith('.transactions')) continue;
     const entryPath = relativePath === '.' ? entry.name : join(relativePath, entry.name);
     if (entry.isDirectory()) {
       entries.push({ path: entryPath, kind: 'dir' });
@@ -608,6 +610,7 @@ function createArchive(memphisRoot: string, backupPath: string): void {
         '--exclude=./.github-pat',
         '--exclude=./vault-entries.json',
         '--exclude=./vault-state.json',
+        '--exclude=*.transactions',
         // Skip transient runtime PID files — recreated on next boot.
         '--exclude=./memphis.pid',
         '--exclude=./state/boot-failures.json*',
@@ -990,6 +993,78 @@ export async function verifyBackup(options: {
     fileCount,
     size,
   };
+}
+
+export interface BackupDrillResult {
+  verification: 'extracted-chain-sqlite';
+  chainsChecked: number;
+  blocksChecked: number;
+  databasesChecked: number;
+  credentialRecovery: 'not-verified';
+}
+
+/** Restore into an isolated scratch directory; never invoke live restore hooks. */
+export async function drillBackup(backupPath: string): Promise<BackupDrillResult> {
+  const entries = listArchiveContents(backupPath);
+  if (!entries.length || hasUnsafeArchiveEntries(entries) || !verifyChecksum(backupPath).valid) {
+    throw new Error('Backup drill rejected empty, unsafe or checksum-invalid archive');
+  }
+  const fallback = tryReadFallbackArchive(backupPath);
+  if (!fallback) {
+    // Refuse links and special files before extraction, including links whose
+    // target could escape the scratch directory. GNU tar lists type first.
+    const listing = execFileSync('tar', ['-tvzf', backupPath], { encoding: 'utf8' });
+    if (listing.split('\n').some((line) => line && !['-', 'd'].includes(line[0]))) {
+      throw new Error('Backup drill refuses links and special files');
+    }
+  }
+  const root = mkdtempSync(join(tmpdir(), 'memphis-verified-drill-'));
+  try {
+    if (fallback) extractFallbackArchive(backupPath, root);
+    else extractArchive(backupPath, root);
+    const { verifyChainIntegrity } = await import('../../storage/chain-adapter.js');
+    const result: BackupDrillResult = {
+      verification: 'extracted-chain-sqlite',
+      chainsChecked: 0,
+      blocksChecked: 0,
+      databasesChecked: 0,
+      credentialRecovery: 'not-verified',
+    };
+    const chains = join(root, 'chains');
+    if (existsSync(chains)) {
+      for (const entry of readdirSync(chains, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const checked = await verifyChainIntegrity(entry.name, { MEMPHIS_DATA_DIR: root });
+        result.chainsChecked += checked.chainsChecked;
+        result.blocksChecked += checked.blockCount;
+      }
+    }
+    const { default: Database } = await import('better-sqlite3');
+    const inspect = (directory: string): void => {
+      for (const name of readdirSync(directory)) {
+        const path = join(directory, name);
+        const stat = lstatSync(path);
+        if (stat.isSymbolicLink()) throw new Error('Backup drill refuses symbolic links');
+        if (stat.isDirectory()) inspect(path);
+        else if (/\.(sqlite|db)$/.test(name)) {
+          const database = new Database(path, { readonly: true, fileMustExist: true });
+          try {
+            const rows = database.pragma('integrity_check') as Array<{ integrity_check: string }>;
+            if (rows.length !== 1 || rows[0].integrity_check !== 'ok') {
+              throw new Error('Backup drill SQLite integrity failed');
+            }
+            result.databasesChecked += 1;
+          } finally {
+            database.close();
+          }
+        }
+      }
+    };
+    inspect(root);
+    return result;
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 }
 
 export async function restoreBackup(options: RestoreOptions): Promise<{
