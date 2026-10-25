@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   appendFileSync,
+  chmodSync,
   existsSync,
   mkdirSync,
   lstatSync,
@@ -17,17 +18,106 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import readline from 'node:readline/promises';
+import { fileURLToPath } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
 
 import chalk from 'chalk';
 import cliProgress from 'cli-progress';
 
+import {
+  DATABASE_PLACEMENT_MANIFEST,
+  cleanupDatabaseSnapshots,
+  databaseSnapshotTarArgs,
+  snapshotDatabases,
+  tarWarningFlags,
+  verifyDatabaseSnapshotEntries,
+  type DatabaseSnapshotResult,
+} from './backup-db-snapshot.js';
 import { getDataDir } from '../../../config/paths.js';
 import { requireOperatorAuth } from '../../auth/operator-gate.js';
 import { resolveDotEnvPath } from '../../config/dotenv-file.js';
 import { classifyField } from '../../config/mutability.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
+
+/**
+ * Shared backup exclusion policy — ONE source of truth for every archiver.
+ *
+ * Historically the CLI (`createArchive`) and the systemd runner
+ * (`scripts/scheduled-backup-runner.mjs`) each kept their own hand-written
+ * exclude list, and they disagreed: the runner excluded nothing secret at
+ * all, and BOTH used literal paths (`--exclude=./vault-entries.json`) which
+ * do not match suffixed variants. Measured on this host: `*.bak-diag-*`
+ * vault copies present in 6/7 archives, `site-secrets/*.htpasswd` in 4/7.
+ *
+ * The policy lives in `scripts/backup-exclude-policy.json` so the plain-Node
+ * runner can read it too (it cannot import TypeScript). Read relative to the
+ * compiled module so it works from both `src/` (tsx) and `dist/`.
+ */
+const BACKUP_EXCLUDE_POLICY_FILE = 'backup-exclude-policy.json';
+
+type BackupExcludePolicy = {
+  excludePatterns: string[];
+  fallbackExcludeNames: string[];
+};
+
+function readBackupExcludePolicy(): BackupExcludePolicy {
+  const candidates = [
+    resolve(process.cwd(), 'scripts', BACKUP_EXCLUDE_POLICY_FILE),
+    resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '../../../scripts',
+      BACKUP_EXCLUDE_POLICY_FILE,
+    ),
+    resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '../../../../scripts',
+      BACKUP_EXCLUDE_POLICY_FILE,
+    ),
+  ];
+  for (const candidate of candidates) {
+    try {
+      const raw = readFileSync(candidate, 'utf8');
+      const parsed = JSON.parse(raw) as Partial<BackupExcludePolicy>;
+      if (Array.isArray(parsed.excludePatterns) && Array.isArray(parsed.fallbackExcludeNames)) {
+        return {
+          excludePatterns: parsed.excludePatterns.filter((p) => typeof p === 'string'),
+          fallbackExcludeNames: parsed.fallbackExcludeNames.filter((n) => typeof n === 'string'),
+        };
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+  throw new Error(
+    `Backup exclude policy not found or malformed: ${BACKUP_EXCLUDE_POLICY_FILE}. ` +
+      'Refusing to archive without a known exclusion policy — an unfiltered ' +
+      'archive would pack vault material. Checked: ' +
+      candidates.join(', '),
+  );
+}
+
+const BACKUP_EXCLUDE_POLICY = readBackupExcludePolicy();
+
+/** tar argv entries (`--exclude=...`) shared by every archive path. */
+export const BACKUP_EXCLUDE_PATTERNS: readonly string[] = BACKUP_EXCLUDE_POLICY.excludePatterns;
+
+/** Top-level directory + file names the JSON fallback archiver must skip. */
+export const FALLBACK_EXCLUDE_NAMES: readonly string[] = BACKUP_EXCLUDE_POLICY.fallbackExcludeNames;
+
+/**
+ * Basenames of secret material, WITHOUT the glob prefix and without the
+ * trailing `*`. A name matches when it equals the base, or starts with
+ * `base.` or `base-`, which covers `.bak-diag-*`, `.tmp`, `.old`.
+ */
+export const SECRET_BASENAME_PREFIXES: readonly string[] = [
+  'vault-entries.json',
+  'vault-state.json',
+  '.tier2-passphrase',
+  '.github-pat',
+  'memphis.pid',
+  'boot-failures.json',
+];
 
 const DERIVED_PATHS = ['case-index.sqlite', 'embeddings'] as const;
 
@@ -36,6 +126,10 @@ export type BackupOptions = {
   memphisRoot?: string;
   tag?: string;
   showProgress?: boolean;
+  /** Optional directory containing databases outside memphisRoot. */
+  dataDir?: string;
+  /** Exact operational database path; an explicitly missing database is fatal. */
+  databasePath?: string;
 };
 
 export type RestoreOptions = {
@@ -84,6 +178,13 @@ type BackupArchive = {
 };
 
 const BACKUP_SUFFIX = '.tar.gz';
+/**
+ * Suffix for an archive that is still being written. Anything carrying it is
+ * in-flight or failed: it must not be listed, verified, retained, copied
+ * offsite, or counted in backup health. Mirrors PARTIAL_SUFFIX in
+ * scripts/scheduled-backup-runner.mjs — keep the two in sync.
+ */
+const PARTIAL_SUFFIX = '.partial';
 const CHECKSUM_SUFFIX = '.sha256';
 const DEFAULT_TAG = 'backup';
 const DEFAULT_MANIFEST: Manifest = {
@@ -125,7 +226,11 @@ function createUniqueBackupFilename(backupRoot: string, tag?: string): string {
   let candidate = `${base}${BACKUP_SUFFIX}`;
   let suffix = 1;
 
-  while (existsSync(join(backupRoot, candidate))) {
+  while (
+    [candidate, `${candidate}${PARTIAL_SUFFIX}`, `${candidate}${CHECKSUM_SUFFIX}`].some((file) =>
+      existsSync(join(backupRoot, file)),
+    )
+  ) {
     candidate = `${base}-${suffix}${BACKUP_SUFFIX}`;
     suffix += 1;
   }
@@ -140,13 +245,6 @@ function sha256ForFile(path: string): string {
 
 function checksumFilePathFor(archivePath: string): string {
   return `${archivePath}${CHECKSUM_SUFFIX}`;
-}
-
-function writeChecksumFile(archivePath: string, checksumHex: string): string {
-  const outPath = checksumFilePathFor(archivePath);
-  const line = `${checksumHex}  ${basename(archivePath)}\n`;
-  writeFileSync(outPath, line, 'utf8');
-  return outPath;
 }
 
 function readChecksumHex(archivePath: string): string | undefined {
@@ -167,7 +265,8 @@ function humanSize(bytes: number): string {
 function isTarExecutionError(error: unknown): boolean {
   return (
     error instanceof Error &&
-    /(spawnSync tar EPERM|spawnSync tar EACCES|tar is required)/.test(error.message)
+    (['EPERM', 'EACCES', 'ENOENT'].includes((error as NodeJS.ErrnoException).code ?? '') ||
+      /(spawnSync tar EPERM|spawnSync tar EACCES|tar is required)/.test(error.message))
   );
 }
 
@@ -179,29 +278,6 @@ function isTarExecutionError(error: unknown): boolean {
  * flag without checking. Caching avoids re-probing on every backup
  * (tar variant doesn't change mid-runtime).
  */
-let cachedTarSupportsWarningOpt: boolean | null = null;
-
-function tarSupportsWarningOpt(): boolean {
-  if (cachedTarSupportsWarningOpt !== null) return cachedTarSupportsWarningOpt;
-  try {
-    execFileSync('tar', ['--warning=no-file-changed', '--version'], {
-      stdio: ['ignore', 'ignore', 'ignore'],
-    });
-    cachedTarSupportsWarningOpt = true;
-  } catch {
-    // BSD tar (macOS) + busybox tar reject the flag. We fall back to
-    // running tar without warning suppression — the
-    // `isTarFileChangedWarning` catch path below tolerates the
-    // resulting exit-1 + stderr signature, so behaviour stays correct,
-    // just slightly noisier in logs.
-    cachedTarSupportsWarningOpt = false;
-  }
-  return cachedTarSupportsWarningOpt;
-}
-
-function tarWarningFlags(): string[] {
-  return tarSupportsWarningOpt() ? ['--warning=no-file-changed', '--warning=no-file-removed'] : [];
-}
 
 /**
  * Detect tar's "file changed as we read it" (or "file removed") exit
@@ -329,36 +405,37 @@ function safeTargetPath(root: string, entryPath: string): string {
   return join(root, entryPath);
 }
 
-function collectFallbackArchiveEntries(root: string, relativePath = '.'): BackupArchiveEntry[] {
+// Apply the same glob patterns as tar to each path, including nested files.
+// Excluded directories are skipped before recursion. The policy currently uses
+// only * and ? wildcards; dots and other regexp characters remain literal.
+const fallbackExcludeMatchers = BACKUP_EXCLUDE_PATTERNS.map((pattern) => {
+  const glob = pattern.replace(/^--exclude=/, '');
+  return new RegExp(
+    '^' +
+      glob
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*/g, '.*')
+        .replace(/\?/g, '.') +
+      '$',
+  );
+});
+
+function collectFallbackArchiveEntries(
+  root: string,
+  relativePath = '.',
+  excludedPaths: readonly string[] = [],
+): BackupArchiveEntry[] {
   const currentRoot = relativePath === '.' ? root : join(root, relativePath);
   const entries: BackupArchiveEntry[] = [];
 
   for (const entry of readdirSync(currentRoot, { withFileTypes: true })) {
-    if (relativePath === '.') {
-      // `snapshots` is excluded for the same reason as `backups`: it holds
-      // pre-change tarballs of the source tree, so packing it makes every
-      // scheduled backup ~66x larger (53 MB -> 3.3 GB on this host) and
-      // feeds itself — each night's archive contains the previous night's
-      // archive. The archive is also redundant with git: every snapshot here
-      // was a pre-fix copy of a tree that is reconstructible from history.
-      if (
-        entry.name === 'backups' ||
-        entry.name === 'cache' ||
-        entry.name === 'logs' ||
-        entry.name === 'snapshots'
-      ) {
-        continue;
-      }
-      if (entry.name.endsWith('.lock')) {
-        continue;
-      }
-    }
-
-    if (entry.name.endsWith('.transactions')) continue;
     const entryPath = relativePath === '.' ? entry.name : join(relativePath, entry.name);
+    const normalizedPath = `./${entryPath.replace(/\\/g, '/')}`;
+    if (fallbackExcludeMatchers.some((matcher) => matcher.test(normalizedPath))) continue;
+    if (excludedPaths.includes(entryPath.replace(/\\/g, '/'))) continue;
     if (entry.isDirectory()) {
       entries.push({ path: entryPath, kind: 'dir' });
-      entries.push(...collectFallbackArchiveEntries(root, entryPath));
+      entries.push(...collectFallbackArchiveEntries(root, entryPath, excludedPaths));
       continue;
     }
 
@@ -374,22 +451,55 @@ function collectFallbackArchiveEntries(root: string, relativePath = '.'): Backup
   return entries;
 }
 
-function createFallbackArchive(memphisRoot: string, backupPath: string): void {
+function createFallbackArchive(
+  memphisRoot: string,
+  backupPath: string,
+  snapshot: DatabaseSnapshotResult,
+): void {
   const archive: BackupArchive = {
     format: 'memphis-backup-v1',
-    entries: collectFallbackArchiveEntries(memphisRoot),
+    entries: [
+      ...collectFallbackArchiveEntries(memphisRoot, '.', snapshot.excludedPaths),
+      // The staged name, not the final path: the snapshot on disk is written
+      // under STAGED_PREFIX, and the JSON fallback must carry the same
+      // placement manifest the tar archive does, or restore would place the
+      // database differently depending on which archiver produced it.
+      ...snapshot.snapshotted.map(({ stagedPath }) => ({
+        path: stagedPath,
+        kind: 'file' as const,
+        contentBase64: readFileSync(join(snapshot.snapshotDir, stagedPath)).toString('base64'),
+      })),
+      // Only when there is a snapshot: with no database the archiver produces
+      // no manifest, and requiring one here would make a plain data backup
+      // fail for no reason.
+      ...(snapshot.snapshotted.length > 0
+        ? [
+            {
+              path: DATABASE_PLACEMENT_MANIFEST,
+              kind: 'file' as const,
+              contentBase64: readFileSync(
+                join(snapshot.snapshotDir, DATABASE_PLACEMENT_MANIFEST),
+              ).toString('base64'),
+            },
+          ]
+        : []),
+    ],
   };
   writeFileSync(backupPath, gzipSync(Buffer.from(JSON.stringify(archive), 'utf8')));
 }
 
-function ensureArchiveListableOrFallback(memphisRoot: string, backupPath: string): void {
+function ensureArchiveListableOrFallback(
+  memphisRoot: string,
+  backupPath: string,
+  snapshot: DatabaseSnapshotResult,
+): void {
   try {
     tarListArchiveContents(backupPath);
   } catch (error) {
     if (!isTarExecutionError(error)) {
       throw error;
     }
-    createFallbackArchive(memphisRoot, backupPath);
+    createFallbackArchive(memphisRoot, backupPath, snapshot);
   }
 }
 
@@ -403,7 +513,7 @@ function extractFallbackArchive(archivePath: string, targetRoot: string): void {
     }
 
     mkdirSync(dirname(targetPath), { recursive: true });
-    writeFileSync(targetPath, Buffer.from(entry.contentBase64 ?? '', 'base64'));
+    writeFileSync(targetPath, Buffer.from(entry.contentBase64 ?? '', 'base64'), { mode: 0o600 });
   }
 }
 
@@ -464,30 +574,40 @@ function getBackupArchives(
   const manifest = loadManifest(backupRoot);
   const now = Date.now();
 
-  return readdirSync(backupRoot)
-    .filter((file) => file.endsWith(BACKUP_SUFFIX))
-    .map((file) => {
-      const path = join(backupRoot, file);
-      const stat = statSync(path);
-      const fromManifest = manifest.backups.find((b) => b.file === file);
-      const checksumHex = readChecksumHex(path);
-      const timestamp = fromManifest?.timestamp ?? stat.mtime.toISOString();
-      return {
-        file,
-        path,
-        tag:
-          fromManifest?.tag ??
-          (file.replace(BACKUP_SUFFIX, '').split('-').slice(0, -5).join('-') || DEFAULT_TAG),
-        timestamp,
-        size: fromManifest?.size ?? stat.size,
-        checksum:
-          fromManifest?.checksum ?? (checksumHex ? `sha256:${checksumHex}` : 'sha256:missing'),
-        fileCount: fromManifest?.fileCount ?? 0,
-        checksumPath: existsSync(checksumFilePathFor(path)) ? checksumFilePathFor(path) : undefined,
-        stale: now - new Date(timestamp).getTime() > 7 * 24 * 60 * 60 * 1000,
-      };
-    })
-    .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
+  return (
+    readdirSync(backupRoot)
+      .filter((file) => file.endsWith(BACKUP_SUFFIX))
+      // Reject the `.partial` marker wherever it sits in the name, not only as
+      // a trailing suffix. `endsWith(PARTIAL_SUFFIX)` alone was insufficient:
+      // an in-flight archive is filtered out only because the marker happens
+      // to come last, so any other placement — `<name>.partial.tar.gz` — was
+      // listed as a valid backup. The marker is a contract, not a suffix.
+      .filter((file) => !file.includes(PARTIAL_SUFFIX))
+      .map((file) => {
+        const path = join(backupRoot, file);
+        const stat = statSync(path);
+        const fromManifest = manifest.backups.find((b) => b.file === file);
+        const checksumHex = readChecksumHex(path);
+        const timestamp = fromManifest?.timestamp ?? stat.mtime.toISOString();
+        return {
+          file,
+          path,
+          tag:
+            fromManifest?.tag ??
+            (file.replace(BACKUP_SUFFIX, '').split('-').slice(0, -5).join('-') || DEFAULT_TAG),
+          timestamp,
+          size: fromManifest?.size ?? stat.size,
+          checksum:
+            fromManifest?.checksum ?? (checksumHex ? `sha256:${checksumHex}` : 'sha256:missing'),
+          fileCount: fromManifest?.fileCount ?? 0,
+          checksumPath: existsSync(checksumFilePathFor(path))
+            ? checksumFilePathFor(path)
+            : undefined,
+          stale: now - new Date(timestamp).getTime() > 7 * 24 * 60 * 60 * 1000,
+        };
+      })
+      .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1))
+  );
 }
 
 function resolveBackupFile(input: string, backupRoot: string): string {
@@ -553,7 +673,11 @@ function buildRedactedDotEnv(): string | null {
   return out.join('\n');
 }
 
-function createArchive(memphisRoot: string, backupPath: string): void {
+function createArchive(
+  memphisRoot: string,
+  backupPath: string,
+  snapshot: DatabaseSnapshotResult,
+): void {
   // Phase C (2026-04-26): write a redacted .env into memphisRoot for the
   // tar run so backup carries provider URLs + vault refs. Always cleaned
   // up afterwards so the file doesn't linger in the data dir between
@@ -579,56 +703,35 @@ function createArchive(memphisRoot: string, backupPath: string): void {
     // The rest of the backup still completes.
   }
 
+  const tarArgs = [
+    '-czf',
+    backupPath,
+    // Keep live-file diagnostics available to the exit-1 classifier.
+    ...tarWarningFlags(),
+    // CRITICAL — never include vault or auth secrets. Culture requires
+    // secrets to be vault-managed, not file-committed; backing them up
+    // violates that and creates a leak path if an archive is
+    // exfiltrated. Vault entries can be re-created from operator memory
+    // + vault recovery flow (see docs/runbooks/RESTORE-FROM-BACKUP.md).
+    //
+    // The patterns come from the shared policy file, not a list kept
+    // here: the systemd runner archiver is a second active writer and
+    // the two lists silently drifted. Excludes are GLOBS — a literal
+    // `--exclude=./vault-entries.json` misses `*.bak-diag-*` variants,
+    // which is exactly how they reached 6/7 archives on this host.
+    ...BACKUP_EXCLUDE_PATTERNS,
+    ...databaseSnapshotTarArgs(snapshot, memphisRoot),
+  ];
+
   try {
-    execFileSync(
-      'tar',
-      [
-        '-czf',
-        backupPath,
-        // Live data dir: sqlite WAL, journal appends, lockfile churn
-        // can change files mid-archive. GNU tar accepts the warning
-        // suppress flags; BSD tar (macOS) rejects the option entirely
-        // — `tarWarningFlags()` returns [] there and we rely on the
-        // catch-block tolerance instead.
-        ...tarWarningFlags(),
-        '--exclude=./backups',
-        '--exclude=./cache',
-        '--exclude=./logs',
-        // Snapshots are pre-change tarballs of the source tree. Packing
-        // them makes every scheduled backup ~66x larger (53 MB -> 3.3 GB on
-        // this host) and feeds itself: each night's archive contains the
-        // previous night's. Redundant with git, which reconstructs any of
-        // these trees from history.
-        '--exclude=./snapshots',
-        '--exclude=*.lock',
-        // CRITICAL — never include vault or auth secrets. Culture requires
-        // secrets to be vault-managed, not file-committed; backing them up
-        // in plaintext violates that and creates a leak path if an
-        // archive is exfiltrated. Vault entries can be re-created from
-        // operator memory + vault recovery flow (see docs/runbooks/RESTORE-FROM-BACKUP.md).
-        '--exclude=./.tier2-passphrase',
-        '--exclude=./.github-pat',
-        '--exclude=./vault-entries.json',
-        '--exclude=./vault-state.json',
-        '--exclude=*.transactions',
-        // Skip transient runtime PID files — recreated on next boot.
-        '--exclude=./memphis.pid',
-        '--exclude=./state/boot-failures.json*',
-        // Telemetry is regenerable and bloaty; skip unless explicitly
-        // requested via `--tag include-telemetry` (future flag).
-        '--exclude=./telemetry',
-        '-C',
-        memphisRoot,
-        '.',
-      ],
-      { stdio: ['ignore', 'pipe', 'pipe'] },
-    );
+    execFileSync('tar', tarArgs, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, LC_ALL: 'C' },
+    });
   } catch (error) {
-    // Even with the warning-suppress flags above, GNU tar still exits
-    // status 1 when it encountered file-changed/removed conditions.
-    // The archive IS valid in that case — accept it.
+    // Directory churn can produce exit 1 while leaving a readable archive.
     if (isTarFileChangedWarning(error, backupPath)) {
-      ensureArchiveListableOrFallback(memphisRoot, backupPath);
+      ensureArchiveListableOrFallback(memphisRoot, backupPath, snapshot);
       cleanupRedactedEnv();
       return;
     }
@@ -636,12 +739,12 @@ function createArchive(memphisRoot: string, backupPath: string): void {
       cleanupRedactedEnv();
       throw error;
     }
-    createFallbackArchive(memphisRoot, backupPath);
+    createFallbackArchive(memphisRoot, backupPath, snapshot);
     cleanupRedactedEnv();
     return;
   }
 
-  ensureArchiveListableOrFallback(memphisRoot, backupPath);
+  ensureArchiveListableOrFallback(memphisRoot, backupPath, snapshot);
   cleanupRedactedEnv();
 }
 
@@ -710,6 +813,40 @@ function extractArchive(archivePath: string, targetRoot: string): void {
     }
     extractFallbackArchive(archivePath, targetRoot);
   }
+}
+
+/**
+ * Move each staged database to the path its archive recorded.
+ *
+ * The archiver stores snapshots under `STAGED_PREFIX` because no --exclude
+ * pattern can be written that drops the live file without also dropping the
+ * staged copy on a tar that applies exclusions to every branch — measured on
+ * bsdtar as the archive coming back with no database at all. GNU tar would
+ * allow `--transform` to write the final name directly, but there is no
+ * substitution syntax that works on both.
+ *
+ * The archive carries the mapping itself, so an archive restored on another
+ * host, or by hand, still lands the database in the right place. A staged
+ * database without a recorded destination is an error: restoring it under its
+ * staging name would leave a half-restored data directory that passes a
+ * directory listing and fails at the first query.
+ */
+function placeStagedDatabases(stagedRoot: string): void {
+  const manifestPath = join(stagedRoot, DATABASE_PLACEMENT_MANIFEST);
+  if (!existsSync(manifestPath)) return;
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+    placements?: Record<string, string>;
+  };
+  for (const [stagedName, finalPath] of Object.entries(manifest.placements ?? {})) {
+    const stagedFile = join(stagedRoot, stagedName);
+    if (!existsSync(stagedFile)) {
+      throw new Error(`Archive recorded a database at ${finalPath} but ${stagedName} is missing`);
+    }
+    const destination = safeTargetPath(stagedRoot, finalPath);
+    mkdirSync(dirname(destination), { recursive: true });
+    renameSync(stagedFile, destination);
+  }
+  rmSync(manifestPath, { force: true });
 }
 
 function withProgress<T>(label: string, enabled: boolean, fn: () => T): T {
@@ -816,6 +953,7 @@ export async function createBackup(options: BackupOptions = {}): Promise<{
   size: number;
   fileCount: number;
   checksum: string;
+  dbSnapshot: DatabaseSnapshotResult;
 }> {
   const memphisRoot = getMemphisRoot(options.memphisRoot);
   const backupRoot = getBackupsRoot(options);
@@ -823,70 +961,102 @@ export async function createBackup(options: BackupOptions = {}): Promise<{
 
   const file = createUniqueBackupFilename(backupRoot, options.tag);
   const backupPath = join(backupRoot, file);
-
-  withProgress('Creating backup', options.showProgress ?? true, () => {
-    createArchive(memphisRoot, backupPath);
-  });
-
-  const size = statSync(backupPath).size;
-  const contents = listArchiveContents(backupPath);
-  const fileCount = contents.filter((entry) => !entry.endsWith('/')).length;
-
-  // Validate that database files are included in the archive
-  const dbFiles = contents.filter((entry) => entry.endsWith('.sqlite') || entry.endsWith('.db'));
-  const memphisDbFiles = readdirSync(memphisRoot).filter(
-    (f) => (f.endsWith('.sqlite') || f.endsWith('.db')) && statSync(join(memphisRoot, f)).isFile(),
-  );
-  if (memphisDbFiles.length > 0 && dbFiles.length === 0) {
-    console.warn(
-      `warning: backup archive is missing database files (${memphisDbFiles.join(', ')}). ` +
-        'These files exist in the data directory but were not included in the archive.',
-    );
+  const partialPath = `${backupPath}${PARTIAL_SUFFIX}`;
+  // Reserve the name before the first await, and protect in-flight data too.
+  writeFileSync(partialPath, '', { flag: 'wx', mode: 0o600 });
+  const rawEnv = process.env;
+  const useRuntimeDatabase = options.memphisRoot === undefined && rawEnv.NODE_ENV !== 'test';
+  const databaseUrl = useRuntimeDatabase ? rawEnv.DATABASE_URL : undefined;
+  if (databaseUrl && !databaseUrl.startsWith('file:')) {
+    throw new Error('Backup requires a file: SQLite DATABASE_URL');
   }
+  const snapshot = await snapshotDatabases({
+    memphisRoot,
+    dataDir: options.dataDir ?? (useRuntimeDatabase ? resolve('data') : undefined),
+    databasePath: options.databasePath ?? (databaseUrl ? resolve(databaseUrl.slice(5)) : undefined),
+  });
+  try {
+    if (!snapshot.ok) {
+      throw new Error(`Database snapshot failed: ${snapshot.errors.join('; ')}`);
+    }
 
-  // Verify DERIVED_PATHS are included in the archive
-  const normalizedContents = contents.map((c) => c.replace(/^\.\//, ''));
-  const missingDerived: string[] = [];
-  for (const derived of DERIVED_PATHS) {
-    const derivedExists = derived.endsWith('/')
-      ? normalizedContents.some((c) => c.startsWith(derived))
-      : normalizedContents.includes(derived) || normalizedContents.includes(`${derived}/`);
-    if (!derivedExists) {
-      // Check if it exists at all in the source
-      const sourcePath = join(memphisRoot, derived);
-      if (existsSync(sourcePath)) {
-        missingDerived.push(derived);
+    withProgress('Creating backup', options.showProgress ?? true, () => {
+      createArchive(memphisRoot, partialPath, snapshot);
+    });
+
+    const size = statSync(partialPath).size;
+    const contents = listArchiveContents(partialPath);
+    verifyDatabaseSnapshotEntries(snapshot, contents);
+    const fileCount = contents.filter((entry) => !entry.endsWith('/')).length;
+
+    // Validate that database files are included in the archive
+    const dbFiles = contents.filter((entry) => entry.endsWith('.sqlite') || entry.endsWith('.db'));
+    const memphisDbFiles = readdirSync(memphisRoot).filter(
+      (f) =>
+        (f.endsWith('.sqlite') || f.endsWith('.db')) && statSync(join(memphisRoot, f)).isFile(),
+    );
+    if (memphisDbFiles.length > 0 && dbFiles.length === 0) {
+      console.warn(
+        `warning: backup archive is missing database files (${memphisDbFiles.join(', ')}). ` +
+          'These files exist in the data directory but were not included in the archive.',
+      );
+    }
+
+    // Verify DERIVED_PATHS are included in the archive
+    const normalizedContents = contents.map((c) => c.replace(/^\.\//, ''));
+    const missingDerived: string[] = [];
+    for (const derived of DERIVED_PATHS) {
+      const derivedExists = derived.endsWith('/')
+        ? normalizedContents.some((c) => c.startsWith(derived))
+        : normalizedContents.includes(derived) || normalizedContents.includes(`${derived}/`);
+      if (!derivedExists) {
+        // Check if it exists at all in the source
+        const sourcePath = join(memphisRoot, derived);
+        if (existsSync(sourcePath)) {
+          missingDerived.push(derived);
+        }
       }
     }
+    if (missingDerived.length > 0) {
+      console.warn(
+        `warning: backup archive is missing derived paths (${missingDerived.join(', ')}). ` +
+          'These files/directories exist in the data directory but were not included.',
+      );
+    }
+
+    const checksumHex = sha256ForFile(partialPath);
+    const partialSidecar = checksumFilePathFor(partialPath);
+    writeFileSync(partialSidecar, `${checksumHex}  ${file}\n`, { flag: 'wx', mode: 0o600 });
+    // An archive is operator data (chains, indexes, redacted env). Under the
+    // default umask 002 it was published world-readable at 0664 even though the
+    // source files are 0600 — the copy was less protected than its sources.
+    // Both halves land together: archive and digest.
+    chmodSync(partialPath, 0o600);
+    renameSync(partialSidecar, checksumFilePathFor(backupPath));
+    renameSync(partialPath, backupPath);
+
+    const entry: ManifestEntry = {
+      file,
+      tag: normalizeTag(options.tag),
+      timestamp: new Date().toISOString(),
+      size,
+      checksum: `sha256:${checksumHex}`,
+      fileCount,
+    };
+    upsertManifestEntry(backupRoot, entry);
+
+    return {
+      backupPath,
+      file,
+      tag: entry.tag,
+      size,
+      fileCount,
+      checksum: entry.checksum,
+      dbSnapshot: snapshot,
+    };
+  } finally {
+    cleanupDatabaseSnapshots(snapshot);
   }
-  if (missingDerived.length > 0) {
-    console.warn(
-      `warning: backup archive is missing derived paths (${missingDerived.join(', ')}). ` +
-        'These files/directories exist in the data directory but were not included.',
-    );
-  }
-
-  const checksumHex = sha256ForFile(backupPath);
-  writeChecksumFile(backupPath, checksumHex);
-
-  const entry: ManifestEntry = {
-    file,
-    tag: normalizeTag(options.tag),
-    timestamp: new Date().toISOString(),
-    size,
-    checksum: `sha256:${checksumHex}`,
-    fileCount,
-  };
-  upsertManifestEntry(backupRoot, entry);
-
-  return {
-    backupPath,
-    file,
-    tag: entry.tag,
-    size,
-    fileCount,
-    checksum: entry.checksum,
-  };
 }
 
 export async function listBackups(options: BackupOptions = {}): Promise<{
@@ -1125,6 +1295,7 @@ export async function restoreBackup(options: RestoreOptions): Promise<{
   }
 
   try {
+    placeStagedDatabases(stagedRoot);
     for (const item of readdirSync(stagedRoot)) {
       renameSync(join(stagedRoot, item), join(memphisRoot, item));
     }
