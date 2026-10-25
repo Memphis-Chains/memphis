@@ -3193,20 +3193,103 @@ impl AppState {
             return;
         }
 
-        let rows = self
-            .provider_statuses
-            .iter()
-            .flat_map(|provider| {
-                let mut lines = vec![info(format!("Provider: {}", provider.name))];
-                lines.extend(
-                    provider
-                        .models
-                        .iter()
-                        .map(|model| plain(format!("- {model}"))),
-                );
-                lines
-            })
-            .collect::<Vec<_>>();
+        let active_provider = self.selected_provider_name();
+        let active_model = self.selected_model_name();
+        let mut providers = self.provider_statuses.iter().collect::<Vec<_>>();
+        providers.sort_by_key(|provider| {
+            if provider.name.eq_ignore_ascii_case(&active_provider) {
+                0
+            } else if provider.configured {
+                1
+            } else {
+                2
+            }
+        });
+
+        let mut rows = vec![info(format!("Active: {active_provider} / {active_model}"))];
+        for provider in providers {
+            let (state, provider_tone) = if provider.configured && provider.available {
+                ("[up]", LineTone::Success)
+            } else if provider.configured {
+                ("[down][!]", LineTone::Warning)
+            } else {
+                ("[nocfg]", LineTone::Dim)
+            };
+            rows.push(styled(
+                format!(
+                    "Provider: {} {state}  default={}",
+                    provider.name, provider.default_model
+                ),
+                provider_tone,
+            ));
+
+            if provider.models.is_empty() {
+                rows.push(dim("  No models reported."));
+                continue;
+            }
+
+            for model in &provider.models {
+                let is_active = provider.name.eq_ignore_ascii_case(&active_provider)
+                    && model_ids_match(model, &active_model);
+                let is_default = model_ids_match(model, &provider.default_model);
+                let marker = if is_active {
+                    "●"
+                } else if is_default {
+                    "◆"
+                } else {
+                    "○"
+                };
+                let capability = provider
+                    .model_capabilities
+                    .iter()
+                    .find(|capability| model_ids_match(&capability.model, model));
+                let capability_text = capability
+                    .map(|capability| {
+                        format!(
+                            "ctx:{}  stream={}  vision={}",
+                            capability
+                                .context_window_tokens
+                                .map(format_token_count)
+                                .unwrap_or_else(|| "?".to_string()),
+                            if capability.supports_streaming {
+                                "yes"
+                            } else {
+                                "no"
+                            },
+                            if capability.supports_vision {
+                                "yes"
+                            } else {
+                                "no"
+                            }
+                        )
+                    })
+                    .unwrap_or_else(|| "ctx:?  stream=?  vision=?".to_string());
+                let mut labels = Vec::new();
+                if is_active {
+                    labels.push("active");
+                }
+                if is_default {
+                    labels.push("default");
+                }
+                let label_suffix = if labels.is_empty() {
+                    String::new()
+                } else {
+                    format!("  [{}]", labels.join(", "))
+                };
+                let model_tone = if is_active {
+                    LineTone::Success
+                } else if provider.configured {
+                    LineTone::Plain
+                } else {
+                    LineTone::Dim
+                };
+                rows.push(styled(
+                    format!("  {marker} {model:<26} {capability_text}{label_suffix}"),
+                    model_tone,
+                ));
+            }
+        }
+        rows.push(dim("Switch with /provider <name>, then /model <id>."));
 
         for row in rows {
             self.append_line(row);
@@ -3996,6 +4079,24 @@ fn format_token_count(tokens: u32) -> String {
     } else {
         tokens.to_string()
     }
+}
+
+fn model_ids_match(left: &str, right: &str) -> bool {
+    fn comparable(model: &str) -> String {
+        let normalized = model
+            .trim()
+            .to_ascii_lowercase()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join("-");
+        match normalized.as_str() {
+            "astra-gpt6-max" | "gpt-6-astra-max" => "astra-gtp6-max".to_string(),
+            "minimax-m3.1-flash-preview" => "minimax-m3.1-flash".to_string(),
+            _ => normalized,
+        }
+    }
+
+    comparable(left) == comparable(right)
 }
 
 fn estimate_tokens_from_chars(chars: usize) -> u32 {
@@ -5282,6 +5383,109 @@ mod tests {
                 assert_eq!(app.chat_model.as_deref(), Some(preset));
             }
         }
+    }
+
+    #[test]
+    fn models_rows_highlight_active_model_and_show_runtime_capabilities() {
+        let mut app = AppState::new(config());
+        app.chat_provider = Some("minimax".into());
+        app.chat_model = Some("MiniMax-M3.1-Flash".into());
+        app.provider_statuses = vec![
+            ProviderStatus {
+                name: "openai".into(),
+                configured: true,
+                available: true,
+                default_model: "gpt-5.6-sol-max".into(),
+                models: vec!["gpt-5.6-sol-max".into(), "gpt-5.6-sol".into()],
+                model_capabilities: vec![
+                    ModelCapabilitySummary {
+                        model: "gpt-5.6-sol-max".into(),
+                        context_window_tokens: Some(1_050_000),
+                        supports_streaming: true,
+                        supports_vision: false,
+                    },
+                    ModelCapabilitySummary {
+                        model: "gpt-5.6-sol".into(),
+                        context_window_tokens: Some(1_050_000),
+                        supports_streaming: true,
+                        supports_vision: false,
+                    },
+                ],
+                error: None,
+            },
+            ProviderStatus {
+                name: "minimax".into(),
+                configured: true,
+                available: true,
+                default_model: "MiniMax-M3.1-Flash".into(),
+                models: vec!["MiniMax-M3.1-Flash".into(), "MiniMax-M3".into()],
+                model_capabilities: vec![
+                    ModelCapabilitySummary {
+                        model: "MiniMax-M3.1-Flash".into(),
+                        context_window_tokens: Some(1_000_000),
+                        supports_streaming: true,
+                        supports_vision: true,
+                    },
+                    ModelCapabilitySummary {
+                        model: "MiniMax-M3".into(),
+                        context_window_tokens: Some(1_000_000),
+                        supports_streaming: true,
+                        supports_vision: true,
+                    },
+                ],
+                error: None,
+            },
+        ];
+
+        app.append_model_rows();
+
+        let lines = app
+            .output_buffer
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>();
+        assert!(lines
+            .iter()
+            .any(|line| *line == "Active: minimax / MiniMax-M3.1-Flash"));
+        let minimax_header = lines
+            .iter()
+            .position(|line| line.starts_with("Provider: minimax"))
+            .expect("minimax provider header");
+        let openai_header = lines
+            .iter()
+            .position(|line| line.starts_with("Provider: openai"))
+            .expect("openai provider header");
+        assert!(
+            minimax_header < openai_header,
+            "active provider must be first"
+        );
+        assert!(lines.iter().any(|line| {
+            line.contains("● MiniMax-M3.1-Flash")
+                && line.contains("ctx:1000k")
+                && line.contains("stream=yes")
+                && line.contains("vision=yes")
+                && line.contains("[active, default]")
+        }));
+        assert!(lines.iter().any(|line| {
+            line.contains("◆ gpt-5.6-sol-max")
+                && line.contains("stream=yes")
+                && line.contains("vision=no")
+                && line.contains("[default]")
+        }));
+        assert!(lines
+            .iter()
+            .any(|line| *line == "Switch with /provider <name>, then /model <id>."));
+    }
+
+    #[test]
+    fn model_row_matching_normalizes_supported_display_aliases() {
+        assert!(super::model_ids_match("gpt-5.6-Sol Max", "gpt-5.6-sol-max"));
+        assert!(super::model_ids_match(
+            "MiniMax-M3.1-Flash-Preview",
+            "MiniMax-M3.1-Flash"
+        ));
+        assert!(super::model_ids_match("astra-gpt6-max", "astra-gtp6-max"));
+        assert!(!super::model_ids_match("gpt-5.6-sol", "gpt-5.6-sol-max"));
     }
 
     #[test]
