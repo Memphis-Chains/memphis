@@ -10,9 +10,9 @@
 //! calls") while the Rust path did not implement it.
 //!
 //! This module mirrors the TypeScript semantics: same target ratio, same
-//! estimate, same order (drop oldest first, then shorten the largest
-//! message). One deliberate difference: after dropping a message the Rust
-//! side also removes tool results whose assistant call was dropped. A
+//! conservative estimate, same order (drop oldest first, then shorten the
+//! largest message). One deliberate difference: after dropping a message,
+//! the Rust side also removes tool results whose assistant call was dropped. A
 //! dangling tool message is rejected by OpenAI-compatible providers
 //! ("tool result's tool id(...) not found"), so trimming that leaves
 //! orphans would trade one 400 for another.
@@ -21,8 +21,12 @@ use std::collections::HashSet;
 
 use crate::provider::ChatMessage;
 
-/// Share of the context window we are willing to fill.
-const TARGET_WINDOW_RATIO: f64 = 0.92;
+/// Share of the context window we are willing to fill. Provider framing,
+/// tool schemas, and the response consume the rest outside this message list.
+const TARGET_WINDOW_RATIO: f64 = 0.85;
+/// Tool-heavy transcripts and JSON tokenize more densely than the old
+/// four-characters-per-token heuristic.
+const ESTIMATED_CHARS_PER_TOKEN: u64 = 3;
 /// Floor for the target, so a tiny window still allows a short exchange.
 const MIN_TARGET_TOKENS: u64 = 512;
 /// Floor for a single message's content when shortening it.
@@ -106,7 +110,7 @@ pub(crate) fn enforce_context_window_before_provider(
         }
         let excess = estimate_prompt_tokens(input.system_prompt, &messages) - target;
         let reduce = (excess as usize)
-            .saturating_mul(4)
+            .saturating_mul(ESTIMATED_CHARS_PER_TOKEN as usize)
             .saturating_add(512)
             .max(length / 4);
         let keep = MIN_MESSAGE_CHARS.max(length.saturating_sub(reduce));
@@ -137,7 +141,7 @@ fn resolve_context_window(declared: Option<u64>, account: Option<u64>) -> Option
     }
 }
 
-/// Rough prompt size in tokens: characters / 4, the same estimate the
+/// Conservative prompt size in tokens: characters / 3, the same estimate the
 /// TypeScript side uses. The count is per Unicode scalar, so text outside
 /// the BMP is counted slightly lower than the JavaScript length would.
 fn estimate_prompt_tokens(system_prompt: Option<&str>, messages: &[ChatMessage]) -> u64 {
@@ -155,7 +159,7 @@ fn estimate_prompt_tokens(system_prompt: Option<&str>, messages: &[ChatMessage])
     if joined.trim().is_empty() {
         return 0;
     }
-    (joined.chars().count() as u64).div_ceil(4)
+    (joined.chars().count() as u64).div_ceil(ESTIMATED_CHARS_PER_TOKEN)
 }
 
 /// Flatten a message the way the provider would see it.
@@ -374,6 +378,24 @@ mod tests {
             "the account limit must narrow the declared window"
         );
         assert!(account_limited.trimmed_messages > 0);
+    }
+
+    #[test]
+    fn trims_tool_heavy_history_that_the_old_estimate_misclassified() {
+        // Mirrors the 2026-10-25 incident: ~885k characters looked safe under
+        // chars/4 at a 258400-token account window, while provider framing and
+        // token-dense tool JSON pushed the real request over the limit.
+        let messages = vec![user(&"x".repeat(884_000)), user("latest turn")];
+        let result = enforce_context_window_before_provider(ContextWindowGuardInput {
+            system_prompt: None,
+            messages: &messages,
+            declared_context_window: Some(1_050_000),
+            account_context_window: Some(258_400),
+        });
+
+        assert_eq!(result.trimmed_messages, 1);
+        assert_eq!(result.messages.len(), 1);
+        assert_eq!(result.messages[0].content(), "latest turn");
     }
 
     #[test]
