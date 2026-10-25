@@ -109,6 +109,17 @@ jobs:
         # stops the class from recurring.
         run: npm run -s ops:check-scan-parity
 
+      - name: Systemd units are runnable
+        # Two alert units shipped as a 71-byte stub ([Unit] + Description,
+        # no [Service]), so systemd refused to run them on every boot with
+        # "Service has no ExecStart=, ExecStop=, or SuccessAction=. Refusing."
+        # The parent OnFailure= wiring was correct; only the alert side was
+        # missing, so a failed Monday/Tuesday digest was never reported to
+        # the operator. This check is what stops a new stub unit from
+        # shipping the same way — and what catches an OnFailure= target that
+        # does not exist or is itself a stub.
+        run: npm run -s ops:check-systemd-units
+
       - name: TypeScript coverage baseline
         run: npm run test:coverage
 
