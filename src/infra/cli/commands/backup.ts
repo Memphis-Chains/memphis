@@ -946,6 +946,34 @@ async function askRestoreConfirmation(file: string): Promise<boolean> {
   }
 }
 
+/**
+ * Refuse to publish a backup that silently omits the runtime database.
+ *
+ * The restore drill verifies whatever databases ARE in the archive, so an
+ * archive without the runtime database still reports "drill=pass" — the
+ * operator reads a green line while the chat history and the search index
+ * are missing. Measured on this host: seven consecutive archives carried
+ * no runtime database (the build that produced them predated the snapshot
+ * feature) and every one of them reported drill=pass.
+ *
+ * A failed backup is loud and recoverable. A silently incomplete one is
+ * discovered only when the data is needed.
+ */
+export function assertRuntimeDatabaseSnapshotted(
+  snapshot: DatabaseSnapshotResult,
+  runtimeDatabasePath: string | undefined,
+): void {
+  if (!runtimeDatabasePath) return;
+  // No database on disk means nothing to lose — a fresh install has none.
+  if (!existsSync(runtimeDatabasePath)) return;
+  const target = resolve(runtimeDatabasePath);
+  const captured = snapshot.snapshotted.some((entry) => resolve(entry.source) === target);
+  if (captured) return;
+  throw new Error(
+    `Backup would omit the runtime database (${target}); refusing to publish an incomplete backup.`,
+  );
+}
+
 export async function createBackup(options: BackupOptions = {}): Promise<{
   backupPath: string;
   file: string;
@@ -970,15 +998,20 @@ export async function createBackup(options: BackupOptions = {}): Promise<{
   if (databaseUrl && !databaseUrl.startsWith('file:')) {
     throw new Error('Backup requires a file: SQLite DATABASE_URL');
   }
+  const runtimeDatabasePath =
+    options.databasePath ?? (databaseUrl ? resolve(databaseUrl.slice(5)) : undefined);
   const snapshot = await snapshotDatabases({
     memphisRoot,
     dataDir: options.dataDir ?? (useRuntimeDatabase ? resolve('data') : undefined),
-    databasePath: options.databasePath ?? (databaseUrl ? resolve(databaseUrl.slice(5)) : undefined),
+    databasePath: runtimeDatabasePath,
   });
   try {
     if (!snapshot.ok) {
       throw new Error(`Database snapshot failed: ${snapshot.errors.join('; ')}`);
     }
+    // Fail BEFORE the archive is written: an incomplete archive must never
+    // reach the backups directory, not even as a partial file.
+    assertRuntimeDatabaseSnapshotted(snapshot, runtimeDatabasePath);
 
     withProgress('Creating backup', options.showProgress ?? true, () => {
       createArchive(memphisRoot, partialPath, snapshot);

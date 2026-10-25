@@ -30,8 +30,11 @@
     "--exclude=boot-failures.json*",
     "--exclude=./site-recover",
     "--exclude=*/embed-index.json.tmp-*",
-    "--exclude=embed-index.json.tmp-*"
+    "--exclude=embed-index.json.tmp-*",
+    "--exclude=*/index-v1.json.tmp-*",
+    "--exclude=index-v1.json.tmp-*"
   ],
+  "$embedTmpNote": "The semantic index is written atomically as `${file_name}.tmp-${pid}-${stamp}` and then renamed (crates/memphis-embed/src/pipeline.rs, unique_tmp_path). The current default file name is `index-v1.json`; `embed-index.json` is the legacy configured path (RUST_EMBED_PERSIST_PATH). Both temp forms are excluded, because both names can appear on disk — an interrupted write leaves the temp file behind.",
   "$walNote": "SQLite -wal/-shm are deliberately NOT excluded. Removing them from a copy of a live database yields a db that opens but silently lacks committed transactions; the correct approach is a consistent snapshot (sqlite backup API), not exclusion. Measured gap: data/memphis.db (30.6 MB) is absent from 7/7 archives because the runner only archives /home/memphis/.memphis.",
   "fallbackExcludeNames": [
     "backups",
