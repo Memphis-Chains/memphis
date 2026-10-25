@@ -1,6 +1,7 @@
 mod chat;
 mod chat_basal;
 mod chain_write_lock;
+mod chat_context_guard;
 mod chat_guards;
 mod chat_memory;
 mod chat_operations;

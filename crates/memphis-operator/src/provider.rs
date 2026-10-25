@@ -263,6 +263,29 @@ impl ProviderRuntime {
         self.default_model.as_str()
     }
 
+    /// The model a request will actually use: the requested one, or the
+    /// provider default, normalised the same way `chat` and
+    /// `chat_stream_with_cancel` normalise it. One helper, so the context
+    /// guard and the provider can never disagree about the model.
+    pub(crate) fn effective_model(&self, requested: Option<&str>) -> String {
+        let requested_model = requested
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| self.default_model());
+        if self.kind == ProviderKind::Minimax {
+            normalize_minimax_model_id(requested_model)
+        } else {
+            requested_model.to_string()
+        }
+    }
+
+    /// Context window the model declares. `None` means the provider does not
+    /// publish one; the caller then relies on the account limit alone.
+    pub(crate) fn declared_context_window_tokens(&self, model: &str) -> Option<u64> {
+        self.model_capability(model)
+            .context_window_tokens
+            .map(u64::from)
+    }
+
     /// Borrow the api_key or fail with an operator-actionable hint.
     ///
     /// Replaces the 5 inline `self.api_key.as_deref().ok_or_else(...)` blocks
@@ -310,16 +333,7 @@ impl ProviderRuntime {
         opts: &ChatRequestOptions,
         tools: &[ChatToolDefinition],
     ) -> Result<ChatCompletion, OperatorError> {
-        let requested_model = opts
-            .model
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or(self.default_model());
-        let normalized_model = if self.kind == ProviderKind::Minimax {
-            normalize_minimax_model_id(requested_model)
-        } else {
-            requested_model.to_string()
-        };
+        let normalized_model = self.effective_model(opts.model.as_deref());
         let model = normalized_model.as_str();
 
         match self.kind {
@@ -392,16 +406,7 @@ impl ProviderRuntime {
     where
         F: FnMut(ChatStreamEvent),
     {
-        let requested_model = opts
-            .model
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or(self.default_model());
-        let normalized_model = if self.kind == ProviderKind::Minimax {
-            normalize_minimax_model_id(requested_model)
-        } else {
-            requested_model.to_string()
-        };
+        let normalized_model = self.effective_model(opts.model.as_deref());
         let model = normalized_model.as_str();
 
         match self.kind {
