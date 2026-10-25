@@ -1,0 +1,21 @@
+[Unit]
+Description=Alert operator: memphis-tuesday-code.service failed
+Documentation=file:/home/memphis/memphis/scripts/systemd/README.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/memphis/memphis
+# The unit used to be a 71-byte stub ([Unit] + Description, no [Service]),
+# so systemd refused to run it on every boot and the operator was never told
+# that the Tuesday digest failed. This script delivers the alert to Telegram.
+#
+# The bot token is vault-backed, so the alert goes through the memphis CLI
+# (which resolves the vault reference) rather than through raw curl — the
+# literal "VAULT:telegram_bot_token" must never reach the Telegram API.
+#
+# The script throttles to one message per failure per hour. Without it, the
+# observed burst pattern (five attempts within three seconds on 2026-10-23,
+# once per boot on 2026-10-24) would bury the operator.
+ExecStart=/bin/bash /home/memphis/memphis/scripts/systemd/failure-alert.sh memphis-tuesday-code.service
+# The alert unit is not chained to anything further: a failed alert must not
+# escalate into a second failed unit and start a notification loop.

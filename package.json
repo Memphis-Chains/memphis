@@ -47,6 +47,7 @@
     "ops:sync-site-metrics": "tsx scripts/sync-site-metrics.mts",
     "ops:mutation-gate": "tsx scripts/mutation-gate.mts",
     "ops:check-scan-parity": "tsx scripts/check-scan-parity.mts",
+    "ops:check-systemd-units": "tsx scripts/check-systemd-units.mts",
     "prepack": "npm run build:release",
     "pack:dry-run": "npm pack --dry-run",
     "predev": "node -e \"try{require('fs').accessSync('crates/memphis-napi/index.node')}catch{console.log('\\n  .node binary missing — building Rust crates...\\n');require('child_process').execSync('npm run build:rust',{stdio:'inherit'})}\"",
