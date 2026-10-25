@@ -768,6 +768,14 @@ impl ProviderRuntime {
             provider_messages
         };
 
+        if self.kind == ProviderKind::Minimax && is_minimax_m31_flash(model) {
+            let reserved_output_tokens = opts
+                .minimax_max_completion_tokens
+                .or(opts.max_tokens)
+                .unwrap_or(MINIMAX_M3_RECOMMENDED_COMPLETION_TOKENS) as u64;
+            check_minimax_context_budget(model, &all_messages, tools, reserved_output_tokens)?;
+        }
+
         let body = post_json(
             format!("{}/chat/completions", base_url).as_str(),
             openai_compatible_request_body(self.kind, model, all_messages, opts, tools, false),
@@ -1964,6 +1972,55 @@ fn minimax_reasoning_effort(opts: &ChatRequestOptions) -> &str {
         Some(value @ ("low" | "medium" | "high" | "xhigh" | "max")) => value,
         _ => "max",
     }
+}
+
+/// Estimated context budget for a MiniMax request.
+///
+/// The API rejects an oversized prompt with "context window exceeds limit
+/// (2013)". Refusing locally keeps the failure legible: the operator sees
+/// the estimated input size, the reserved output budget and the window, not
+/// a provider error code. 92% leaves headroom for the provider's own
+/// tokenizer estimate, which is not the same estimator as ours.
+const MINIMAX_ESTIMATED_CONTEXT_BUDGET: f64 = 0.92;
+
+/// Conservative context estimate for a MiniMax request, in tokens.
+///
+/// Characters / 4 is the standard English approximation. It is not a
+/// provider tokenizer and not an exact quota — it is a guard against
+/// obviously-oversized requests, not a precise budget.
+fn estimate_minimax_request_tokens(messages: &[Value], tools: &[ChatToolDefinition]) -> u64 {
+    let messages_chars = messages
+        .iter()
+        .map(|message| message.to_string().len())
+        .sum::<usize>();
+    // Measure the tools the way they go on the wire, not the struct's Debug
+    // form — the estimate has to describe the request, not the local shape.
+    let tools_chars = build_tools_json(tools)
+        .iter()
+        .map(|tool| tool.to_string().len())
+        .sum::<usize>();
+    ((messages_chars + tools_chars) / 4) as u64
+}
+
+/// Reject a MiniMax request whose estimated size does not fit the window.
+///
+/// Returns the estimated input tokens and the reserved output tokens so the
+/// caller can report both.
+fn check_minimax_context_budget(
+    model: &str,
+    messages: &[Value],
+    tools: &[ChatToolDefinition],
+    reserved_output_tokens: u64,
+) -> Result<(), OperatorError> {
+    let context_window_tokens = u64::from(minimax_context_window_tokens(model));
+    let estimated_input_tokens = estimate_minimax_request_tokens(messages, tools);
+    let budget = (context_window_tokens as f64 * MINIMAX_ESTIMATED_CONTEXT_BUDGET) as u64;
+    if estimated_input_tokens + reserved_output_tokens > budget {
+        return Err(OperatorError::Message(format!(
+            "MiniMax request exceeds the estimated context budget: {estimated_input_tokens} input + {reserved_output_tokens} reserved output tokens exceeds {budget} of the {context_window_tokens}-token window (model {model}); reduce history or the completion limit"
+        )));
+    }
+    Ok(())
 }
 
 fn openai_compatible_request_body(

@@ -155,6 +155,7 @@ export function createConfiguredRuntimeProviders(
           apiKey: minimaxResult.key,
           model: rawEnv.MINIMAX_MODEL,
           baseUrl: rawEnv.MINIMAX_BASE_URL,
+          rawEnv,
         }),
       ),
     );

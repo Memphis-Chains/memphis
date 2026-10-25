@@ -121,6 +121,8 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   MINIMAX_API_KEY: 'secret',
   MINIMAX_MODEL: 'hot',
   MINIMAX_BASE_URL: 'hot',
+  // Read on every MiniMax request, so a change takes effect on the next
+  // turn — 'hot', not 'warm'.
   MINIMAX_REASONING_EFFORT: 'hot',
   MINIMAX_MAX_COMPLETION_TOKENS: 'hot',
   MINIMAX_REQUEST_TIMEOUT_MS: 'hot',
