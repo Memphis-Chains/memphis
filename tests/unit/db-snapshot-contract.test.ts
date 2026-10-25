@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as snapshotModule from '../../scripts/backup-db-snapshot.mjs';
 import {
   DATABASE_PLACEMENT_MANIFEST,
+  RUNTIME_DB_PREFIX,
   STAGED_PREFIX,
   tarSubstitutionFlags,
   tarSupportsWarningOpt,
@@ -417,8 +418,15 @@ describe('consistent database snapshots through every archive writer', () => {
     const result = runRunner(['--database-path', path]);
     expect(result.status, result.stdout + result.stderr).toBe(0);
     const report = JSON.parse(result.stdout);
+    // The runtime database gets its own archive path and staging name. It
+    // lives outside the data directory, and a bare `memphis.db` would
+    // collide with a data-tree database of the same name: measured on this
+    // host as a restore that left `memphis.db` in the data directory, after
+    // which the next backup refused to publish ("Multiple databases would
+    // overwrite archive entry: memphis.db") — the operator's recovery
+    // procedure broke their backups.
     expect(report.dbSnapshot.snapshotted).toMatchObject([
-      { source: path, archivePath: 'memphis.db' },
+      { source: path, archivePath: `${RUNTIME_DB_PREFIX}operations.sqlite`, role: 'runtime' },
     ]);
   });
 
@@ -432,9 +440,16 @@ describe('consistent database snapshots through every archive writer', () => {
     vi.stubEnv('DATABASE_URL', `file:${path}`);
     const created = await createBackup({ dataDir: join(repo, 'data'), showProgress: false });
     expect(created.dbSnapshot.snapshotted).toMatchObject([
-      { source: path, archivePath: 'memphis.db' },
+      {
+        source: path,
+        archivePath: `${RUNTIME_DB_PREFIX}operations.sqlite`,
+        role: 'runtime',
+        stagedPath: `${STAGED_PREFIX}runtime-operations.sqlite`,
+      },
     ]);
-    expect(listArchiveContents(created.backupPath)).toContain(`${STAGED_PREFIX}memphis.db`);
+    expect(listArchiveContents(created.backupPath)).toContain(
+      `${STAGED_PREFIX}runtime-operations.sqlite`,
+    );
   });
 
   it('concurrent snapshots have separate staging and never reuse old content', async () => {
