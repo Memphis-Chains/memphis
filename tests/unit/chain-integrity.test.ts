@@ -320,12 +320,12 @@ describe('security: chain integrity verification', () => {
     await appendBlock(
       'journal',
       { type: 'journal', content: 'one' },
-      { RUST_CHAIN_ENABLED: 'false' },
+      { ...process.env, RUST_CHAIN_ENABLED: 'false', MEMPHIS_DATA_DIR: join(home, '.memphis') },
     );
     await appendBlock(
       'journal',
       { type: 'journal', content: 'two' },
-      { RUST_CHAIN_ENABLED: 'false' },
+      { ...process.env, RUST_CHAIN_ENABLED: 'false', MEMPHIS_DATA_DIR: join(home, '.memphis') },
     );
 
     const result = await verifyChainIntegrity('journal');
@@ -340,12 +340,12 @@ describe('security: chain integrity verification', () => {
     await appendBlock(
       'journal',
       { type: 'journal', content: 'one' },
-      { RUST_CHAIN_ENABLED: 'false' },
+      { ...process.env, RUST_CHAIN_ENABLED: 'false', MEMPHIS_DATA_DIR: join(home, '.memphis') },
     );
     await appendBlock(
       'journal',
       { type: 'journal', content: 'two' },
-      { RUST_CHAIN_ENABLED: 'false' },
+      { ...process.env, RUST_CHAIN_ENABLED: 'false', MEMPHIS_DATA_DIR: join(home, '.memphis') },
     );
 
     const chainDir = join(home, '.memphis', 'chains', 'journal');
@@ -372,12 +372,12 @@ describe('security: chain integrity verification', () => {
     await appendBlock(
       'journal',
       { type: 'journal', content: 'first' },
-      { RUST_CHAIN_ENABLED: 'false' },
+      { ...process.env, RUST_CHAIN_ENABLED: 'false', MEMPHIS_DATA_DIR: join(home, '.memphis') },
     );
     await appendBlock(
       'journal',
       { type: 'journal', content: 'second' },
-      { RUST_CHAIN_ENABLED: 'false' },
+      { ...process.env, RUST_CHAIN_ENABLED: 'false', MEMPHIS_DATA_DIR: join(home, '.memphis') },
     );
 
     // Tamper the second block's stored hash directly so checkBlockHashMismatch
@@ -416,7 +416,7 @@ describe('security: chain integrity verification', () => {
     await appendBlock(
       'journal',
       { type: 'journal', content: 'cli-check' },
-      { RUST_CHAIN_ENABLED: 'false' },
+      { ...process.env, RUST_CHAIN_ENABLED: 'false', MEMPHIS_DATA_DIR: join(home, '.memphis') },
     );
 
     const out = await runCli(['chain', 'verify', '--chain', 'journal', '--json'], {
