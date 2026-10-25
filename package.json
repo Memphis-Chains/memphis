@@ -196,7 +196,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.7.6",
-    "@modelcontextprotocol/sdk": "^1.31.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-http": "^0.219.0",
     "@opentelemetry/resources": "^2.8.0",
@@ -212,7 +212,7 @@
     "pino": "^10.3.1",
     "prompts": "^2.4.2",
     "yaml": "^2.8.2",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   },
   "optionalDependencies": {
     "@memphis-chains/memphis-darwin-arm64": "*",
@@ -226,7 +226,7 @@
     "@grpc/grpc-js": "^1.14.5",
     "@hono/node-server": "^1.19.15",
     "@opentelemetry/propagator-jaeger": "^2.10.0",
-    "body-parser": "^2.2.3",
+    "body-parser": "^2.4.0",
     "brace-expansion": "^5.0.6",
     "esbuild": "^0.28.1",
     "fast-uri": "^3.1.6",
