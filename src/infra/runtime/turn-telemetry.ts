@@ -30,6 +30,13 @@ type BuildRuntimeTelemetryInput = {
 
 const latestTurnTelemetry = new Map<string, TurnTelemetrySnapshot>();
 
+/**
+ * Conservative prompt estimate shared by telemetry and the preflight guard.
+ * Tool-heavy transcripts and JSON routinely tokenize more densely than the
+ * old four-characters-per-token heuristic.
+ */
+export const ESTIMATED_CHARS_PER_TOKEN = 3;
+
 function serializeMessage(message: ChatMessage): string {
   switch (message.role) {
     case 'system':
@@ -46,7 +53,7 @@ function serializeMessage(message: ChatMessage): string {
 
 function estimateTokensFromText(value: string): number {
   if (!value.trim()) return 0;
-  return Math.ceil(value.length / 4);
+  return Math.ceil(value.length / ESTIMATED_CHARS_PER_TOKEN);
 }
 
 export function normalizeTokenUsage(usage?: TokenUsage): TokenUsage | undefined {

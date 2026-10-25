@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  ESTIMATED_CHARS_PER_TOKEN,
+  estimatePromptTokens,
   resetTurnTelemetryForTests,
   snapshotTurnTelemetry,
 } from '../../src/infra/runtime/turn-telemetry.js';
@@ -883,6 +885,16 @@ describe('account context window', () => {
 
     // A provider may not widen the ceiling, whatever it claims.
     expect(telemetry.contextWindowTokens).toBeLessThanOrEqual(1_050_000);
+  });
+
+  it('estimates tool-heavy transcripts conservatively', () => {
+    const transcriptChars = 884_000;
+    const estimated = estimatePromptTokens({
+      messages: [{ role: 'tool', tool_call_id: 'incident', content: 'x'.repeat(transcriptChars) }],
+    });
+
+    expect(ESTIMATED_CHARS_PER_TOKEN).toBe(3);
+    expect(estimated).toBeGreaterThan(Math.floor(258_400 * 0.85));
   });
 });
 
