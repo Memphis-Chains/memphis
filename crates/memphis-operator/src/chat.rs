@@ -419,9 +419,50 @@ fn run_turn(
     error_trail: &mut Vec<(String, String)>,
     on_chunk: &mut dyn FnMut(ChatStreamEvent),
 ) -> Result<ChatExchange, OperatorError> {
+    // Context-window guard: the same protection the TypeScript gateway
+    // applies before every provider call. Without it this path could build a
+    // prompt larger than the model's window, and the provider would answer
+    // HTTP 400 "context window exceeds limit" instead of Memphis trimming.
+    let effective_model = provider_runtime.effective_model(options.model.as_deref());
+    let declared_context_window =
+        provider_runtime.declared_context_window_tokens(effective_model.as_str());
+    let mut account_context_window = if provider_runtime.name() == "openai" {
+        crate::openai_codex::read_account_context_window(&runtime.config, effective_model.as_str())
+    } else {
+        None
+    };
+    let effective_context_window = match (declared_context_window, account_context_window) {
+        (Some(declared), Some(account)) => Some(declared.min(account)),
+        (Some(declared), None) => Some(declared),
+        (None, Some(account)) => Some(account),
+        (None, None) => None,
+    };
+    let mut trim_notice_sent = false;
     {
         loop {
             ensure_chat_not_cancelled(cancel_flag)?;
+            // The guard runs before the streaming sink is created: the sink
+            // borrows the chunk callback mutably for the whole request.
+            let guard = crate::chat_context_guard::enforce_context_window_before_provider(
+                crate::chat_context_guard::ContextWindowGuardInput {
+                    system_prompt: options.system_prompt.as_deref(),
+                    messages: messages.as_slice(),
+                    declared_context_window,
+                    account_context_window,
+                },
+            );
+            // Tell the operator when history was cut: silently dropping turns
+            // looks like the model forgot them.
+            if !trim_notice_sent && (guard.trimmed_messages > 0 || guard.truncated_messages > 0) {
+                trim_notice_sent = true;
+                on_chunk(ChatStreamEvent::Text(format!(
+                    "[context] trimmed {} message(s) and shortened {} to fit the {}-token context window\n",
+                    guard.trimmed_messages,
+                    guard.truncated_messages,
+                    effective_context_window.unwrap_or_default()
+                )));
+            }
+            let request_context = crate::context::provider_context(&guard.messages);
             let mut stream_guard = StreamingOutputGuard::new();
             let mut think_stripper = ThinkStripper::new();
             let mut stream_sink = |event: ChatStreamEvent| match event {
@@ -442,7 +483,6 @@ fn run_turn(
                 }
                 ChatStreamEvent::Usage(usage) => on_chunk(ChatStreamEvent::Usage(usage)),
             };
-            let request_context = crate::context::provider_context(&messages);
             let mut completion = provider_runtime.chat_stream_with_cancel(
                 &request_context,
                 &options,
@@ -463,6 +503,16 @@ fn run_turn(
             // field, scrub the accumulated content too before it gets
             // persisted to the chat history.
             completion.content = strip_think_blocks(completion.content.as_str());
+            // The server reports the account limit after every turn. Keep the
+            // stricter of the two values when both are known: the local
+            // catalog records the share the account may actually use, the
+            // server reports the granted pool.
+            if let Some(window) = completion.effective_context_window {
+                account_context_window = Some(match account_context_window {
+                    Some(known) => known.min(window),
+                    None => window,
+                });
+            }
             let assistant_tool_calls = completion.tool_calls.clone();
             pending.push(MessageToPersist {
                 role: "assistant",

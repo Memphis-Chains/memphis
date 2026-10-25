@@ -278,18 +278,7 @@ impl CodexBridge {
                             }
                         }
                         BridgeEvent::Done { response } => {
-                            let expected_model = if matches!(
-                                model,
-                                "astra-gtp6-max" | "astra-gpt6-max" | "gpt-6-astra-max"
-                            ) {
-                                "gpt-6-astra"
-                            } else if model.eq_ignore_ascii_case("gpt-5.6-sol-max")
-                                || model.eq_ignore_ascii_case("gpt-5.6-sol max")
-                            {
-                                "gpt-5.6-sol"
-                            } else {
-                                model
-                            };
+                            let expected_model = resolve_codex_model_slug(model);
                             if response.provider != "openai"
                                 || response.model != expected_model
                                 || response.tool_calls.iter().any(|call| {
@@ -507,6 +496,70 @@ fn request_payload(
         "tools":tools,
         "timeoutMs":timeout_ms,
     })
+}
+
+/// Canonical Codex model id for a Memphis preset — the slug the account
+/// catalog records. Mirrors `resolveCodexModel` in the TypeScript client, so
+/// both surfaces read the same catalog entry.
+pub(crate) fn resolve_codex_model_slug(model: &str) -> &str {
+    let normalized = model.trim();
+    if matches!(
+        normalized.to_ascii_lowercase().as_str(),
+        "astra-gtp6-max" | "astra-gpt6-max" | "gpt-6-astra-max"
+    ) {
+        return "gpt-6-astra";
+    }
+    if normalized.eq_ignore_ascii_case("gpt-5.6-sol-max")
+        || normalized.eq_ignore_ascii_case("gpt-5.6-sol max")
+        || normalized.eq_ignore_ascii_case("gpt-5.6-sol")
+    {
+        return "gpt-5.6-sol";
+    }
+    normalized
+}
+
+/// Context window the logged-in account is granted, read from the Codex model
+/// catalog the CLI keeps under CODEX_HOME.
+///
+/// The catalog is account-specific and records both the granted pool and the
+/// share of it the model may actually use. The server also reports the
+/// effective value with every turn, but only after that turn has been sent —
+/// reading it here lets Memphis trim the FIRST request of a conversation
+/// instead of the second. A missing or unreadable catalog is not an error:
+/// the declared window still applies.
+pub(crate) fn read_account_context_window(config: &OperatorConfig, model: &str) -> Option<u64> {
+    let codex_home = config.env("CODEX_HOME").map(PathBuf::from).or_else(|| {
+        config
+            .env("HOME")
+            .map(|home| PathBuf::from(home).join(".codex"))
+    })?;
+    let raw = std::fs::read_to_string(codex_home.join("models_cache.json")).ok()?;
+    let parsed: Value = serde_json::from_str(&raw).ok()?;
+    let models = parsed.get("models")?.as_array()?;
+    let slug = resolve_codex_model_slug(model);
+    for entry in models {
+        let Some(record) = entry.as_object() else {
+            continue;
+        };
+        if record.get("slug").and_then(Value::as_str) != Some(slug) {
+            continue;
+        }
+        let Some(pool) = record.get("context_window").and_then(Value::as_u64) else {
+            return None;
+        };
+        if pool == 0 {
+            return None;
+        }
+        let share = record
+            .get("effective_context_window_percent")
+            .and_then(Value::as_f64)
+            .filter(|percent| percent.is_finite() && *percent > 0.0)
+            .map(|percent| percent / 100.0)
+            .unwrap_or(1.0);
+        let effective = ((pool as f64) * share).floor() as u64;
+        return if effective > 0 { Some(effective) } else { None };
+    }
+    None
 }
 
 fn ensure_not_cancelled(cancel_flag: Option<&AtomicBool>) -> Result<(), OperatorError> {
@@ -774,5 +827,63 @@ mod tests {
         let (sender, receiver) = mpsc::sync_channel(8);
         read_frames(&b"123456789"[..], sender, 4, 16);
         assert!(matches!(receiver.recv().unwrap(), PipeEvent::Limit));
+    }
+
+    #[test]
+    fn codex_account_context_window_reads_the_local_catalog() {
+        let root = std::env::temp_dir().join(format!(
+            "memphis-native-codex-catalog-{}-{}",
+            std::process::id(),
+            NEXT_ID.fetch_add(1, Ordering::SeqCst)
+        ));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("models_cache.json"),
+            r#"{"models":[{"slug":"gpt-6-astra","context_window":272000,"effective_context_window_percent":95}]}"#,
+        )
+        .unwrap();
+        let config = OperatorConfig::from_iter([
+            ("MEMPHIS_RUNTIME_ROOT", root.to_string_lossy().into_owned()),
+            ("CODEX_HOME", root.to_string_lossy().into_owned()),
+            ("HOME", root.to_string_lossy().into_owned()),
+        ]);
+        // 272000 granted pool * 95% share = 258400 usable tokens.
+        assert_eq!(
+            read_account_context_window(&config, "astra-gtp6-max"),
+            Some(258_400)
+        );
+        assert_eq!(
+            read_account_context_window(&config, "gpt-6-astra"),
+            Some(258_400)
+        );
+        assert_eq!(read_account_context_window(&config, "unknown-model"), None);
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn codex_account_context_window_is_absent_without_a_catalog() {
+        let root = std::env::temp_dir().join(format!(
+            "memphis-native-codex-empty-{}-{}",
+            std::process::id(),
+            NEXT_ID.fetch_add(1, Ordering::SeqCst)
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let config = OperatorConfig::from_iter([
+            ("MEMPHIS_RUNTIME_ROOT", root.to_string_lossy().into_owned()),
+            ("HOME", root.to_string_lossy().into_owned()),
+        ]);
+        assert_eq!(read_account_context_window(&config, "gpt-6-astra"), None);
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn codex_model_slug_resolves_memphis_presets() {
+        assert_eq!(resolve_codex_model_slug("astra-gtp6-max"), "gpt-6-astra");
+        assert_eq!(resolve_codex_model_slug("ASTRA-GTP6-MAX"), "gpt-6-astra");
+        assert_eq!(resolve_codex_model_slug("gpt-6-astra-max"), "gpt-6-astra");
+        assert_eq!(resolve_codex_model_slug("gpt-5.6-sol-max"), "gpt-5.6-sol");
+        assert_eq!(resolve_codex_model_slug("gpt-5.6-sol max"), "gpt-5.6-sol");
+        assert_eq!(resolve_codex_model_slug("gpt-6-astra"), "gpt-6-astra");
+        assert_eq!(resolve_codex_model_slug("custom-model"), "custom-model");
     }
 }
