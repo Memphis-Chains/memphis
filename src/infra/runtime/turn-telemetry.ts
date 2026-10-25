@@ -20,6 +20,12 @@ type BuildRuntimeTelemetryInput = {
   compactionCount?: number;
   degraded?: boolean;
   degradationReason?: string;
+  /**
+   * Context window the provider's account actually granted on this turn.
+   * Only ever lowers the declared model capability: a provider may not widen
+   * its own limit, but it may report that the account is more restrictive.
+   */
+  effectiveContextWindow?: number;
 };
 
 const latestTurnTelemetry = new Map<string, TurnTelemetrySnapshot>();
@@ -92,7 +98,21 @@ export function buildRuntimeTelemetry(input: BuildRuntimeTelemetryInput): Runtim
     messages: input.messages,
   });
   const capability = resolveModelCapabilitySnapshot(input.provider, input.model);
-  const contextWindowTokens = capability?.contextWindowTokens;
+  const declaredContextWindow = capability?.contextWindowTokens;
+  const accountContextWindow =
+    typeof input.effectiveContextWindow === 'number' &&
+    Number.isFinite(input.effectiveContextWindow) &&
+    input.effectiveContextWindow > 0
+      ? Math.trunc(input.effectiveContextWindow)
+      : undefined;
+  // The account may only narrow the window. Widening it would let a prompt
+  // past a limit the upstream API still enforces.
+  const contextWindowTokens =
+    declaredContextWindow === undefined
+      ? accountContextWindow
+      : accountContextWindow === undefined
+        ? declaredContextWindow
+        : Math.min(declaredContextWindow, accountContextWindow);
   const remainingContextTokens =
     typeof contextWindowTokens === 'number'
       ? Math.max(0, contextWindowTokens - estimatedPromptTokens)
@@ -117,6 +137,7 @@ export function buildRuntimeTelemetry(input: BuildRuntimeTelemetryInput): Runtim
   return {
     usage,
     contextWindowTokens,
+    ...(accountContextWindow !== undefined ? { effectiveContextWindow: accountContextWindow } : {}),
     estimatedPromptTokens,
     remainingContextTokens,
     compactionPressure: {

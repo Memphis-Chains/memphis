@@ -15,7 +15,8 @@ vi.mock('../../src/infra/storage/rust-embed-adapter.js', () => ({
   embedSearch: vi.fn(),
 }));
 
-vi.mock('../../src/infra/storage/rust-vault-adapter.js', () => ({
+vi.mock('../../src/infra/storage/rust-vault-adapter.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/infra/storage/rust-vault-adapter.js')>()),
   vaultDecrypt: vi.fn(),
   getRustVaultAdapterStatus: vi.fn(() => ({
     rustEnabled: false,
@@ -30,7 +31,7 @@ vi.mock('../../src/infra/storage/rust-vault-adapter.js', () => ({
 }));
 
 vi.mock('../../src/infra/storage/vault-entry-store.js', () => ({
-  getLatestVaultEntry: vi.fn(),
+  readLatestVaultSecret: vi.fn(),
   listVaultEntries: vi.fn(() => []),
   verifyVaultEntry: vi.fn(() => true),
 }));
@@ -153,8 +154,8 @@ describe('mcp tools — vault-get', () => {
   });
 
   it('returns not found for missing key', async () => {
-    const { getLatestVaultEntry } = await import('../../src/infra/storage/vault-entry-store.js');
-    vi.mocked(getLatestVaultEntry).mockReturnValue(undefined);
+    const { readLatestVaultSecret } = await import('../../src/infra/storage/vault-entry-store.js');
+    vi.mocked(readLatestVaultSecret).mockReturnValue(undefined);
 
     const result = runMemphisVaultGet({ key: 'missing' });
     expect(result.found).toBe(false);
@@ -162,17 +163,18 @@ describe('mcp tools — vault-get', () => {
   });
 
   it('decrypts and returns vault entry', async () => {
-    const { getLatestVaultEntry } = await import('../../src/infra/storage/vault-entry-store.js');
-    const { vaultDecrypt } = await import('../../src/infra/storage/rust-vault-adapter.js');
+    const { readLatestVaultSecret } = await import('../../src/infra/storage/vault-entry-store.js');
 
-    vi.mocked(getLatestVaultEntry).mockReturnValue({
-      key: 'api-key',
-      encrypted: 'ZW5j',
-      iv: 'bg==',
-      fingerprint: 'fp-1',
-      createdAt: '2026-01-01T00:00:00Z',
+    vi.mocked(readLatestVaultSecret).mockReturnValue({
+      entry: {
+        key: 'api-key',
+        encrypted: 'ZW5j',
+        iv: 'bg==',
+        fingerprint: 'fp-1',
+        createdAt: '2026-01-01T00:00:00Z',
+      },
+      plaintext: 'secret-value',
     } as never);
-    vi.mocked(vaultDecrypt).mockReturnValue('secret-value');
 
     const result = runMemphisVaultGet({ key: 'api-key' });
     expect(result.found).toBe(true);
@@ -181,17 +183,9 @@ describe('mcp tools — vault-get', () => {
   });
 
   it('returns error on decryption failure', async () => {
-    const { getLatestVaultEntry } = await import('../../src/infra/storage/vault-entry-store.js');
-    const { vaultDecrypt } = await import('../../src/infra/storage/rust-vault-adapter.js');
+    const { readLatestVaultSecret } = await import('../../src/infra/storage/vault-entry-store.js');
 
-    vi.mocked(getLatestVaultEntry).mockReturnValue({
-      key: 'broken',
-      encrypted: 'ZW5j',
-      iv: 'bg==',
-      fingerprint: 'fp-2',
-      createdAt: '2026-01-01T00:00:00Z',
-    } as never);
-    vi.mocked(vaultDecrypt).mockImplementation(() => {
+    vi.mocked(readLatestVaultSecret).mockImplementation(() => {
       throw new Error('bad key');
     });
 

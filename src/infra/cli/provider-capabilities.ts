@@ -1,6 +1,13 @@
 import { parseBool } from '../../core/env.js';
 import type { ProviderName } from '../../core/types.js';
 import { resolveModelCapabilitySnapshot } from '../../providers/model-capabilities.js';
+import {
+  GPT56_SOL_MAX_PRESET,
+  GPT56_SOL_MODEL,
+  codexBinaryAvailable,
+  readAccountContextWindow,
+  resolveCodexModel,
+} from '../../providers/openai-codex/client.js';
 
 type ProviderType = 'local' | 'remote';
 
@@ -37,6 +44,7 @@ const PROVIDERS: ProviderDefinition[] = [
   { name: 'local-fallback', type: 'local' },
   { name: 'ollama', type: 'local' },
   { name: 'anthropic', type: 'remote' },
+  { name: 'openai', type: 'remote' },
   { name: 'shared-llm', type: 'remote' },
   { name: 'decentralized-llm', type: 'remote' },
   { name: 'minimax', type: 'remote' },
@@ -53,6 +61,8 @@ function resolveRemoteProviderConfig(
   env: NodeJS.ProcessEnv,
 ): RemoteProviderConfig {
   switch (provider) {
+    case 'openai':
+      return { model: firstNonEmpty(env.OPENAI_MODEL) ?? 'astra-gtp6-max' };
     case 'anthropic':
       return {
         baseUrl: firstNonEmpty(env.ANTHROPIC_BASE_URL, 'https://api.anthropic.com'),
@@ -75,7 +85,7 @@ function resolveRemoteProviderConfig(
       return {
         baseUrl: firstNonEmpty(env.MINIMAX_BASE_URL, 'https://api.minimax.io/v1'),
         apiKey: firstNonEmpty(env.MINIMAX_API_KEY),
-        model: firstNonEmpty(env.MINIMAX_MODEL) ?? 'MiniMax-M2.7',
+        model: firstNonEmpty(env.MINIMAX_MODEL) ?? 'MiniMax-M3.1-Flash',
       };
     case 'deepseek':
       return {
@@ -102,6 +112,8 @@ function resolveRemoteProviderConfig(
 
 function providerConfigured(name: ProviderName, env: NodeJS.ProcessEnv): boolean {
   switch (name) {
+    case 'openai':
+      return env.OPENAI_AUTH_MODE === 'codex' || env.DEFAULT_PROVIDER === 'openai';
     case 'local-fallback':
       return parseBool(env.LOCAL_FALLBACK_ENABLED, true);
     case 'ollama':
@@ -134,6 +146,7 @@ function providerConfigured(name: ProviderName, env: NodeJS.ProcessEnv): boolean
 }
 
 function providerHealthy(name: ProviderName, env: NodeJS.ProcessEnv): boolean {
+  if (name === 'openai') return providerConfigured(name, env) && codexBinaryAvailable(env);
   if (name === 'local-fallback') {
     return parseBool(env.LOCAL_FALLBACK_ENABLED, true);
   }
@@ -153,12 +166,23 @@ export function listConfiguredProviders(env: NodeJS.ProcessEnv): ProviderListIte
   }));
 }
 
-function toCliCapability(provider: ProviderName, model: string): ModelCapability {
-  const snapshot = resolveModelCapabilitySnapshot(provider, model);
+function toCliCapability(
+  provider: ProviderName,
+  model: string,
+  env: NodeJS.ProcessEnv = process.env,
+): ModelCapability {
+  const snapshot = resolveModelCapabilitySnapshot(provider, model, env);
+  // The account may grant less than the model declares. Report the limit the
+  // account actually enforces, never the advertised one alone.
+  const accountWindow =
+    provider === 'openai'
+      ? readAccountContextWindow(env, resolveCodexModel(model).model)
+      : undefined;
+  const declared = snapshot?.contextWindowTokens ?? 8192;
   return {
     supports_streaming: snapshot?.supportsStreaming ?? true,
     supports_vision: snapshot?.supportsVision ?? false,
-    context_window: snapshot?.contextWindowTokens ?? 8192,
+    context_window: accountWindow === undefined ? declared : Math.min(declared, accountWindow),
   };
 }
 
@@ -273,6 +297,17 @@ export async function listModelsWithCapabilities(env: NodeJS.ProcessEnv): Promis
 
   for (const provider of configured) {
     switch (provider) {
+      case 'openai':
+        for (const model of new Set([
+          resolveRemoteProviderConfig(provider, env).model,
+          'astra-gtp6-max',
+          'gpt-6-astra',
+          GPT56_SOL_MAX_PRESET,
+          GPT56_SOL_MODEL,
+        ])) {
+          rows.push({ provider, model, capabilities: toCliCapability(provider, model, env) });
+        }
+        break;
       case 'local-fallback':
         rows.push(...listLocalFallbackModels());
         break;

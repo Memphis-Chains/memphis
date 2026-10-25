@@ -5,12 +5,20 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  applyReloadPlan,
   computeReloadPlan,
+  performHotReloadSync,
   performHotReload,
   redactFieldValue,
   redactReloadResult,
   snapshotRedactedEnv,
 } from '../../src/infra/config/hot-reload.js';
+import {
+  getActiveRuntimeConfigSnapshot,
+  initializeRuntimeConfigSnapshot,
+  nativeRuntimeEnvironment,
+  resetRuntimeConfigSnapshotForTests,
+} from '../../src/infra/config/runtime-config-snapshot.js';
 
 interface TestEnv {
   envDir: string;
@@ -115,6 +123,37 @@ describe('hot-reload — performHotReload mutates process.env', () => {
       if (!(key in savedEnv)) delete process.env[key];
     }
     Object.assign(process.env, savedEnv);
+    resetRuntimeConfigSnapshotForTests();
+  });
+
+  it('pins startup paths and advances the generation only for accepted changes', async () => {
+    process.env.MEMPHIS_RUNTIME_ROOT = testEnv.envDir;
+    process.env.MEMPHIS_DATA_DIR = join(testEnv.envDir, 'data');
+    process.env.MEMPHIS_VAULT_STATE_PATH = join(testEnv.envDir, 'state.json');
+    process.env.MEMPHIS_VAULT_ENTRIES_PATH = join(testEnv.envDir, 'entries.json');
+    const first = initializeRuntimeConfigSnapshot();
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(Object.isFrozen(first.vaultState)).toBe(true);
+    writeEnv(testEnv.envPath, { GEN_MAX_TOKENS: '2048', MEMPHIS_VAULT_STATE_PATH: './state.json' });
+    applyReloadPlan(computeReloadPlan(), { dryRun: true });
+    expect(getActiveRuntimeConfigSnapshot()).toBe(first);
+    expect((await performHotReload()).ok).toBe(true);
+    const next = getActiveRuntimeConfigSnapshot()!;
+    expect(next.generation).toBe(first.generation + 1);
+    expect(next.vaultState).toBe(first.vaultState);
+    expect(nativeRuntimeEnvironment(next).MEMPHIS_CONFIG_GENERATION).toBe(String(next.generation));
+    await performHotReload();
+    expect(getActiveRuntimeConfigSnapshot()).toBe(next);
+    writeEnv(testEnv.envPath, { GEN_MAX_TOKENS: '99999999' });
+    expect((await performHotReload()).ok).toBe(false);
+    expect(getActiveRuntimeConfigSnapshot()).toBe(next);
+    writeEnv(testEnv.envPath, { MEMPHIS_VAULT_STATE_PATH: join(testEnv.envDir, 'other.json') });
+    expect((await performHotReload()).rejectedCold).toContain('MEMPHIS_VAULT_STATE_PATH');
+    expect(getActiveRuntimeConfigSnapshot()).toBe(next);
+    expect(process.env.MEMPHIS_VAULT_STATE_PATH).toBe(first.vaultState.path);
+    writeEnv(testEnv.envPath, { GEN_MAX_TOKENS: '4096' });
+    expect(performHotReloadSync().ok).toBe(true);
+    expect(getActiveRuntimeConfigSnapshot()!.generation).toBe(next.generation + 1);
   });
 
   it('writes hot field changes into process.env', async () => {
@@ -137,7 +176,7 @@ describe('hot-reload — redaction', () => {
   it('redactFieldValue obscures secret fields and passes through hot fields', () => {
     expect(redactFieldValue('ANTHROPIC_API_KEY', 'sk-ant-secret')).toBe('***redacted***');
     expect(redactFieldValue('GEN_MAX_TOKENS', '4096')).toBe('4096');
-    expect(redactFieldValue('UNKNOWN_KEY', 'visible')).toBe('visible');
+    expect(redactFieldValue('UNKNOWN_KEY', 'visible')).toBe('***redacted***');
     expect(redactFieldValue('GEN_TIMEOUT_MS', undefined)).toBe('');
   });
 

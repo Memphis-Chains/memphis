@@ -142,6 +142,19 @@ export class SqliteToolCallApprovalRepository {
     return row ? mapRow(row) : null;
   }
 
+  /** Atomically consume the exact caller/argument grant. A concurrent replay,
+   * another session or a changed request cannot reuse an approved operation. */
+  consumeScoped(requestId: string, toolName: string, callerId: string, binding: string): boolean {
+    return this.db.transaction(() => {
+      const approved = this.findApproved(requestId);
+      if (!approved || approved.toolName !== toolName || approved.callerId !== callerId) return false;
+      const stored = JSON.parse(approved.argumentsJson) as Record<string, unknown>;
+      if (stored._approval_binding !== binding) return false;
+      return this.db.prepare("UPDATE tool_call_approvals SET state = 'used', updated_at = ? WHERE request_id = ? AND state = 'approved' AND expires_at_ms > ?")
+        .run(new Date().toISOString(), requestId, Date.now()).changes === 1;
+    }).immediate();
+  }
+
   /**
    * List pending requests, optionally filtered by tool name.
    */

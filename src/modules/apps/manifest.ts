@@ -717,8 +717,8 @@ function resolveActionVaultEnv(
       continue;
     }
 
-    // Bounded access — 2026-10-09. Was `useVaultSecretByKey`, whose body
-    // was identical to the plain read and put `plaintext` on the result.
+    // Trusted loading for the child environment. The callback returns plaintext;
+    // public plan construction below exposes binding metadata only.
     let resolvedPlaintext: string | undefined;
     try {
       resolvedPlaintext = withVaultSecret(
@@ -790,7 +790,7 @@ function resolveActionVaultFiles(
 
   for (const [pathTemplate, binding] of entries) {
     const filePath = resolve(interpolateTemplate(pathTemplate, templateVars));
-    // Bounded access — 2026-10-09, same migration as the env branch above.
+    // Trusted loading for materialization into the configured credential file.
     let filePlaintext: string | undefined;
     try {
       filePlaintext = withVaultSecret(

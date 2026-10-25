@@ -19,6 +19,8 @@ import {
 } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { withChainWriteLock } from './chain-write-lock.js';
+
 // ── Shared types ─────────────────────────────────────────────────────────────
 
 export interface NapiBlockData {
@@ -155,8 +157,12 @@ export async function writeBlockAtomic(
 
   const tmpFilename = `${filename}.tmp-${process.pid}-${Date.now()}`;
   await writeFile(tmpFilename, payload, 'utf8');
+  const staged = await open(tmpFilename, 'r');
+  try { await staged.sync(); } finally { await staged.close(); }
   try {
     await rename(tmpFilename, filename);
+    const directory = await open(dir, 'r');
+    try { await directory.sync(); } finally { await directory.close(); }
   } catch (error) {
     await unlink(tmpFilename).catch(() => undefined);
     throw error;
@@ -207,49 +213,7 @@ export async function writeBlockAtomic(
 
 // ── Append lock ──────────────────────────────────────────────────────────────
 
-const NAPI_LOCK_FILE = '.napi-append.lock';
-const NAPI_LOCK_MAX_ATTEMPTS = 200;
-const NAPI_LOCK_RETRY_MS = 10;
-const NAPI_LOCK_STALE_MS = 30_000;
-
-/**
- * Serialize chain append operations against a single chains directory via an
- * exclusive lock file. Callers that read, compute, and write must wrap the
- * entire cycle in this lock so concurrent writers cannot race on the next-index
- * computation.
- *
- * A lock file older than `NAPI_LOCK_STALE_MS` is considered abandoned (from a
- * crashed process) and forcibly unlinked.
- */
+/** Same allocation lock as TS fallback and the native operator. */
 export async function withNapiAppendLock<T>(chainsDir: string, fn: () => Promise<T>): Promise<T> {
-  const lockPath = join(chainsDir, NAPI_LOCK_FILE);
-  await mkdir(chainsDir, { recursive: true });
-
-  for (let attempt = 0; attempt < NAPI_LOCK_MAX_ATTEMPTS; attempt += 1) {
-    try {
-      const lockHandle = await open(lockPath, 'wx');
-      try {
-        return await fn();
-      } finally {
-        await lockHandle.close().catch(() => undefined);
-        await unlink(lockPath).catch(() => undefined);
-      }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') {
-        throw error;
-      }
-      try {
-        const lockStat = await stat(lockPath);
-        if (Date.now() - lockStat.mtimeMs > NAPI_LOCK_STALE_MS) {
-          await unlink(lockPath).catch(() => undefined);
-          continue;
-        }
-      } catch {
-        continue;
-      }
-      await new Promise((resolve) => setTimeout(resolve, NAPI_LOCK_RETRY_MS));
-    }
-  }
-
-  throw new Error(`napi chain append lock timeout for ${chainsDir}`);
+  return withChainWriteLock(chainsDir, fn);
 }

@@ -322,9 +322,23 @@ function parseCommand(command: string): { base: string; args: string[] } {
     throw new AppError('VALIDATION_ERROR', 'command required', 400);
   }
 
-  // Extract base command (strip any path prefix — only basename matters)
+  // An allowlisted basename must not authorize an arbitrary executable at
+  // /tmp/ls or ./whoami. Only canonical OS-managed binary paths may use
+  // the same rule as a bare command; traversal and extra path components
+  // are rejected before the original command reaches the executor.
   const rawBase = parts[0];
-  const base = rawBase.includes('/') ? rawBase.split('/').pop()! : rawBase;
+  let base = rawBase;
+  if (rawBase.includes('/')) {
+    const systemBinary = /^\/(?:usr\/)?s?bin\/([A-Za-z0-9._+-]+)$/.exec(rawBase);
+    if (!systemBinary) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'command path is outside trusted system binary directories',
+        403,
+      );
+    }
+    base = systemBinary[1];
+  }
 
   return { base, args: parts.slice(1) };
 }

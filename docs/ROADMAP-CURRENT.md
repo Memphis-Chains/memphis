@@ -2,6 +2,11 @@
 
 Updated: 2026-03-28
 
+The operator-requested Omarchy repair and refactor track for the October 2026
+incident is maintained in [the S0–S9 execution plan](plans/2026-10-12-memphis-refactor/README.md).
+It distinguishes the completed local repair from planned product changes and
+provides the audit, architecture, acceptance gates, and recovery runbook.
+
 ## Why This Roadmap Exists
 
 Memphis moved fast over the last month and accumulated too many competing

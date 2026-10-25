@@ -1,5 +1,17 @@
 mod chat;
+mod chat_basal;
+mod chain_write_lock;
+mod chat_guards;
+mod chat_memory;
+mod chat_operations;
+mod chat_prompt;
+mod chat_session;
+mod chat_streaming;
+mod chat_tool_catalog;
+mod chat_tool_executor;
 mod config;
+mod context;
+mod openai_codex;
 mod provider;
 mod runtime;
 mod think_stripper;

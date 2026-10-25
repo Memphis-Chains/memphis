@@ -35,7 +35,12 @@ describe('tool registry', () => {
     // (canonical supervised-operational autonomy readiness) and
     // memphis_tensor_status (canonical tensor/vector runtime truth).
     // 2026-10-09: +1 tier-2 — memphis_wallet_sign (vault-held Ed25519 signing).
-    expect(getToolNames(stableEnv)).toHaveLength(59); // 2026-10-03: +1 (memphis_classify)
+    // 2026-10-22: +1 tier-0 — memphis_vault_list. Native-only (the Rust
+    //   operator cockpit executes it; the gateway does not advertise it),
+    //   but listed here so its tier and capabilities have one home. It used
+    //   to be absent from the registry entirely, with a hand-written tier
+    //   in native-tool-policy.ts — two policy homes and no comparison.
+    expect(getToolNames(stableEnv)).toHaveLength(60); // 2026-10-03: +1 (memphis_classify)
   });
 
   it('hides experimental preview tools by default', () => {
@@ -100,7 +105,8 @@ describe('tool registry', () => {
     // PR #593 (S5): +6 tier-0 — memphis_self_plan_{create,get,advance,cancel}
     //   + memphis_self_review + memphis_self_deploy_verify.
     // 2026-06-16: +2 tier-0 — memphis_self_governance_status + memphis_tensor_status.
-    expect(tier0.length).toBe(25);
+    // 2026-10-22: +1 tier-0 — memphis_vault_list (native-only).
+    expect(tier0.length).toBe(26);
     expect(tier0.every((t) => t.tier === 0)).toBe(true);
 
     const tier1 = getToolsByTier(1, stableEnv);

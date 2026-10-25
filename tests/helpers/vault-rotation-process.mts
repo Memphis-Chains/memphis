@@ -1,8 +1,25 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
+import { basename, isAbsolute, relative } from 'node:path';
 
 const [mode, operation, point] = process.argv.slice(2);
+if (mode === 'seed') {
+  assert.equal(process.env.NODE_ENV, 'test');
+  const root = process.env.MEMPHIS_RUNTIME_ROOT ?? '';
+  assert.ok(basename(root).startsWith('memphis-vitest-'), 'Seed requires an isolated test root');
+  for (const name of [
+    'MEMPHIS_ENV_FILE',
+    'MEMPHIS_VAULT_STATE_PATH',
+    'MEMPHIS_VAULT_ENTRIES_PATH',
+  ]) {
+    const target = relative(root, process.env[name] ?? '');
+    assert.ok(
+      target && !target.startsWith('..') && !isAbsolute(target),
+      'Seed paths must stay inside the fixture',
+    );
+  }
+}
 const oldPepper = 'synthetic-original-pepper-for-crash-test';
 const newPepper = 'synthetic-replacement-pepper-for-crash-test';
 const secrets = [
@@ -17,13 +34,57 @@ const { vaultInit, vaultEncrypt, vaultDecrypt, rotateVaultMasterKey } =
 const { saveVaultEntry, listVaultEntries, verifyVaultEntry } =
   await import('../../src/infra/storage/vault-entry-store.js');
 
-if (mode === 'init') {
-  vaultInit({
-    passphrase: 'Synthetic-Strong-Passphrase!123',
-    recovery_question: 'fixture?',
-    recovery_answer: 'synthetic',
-  });
+if (mode === 'init' || mode === 'seed') {
+  if (mode === 'seed') {
+    // Writer/read races exercise real native entry crypto, not passphrase setup.
+    fs.writeFileSync(
+      process.env.MEMPHIS_VAULT_STATE_PATH!,
+      JSON.stringify({
+        salt: Buffer.alloc(32, 1).toString('base64'),
+        masterKey: Buffer.alloc(32, 2).toString('base64'),
+      }),
+    );
+  } else
+    vaultInit({
+      passphrase: 'Synthetic-Strong-Passphrase!123',
+      recovery_question: 'fixture?',
+      recovery_answer: 'synthetic',
+    });
   for (const [key, secret] of secrets) saveVaultEntry(vaultEncrypt(key, secret));
+} else if (mode === 'hold-secret-selection' || mode === 'hold-bounded-selection') {
+  const bridge = createRequire(import.meta.url)(process.env.RUST_CHAIN_BRIDGE_PATH!);
+  const load = bridge.vault_load_state;
+  let paused = false;
+  bridge.vault_load_state = (...args: unknown[]) => {
+    const loaded = load(...args);
+    bridge.vault_load_state = load;
+    paused = true;
+    fs.writeFileSync(operation, 'decoded-old-state-after-selection');
+    const deadline = Date.now() + 25000;
+    while (!fs.existsSync(point)) {
+      assert.ok(Date.now() < deadline, 'Fixture secret-read release deadline exceeded');
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    }
+    return loaded;
+  };
+  const { readVaultSecretByKey, withVaultSecret } =
+    await import('../../src/security/vault-boundary.js');
+  if (mode === 'hold-secret-selection') {
+    const result = readVaultSecretByKey('first', { surface: 'system' });
+    assert.equal(result.error, undefined);
+    assert.equal(result.plaintext, secrets[0][1]);
+  } else {
+    assert.equal(
+      withVaultSecret('first', { surface: 'system' }, (value) => value),
+      secrets[0][1],
+    );
+  }
+  assert.ok(paused);
+  // Both the warmed cache and a fresh process must remain usable.
+  assert.equal(
+    withVaultSecret('second', { surface: 'system' }, (value) => value),
+    secrets[1][1],
+  );
 } else if (mode === 'hold-entry' || mode === 'hold-state-load') {
   if (mode === 'hold-state-load') {
     const bridge = createRequire(import.meta.url)(process.env.RUST_CHAIN_BRIDGE_PATH!);
@@ -62,6 +123,23 @@ if (mode === 'init') {
   // that the original process invalidates its cached pre-rotation key.
   const fresh = saveVaultEntry(vaultEncrypt('racer', 'synthetic-racer'));
   assert.equal(vaultDecrypt(fresh), 'synthetic-racer');
+} else if (mode === 'wait-pepper-rotation') {
+  const { readVaultSecretByKey } = await import('../../src/security/vault-boundary.js');
+  assert.equal(readVaultSecretByKey('first', { surface: 'system' }).plaintext, secrets[0][1]);
+  fs.writeFileSync(operation, 'cache-warm');
+  const deadline = Date.now() + 60000;
+  while (!fs.existsSync(point)) {
+    assert.ok(Date.now() < deadline, 'Fixture pepper release deadline exceeded');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  const result = readVaultSecretByKey('first', { surface: 'system' });
+  assert.equal(result.errorCode, 'VAULT_STATE_AUTH_FAILED');
+  assert.equal(result.plaintext, undefined);
+  assert.equal(process.env.MEMPHIS_VAULT_PEPPER, oldPepper);
+} else if (mode === 'rotate-pepper-clean') {
+  const { rotateVaultPepperAndConfig } =
+    await import('../../src/infra/storage/vault-pepper-transaction.js');
+  rotateVaultPepperAndConfig(oldPepper, newPepper);
 } else if (mode === 'rotate-clean') {
   rotateVaultMasterKey();
 } else if (mode === 'hold-rotation') {

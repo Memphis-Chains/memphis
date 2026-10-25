@@ -197,6 +197,30 @@ export class CapabilityMatrix {
       name: 'minimax',
       models: [
         {
+          // 1M context, multimodal (text/image/video), tunable thinking
+          // depth. Source: platform.minimax.io/docs/guides/models-intro.md
+          // and /docs/api-reference/text-openai-api.md — both list
+          // "MiniMax-M3.1-Flash | 1,000,000". Confirmed live 2026-10-24:
+          // a 999_209-token prompt was accepted, 1_530_000 was rejected
+          // with "context window exceeds limit (2013)".
+          name: 'MiniMax-M3.1-Flash',
+          contextWindow: 1000000,
+          maxOutputTokens: 524288,
+          supportsStreaming: true,
+          supportsFunctionCalling: true,
+          supportsVision: true,
+          supportsJson: true,
+        },
+        {
+          name: 'MiniMax-M3',
+          contextWindow: 1000000,
+          maxOutputTokens: 524288,
+          supportsStreaming: true,
+          supportsFunctionCalling: true,
+          supportsVision: true,
+          supportsJson: true,
+        },
+        {
           name: 'MiniMax-M2.7',
           contextWindow: 204800,
           maxOutputTokens: 32768,

@@ -81,12 +81,12 @@ const MUTATIONS: Mutation[] = [
   },
   {
     name: 'sync-native-tiers would accept a stale native tier table',
-    file: 'crates/memphis-operator/src/chat.rs',
+    file: 'crates/memphis-operator/src/chat_tool_catalog.rs',
     // memphis_git is tier 2 now (the registry says so). Mutating the whole
     // arm keeps the guard meaningful: the table must change when the
     // generated content changes, which is what `--check` exists to notice.
-    anchor: '| "memphis_git" => 2,',
-    replacement: '| "memphis_git_unused_placeholder" => 2,\n        "memphis_git" => 1,',
+    anchor: '        | "memphis_git"\n',
+    replacement: '        | "memphis_git_unused_placeholder"\n',
     guard: ['npx', 'tsx', 'scripts/sync-native-tiers.mts', '--check'],
   },
   {

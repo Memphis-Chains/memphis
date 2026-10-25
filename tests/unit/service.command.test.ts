@@ -65,8 +65,14 @@ describe('service command', () => {
   it('prints service status as JSON', async () => {
     const root = makeRuntimeRoot();
     const originalCwd = process.cwd();
+    const originalRuntimeRoot = process.env.MEMPHIS_RUNTIME_ROOT;
     process.chdir(root);
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    process.env.MEMPHIS_RUNTIME_ROOT = root;
+    let output = '';
+    vi.spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      output += String(chunk);
+      return true;
+    }) as typeof process.stdout.write);
 
     try {
       const handled = await handleServiceCommand(makeContext('service', 'status'), {
@@ -89,11 +95,13 @@ describe('service command', () => {
       });
 
       expect(handled).toBe(true);
-      const payload = JSON.parse(log.mock.calls[0]?.[0] as string);
+      const payload = JSON.parse(output);
       expect(payload.active).toBe(true);
       expect(payload.runtimeRoot).toBe(root);
     } finally {
       process.chdir(originalCwd);
+      if (originalRuntimeRoot === undefined) delete process.env.MEMPHIS_RUNTIME_ROOT;
+      else process.env.MEMPHIS_RUNTIME_ROOT = originalRuntimeRoot;
     }
   });
 
@@ -169,11 +177,14 @@ describe('user service helpers', () => {
     // into a throwaway path too.
     const root = mkdtempSync(join(tmpdir(), 'memphis-non-root-'));
     const saved = process.argv[1];
+    const savedRuntimeRoot = process.env.MEMPHIS_RUNTIME_ROOT;
     process.argv[1] = join(root, 'fake-bin');
+    delete process.env.MEMPHIS_RUNTIME_ROOT;
     try {
       expect(() => resolveRuntimeRoot(root)).toThrow(/MEMPHIS_RUNTIME_ROOT|runtime root/);
     } finally {
       process.argv[1] = saved;
+      if (savedRuntimeRoot !== undefined) process.env.MEMPHIS_RUNTIME_ROOT = savedRuntimeRoot;
     }
   });
 });

@@ -2,6 +2,18 @@ import { randomUUID } from 'node:crypto';
 import { closeSync, fsyncSync, openSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+import { safeIoErrorCode } from '../storage/io-error-code.js';
+
+function reportCleanupFailure(operation: 'close' | 'unlink', error: unknown): void {
+  try {
+    process.stderr.write(
+      `[private-atomic-file] temporary ${operation} failed (${safeIoErrorCode(error) ?? 'PRIVATE_ATOMIC_CLEANUP_FAILED'})\n`,
+    );
+  } catch {
+    /* A failed warning cannot replace the primary storage error. */
+  }
+}
+
 /**
  * Private from creation, durable before publication; never truncate the live file.
  *
@@ -28,17 +40,17 @@ export function writePrivateAtomicFile(path: string, content: string): void {
       closeSync(directory);
     }
   } finally {
-    if (fd !== undefined) closeSync(fd);
+    if (fd !== undefined) {
+      try {
+        closeSync(fd);
+      } catch (error) {
+        reportCleanupFailure('close', error);
+      }
+    }
     try {
       unlinkSync(temporary);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        process.stderr.write(
-          `[private-atomic-file] leftover temporary ${temporary} could not be removed: ${
-            error instanceof Error ? error.message : 'unknown_error'
-          }\n`,
-        );
-      }
+      if (safeIoErrorCode(error) !== 'ENOENT') reportCleanupFailure('unlink', error);
     }
   }
 }

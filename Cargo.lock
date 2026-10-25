@@ -1390,6 +1390,7 @@ dependencies = [
  "aes-gcm",
  "base64 0.22.1",
  "chrono",
+ "libc",
  "memphis-case-index",
  "memphis-core",
  "memphis-embed",
@@ -1403,6 +1404,7 @@ dependencies = [
  "sha2",
  "thiserror 2.0.18",
  "ureq",
+ "zeroize",
 ]
 
 [[package]]

@@ -11,6 +11,7 @@ import * as readline from 'node:readline/promises';
 
 import { getDataDir } from '../../config/paths.js';
 import { secureCompare } from '../../security/constant-time.js';
+import { operatorContextKey } from '../../security/operator-context.js';
 import { readTier2PassphraseFromFile } from '../../security/tier2-passphrase-file.js';
 import type { CliArgs } from '../cli/types.js';
 
@@ -87,23 +88,27 @@ const ATTEMPT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_ATTEMPTS = 5;
 const attemptLog = new Map<string, { count: number; firstAttemptAt: number }>();
 
-let sessionAuthorizedAt: number | null = null;
+const sessionGrants = new Map<string, number>();
 
 export function isSessionAuthorized(): boolean {
-  if (sessionAuthorizedAt === null) return false;
-  if (Date.now() - sessionAuthorizedAt > SESSION_TTL_MS) {
-    sessionAuthorizedAt = null;
+  const key = operatorContextKey();
+  const grantedAt = sessionGrants.get(key);
+  if (grantedAt === undefined) return false;
+  if (Date.now() - grantedAt >= SESSION_TTL_MS) {
+    sessionGrants.delete(key);
     return false;
   }
   return true;
 }
 
 export function authorizeSession(): void {
-  sessionAuthorizedAt = Date.now();
+  const now = Date.now();
+  for (const [key, granted] of sessionGrants) if (now - granted >= SESSION_TTL_MS) sessionGrants.delete(key);
+  sessionGrants.set(operatorContextKey(), now);
 }
 
 export function clearSessionAuth(): void {
-  sessionAuthorizedAt = null;
+  sessionGrants.delete(operatorContextKey());
 }
 
 // ─── Config persistence ──────────────────────────────────────────────

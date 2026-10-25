@@ -163,6 +163,7 @@ export default [
       'dist/**',
       '**/dist/**',
       'node_modules/**',
+      '**/.venv/**',
       '.tools/**',
       '.memphis-intake/**',
       'reference/**',
