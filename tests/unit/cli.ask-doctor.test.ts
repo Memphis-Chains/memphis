@@ -42,6 +42,24 @@ import type { CliContext } from '../../src/infra/cli/context.js';
 import type { CliArgs } from '../../src/infra/cli/types.js';
 import { printDoctorHumanV2, runDoctorChecksV2 } from '../../src/infra/cli/utils/doctor-v2.js';
 
+/**
+ * Capture what the CLI writes to stdout.
+ *
+ * The CLI prints through `print()`, which writes to `process.stdout` — not
+ * through `console.log`. Vitest captures console output itself, so a
+ * `console.log` spy sees nothing the CLI printed.
+ */
+function captureStdout(): { output: () => string; restore: () => void } {
+  let captured = '';
+  const spy = vi
+    .spyOn(process.stdout, 'write')
+    .mockImplementation(((chunk: string | Uint8Array) => {
+      captured += String(chunk);
+      return true;
+    }) as typeof process.stdout.write);
+  return { output: () => captured, restore: () => spy.mockRestore() };
+}
+
 function baseArgs(overrides: Partial<CliArgs>): CliArgs {
   return {
     json: false,
@@ -75,7 +93,8 @@ afterEach(() => {
 
 describe('CLI ask + doctor', () => {
   it('supports ask alias with JSON output', async () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    // `ask --json` prints through print(), which writes to process.stdout.
+    const stdout = captureStdout();
     const context = {
       argv: [],
       args: baseArgs({ command: 'ask', input: 'hello ask', json: true }),
@@ -114,8 +133,7 @@ describe('CLI ask + doctor', () => {
     const handled = await handleInteractionCommand(context);
 
     expect(handled).toBe(true);
-    expect(log).toHaveBeenCalledOnce();
-    const payload = JSON.parse(log.mock.calls[0]?.[0] as string);
+    const payload = JSON.parse(stdout.output());
     expect(payload.providerUsed).toBe('local-fallback');
     expect(payload.output).toContain('hello ask');
   });
@@ -156,6 +174,7 @@ describe('CLI ask + doctor', () => {
   }, 60000);
 
   it('doctor prints human-readable output with indicators', async () => {
+    // printDoctorHumanReport writes through console.log, not through print().
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const report = await runDoctorChecksV2();
 
