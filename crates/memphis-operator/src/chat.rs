@@ -105,6 +105,8 @@ fn chat_max_errors() -> usize {
 }
 
 fn chat_max_tokens() -> usize {
+    // TUI sends an explicit limit: MEMPHIS_GEN_MAX_TOKENS > GEN_MAX_TOKENS > 2048.
+    // The MiniMax adapter's 32768 direct-chat default must not override this value.
     env_limit_any(
         &["MEMPHIS_GEN_MAX_TOKENS", "GEN_MAX_TOKENS"],
         CHAT_MAX_TOKENS_DEFAULT,
@@ -766,6 +768,43 @@ mod tests {
         Arc,
     };
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn native_max_tokens_respects_explicit_env_and_default() {
+        const EXPECTED: &str = "MEMPHIS_NATIVE_LIMIT_FIXTURE_EXPECTED";
+        if let Ok(expected) = std::env::var(EXPECTED) {
+            assert_eq!(chat_max_tokens(), expected.parse::<usize>().unwrap());
+            return;
+        }
+        // Each case gets a separate process; no test changes shared environment.
+        for (native, generic, expected) in [
+            (None, None, 2048),
+            (Some("4096"), None, 4096),
+            (None, Some("32768"), 32768),
+            (Some("4096"), Some("32768"), 4096),
+            (Some("0"), Some("32768"), 32768),
+        ] {
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            child
+                .args([
+                    "--exact",
+                    "chat::tests::native_max_tokens_respects_explicit_env_and_default",
+                ])
+                .env_remove("MEMPHIS_GEN_MAX_TOKENS")
+                .env_remove("GEN_MAX_TOKENS")
+                .env(EXPECTED, expected.to_string());
+            if let Some(value) = native {
+                child.env("MEMPHIS_GEN_MAX_TOKENS", value);
+            }
+            if let Some(value) = generic {
+                child.env("GEN_MAX_TOKENS", value);
+            }
+            assert!(
+                child.output().unwrap().status.success(),
+                "isolated native token limit case failed"
+            );
+        }
+    }
 
     fn temp_runtime_root(name: &str) -> PathBuf {
         let nanos = SystemTime::now()
