@@ -22,6 +22,12 @@ export const STAGED_PREFIX = '.memphis-db-snapshot-';
 // Carried inside the archive; restore deletes it after placing the databases,
 // so it never becomes part of the restored data directory.
 export const DATABASE_PLACEMENT_MANIFEST = '.memphis-db-placement.json';
+/**
+ * Archive-path namespace for the runtime database (the one `DATABASE_URL`
+ * points at). It lives outside the data directory, so it must not share an
+ * archive path with a data-tree database of the same name.
+ */
+export const RUNTIME_DB_PREFIX = 'runtime/';
 const DATABASES = ['memphis.db', 'dashboard.db'];
 
 function pathWithin(root, source) {
@@ -61,14 +67,31 @@ export async function snapshotDatabases({ memphisRoot, dataDir, databasePath }) 
     if (!existsSync(databasePath)) {
       result.errors.push(`Configured database does not exist: ${databasePath}`);
     } else {
-      add(databasePath, 'memphis.db');
+      // The REAL file name, not a fixed 'memphis.db'. The configured
+      // database can be called anything (`operations.sqlite` in the
+      // contract test), and a fixed name made the archive claim to hold a
+      // file that was never there — the restore then wrote it under a name
+      // the source never used.
+      add(databasePath, basename(databasePath));
     }
   }
+
+  // The runtime database is the one `DATABASE_URL` points at. It usually
+  // lives OUTSIDE the data directory (`<install root>/data/memphis.db`), so
+  // it is restored to the path the runtime reads, not into the data tree.
+  //
+  // Giving it its own archive path and staging name is what keeps two
+  // databases with the same basename apart. Measured on this host: a restore
+  // left `memphis.db` in the data directory, and the next backup then found
+  // two databases claiming the archive entry `memphis.db` and refused to
+  // publish — the operator's recovery procedure broke their backups.
+  const runtimeSource = databasePath ? resolve(databasePath) : undefined;
 
   const destinations = new Set();
   for (const [source, file] of sources) {
     const localPath = pathWithin(root, source);
-    const archivePath = localPath ?? file;
+    const isRuntimeDatabase = runtimeSource !== undefined && resolve(source) === runtimeSource;
+    const archivePath = isRuntimeDatabase ? `${RUNTIME_DB_PREFIX}${file}` : (localPath ?? file);
     if (destinations.has(archivePath)) {
       result.errors.push(`Multiple databases would overwrite archive entry: ${archivePath}`);
       continue;
@@ -78,8 +101,12 @@ export async function snapshotDatabases({ memphisRoot, dataDir, databasePath }) 
       result.excludedPaths.push(localPath, `${localPath}-wal`, `${localPath}-shm`);
     }
     // Written under the staging name, not the final path — see
-    // databaseSnapshotTarArgs() for the measurement behind that.
-    const stagedPath = `${STAGED_PREFIX}${basename(archivePath)}`;
+    // databaseSnapshotTarArgs() for the measurement behind that. The runtime
+    // database gets its own staging name so it cannot overwrite a data-tree
+    // database that happens to share its basename.
+    const stagedPath = isRuntimeDatabase
+      ? `${STAGED_PREFIX}runtime-${file}`
+      : `${STAGED_PREFIX}${basename(archivePath)}`;
     const target = join(snapshotDir, stagedPath);
     try {
       mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
@@ -112,6 +139,7 @@ export async function snapshotDatabases({ memphisRoot, dataDir, databasePath }) 
         stagedPath,
         source,
         bytes: statSync(target).size,
+        role: isRuntimeDatabase ? 'runtime' : 'data-dir',
       });
     } catch (error) {
       rmSync(target, { force: true });
@@ -234,14 +262,17 @@ export function tarSubstitutionFlags(substitution) {
  */
 export function databasePlacementManifest(snapshot) {
   const placements = {};
-  for (const { stagedPath, archivePath } of snapshot.snapshotted) {
-    placements[stagedPath] = archivePath;
+  for (const { stagedPath, archivePath, role } of snapshot.snapshotted) {
+    // v2 records the role. v1 could only express "a file inside the data
+    // directory", which is why a runtime database restored from a v1 archive
+    // landed somewhere the runtime never reads.
+    placements[stagedPath] = { path: archivePath, role: role ?? 'data-dir' };
   }
   return {
     manifestName: DATABASE_PLACEMENT_MANIFEST,
     content: `${JSON.stringify(
       {
-        format: 'memphis-db-placement-v1',
+        format: 'memphis-db-placement-v2',
         // Written by the archiver; restore refuses a path it considers unsafe
         // through the same check every other archive entry passes.
         placements,
@@ -251,6 +282,7 @@ export function databasePlacementManifest(snapshot) {
     )}\n`,
   };
 }
+
 
 export function cleanupDatabaseSnapshots(snapshot) {
   rmSync(snapshot.snapshotDir, { recursive: true, force: true });
@@ -299,9 +331,14 @@ export function cleanupDatabaseSnapshots(snapshot) {
  */
 export function databaseSnapshotTarArgs(snapshot, memphisRoot) {
   if (snapshot.snapshotted.length === 0) return ['-C', memphisRoot, '.'];
-  const staged = snapshot.snapshotted.map(({ archivePath }) => ({
+  // The staged name is READ from the snapshot, never recomputed here. The
+  // runtime database carries its own staging name (it must not collide with
+  // a data-tree database of the same basename), and a name recomputed from
+  // `archivePath` would silently point at a file that does not exist —
+  // measured as `tar: .memphis-db-snapshot-memphis.db: Cannot stat`.
+  const staged = snapshot.snapshotted.map(({ archivePath, stagedPath }) => ({
     archivePath,
-    stagedPath: `${STAGED_PREFIX}${basename(archivePath)}`,
+    stagedPath,
   }));
   return [
     ...snapshot.excludedPaths.map((path) => `--exclude=./${path.replace(/[?*[]/g, '[$&]')}`),
