@@ -18,8 +18,8 @@ Three modes:
 
     --mode full    Runs the real trainer for 3 epochs. Intended for
                    operator overnight runs on the training rig.
-                   Wall clock 4-8h on GTX 960. Same ONNX/eval caveats
-                   as --mode smoke today; both lift in a follow-up PR.
+                   Exports real ONNX and reports measured epoch evaluation.
+                   Export failure aborts; trained state is retained for retry.
 
 Per docs/dev/KARTOGRAF-SPEC.md §Training paths, default hardware is
 the GTX 960 / i3-2120 / 16GB RAM local profile (Path A).

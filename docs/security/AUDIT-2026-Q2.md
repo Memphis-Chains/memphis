@@ -41,3 +41,26 @@ Future external-review acceptance requires
 `status: "completed"`, nonempty `reviewer`, past `completedAt`, an HTTPS `source`
 referring to the review, and `reportSha256` of this report. Do not create that
 attestation for this internal review. Tests use synthetic evidence only.
+
+## Kartograf lifecycle follow-up
+
+The old CLI deleted a producer's previous artifacts before validating a new
+bundle, reported artifact mismatches as successful installs, and selected models
+by directory enumeration. The follow-up publishes complete immutable bundles,
+binds explicit selection to an independently expected producer DID, and probes
+non-stub inference before changing the pointer. New versions are staged until
+selected; corrupt pointers fail closed. Model and tokenizer hashes are verified
+at load. Bounded regular-file envelope inputs and generic parse errors prevent
+oversized/symlink reads and accidental echoing of malformed input contents.
+
+The training exporter previously substituted placeholder ONNX bytes after a
+full-mode export failure and continued toward signing. Full mode now aborts and
+preserves its trained state for retry. Pure stdlib tests cover this release
+boundary without loading ML packages, downloading models, or reading a seed.
+
+These are implementation safeguards, not evidence of a trained model or an
+independent external review. The host lacks the historical checkpoint, corpus
+and training venv. The frozen v1 labels also cannot produce the Q2 gate's vault
+class. Artifact provenance, zone/index contracts, ML compatibility and vault-based
+producer signing must be established before a release run. See the updated
+Kartograf readiness inventory and checkpoint selection runbook.
