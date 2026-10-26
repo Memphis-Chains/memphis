@@ -1,8 +1,11 @@
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { hasCompletedExternalAudit } from './q2-audit-evidence.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const work = mkdtempSync(join(tmpdir(), 'memphis-q2-exit-'));
@@ -30,6 +33,8 @@ const env = {
   RUST_CHAIN_ENABLED: 'true',
   RUST_CHAIN_BRIDGE_PATH: join(root, 'crates/memphis-napi/index.node'),
   MEMPHIS_KARTOGRAF_ENABLE: 'true',
+  // Generated in memory for this throwaway vault; never inherits the operator pepper.
+  MEMPHIS_VAULT_PEPPER: randomBytes(32).toString('hex'),
 };
 const checks = [];
 function command(args) {
@@ -70,11 +75,10 @@ function probe(
   });
   return ok;
 }
-const audit = join(root, 'docs/security/AUDIT-2026-Q2.md');
 checks.push({
   id: 'security-audit',
-  description: 'Nonempty Q2 security audit report',
-  ok: existsSync(audit) && statSync(audit).isFile() && statSync(audit).size > 0,
+  description: 'Completed external Q2 review with evidence bound to the report',
+  ok: hasCompletedExternalAudit(root),
 });
 probe('checkpoint-install', 'Install the signed Q2 release as the active checkpoint', [
   'kartograf',
@@ -113,6 +117,13 @@ probe(
   [0, 1],
 );
 
+const fixture = spawnSync(process.execPath, [join(root, 'scripts/quarterly-mv2-fixture.mjs')], {
+  cwd: work,
+  env,
+  encoding: 'utf8',
+  timeout: 120_000,
+  maxBuffer: 1024 * 1024,
+});
 const mv2 = join(work, 'quarter.mv2');
 const exported = probe(
   'mv2-export',
@@ -125,7 +136,12 @@ const exported = probe(
     '--include',
     'journal,decisions,reflections,cases,patterns,system',
   ],
-  () => existsSync(mv2) && statSync(mv2).isFile() && statSync(mv2).size > 0,
+  (s) =>
+    fixture.status === 0 &&
+    s?.blockCount >= 6 &&
+    existsSync(mv2) &&
+    statSync(mv2).isFile() &&
+    statSync(mv2).size > 0,
 );
 if (exported) {
   probe(
@@ -153,7 +169,11 @@ const trajectoryExport = probe('hf-export', 'Export trajectories in HF dataset f
 if (trajectoryExport) {
   const loaded = spawnSync(
     'python3',
-    ['-c', 'import sys; from datasets import load_dataset; load_dataset(sys.argv[1])', dataset],
+    [
+      '-c',
+      'import sys; from datasets import load_dataset; d = load_dataset(sys.argv[1]); assert len(d["train"]) > 0; assert "events_json" in d["train"].column_names',
+      dataset,
+    ],
     {
       cwd: work,
       env,
@@ -166,6 +186,10 @@ if (trajectoryExport) {
     description: 'Hugging Face datasets loads the exported dataset',
     ok: loaded.status === 0,
     exitCode: loaded.status,
+    diagnostic:
+      loaded.status === 0
+        ? undefined
+        : (loaded.stderr || loaded.error?.message || 'Loader failed').slice(-4000),
   });
 } else {
   checks.push({
