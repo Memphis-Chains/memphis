@@ -111,14 +111,15 @@ zostaje w treści jako kontekst. Evaluator raportuje teraz `recent`.
 gałąź:    feature/durable-tool-journal (baza PR #688)
           0cf8d592 + 3efb07d5 + 65fe4640 + 86c0ee8d
           pushnięte: 86c0ee8d
-upstream: origin/main = cb258234 (operator scalil PR #688 jako d41dc90b, potem
-          #692, #691, #694)
+upstream: origin/main = 769bd2d6 (po #692, #691, #694, #695, #696)
 PR #688:  SCALONY 2026-10-26 15:27:47Z (merge commit d41dc90b) — moje commity
           0cf8d592 + 3efb07d5 + 65fe4640 są w main
-PR #695:  OTWARTY (moje 2 pozostałe commity: fix alertów + handoff), MERGEABLE,
-          BLOCKED — GitHub nie uruchamia workflowów z forka, czeka na approval
-          maintainera (mam tylko `pull`)
-memphis:  zdrowy, 9 łańcuchów, 1258 bloków, verify ok:true
+PR #695:  SCALONY 2026-10-26 20:04:07Z (merge commit 96adfad7) — moje commity
+          9db7e5d3 (fix alertów) + 94e851d9 + 81c4c6f8 (handoff) są w main.
+          Checki przed merge: automerge, chain-invariant, quality-gate,
+          cross-arch ubuntu-24.04-arm, cross-arch macos-latest — wszystkie SUCCESS.
+          UWAGA: ten plik pisany był o 19:43 UTC, merge przyszedł 21 min później.
+memphis:  zdrowy, 9 łańcuchów, 1290 bloków, verify ok:true (sprawdzone 26.10 20:37 UTC)
 doctor:  47 pass / 13 warn / 0 fail
 readiness: exit 0 ("63 tools; registry/executor/MCP/schema parity OK")
 tests:   TS 3292/3292 (440 plików, 0 awarii), Rust operator 181 + TUI 123
@@ -142,8 +143,9 @@ zadania: runtime-watch → success; scheduled-backup → drill=pass (8,8 MB)
    Do `Memphis-Chains/memphis` mam tylko `pull`. Zamiana na fine-grained:
    <https://github.com/settings/tokens> → Fine-grained → Only select repositories →
    `Memphis-Chains/memphis` → Contents RW + Pull requests RW.
-4. **Approval maintainera dla PR #695** — tak samo jak dla #688. Bez tego checki
-   z forka nie ruszą i każdy push generuje 3 maile.
+4. ~~**Approval maintainera dla PR #695**~~ — **ZAMKNIĘTE 26.10 20:04 UTC**
+   (PR scalony, checki przeszły). Z tej listy zostaje tylko fakt, że GitHub nie
+   uruchamia workflowów z forka: każdy push generuje 3 checki bez jobów.
 
 ---
 
@@ -172,8 +174,9 @@ zadania: runtime-watch → success; scheduled-backup → drill=pass (8,8 MB)
   błąd z 02:00 wczoraj; odświeży się o 02:00. `memphis schedule run` wymaga
   passphrase, a edycja stanu poza API to obejście bramki.
 - **Nie wyłączyliśmy maili GitHuba** — to konto operatora.
-- **Nie przeszliśmy przez PR #695** — BLOCKED, czeka na approval maintainera
-  (#688 operator już scalił 26.10 15:27 UTC).
+- **Nie przeszliśmy przez PR #695** — to zdanie napisane o 19:43 UTC było
+  prawdziwe w chwili pisania; **PR #695 został scalony o 20:04 UTC**
+  (merge commit 96adfad7, checki SUCCESS). Obie PR-y są już w `origin/main`.
 - **Nie zrobiliśmy `memphis chain verify` dla katalogów `chains/*.backup-*`** — są
   zarchiwizowane i usunięte (patrz journal-77).
 - **Nie naprawiliśmy `quarterly-gate`** — to zaplanowana porażka: skrypt Q2
