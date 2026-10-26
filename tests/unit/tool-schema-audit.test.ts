@@ -97,6 +97,19 @@ describe('tool schema audit', () => {
     expect(mode).toBeUndefined();
   });
 
+  // The registry is the authority on what a tool accepts. The executor
+  // dropped `timezone`, `period` and `job`, so a builtin task could not be
+  // created through the gateway at all.
+  it('reports no schema drift for the cron tool', () => {
+    const report = buildToolSchemaAuditReport({
+      ...process.env,
+      MEMPHIS_RUNTIME_ROOT: process.cwd(),
+    } as NodeJS.ProcessEnv);
+
+    expect(report.mismatches.filter((entry) => entry.name === 'memphis_cron')).toEqual([]);
+    expect(report.typeMismatches.filter((entry) => entry.name === 'memphis_cron')).toEqual([]);
+  });
+
   it('keeps repaired batch-2 and batch-3 tools out of schema drift', () => {
     const report = buildToolSchemaAuditReport({
       ...process.env,
