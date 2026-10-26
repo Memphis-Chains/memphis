@@ -5,6 +5,7 @@
 // themselves use env-registry. Per Sprint ι policy, file-level
 // disable instead of accessor-bloat.
 //
+import * as chainCrypto from 'node:crypto';
 import { lstatSync } from 'node:fs';
 
 import { assertChainWriteAllowed } from './chain-write-guard.js';
@@ -180,6 +181,59 @@ export interface ChainExportEnvelope {
   exportedAt: string;
   blockCount: number;
   blocks: ChainBlock[];
+}
+
+/** Validate a complete immutable snapshot without rewriting indices or hashes. */
+export function validateChainSnapshot(chainName: string, candidates: unknown[]): ChainBlock[] {
+  if (!SAFE_CHAIN_NAME.test(chainName)) throw new Error('Invalid snapshot chain');
+  const blocks: ChainBlock[] = [];
+  for (const candidate of candidates) {
+    const block = toChainBlock(candidate as Partial<ChainBlock>, 'snapshot');
+    if (
+      block.chain !== chainName ||
+      !Number.isSafeInteger(block.index) ||
+      block.index < 0 ||
+      !Number.isFinite(Date.parse(block.timestamp)) ||
+      !/^[a-f0-9]{64}$/.test(block.hash)
+    )
+      throw new Error('Invalid snapshot block');
+    const previous = blocks.at(-1);
+    if (
+      previous
+        ? block.index !== previous.index + 1 || block.prev_hash !== previous.hash
+        : ![0, 1].includes(block.index) ||
+          (block.prev_hash !== GENESIS_PREV_HASH && !(block.index === 1 && block.prev_hash === ''))
+    )
+      throw new Error('Snapshot continuity mismatch');
+    if (checkBlockHashMismatch(block, chainCrypto, 'snapshot'))
+      throw new Error('Snapshot block hash mismatch');
+    if (block.signer !== undefined || block.signature !== undefined) {
+      if (
+        !/^[a-f0-9]{64}$/.test(block.signer ?? '') ||
+        !/^[a-f0-9]{128}$/.test(block.signature ?? '')
+      )
+        throw new Error('Invalid snapshot block signature');
+      const key = chainCrypto.createPublicKey({
+        key: Buffer.concat([
+          Buffer.from('302a300506032b6570032100', 'hex'),
+          Buffer.from(block.signer!, 'hex'),
+        ]),
+        format: 'der',
+        type: 'spki',
+      });
+      if (
+        !chainCrypto.verify(
+          null,
+          Buffer.from(block.hash),
+          key,
+          Buffer.from(block.signature!, 'hex'),
+        )
+      )
+        throw new Error('Invalid snapshot block signature');
+    }
+    blocks.push(block);
+  }
+  return blocks;
 }
 
 /**

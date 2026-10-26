@@ -40,6 +40,11 @@ export const CLI_COMMAND_REGISTRY = [
     createLazyHandlerLoader(() => import('./handlers/apps.handler.js'), 'appsCommandHandler'),
   ),
   createCommandRegistration(
+    'import',
+    ['import'],
+    createLazyHandlerLoader(() => import('./handlers/import.handler.js'), 'importCommandHandler'),
+  ),
+  createCommandRegistration(
     'export',
     ['export'],
     createLazyHandlerLoader(() => import('./handlers/export.handler.js'), 'exportCommandHandler'),
@@ -353,6 +358,7 @@ export const CLI_COMPLETION_COMMANDS = [
   'tools',
   'brave',
   'identity',
+  'import',
   'evolve',
   'secret',
   'telegram',
