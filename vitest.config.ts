@@ -1,9 +1,34 @@
 import { defineConfig } from 'vitest/config';
 
+import { TEST_TMP_ROOT, TEST_TMP_ROOT_ENV } from './tests/helpers/test-tmp-root.js';
+
+// The workers inherit the environment of the process that spawned them, so
+// this is what actually puts every fixture inside the run's directory.
+// `test.env` does not reach them on this Vitest version — measured:
+// TMPDIR was undefined in the worker with it set in the config.
+process.env[TEST_TMP_ROOT_ENV] = TEST_TMP_ROOT;
+process.env.TMPDIR = TEST_TMP_ROOT;
+process.env.TMP = TEST_TMP_ROOT;
+process.env.TEMP = TEST_TMP_ROOT;
+
 export default defineConfig({
   test: {
     silent: 'passed-only',
     setupFiles: ['tests/setup-isolation.ts'],
+    // Every fixture a test creates lands in one directory that this run
+    // owns and removes when it ends. 258 test files build their own
+    // `mkdtempSync` fixtures and about 140 never clean them up; on the
+    // operator's host that had grown to 2 145 directories, 212 MB of a
+    // tmpfs — which is RAM. `os.tmpdir()` honours TMPDIR, so this moves
+    // the whole class of leaks into one removable place instead of 140
+    // per-file cleanups that every new test would undo.
+    //
+    // The directory carries the run's pid, so two concurrent runs never
+    // share one and neither can delete the other's fixtures. It lives in
+    // the system temp dir, not in the repository: a fixture under the run
+    // root is walked upwards by resolveInstallRoot, and from inside a
+    // Memphis checkout that walk finds the checkout.
+    globalSetup: ['tests/global-setup.ts'],
     // 15s was below what the I/O-bound suites actually need. doctor-v2
     // runs 12 full scans at ~6.5s each; cli.ask-session takes 11s alone.
     // On a 4-core host a 544-file run pushes both past 15s and they fail
