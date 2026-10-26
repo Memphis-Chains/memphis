@@ -5,11 +5,12 @@ import { loadCognitiveConfig } from '../../cognitive/config-loader.js';
 import { InsightGenerator } from '../../cognitive/insight-generator.js';
 import { ModelE_MetaCognitiveReflection } from '../../cognitive/model-e.js';
 import { loadCognitiveBlocks } from '../../cognitive/runtime-support.js';
+import { ChainStore } from '../../cognitive/store.js';
 import type { Reflection } from '../../cognitive/types.js';
 import { LOG_LEVEL } from '../../config/env-registry.js';
 import { getDataDir } from '../../config/paths.js';
 import type { Block } from '../../memory/chain.js';
-import { updateSoulMemory, writeMemoryAction } from '../../soul/memory.js';
+import { updateSoulMemory, writeMemoryActionPersisted } from '../../soul/memory.js';
 import { createPinoLogger } from '../logging/pino.js';
 
 export const DEFAULT_REFLECTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -143,7 +144,7 @@ export function resolveDueReflectionPeriods(
 export async function runReflectionCycle(
   options: RunReflectionCycleOptions = {},
 ): Promise<ReflectionRunSummary> {
-  const rawEnv = options.rawEnv ?? process.env;
+  const rawEnv = { ...(options.rawEnv ?? process.env) };
   const now = options.now ?? new Date();
   const periods = dedupePeriods(options.periods ?? ['daily']);
   if (periods.length === 0) {
@@ -152,8 +153,9 @@ export async function runReflectionCycle(
 
   const blocks = await loadCognitiveBlocks({}, rawEnv);
   const modelEConfig = loadCognitiveConfig(rawEnv).modelE;
-  const model = new ModelE_MetaCognitiveReflection(blocks, modelEConfig);
-  const insightGenerator = new InsightGenerator(blocks);
+  const store = new ChainStore(rawEnv);
+  const model = new ModelE_MetaCognitiveReflection(blocks, modelEConfig, store);
+  const insightGenerator = new InsightGenerator(blocks, store);
   const reflections: Reflection[] = [];
   let insightCount = 0;
 
@@ -185,7 +187,7 @@ export async function runReflectionCycle(
     rawEnv,
   );
 
-  writeMemoryAction(
+  await writeMemoryActionPersisted(
     'insight',
     `${options.trigger ?? 'lifecycle'} reflection cycle: ${periods.join(', ')} | reflections=${reflections.length} insights=${insightCount}`,
     rawEnv,
@@ -206,7 +208,7 @@ export async function runReflectionCycle(
 export async function runDueReflectionCycle(
   options: RunDueReflectionCycleOptions = {},
 ): Promise<ReflectionRunSummary> {
-  const rawEnv = options.rawEnv ?? process.env;
+  const rawEnv = { ...(options.rawEnv ?? process.env) };
   const now = options.now ?? new Date();
   const state = loadReflectionLoopState(rawEnv);
   const periods = resolveDueReflectionPeriods(rawEnv, now, state);
