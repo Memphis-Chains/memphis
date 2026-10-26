@@ -419,9 +419,25 @@ export function generateCompletionScript(shell: CompletionShell): string {
   return generateFishCompletionScript();
 }
 
-export function print(data: unknown, asJson: boolean, out: NodeJS.WriteStream = process.stdout): void {
+export function print(data: unknown, asJson: boolean, out?: NodeJS.WriteStream): void {
+  // Two contracts, one function.
+  //
+  // `console.log` is what the CLI output contract is: tests assert on it
+  // with `vi.spyOn(console, 'log')`, and `console.log` writes through
+  // `process.stdout`, so the CLI test helper still captures it. Writing to
+  // the stream directly made the JSON output invisible to every such
+  // assertion while looking correct on the terminal.
+  //
+  // The explicit `out` is the channel rule: on the MCP stdio transport the
+  // JSON-RPC stream owns stdout, so a lifecycle line must be written to
+  // stderr instead. That case passes the stream and gets exactly that
+  // stream — no console.log, because console.log always goes to stdout.
   const line = (text: string): void => {
-    out.write(`${text}\n`);
+    if (out) {
+      out.write(`${text}\n`);
+      return;
+    }
+    console.log(text);
   };
   if (asJson) {
     line(JSON.stringify(data, null, 2));
