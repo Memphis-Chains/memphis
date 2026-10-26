@@ -54,6 +54,7 @@ import { createPinoLogger } from '../infra/logging/pino.js';
 import { instrument } from '../infra/observability/instrument.js';
 import {
   buildRuntimeTelemetry,
+  ESTIMATED_CHARS_PER_TOKEN,
   estimatePromptTokens,
   recordTurnTelemetry,
 } from '../infra/runtime/turn-telemetry.js';
@@ -632,6 +633,10 @@ type ContextWindowGuardResult = {
   truncatedMessages: number;
 };
 
+// Leave room for provider framing, tool schemas, and the response. Those are
+// not represented in ChatMessage[] but still consume the upstream window.
+const CONTEXT_TARGET_RATIO = 0.85;
+
 function truncateChatMessageContent(message: ChatMessage, maxChars: number): ChatMessage {
   if (!('content' in message) || message.content.length <= maxChars) return message;
   const marker = '\n\n[context trimmed: message shortened before provider call]';
@@ -679,12 +684,27 @@ function enforceContextWindowBeforeProvider(input: {
     return { messages: input.messages, trimmedMessages: 0, truncatedMessages: 0 };
   }
 
-  const targetTokens = Math.max(512, Math.floor(contextWindowTokens * 0.92));
+  const targetTokens = Math.max(512, Math.floor(contextWindowTokens * CONTEXT_TARGET_RATIO));
   let messages = [...input.messages];
   let trimmedMessages = 0;
   let truncatedMessages = 0;
 
   const estimate = () => estimatePromptTokens({ systemPrompt: input.systemPrompt, messages });
+
+  // Reasoning carries continuation state. Trimming individual messages can
+  // break that state or orphan a tool result, so reject protected history intact.
+  if (
+    messages.some(
+      (message) => message.role === 'assistant' && message.reasoning_content !== undefined,
+    ) &&
+    estimate() > targetTokens
+  ) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'Conversation with reasoning exceeds the estimated context budget; start a shorter conversation',
+      400,
+    );
+  }
 
   while (messages.length > 1 && estimate() > targetTokens) {
     const dropIndex = messages.findIndex(
@@ -707,7 +727,7 @@ function enforceContextWindowBeforeProvider(input: {
     const currentTokens = estimate();
     const excessTokens = currentTokens - targetTokens;
     const reduceChars = Math.max(
-      excessTokens * 4 + 512,
+      excessTokens * ESTIMATED_CHARS_PER_TOKEN + 512,
       Math.floor(largest.message.content.length * 0.25),
     );
     const maxChars = Math.max(128, largest.message.content.length - reduceChars);

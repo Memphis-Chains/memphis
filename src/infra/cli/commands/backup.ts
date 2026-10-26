@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import {
   appendFileSync,
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   lstatSync,
@@ -835,18 +836,69 @@ function placeStagedDatabases(stagedRoot: string): void {
   const manifestPath = join(stagedRoot, DATABASE_PLACEMENT_MANIFEST);
   if (!existsSync(manifestPath)) return;
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
-    placements?: Record<string, string>;
+    format?: string;
+    placements?: Record<string, string | { path: string; role?: string }>;
   };
-  for (const [stagedName, finalPath] of Object.entries(manifest.placements ?? {})) {
+  for (const [stagedName, placement] of Object.entries(manifest.placements ?? {})) {
+    // v1 recorded a bare path; v2 records `{ path, role }`. Both are read
+    // here, because archives written before the role existed must still
+    // restore.
+    const finalPath = typeof placement === 'string' ? placement : placement.path;
+    const role = typeof placement === 'string' ? 'data-dir' : (placement.role ?? 'data-dir');
     const stagedFile = join(stagedRoot, stagedName);
     if (!existsSync(stagedFile)) {
       throw new Error(`Archive recorded a database at ${finalPath} but ${stagedName} is missing`);
+    }
+    if (role === 'runtime') {
+      // The runtime database lives outside the data directory — the path
+      // `DATABASE_URL` names. Restoring it "into" the data directory would
+      // put it where no runtime ever reads it: the restore would report
+      // success while the operator's chat history and search index stayed
+      // on the old file. Measured on this host: a restore put the database
+      // at `<data dir>/memphis.db`, and the runtime kept using the database
+      // it already had.
+      placeRuntimeDatabase(stagedFile, finalPath);
+      continue;
     }
     const destination = safeTargetPath(stagedRoot, finalPath);
     mkdirSync(dirname(destination), { recursive: true });
     renameSync(stagedFile, destination);
   }
   rmSync(manifestPath, { force: true });
+}
+
+/**
+ * Place the runtime database at the path the runtime actually reads.
+ *
+ * The archive records the source path it was taken from. That path is
+ * absolute, so restoring it verbatim is wrong on a different host — but the
+ * operator's `DATABASE_URL` is the authority for where the runtime looks,
+ * and it is what decides the destination here.
+ *
+ * When `DATABASE_URL` is not configured, the recorded path is used: it is
+ * still better than dropping the database into the data directory, where it
+ * would be invisible.
+ */
+function placeRuntimeDatabase(stagedFile: string, recordedPath: string): void {
+  const destination = resolveRuntimeDatabasePath() ?? resolve(recordedPath);
+  mkdirSync(dirname(destination), { recursive: true });
+  // Rename across filesystems fails; copy-then-rename does not, and it keeps
+  // the destination a complete database at every instant.
+  copyFileSync(stagedFile, destination);
+  rmSync(stagedFile, { force: true });
+  chmodSync(destination, 0o600);
+}
+
+/**
+ * The path the runtime reads its database from, resolved the same way the
+ * runtime resolves it: `DATABASE_URL` with the `file:` prefix stripped.
+ */
+export function resolveRuntimeDatabasePath(rawEnv: NodeJS.ProcessEnv = process.env): string | null {
+  const databaseUrl = rawEnv.DATABASE_URL?.trim();
+  if (!databaseUrl || !databaseUrl.startsWith('file:')) return null;
+  const raw = databaseUrl.slice('file:'.length).trim();
+  if (!raw) return null;
+  return resolve(raw);
 }
 
 function withProgress<T>(label: string, enabled: boolean, fn: () => T): T {
@@ -946,6 +998,34 @@ async function askRestoreConfirmation(file: string): Promise<boolean> {
   }
 }
 
+/**
+ * Refuse to publish a backup that silently omits the runtime database.
+ *
+ * The restore drill verifies whatever databases ARE in the archive, so an
+ * archive without the runtime database still reports "drill=pass" — the
+ * operator reads a green line while the chat history and the search index
+ * are missing. Measured on this host: seven consecutive archives carried
+ * no runtime database (the build that produced them predated the snapshot
+ * feature) and every one of them reported drill=pass.
+ *
+ * A failed backup is loud and recoverable. A silently incomplete one is
+ * discovered only when the data is needed.
+ */
+export function assertRuntimeDatabaseSnapshotted(
+  snapshot: DatabaseSnapshotResult,
+  runtimeDatabasePath: string | undefined,
+): void {
+  if (!runtimeDatabasePath) return;
+  // No database on disk means nothing to lose — a fresh install has none.
+  if (!existsSync(runtimeDatabasePath)) return;
+  const target = resolve(runtimeDatabasePath);
+  const captured = snapshot.snapshotted.some((entry) => resolve(entry.source) === target);
+  if (captured) return;
+  throw new Error(
+    `Backup would omit the runtime database (${target}); refusing to publish an incomplete backup.`,
+  );
+}
+
 export async function createBackup(options: BackupOptions = {}): Promise<{
   backupPath: string;
   file: string;
@@ -970,15 +1050,20 @@ export async function createBackup(options: BackupOptions = {}): Promise<{
   if (databaseUrl && !databaseUrl.startsWith('file:')) {
     throw new Error('Backup requires a file: SQLite DATABASE_URL');
   }
+  const runtimeDatabasePath =
+    options.databasePath ?? (databaseUrl ? resolve(databaseUrl.slice(5)) : undefined);
   const snapshot = await snapshotDatabases({
     memphisRoot,
     dataDir: options.dataDir ?? (useRuntimeDatabase ? resolve('data') : undefined),
-    databasePath: options.databasePath ?? (databaseUrl ? resolve(databaseUrl.slice(5)) : undefined),
+    databasePath: runtimeDatabasePath,
   });
   try {
     if (!snapshot.ok) {
       throw new Error(`Database snapshot failed: ${snapshot.errors.join('; ')}`);
     }
+    // Fail BEFORE the archive is written: an incomplete archive must never
+    // reach the backups directory, not even as a partial file.
+    assertRuntimeDatabaseSnapshotted(snapshot, runtimeDatabasePath);
 
     withProgress('Creating backup', options.showProgress ?? true, () => {
       createArchive(memphisRoot, partialPath, snapshot);

@@ -10,7 +10,6 @@
 import { randomUUID } from 'node:crypto';
 
 import type { ChatMessage, ChatOptions, ChatResponse, Provider } from './index.js';
-import { DEFAULT_MINIMAX_MODEL } from './minimax/config.js';
 import type { LLMProvider } from '../core/contracts/llm-provider.js';
 import { AppError } from '../core/errors.js';
 import type { GenerateInput, GenerateResult, ProviderHealth, ProviderName } from '../core/types.js';

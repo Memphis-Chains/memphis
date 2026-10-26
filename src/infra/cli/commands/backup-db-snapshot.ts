@@ -6,6 +6,7 @@
 // export of the module is re-exported here.
 export {
   DATABASE_PLACEMENT_MANIFEST,
+  RUNTIME_DB_PREFIX,
   SNAPSHOT_DIR_NAME,
   STAGED_PREFIX,
   cleanupDatabaseSnapshots,
@@ -16,5 +17,6 @@ export {
   tarSupportsWarningOpt,
   tarWarningFlags,
   verifyDatabaseSnapshotEntries,
+  type DatabaseRole,
   type DatabaseSnapshotResult,
 } from '../../../../scripts/backup-db-snapshot.mjs';

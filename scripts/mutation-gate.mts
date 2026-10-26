@@ -111,13 +111,19 @@ const MUTATIONS: Mutation[] = [
   },
 ];
 
+// Git hooks export repository-local variables. A scratch command must discover
+// its own repository from cwd instead of modifying the committing worktree.
+const childEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
+);
+
 /** Run a command, returning its exit status without throwing. */
 function status(cmd: string[]): number {
   return (
     spawnSync(cmd[0], cmd.slice(1), {
       cwd: resolve('.'),
       encoding: 'utf8',
-      env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
+      env: { ...childEnv, FORCE_COLOR: '0', NO_COLOR: '1' },
     }).status ?? 1
   );
 }
@@ -171,15 +177,17 @@ const results: Result[] = [];
   const id = ['131', '603', '3647'].join('');
   const cleanup = () => rmSync(dir, { recursive: true, force: true });
   try {
-    execFileSync('git', ['init', '-q'], { cwd: dir });
+    execFileSync('git', ['init', '-q'], { cwd: dir, env: childEnv });
     writeFileSync(join(dir, `session-${id}.json`), '{}\n', 'utf8');
-    execFileSync('git', ['add', '-A'], { cwd: dir });
+    execFileSync('git', ['add', '-A'], { cwd: dir, env: childEnv });
     execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'x'], {
       cwd: dir,
+      env: childEnv,
     });
     const out = spawnSync('bash', [resolve('scripts/pii-scan.sh')], {
       cwd: dir,
       encoding: 'utf8',
+      env: childEnv,
     });
     results.push({
       name: 'pii-scan blocks an identifier in a filename (path_hits alive)',

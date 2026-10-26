@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../../src/onboarding/first-run.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/onboarding/first-run.js')>()),
+  inspectFirstRunStatus: () => ({ state: 'initialized-clean' }),
+}));
+
 const { runTurnRuntime } = vi.hoisted(() => ({
   runTurnRuntime: vi.fn(async () => ({
     provider: 'local-fallback',
@@ -51,12 +56,12 @@ import { printDoctorHumanV2, runDoctorChecksV2 } from '../../src/infra/cli/utils
  */
 function captureStdout(): { output: () => string; restore: () => void } {
   let captured = '';
-  const spy = vi
-    .spyOn(process.stdout, 'write')
-    .mockImplementation(((chunk: string | Uint8Array) => {
-      captured += String(chunk);
-      return true;
-    }) as typeof process.stdout.write);
+  const spy = vi.spyOn(process.stdout, 'write').mockImplementation(((
+    chunk: string | Uint8Array,
+  ) => {
+    captured += String(chunk);
+    return true;
+  }) as typeof process.stdout.write);
   return { output: () => captured, restore: () => spy.mockRestore() };
 }
 

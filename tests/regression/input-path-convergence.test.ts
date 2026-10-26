@@ -8,6 +8,12 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+// These tests exercise routing after onboarding, independent of host state.
+vi.mock('../../src/onboarding/first-run.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/onboarding/first-run.js')>()),
+  inspectFirstRunStatus: () => ({ state: 'initialized-clean' }),
+}));
+
 // ── Mock runTurnRuntime at the gateway level ────────────────────────────────
 const { runTurnRuntime } = vi.hoisted(() => ({
   runTurnRuntime: vi.fn(async () => ({
@@ -63,12 +69,12 @@ import type { CliArgs } from '../../src/infra/cli/types.js';
  */
 function captureStdout(): { output: () => string; restore: () => void } {
   let captured = '';
-  const spy = vi
-    .spyOn(process.stdout, 'write')
-    .mockImplementation(((chunk: string | Uint8Array) => {
-      captured += String(chunk);
-      return true;
-    }) as typeof process.stdout.write);
+  const spy = vi.spyOn(process.stdout, 'write').mockImplementation(((
+    chunk: string | Uint8Array,
+  ) => {
+    captured += String(chunk);
+    return true;
+  }) as typeof process.stdout.write);
   return { output: () => captured, restore: () => spy.mockRestore() };
 }
 

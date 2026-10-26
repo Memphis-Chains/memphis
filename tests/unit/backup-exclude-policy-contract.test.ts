@@ -169,9 +169,36 @@ describe('backup exclude policy — one source of truth for every archiver', () 
       'memphis.pid',
       'boot-failures.json*',
       'embed-index.json.tmp-*',
+      'index-v1.json.tmp-*',
     ]) {
       expect(patterns, `missing a root-level form for ${secret}`).toContain(secret);
     }
+  });
+
+  it('excludes the semantic-index temp file under its current name', () => {
+    // The writer renames `${file_name}.tmp-${pid}-${stamp}` into place
+    // (crates/memphis-embed/src/pipeline.rs). The file was renamed from
+    // `embed-index.json` to `index-v1.json`, and the exclusion followed the
+    // OLD name only — so an interrupted index write left a temp file that
+    // the archiver happily packed. This runs real tar: the failure was in
+    // how the glob matched, not in what we declared.
+    const root = mkdtempSync(join(tmpdir(), 'memphis-policy-embed-tmp-'));
+    mkdirSync(join(root, 'embed'), { recursive: true });
+    writeFileSync(join(root, 'embed', 'index-v1.json'), 'KEEP');
+    writeFileSync(join(root, 'embed', 'index-v1.json.tmp-1234-1700000000'), 'TEMPORARY');
+    writeFileSync(join(root, 'embed', 'embed-index.json.tmp-1234-1700000000'), 'TEMPORARY');
+
+    const archive = join(tmpdir(), `memphis-policy-embed-tmp-${process.pid}-${Date.now()}.tar.gz`);
+    execFileSync(
+      'tar',
+      ['-czf', archive, ...tarWarningFlags(), ...tarPatternArgs(), '-C', root, '.'],
+      { stdio: 'pipe', env: { ...process.env, LC_ALL: 'C' } },
+    );
+    const listing = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' });
+
+    expect(listing).toContain('embed/index-v1.json');
+    expect(listing).not.toContain('index-v1.json.tmp-');
+    expect(listing).not.toContain('embed-index.json.tmp-');
   });
 
   it('tar drops a secret stored at the archive root', () => {
