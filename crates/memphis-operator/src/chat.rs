@@ -2681,6 +2681,46 @@ mod tests {
             .contains("unsupported native rust chat tool"));
     }
 
+    /// The native surface manages cron script FILES in ~/memphis/crons/;
+    /// the gateway manages scheduled TASKS. They were both called
+    /// `memphis_cron`, so the model could not tell which one it was
+    /// looking at. The script surface has its own name now.
+    #[test]
+    fn native_cron_script_surface_dispatches_under_its_own_name() {
+        let root = temp_runtime_root("native-cron-script");
+        let runtime = runtime_for(root.as_path());
+        let call = ChatToolCall {
+            id: "cron-script-call".to_string(),
+            name: "memphis_cron_script".to_string(),
+            arguments: json!({ "action": "list" }),
+        };
+
+        let (display, output) = execute_native_tool(&runtime, &call, 2).expect("list cron scripts");
+        assert!(display.contains("cron entries="), "display was {display}");
+        // It reports the directory it manages, so the operator can see
+        // which surface answered.
+        assert!(output.contains("\"cronDir\""), "output was {output}");
+    }
+
+    /// `memphis_cron` is the gateway scheduler now. A model that asks for
+    /// it on the native surface gets a clear refusal instead of the script
+    /// manager it used to be.
+    #[test]
+    fn native_cron_scheduler_name_is_not_a_native_tool() {
+        assert_eq!(tool_tier("memphis_cron"), u8::MAX);
+        let root = temp_runtime_root("native-cron-old-name");
+        let runtime = runtime_for(root.as_path());
+        let call = ChatToolCall {
+            id: "old-name-call".to_string(),
+            name: "memphis_cron".to_string(),
+            arguments: json!({ "action": "list" }),
+        };
+        let error = execute_native_tool(&runtime, &call, u8::MAX).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("unsupported native rust chat tool"));
+    }
+
     #[test]
     fn native_code_read_is_refused_on_a_tier_1_surface() {
         let root = temp_runtime_root("native-code-read-tier");
