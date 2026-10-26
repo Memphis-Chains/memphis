@@ -545,7 +545,7 @@ export function rotateMemoryFile(rawEnv: NodeJS.ProcessEnv = process.env): void 
   const burnedAt = new Date().toISOString();
   const archivedEntries = entries.map((e) => ({ ...e, burned: true, burnedAt }));
 
-  const agentName = MEMPHIS_AGENT_NAME.read(process.env);
+  const agentName = MEMPHIS_AGENT_NAME.read(rawEnv);
 
   const header = [
     `# MEMORY ARCHIVE — ${agentName}`,
@@ -562,9 +562,8 @@ export function rotateMemoryFile(rawEnv: NodeJS.ProcessEnv = process.env): void 
   try {
     storeVaultSecret(archiveKey, content, { surface: 'system', command: 'memory-rotate' }, rawEnv);
   } catch {
-    const archivePath = path.join(getDataDir(rawEnv), 'config', `memory-archive-${Date.now()}.md`);
-    writeFileSync(archivePath, content, 'utf8');
-    console.warn('Vault unavailable for memory archive — falling back to plaintext.');
+    console.warn('Memory rotation postponed: vault unavailable; active entries retained.');
+    return;
   }
 
   // Clear the active memory.md

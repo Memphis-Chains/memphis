@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { hasCompletedExternalAudit } from './q2-audit-evidence.mjs';
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const work = mkdtempSync(join(tmpdir(), 'memphis-q2-exit-'));
 const data = join(work, 'data');
@@ -70,11 +72,10 @@ function probe(
   });
   return ok;
 }
-const audit = join(root, 'docs/security/AUDIT-2026-Q2.md');
 checks.push({
   id: 'security-audit',
-  description: 'Nonempty Q2 security audit report',
-  ok: existsSync(audit) && statSync(audit).isFile() && statSync(audit).size > 0,
+  description: 'Completed external Q2 review with evidence bound to the report',
+  ok: hasCompletedExternalAudit(root),
 });
 probe('checkpoint-install', 'Install the signed Q2 release as the active checkpoint', [
   'kartograf',

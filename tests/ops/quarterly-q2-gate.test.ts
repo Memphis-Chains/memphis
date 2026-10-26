@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -9,13 +10,31 @@ function fixture(failures: string[] = [], audit = true) {
   const root = mkdtempSync(join(tmpdir(), 'memphis-q2-gate-'));
   for (const path of ['scripts', 'bin', 'docs/security'])
     mkdirSync(join(root, path), { recursive: true });
-  for (const name of ['quarterly-exit-test-q2.sh', 'quarterly-exit-test-q2.mjs'])
+  for (const name of [
+    'quarterly-exit-test-q2.sh',
+    'quarterly-exit-test-q2.mjs',
+    'q2-audit-evidence.mjs',
+  ])
     copyFileSync(join('scripts', name), join(root, 'scripts', name));
-  if (audit)
+  if (audit) {
     writeFileSync(
       join(root, 'docs/security/AUDIT-2026-Q2.md'),
       'Synthetic acceptance audit fixture.',
     );
+    writeFileSync(
+      join(root, 'docs/security/AUDIT-2026-Q2.evidence.json'),
+      JSON.stringify({
+        reviewType: 'external',
+        status: 'completed',
+        reviewer: 'Synthetic fixture reviewer',
+        completedAt: '2026-01-01',
+        source: 'https://example.invalid/synthetic-review',
+        reportSha256: createHash('sha256')
+          .update('Synthetic acceptance audit fixture.')
+          .digest('hex'),
+      }),
+    );
+  }
   writeFileSync(join(root, 'bin/failures.json'), JSON.stringify(failures));
   writeFileSync(
     join(root, 'bin/memphis.js'),
