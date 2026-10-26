@@ -273,11 +273,19 @@ export async function appendBlock(
 
     await fs.writeFile(tmpFilename, payload, 'utf8');
     const staged = await fs.open(tmpFilename, 'r');
-    try { await staged.sync(); } finally { await staged.close(); }
+    try {
+      await staged.sync();
+    } finally {
+      await staged.close();
+    }
     try {
       await fs.rename(tmpFilename, filename);
       const directory = await fs.open(chainsDir, 'r');
-      try { await directory.sync(); } finally { await directory.close(); }
+      try {
+        await directory.sync();
+      } finally {
+        await directory.close();
+      }
     } catch (error) {
       await fs.unlink(tmpFilename).catch(() => undefined);
       throw error;
@@ -857,6 +865,19 @@ export async function verifyChainIntegrity(
   const selectedChains = chainName
     ? [normalizeChainName(chainName) ?? chainName]
     : allDirs.filter((name) => allowlist.has(name));
+  // A caller may pass a chain name that came from a directory listing (the
+  // backup drill does exactly that). Names outside the safe shape — a
+  // rebuild-hashes backup directory like `journal.backup-1792925651264` —
+  // are skipped instead of aborting the whole verification. Throwing here
+  // made every scheduled backup report "restore-drill FAILED — invalid
+  // chain name" while the archive itself was complete and correct.
+  const unsafeChains = selectedChains.filter((name) => !SAFE_CHAIN_NAME.test(name));
+  const safeChains = selectedChains.filter((name) => SAFE_CHAIN_NAME.test(name));
+  if (unsafeChains.length > 0) {
+    console.warn(
+      `[chain-adapter] skipping ${unsafeChains.length} chain dir(s) with unsafe names under ${baseDir}: ${unsafeChains.join(', ')}.`,
+    );
+  }
   const skipped = chainName ? [] : allDirs.filter((name) => !allowlist.has(name));
   if (skipped.length > 0) {
     // Non-fatal: sidecar writers (halt-aware audit, log dumps, …)
@@ -870,7 +891,7 @@ export async function verifyChainIntegrity(
   let chainsChecked = 0;
   let blockCount = 0;
 
-  for (const chain of selectedChains) {
+  for (const chain of safeChains) {
     const normalizedChain = normalizeChainName(chain) ?? chain;
     if (!SAFE_CHAIN_NAME.test(normalizedChain)) {
       throw new Error('invalid chain name');
@@ -991,7 +1012,6 @@ function extractJsonObjects(raw: string): unknown[] {
 
   return out;
 }
-
 
 export async function withAppendLock<T>(
   chainsDir: string,
