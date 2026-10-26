@@ -252,6 +252,57 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     ],
   },
   ...DEVELOPMENT_TOOLS,
+  /**
+   * Native-only: the Rust operator cockpit manages cron script FILES in
+   * ~/memphis/crons/. The gateway does not advertise it — the gateway's own
+   * scheduler tool is `memphis_cron`, which manages tasks.
+   *
+   * It is listed here so the tier, the capabilities and the schema have one
+   * home, and the shared contract marks it `gatewayHidden`. The schema
+   * mirrors the native catalog: the expression is `cron`, the same word the
+   * gateway scheduler uses for it.
+   */
+  memphis_cron_script: {
+    name: 'memphis_cron_script',
+    tier: 2,
+    capabilities: ['execute', 'write'],
+    description: 'Manage cron script files (list, add, remove, enable, disable)',
+    inputSchema: z
+      .object({
+        action: z.enum(['list', 'add', 'remove', 'enable', 'disable']),
+        cron: z.string().optional(),
+        name: z.string().optional(),
+        script: z.string().optional(),
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+    helpText:
+      'Manage cron script files in ~/memphis/crons/ on the native operator surface. Each script carries its own cron expression and body; the runtime registers it as a scheduled task and runs it on that schedule. `list` shows the scripts; `add` writes a new one (cron + script body); `remove` deletes it; `enable`/`disable` toggle the executable bit without deleting. This is the FILE surface — `memphis_cron` manages scheduled TASKS.',
+    cliFlags: [
+      {
+        name: '--action',
+        description: 'list | add | remove | enable | disable. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--cron',
+        description: 'Recurring 5-field cron expression (e.g. `0 9 * * 1-5`). Required for add.',
+        takesValue: true,
+      },
+      {
+        name: '--name',
+        description:
+          'Script name (without the .sh suffix). Required for add/remove/enable/disable.',
+        takesValue: true,
+      },
+      {
+        name: '--script',
+        description: 'Shell script body. Required for add.',
+        takesValue: true,
+      },
+    ],
+  },
   memphis_cron: {
     name: 'memphis_cron',
     tier: 2,

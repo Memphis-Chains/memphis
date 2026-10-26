@@ -275,14 +275,14 @@ pub(crate) fn native_tool_definitions() -> Vec<ChatToolDefinition> {
             }),
         },
         ChatToolDefinition {
-            name: "memphis_cron".to_string(),
-            description: "Manage cron scripts: list, add, remove, enable, disable".to_string(),
+            name: "memphis_cron_script".to_string(),
+            description: "Manage cron script files in ~/memphis/crons/: list, add, remove, enable, disable. Each file carries its own cron expression and body; the runtime registers it as a scheduled task and runs it on that schedule. This is the FILE surface — `memphis_cron` manages scheduled TASKS.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "action": { "type": "string", "enum": ["list", "add", "remove", "enable", "disable"], "description": "Action (default: list)" },
-                    "name": { "type": "string", "description": "Script name (required for add/remove/enable/disable)" },
-                    "schedule": { "type": "string", "description": "Cron expression e.g. '0 * * * *' (for add)" },
+                    "name": { "type": "string", "description": "Script name without the .sh suffix (required for add/remove/enable/disable)" },
+                    "cron": { "type": "string", "description": "Cron expression e.g. '0 * * * *' (for add)" },
                     "script": { "type": "string", "description": "Shell script content (required for add)" }
                 }
             }),
@@ -310,7 +310,7 @@ pub(crate) fn tool_tier(name: &str) -> u8 {
     match name {
         "memphis_classify"
         | "memphis_code_read"
-        | "memphis_cron"
+        | "memphis_cron_script"
         | "memphis_exec"
         | "memphis_git"
         | "memphis_glob"

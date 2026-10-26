@@ -100,10 +100,24 @@ export const NATIVE_TOOL_CONTRACTS: readonly ToolContract[] = [
     exposures: ['native', 'gateway'],
   },
   {
+    // The scheduler the gateway surfaces expose: recurring Memphis-internal
+    // tasks, with a task type, a timezone and a handler.
     name: 'memphis_cron',
     tier: 2,
     capabilities: ['execute', 'write'],
-    exposures: ['native', 'gateway'],
+    exposures: ['gateway'],
+  },
+  {
+    // The native surface manages cron SCRIPT FILES in ~/memphis/crons/,
+    // each carrying its own expression and body. The crons bridge registers
+    // them as scheduler tasks, so the two tools feed one scheduler — but
+    // they are not the same tool, and one name for both of them taught the
+    // model two vocabularies (schedule vs cron) for one thing.
+    name: 'memphis_cron_script',
+    tier: 2,
+    capabilities: ['execute', 'write'],
+    exposures: ['native'],
+    gatewayHidden: true,
   },
   {
     name: 'memphis_decide',

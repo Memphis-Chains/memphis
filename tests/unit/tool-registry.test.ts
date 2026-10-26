@@ -40,7 +40,7 @@ describe('tool registry', () => {
     //   but listed here so its tier and capabilities have one home. It used
     //   to be absent from the registry entirely, with a hand-written tier
     //   in native-tool-policy.ts — two policy homes and no comparison.
-    expect(getToolNames(stableEnv)).toHaveLength(60); // 2026-10-03: +1 (memphis_classify)
+    expect(getToolNames(stableEnv)).toHaveLength(61); // 2026-10-26: +1 (memphis_cron_script)
   });
 
   it('hides experimental preview tools by default', () => {
@@ -133,7 +133,7 @@ describe('tool registry', () => {
     // PR #593 (S5): +1 tier-2 — memphis_self_pr_open (execute+network,
     // pushes branch + opens PR via gh).
     // 2026-10-09: +1 tier-2 — memphis_wallet_sign (vault-held Ed25519 signing).
-    expect(tier2.length).toBe(28); // 2026-10-03: +1 (memphis_classify)
+    expect(tier2.length).toBe(29); // 2026-10-26: +1 (memphis_cron_script)
     expect(tier2.map((t) => t.name).sort()).toEqual(
       [
         'memphis_brave_search',
@@ -147,6 +147,9 @@ describe('tool registry', () => {
         'memphis_config_reload',
         'memphis_config_set',
         'memphis_cron',
+        // Native-only: the Rust cockpit manages cron script FILES. The
+        // gateway's own scheduler tool above manages tasks.
+        'memphis_cron_script',
         'memphis_db',
         'memphis_deploy',
         'memphis_exec',
