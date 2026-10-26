@@ -16,6 +16,7 @@
  * Subcommands:
  *   - `init`   — generate fresh keypair (no-op if already present
  *                unless `--force`)
+ *   - `recover` — restore the public DID from the existing vault seed
  *   - `show`   — print current DID JSON
  */
 
@@ -28,7 +29,12 @@ import chalk from 'chalk';
 import type { CommandHandler } from './command-handler.js';
 import { getDataDir } from '../../../config/paths.js';
 import { runMemphisJournal } from '../../../mcp/tools/journal.js';
-import { storeVaultSecret } from '../../../security/vault-boundary.js';
+import {
+  listVaultEntryMetadata,
+  storeVaultSecret,
+  withVaultSecret,
+} from '../../../security/vault-boundary.js';
+import { writePrivateAtomicFile } from '../../config/private-atomic-file.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
 
@@ -54,12 +60,13 @@ export const identityCommandHandler: CommandHandler = {
     const { subcommand } = context.args;
     const handlers: Record<string, () => Promise<boolean>> = {
       init: () => handleIdentityInit(context),
+      recover: () => handleIdentityRecover(context),
       show: () => handleIdentityShow(context),
     };
     const handler = subcommand ? handlers[subcommand] : handlers.show;
     if (!handler) {
       throw new Error(
-        `Unknown subcommand: memphis identity ${subcommand}. Try: init | show`,
+        `Unknown subcommand: memphis identity ${subcommand}. Try: init | recover | show`,
       );
     }
     return handler();
@@ -93,10 +100,103 @@ function readDidFile(memphisDir: string): DidFileSchema | undefined {
   if (!existsSync(path)) return undefined;
   try {
     const raw = readFileSync(path, 'utf8');
-    return JSON.parse(raw) as DidFileSchema;
+    const value = JSON.parse(raw) as DidFileSchema;
+    if (
+      value?.schemaVersion !== SCHEMA_VERSION ||
+      value.algorithm !== 'ed25519' ||
+      !/^[a-f0-9]{64}$/.test(value.publicKeyHex) ||
+      value.did !== `did:key:ed25519:${value.publicKeyHex}` ||
+      !Number.isFinite(Date.parse(value.createdAt))
+    )
+      return undefined;
+    return value;
   } catch {
     return undefined;
   }
+}
+
+function identityFailure(context: CliContext, reason: string, message: string): boolean {
+  print({ ok: false, reason, message }, context.args.json ?? false);
+  process.exitCode = 1;
+  return true;
+}
+
+async function handleIdentityRecover(context: CliContext): Promise<boolean> {
+  const directory = getDataDir(process.env);
+  const path = resolve(directory, DID_FILE);
+  const existing = readDidFile(directory);
+  if (existsSync(path) && !existing)
+    return identityFailure(
+      context,
+      'invalid-public-file',
+      'Existing DID file is invalid; preserve it before recovery.',
+    );
+  let publicKeyHex: string;
+  try {
+    publicKeyHex = withVaultSecret(
+      VAULT_KEY,
+      { surface: 'cli', command: 'identity recover' },
+      (value) => {
+        if (!/^[a-fA-F0-9]{64}$/.test(value)) throw new Error('Invalid identity seed');
+        const seed = Buffer.from(value, 'hex');
+        try {
+          return deriveEd25519PublicHex(seed);
+        } finally {
+          seed.fill(0);
+        }
+      },
+      process.env,
+    );
+  } catch {
+    return identityFailure(
+      context,
+      'seed-unavailable',
+      'Existing identity seed is missing, invalid or unreadable; recovery did not change the identity.',
+    );
+  }
+  const did = `did:key:ed25519:${publicKeyHex}`;
+  if (existing && existing.did !== did)
+    return identityFailure(
+      context,
+      'identity-mismatch',
+      'Public DID does not match the vault seed; recovery refused to overwrite it.',
+    );
+  if (existing) {
+    print(
+      { ok: true, did, recovered: false, alreadyPresent: true, rotated: false },
+      context.args.json ?? false,
+    );
+    return true;
+  }
+  try {
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    writePrivateAtomicFile(
+      path,
+      JSON.stringify(
+        {
+          schemaVersion: SCHEMA_VERSION,
+          did,
+          publicKeyHex,
+          algorithm: 'ed25519',
+          createdAt: new Date().toISOString(),
+        },
+        null,
+        2,
+      ) + '\n',
+      { exclusive: true },
+    );
+  } catch {
+    return identityFailure(
+      context,
+      'publication-failed',
+      'Could not publish the public DID; recovery did not replace an existing file or change the vault.',
+    );
+  }
+  print(
+    { ok: true, did, publicKeyHex, didFile: path, recovered: true, rotated: false },
+    context.args.json ?? false,
+  );
+  return true;
 }
 
 async function handleIdentityInit(context: CliContext): Promise<boolean> {
@@ -104,6 +204,37 @@ async function handleIdentityInit(context: CliContext): Promise<boolean> {
   const memphisDir = getDataDir(process.env);
 
   const existing = readDidFile(memphisDir);
+
+  if (!force) {
+    if (existsSync(resolve(memphisDir, DID_FILE)) && !existing)
+      return identityFailure(
+        context,
+        'invalid-public-file',
+        'Existing DID file is invalid; preserve it before recovery.',
+      );
+    if (!existing) {
+      try {
+        if (
+          listVaultEntryMetadata(
+            { surface: 'cli', command: 'identity init' },
+            process.env,
+            VAULT_KEY,
+          ).length > 0
+        )
+          return identityFailure(
+            context,
+            'recovery-required',
+            'An identity seed already exists. Run memphis identity recover to restore the public DID.',
+          );
+      } catch {
+        return identityFailure(
+          context,
+          'vault-unreadable',
+          'Could not inspect existing identity metadata; initialization refused.',
+        );
+      }
+    }
+  }
   if (existing && !force) {
     const result = {
       ok: false,
@@ -185,8 +316,12 @@ async function handleIdentityInit(context: CliContext): Promise<boolean> {
     console.log(`  DID:        ${chalk.cyan(did)}`);
     console.log(`  Public:     ${chalk.gray(publicKeyHex)}`);
     console.log(`  File:       ${chalk.gray(didPath)} (chmod 600)`);
-    console.log(`  Seed:       ${chalk.gray('vault entry ' + VAULT_KEY)} (never written to plaintext)`);
-    console.log(`  Journal:    ${journaledOk ? chalk.green('config-change recorded') : chalk.yellow('not recorded (vault write succeeded)')}`);
+    console.log(
+      `  Seed:       ${chalk.gray('vault entry ' + VAULT_KEY)} (never written to plaintext)`,
+    );
+    console.log(
+      `  Journal:    ${journaledOk ? chalk.green('config-change recorded') : chalk.yellow('not recorded (vault write succeeded)')}`,
+    );
     if (existing) {
       console.log(chalk.yellow.bold('\n  ⚠ Previous DID rotated. Old signatures will not verify.'));
     }
@@ -206,11 +341,16 @@ async function handleIdentityShow(context: CliContext): Promise<boolean> {
     const result = {
       ok: false,
       reason: 'not-initialised',
-      message: 'No DID found. Run `memphis identity init` to generate one.',
+      message:
+        'No DID found. Use `memphis identity recover` for an existing vault seed, or `memphis identity init` for a new identity.',
     };
     if (!json) {
       console.log(chalk.red('\n  ✗ No DID configured.\n'));
-      console.log(chalk.gray('  Run `memphis identity init` to generate one.\n'));
+      console.log(
+        chalk.gray(
+          '  Use `memphis identity recover` for an existing seed, or `memphis identity init` for a new identity.\n',
+        ),
+      );
     }
     print(result, json ?? false);
     return true;
