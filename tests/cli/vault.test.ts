@@ -15,6 +15,8 @@ describe('CLI vault', () => {
     const env = {
       HOME: dataDir,
       MEMPHIS_DATA_DIR: dataDir,
+      MEMPHIS_ENV_FILE: join(dataDir, '.env'),
+      MEMPHIS_VAULT_STATE_PATH: join(dataDir, 'vault-state.json'),
       MEMPHIS_VAULT_ENTRIES_PATH: vaultEntriesPath,
       MEMPHIS_VAULT_PEPPER: 'test-pepper-0123456789abcdef',
     };

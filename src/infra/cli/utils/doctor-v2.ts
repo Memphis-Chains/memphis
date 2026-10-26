@@ -55,6 +55,7 @@ import {
 } from '../../../gateway/surface-policy.js';
 import { resolveVoiceConfig } from '../../../gateway/voice/voice-service.js';
 import { DEFAULT_MCP_HTTP_PORT, buildMcpHttpHealthUrl } from '../../../mcp/transport/defaults.js';
+import { isChainBackupDirectory } from '../../../memory/chain-catalog.js';
 import { inspectManagedAppCatalog } from '../../../modules/apps/manifest.js';
 import type { FirstRunPlan } from '../../../onboarding/first-run.js';
 import { probeVaultCipherCycle } from '../../../security/vault-boundary.js';
@@ -62,10 +63,13 @@ import { loadSoulManifest } from '../../../soul/manifest.js';
 import { readDotEnvFile } from '../../config/hot-reload.js';
 import { envSchema } from '../../config/schema.js';
 import { readRecentSecurityAuditEvents } from '../../logging/security-audit.js';
+import { readEmbeddingMetadata } from '../../runtime/embedding-metadata.js';
 import { resolveInstallRoot } from '../../runtime/install-root.js';
 import { loadKnownForks } from '../../runtime/known-forks.js';
+import { hasOperatorRecovery } from '../../runtime/operator-recovery-status.js';
 import { buildRuntimeHealthSnapshot } from '../../runtime/runtime-health.js';
 import { repairRuntimeState } from '../../runtime/runtime-repair.js';
+import { isSchedulerTaskStatus, type SchedulerTaskStatus } from '../../runtime/scheduler-status.js';
 import { diagnoseChainHashes, rebuildChainHashes } from '../../storage/chain-adapter.js';
 import { assessRustBridgeManifestStatus } from '../../storage/rust-bridge-manifest.js';
 import { embedReset, embedSearch } from '../../storage/rust-embed-adapter.js';
@@ -300,12 +304,23 @@ function dirSizeBytes(path: string): number {
   return total;
 }
 
-function checkChainIntegrity(chainsDir: string): { ok: boolean; checked: number; invalid: number } {
+export function checkChainIntegrity(chainsDir: string): {
+  ok: boolean;
+  checked: number;
+  invalid: number;
+} {
   if (!existsSync(chainsDir)) return { ok: false, checked: 0, invalid: 0 };
   let checked = 0;
   let invalid = 0;
 
   for (const chainName of readdirSync(chainsDir)) {
+    // Skip chain backup directories created by rebuildChainHashes runs
+    // (chains/<chain>.backup-<unix-ts>). They are recovery copies, not
+    // live chains: one of them has a broken prev_hash link, and counting
+    // it here made doctor report "Chains integrity: invalid=1" over a
+    // perfectly healthy set of chains — the same false alarm the restore
+    // drill hit, from the same cause.
+    if (isChainBackupDirectory(chainName)) continue;
     const dir = join(chainsDir, chainName);
     if (!statSync(dir).isDirectory()) continue;
     const files = readdirSync(dir)
@@ -525,7 +540,7 @@ async function autoRepair(
         // boxes that had a chain repair (Wodzu's smoke surfaced this
         // for cases.backup-1777572129840). Pre-existing noise, not
         // load-bearing — silent skip.
-        if (/\.backup-\d+$/.test(entry)) continue;
+        if (isChainBackupDirectory(entry)) continue;
         const chainDir = join(chainsRoot, entry);
         try {
           if (!statSync(chainDir).isDirectory()) continue;
@@ -585,7 +600,6 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
 
   const memphisDir = getDataDir();
   const chainsDir = getChainPath();
-  const embeddingDir = getEmbeddingPath();
   const vaultDir = getVaultPath();
   const configPath = getConfigPath('config.yaml');
 
@@ -620,11 +634,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     tier: 1,
     title: 'Rust bridge manifest',
     level:
-      bridgeManifest.level === 'ok'
-        ? 'pass'
-        : bridgeManifest.level === 'warn'
-          ? 'warn'
-          : 'fail',
+      bridgeManifest.level === 'ok' ? 'pass' : bridgeManifest.level === 'warn' ? 'warn' : 'fail',
     ok: bridgeManifest.ok,
     required: bridgeManifest.rustEnabled || bridgeManifest.strictRequired,
     detail: `${bridgeManifest.message}; path=${bridgeManifest.bridgePath}; missing=${bridgeManifest.missingRequiredExports.length}`,
@@ -667,8 +677,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     }
   })();
   const recentMitigations = readRecentSecurityAuditEvents(
-    (event) =>
-      event.action === 'chain.verify.startup' && event.status === 'mitigated',
+    (event) => event.action === 'chain.verify.startup' && event.status === 'mitigated',
     20,
     process.env,
   );
@@ -686,9 +695,10 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
         `${String(latestMitigation.details?.block ?? '?')} ` +
         `(${String(latestMitigation.details?.kind ?? '?')})`
       : `${knownForks.length} fork(s) configured; no mitigations in recent audit history`,
-    fix: knownForks.length === 0
-      ? undefined
-      : 'Edit <dataDir>/known-forks.json or set MEMPHIS_KNOWN_FORK_MARKERS to adjust the accepted-fork list',
+    fix:
+      knownForks.length === 0
+        ? undefined
+        : 'Edit <dataDir>/known-forks.json or set MEMPHIS_KNOWN_FORK_MARKERS to adjust the accepted-fork list',
   });
   checks.push({
     id: 't1-chain-memory-source',
@@ -756,26 +766,9 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     fix: 'Run memphis init for controlled first-run state; use memphis soul seed only for explicit legacy/debug workflows',
   });
 
-  const persistPath = process.env.RUST_EMBED_PERSIST_PATH;
-  let embeddingBytes: number;
-  let embeddingVectors: number;
-  if (persistPath && existsSync(persistPath)) {
-    const stat = statSync(persistPath);
-    embeddingBytes = stat.size;
-    try {
-      const idx = JSON.parse(readFileSync(persistPath, 'utf8')) as {
-        docs?: unknown[];
-        documents?: unknown[];
-      };
-      const docs = idx.docs ?? idx.documents;
-      embeddingVectors = Array.isArray(docs) ? docs.length : 0;
-    } catch {
-      embeddingVectors = 0;
-    }
-  } else {
-    embeddingBytes = dirSizeBytes(embeddingDir);
-    embeddingVectors = existsSync(embeddingDir) ? readdirSync(embeddingDir).length : 0;
-  }
+  const embeddingMetadata = readEmbeddingMetadata(process.env);
+  const embeddingBytes = embeddingMetadata.sizeBytes;
+  const embeddingVectors = embeddingMetadata.documents ?? 0;
   checks.push({
     id: 't1-embeddings-indexed',
     tier: 1,
@@ -783,8 +776,11 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     level: embeddingVectors > 0 ? 'pass' : 'warn',
     ok: embeddingVectors > 0,
     required: false,
-    detail: `vectors≈${embeddingVectors}, size=${Math.round(embeddingBytes / 1024)}KB`,
-    fix: 'Generate embeddings via memphis embed store or memphis embed reindex',
+    detail: `stored vectors=${embeddingMetadata.documents ?? 'unknown'}, state=${embeddingMetadata.state}, size=${Math.round(embeddingBytes / 1024)}KB`,
+    fix:
+      embeddingMetadata.state === 'unknown'
+        ? 'Build the native bridge with embedding metadata support'
+        : 'Generate embeddings via memphis embed store or memphis embed reindex',
   });
   const exactSearchLevel =
     runtimeSnapshot.exactSearch.status === 'indexed'
@@ -1187,9 +1183,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   // Tier 4
   const vaultFiles = existsSync(vaultDir) ? readdirSync(vaultDir) : [];
   const plaintextLeak = vaultFiles.some((f) => f.endsWith('.txt') || f.includes('plain'));
-  const has2fa = Boolean(
-    process.env.MEMPHIS_RECOVERY_QUESTION && process.env.MEMPHIS_RECOVERY_ANSWER,
-  );
+  const has2fa = hasOperatorRecovery(process.env);
   const didPath = resolve(memphisDir, 'did.json');
   const didExists = existsSync(didPath);
   const pepper = MEMPHIS_VAULT_PEPPER.read(process.env);
@@ -1234,8 +1228,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     .map((policy) => ({ policy, risk: evaluateSurfacePolicyRisk(policy) }));
   const dangerousChatSurfaces = chatSurfaceRisks.filter((item) => item.risk.level === 'fail');
   const telegramAllowlisted =
-    parseTelegramAllowedUserIds(diagnosticEnv).length > 0 &&
-    !telegramAllowAllUsers(diagnosticEnv);
+    parseTelegramAllowedUserIds(diagnosticEnv).length > 0 && !telegramAllowAllUsers(diagnosticEnv);
   const allowlistedOperatorChatSurfaces = dangerousChatSurfaces.filter(
     (item) => item.policy.surface === 'telegram' && telegramAllowlisted,
   );
@@ -1258,7 +1251,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   checks.push({
     id: 't4-2fa',
     tier: 4,
-    title: '2FA configured (Q&A)',
+    title: 'Operator recovery configured',
     level: levelFrom(has2fa, true),
     ok: has2fa,
     // Closure sprint Z.2.2 (2026-05-09): downgraded to non-required.
@@ -1270,7 +1263,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     required: false,
     detail: has2fa
       ? 'recovery Q&A present'
-      : 'recovery Q&A not configured (run `memphis vault init` or `memphis operator set-passphrase --recovery-question … --recovery-answer …`)',
+      : 'operator recovery Q&A not configured (use memphis operator set-passphrase with recovery options)',
     fix: has2fa
       ? undefined
       : 'Configure recovery Q&A so you can recover the operator passphrase if lost. See docs/operator/OPERATIONS-MANUAL.md.',
@@ -1333,12 +1326,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     id: 't4-chat-surface-hardening',
     tier: 4,
     title: 'Chat surface hardening',
-    level:
-      dangerousChatSurfaces.length === 0
-        ? 'pass'
-        : isFullAutonomy
-          ? 'warn'
-          : 'fail',
+    level: dangerousChatSurfaces.length === 0 ? 'pass' : isFullAutonomy ? 'warn' : 'fail',
     ok: dangerousChatSurfaces.length === 0 || isFullAutonomy,
     required: !isFullAutonomy && dangerousChatSurfaces.length > 0,
     detail:
@@ -1352,9 +1340,10 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
           [...publicDangerousChatSurfaces, ...allowlistedOperatorChatSurfaces]
             .map((item) => `${item.policy.surface}: ${item.risk.issues.join('; ')}`)
             .join(' | '),
-    fix: isFullAutonomy || dangerousChatSurfaces.length === 0
-      ? undefined
-      : 'Run memphis config surfaces reset <surface> or lower chat surfaces to tier0/tier1 without unknown tools or operator override',
+    fix:
+      isFullAutonomy || dangerousChatSurfaces.length === 0
+        ? undefined
+        : 'Run memphis config surfaces reset <surface> or lower chat surfaces to tier0/tier1 without unknown tools or operator override',
   });
   checks.push({
     id: 't4-chat-surface-exposure',
@@ -1660,7 +1649,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
         id: string;
         name: string;
         enabled: boolean;
-        lastStatus: 'success' | 'failed' | null;
+        lastStatus: SchedulerTaskStatus | null;
         lastRun: string | null;
         runCount: number;
       };
@@ -1676,7 +1665,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
         if (typeof t.id !== 'string' || t.id.length === 0) reasons.push('id');
         if (typeof t.name !== 'string') reasons.push('name');
         if (typeof t.enabled !== 'boolean') reasons.push('enabled');
-        if (t.lastStatus !== null && t.lastStatus !== 'success' && t.lastStatus !== 'failed')
+        if (t.lastStatus !== null && !isSchedulerTaskStatus(t.lastStatus))
           reasons.push('lastStatus');
         if (reasons.length > 0) {
           invalid.push({
@@ -1704,7 +1693,9 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
         });
       } else {
         const enabled = tasks.filter((t) => t.enabled);
-        const failed = enabled.filter((t) => t.lastStatus === 'failed');
+        const failed = enabled.filter(
+          (t) => t.lastStatus === 'failed' || t.lastStatus === 'timed_out',
+        );
         const cronOk = failed.length === 0;
         checks.push({
           id: 't6-cron-tasks',

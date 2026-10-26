@@ -151,6 +151,9 @@ describe('vault routes e2e', { timeout: 30_000 }, () => {
       bridgePath,
       `let _vault = null;
 module.exports = {
+  vault_load_state: require(${JSON.stringify(originalEnv.RUST_CHAIN_BRIDGE_PATH)}).vault_load_state,
+  vault_parse_entries: require(${JSON.stringify(originalEnv.RUST_CHAIN_BRIDGE_PATH)}).vault_parse_entries,
+  vault_decode_entry: require(${JSON.stringify(originalEnv.RUST_CHAIN_BRIDGE_PATH)}).vault_decode_entry,
   vault_init_full: () => {
     _vault = { salt: Buffer.alloc(32, 1), masterKey: Buffer.alloc(32, 2) };
     return { vault: _vault, did: 'did:memphis:mock', qa_question: 'pet?' };

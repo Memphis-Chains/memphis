@@ -57,7 +57,7 @@ function setupFixture(): { statePath: string; masterKey: Buffer; oldPepper: stri
   const statePath = join(dir, 'vault-state.json');
   const oldPepper = 'old-pepper-more-than-twelve-chars';
   const masterKey = randomBytes(32);
-  const salt = randomBytes(16);
+  const salt = randomBytes(32);
   writeFileSync(statePath, wrapState(masterKey, salt, oldPepper));
   return { statePath, masterKey, oldPepper };
 }
@@ -68,6 +68,7 @@ describe('rotateVaultStatePepper', () => {
     const newPepper = 'new-pepper-also-more-than-twelve';
 
     const result = rotateVaultStatePepper(oldPepper, newPepper, {
+      RUST_CHAIN_BRIDGE_PATH: process.env.RUST_CHAIN_BRIDGE_PATH,
       MEMPHIS_VAULT_STATE_PATH: statePath,
     } as NodeJS.ProcessEnv);
 
@@ -84,6 +85,7 @@ describe('rotateVaultStatePepper', () => {
     const { statePath, oldPepper } = setupFixture();
     expect(() =>
       rotateVaultStatePepper(oldPepper, 'short', {
+        RUST_CHAIN_BRIDGE_PATH: process.env.RUST_CHAIN_BRIDGE_PATH,
         MEMPHIS_VAULT_STATE_PATH: statePath,
       } as NodeJS.ProcessEnv),
     ).toThrow(/at least 12/i);
@@ -93,6 +95,7 @@ describe('rotateVaultStatePepper', () => {
     const { statePath, oldPepper } = setupFixture();
     expect(() =>
       rotateVaultStatePepper(oldPepper, oldPepper, {
+        RUST_CHAIN_BRIDGE_PATH: process.env.RUST_CHAIN_BRIDGE_PATH,
         MEMPHIS_VAULT_STATE_PATH: statePath,
       } as NodeJS.ProcessEnv),
     ).toThrow(/must differ/i);
@@ -102,6 +105,7 @@ describe('rotateVaultStatePepper', () => {
     const { statePath } = setupFixture();
     expect(() =>
       rotateVaultStatePepper('wrong-old-pepper-padding', 'fresh-new-pepper-more-than-twelve', {
+        RUST_CHAIN_BRIDGE_PATH: process.env.RUST_CHAIN_BRIDGE_PATH,
         MEMPHIS_VAULT_STATE_PATH: statePath,
       } as NodeJS.ProcessEnv),
     ).toThrow(/decrypt vault state/i);
@@ -112,6 +116,7 @@ describe('rotateVaultStatePepper', () => {
     const statePath = join(dir, 'vault-state.json');
     expect(() =>
       rotateVaultStatePepper('any-old-pepper-padding', 'any-new-pepper-more-than-twelve', {
+        RUST_CHAIN_BRIDGE_PATH: process.env.RUST_CHAIN_BRIDGE_PATH,
         MEMPHIS_VAULT_STATE_PATH: statePath,
       } as NodeJS.ProcessEnv),
     ).toThrow(/not found/i);
@@ -147,6 +152,7 @@ describe('generateVaultPepper (the --generate source)', () => {
     const newPepper = generateVaultPepper();
 
     rotateVaultStatePepper(oldPepper, newPepper, {
+      RUST_CHAIN_BRIDGE_PATH: process.env.RUST_CHAIN_BRIDGE_PATH,
       MEMPHIS_VAULT_STATE_PATH: statePath,
     } as NodeJS.ProcessEnv);
 

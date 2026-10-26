@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { ModuleKind, ScriptTarget, transpileModule } from 'typescript';
 import { afterAll, describe, expect, it } from 'vitest';
 
 const thisDir = path.dirname(fileURLToPath(import.meta.url));
@@ -22,6 +23,15 @@ function createLauncherFixture(distEntrySource?: string): string {
   if (distEntrySource) {
     mkdirSync(path.join(fixtureDir, 'dist', 'infra', 'cli'), { recursive: true });
     writeFileSync(path.join(fixtureDir, 'dist', 'infra', 'cli', 'index.js'), distEntrySource);
+    mkdirSync(path.join(fixtureDir, 'dist', 'infra', 'runtime'), { recursive: true });
+    const exitCodes = transpileModule(
+      readFileSync(path.join(repoRoot, 'src', 'infra', 'runtime', 'exit-codes.ts'), 'utf8'),
+      { compilerOptions: { module: ModuleKind.ESNext, target: ScriptTarget.ES2022 } },
+    );
+    writeFileSync(
+      path.join(fixtureDir, 'dist', 'infra', 'runtime', 'exit-codes.js'),
+      exitCodes.outputText,
+    );
   }
 
   return path.join(fixtureDir, 'bin', 'memphis.js');
@@ -34,6 +44,30 @@ afterAll(() => {
 });
 
 describe('bin/memphis.js', () => {
+  it.each([101, 102, 103])('preserves permanent startup exit code %s', (exitCode) => {
+    const launcherPath = createLauncherFixture(`
+      import { MemphisExitError } from '../runtime/exit-codes.js';
+      export async function runCli() { throw new MemphisExitError(${exitCode}, 'synthetic startup failure'); }
+    `);
+    const result = spawnSync(process.execPath, [launcherPath, 'serve'], {
+      env: { ...process.env, MEMPHIS_DATA_DIR: path.join(path.dirname(launcherPath), 'data') },
+      encoding: 'utf8',
+      timeout: 10000,
+    });
+    expect(result.status).toBe(exitCode);
+    expect(result.stderr).toContain('synthetic startup failure');
+  });
+
+  it('keeps unexpected import failures on the general error code', () => {
+    const launcherPath = createLauncherFixture("throw new Error('synthetic import failure');");
+    const result = spawnSync(process.execPath, [launcherPath, 'health'], {
+      encoding: 'utf8',
+      timeout: 10000,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('synthetic import failure');
+  });
+
   it('loads the compiled dist entrypoint when present', () => {
     const launcherPath = createLauncherFixture(
       'export async function runCli(argv) { process.stdout.write(JSON.stringify({ argv })); }',

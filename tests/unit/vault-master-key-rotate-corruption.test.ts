@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,8 +13,8 @@ import { loadEntriesForRotationOrThrow } from '../../src/infra/storage/rust-vaul
  * returned `[]`, which then caused rotation to overwrite the entries file
  * with an empty array — silently destroying every ciphertext record. The
  * loading logic was extracted into `loadEntriesForRotationOrThrow` so this
- * test can pin the "loud-abort" contract without needing a fully-functional
- * vault bridge / pepper setup.
+ * test can pin the "loud-abort" contract using the shared Rust parser without
+ * needing a vault state or pepper.
  */
 
 interface TestEnv {
@@ -47,41 +47,35 @@ describe('loadEntriesForRotationOrThrow — corrupt entries file handling', () =
     expect(loadEntriesForRotationOrThrow(env.entriesPath)).toEqual([]);
   });
 
-  it('returns empty array for empty / whitespace-only file', () => {
+  it('aborts for empty / whitespace-only files', () => {
     writeFileSync(env.entriesPath, '', 'utf8');
-    expect(loadEntriesForRotationOrThrow(env.entriesPath)).toEqual([]);
+    expect(() => loadEntriesForRotationOrThrow(env.entriesPath)).toThrow('VAULT_ENTRIES_MALFORMED');
     writeFileSync(env.entriesPath, '   \n\n', 'utf8');
-    expect(loadEntriesForRotationOrThrow(env.entriesPath)).toEqual([]);
+    expect(() => loadEntriesForRotationOrThrow(env.entriesPath)).toThrow('VAULT_ENTRIES_MALFORMED');
   });
 
   it('aborts when vault-entries.json contains invalid JSON', () => {
     writeFileSync(env.entriesPath, '{not valid json at all', 'utf8');
-    expect(() => loadEntriesForRotationOrThrow(env.entriesPath)).toThrow(/not valid JSON|aborted/i);
+    expect(() => loadEntriesForRotationOrThrow(env.entriesPath)).toThrow(/VAULT_ENTRIES_MALFORMED/);
   });
 
   it('aborts when vault-entries.json contains a non-array JSON value', () => {
     writeFileSync(env.entriesPath, '{"oops": "object not array"}', 'utf8');
-    expect(() => loadEntriesForRotationOrThrow(env.entriesPath)).toThrow(
-      /must contain a JSON array|aborted/i,
-    );
+    expect(() => loadEntriesForRotationOrThrow(env.entriesPath)).toThrow(/VAULT_ENTRIES_MALFORMED/);
   });
 
   it('aborts when vault-entries.json is a stray primitive', () => {
     writeFileSync(env.entriesPath, '42', 'utf8');
-    expect(() => loadEntriesForRotationOrThrow(env.entriesPath)).toThrow(
-      /must contain a JSON array|aborted/i,
-    );
+    expect(() => loadEntriesForRotationOrThrow(env.entriesPath)).toThrow(/VAULT_ENTRIES_MALFORMED/);
   });
 
-  it('abort message references the entries path so operators know where to look', () => {
-    writeFileSync(env.entriesPath, 'garbage', 'utf8');
-    try {
-      loadEntriesForRotationOrThrow(env.entriesPath);
-      throw new Error('expected abort');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      expect(message).toContain(env.entriesPath);
-    }
+  it('reports a safe code without echoing invalid contents or changing the file', () => {
+    const sentinel = '{"private-sentinel":';
+    writeFileSync(env.entriesPath, sentinel, 'utf8');
+    expect(() => loadEntriesForRotationOrThrow(env.entriesPath)).toThrow(
+      'VAULT_ENTRIES_MALFORMED: vault entries are malformed',
+    );
+    expect(readFileSync(env.entriesPath, 'utf8')).toBe(sentinel);
   });
 
   it('accepts a valid array (round-trip)', () => {
@@ -96,6 +90,8 @@ describe('loadEntriesForRotationOrThrow — corrupt entries file handling', () =
       },
     ];
     writeFileSync(env.entriesPath, JSON.stringify(payload), 'utf8');
-    expect(loadEntriesForRotationOrThrow(env.entriesPath)).toEqual(payload);
+    expect(loadEntriesForRotationOrThrow(env.entriesPath)).toEqual([
+      { ...payload[0], fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/) },
+    ]);
   });
 });

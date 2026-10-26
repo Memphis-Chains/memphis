@@ -1,8 +1,8 @@
 //! Strip `<think>…</think>` reasoning blocks from model output.
 //!
-//! Reasoning-style models (MiniMax-M2.7, Qwen QwQ, DeepSeek-R1 and many
-//! distilled derivatives) embed their chain-of-thought in literal
-//! `<think>` XML-ish tags and expect the front-end to hide them before
+//! Reasoning-style models (MiniMax-M3.1-Flash/M2.7, Qwen QwQ,
+//! DeepSeek-R1 and many distilled derivatives) embed their chain-of-thought
+//! in literal `<think>` XML-ish tags and expect the front-end to hide them before
 //! rendering to the end user. Memphis didn't strip them, so Marcin saw
 //! the model's internal deliberation scrolling across the TUI as plain
 //! text — distracting at best, confusing at worst.

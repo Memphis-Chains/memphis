@@ -15,6 +15,15 @@ function makeRepo() {
 }
 
 describe('SqliteToolCallApprovalRepository', () => {
+  it('consumes only one matching scoped approval and rejects argument/session substitution', () => {
+    const repo = makeRepo();
+    const request = repo.createRequest({ toolName: 'memphis_exec', callerId: 'session-one', arguments: { _approval_binding: 'signed-args', command: 'pwd' } });
+    repo.approve(request.requestId);
+    expect(repo.consumeScoped(request.requestId, 'memphis_exec', 'session-two', 'signed-args')).toBe(false);
+    expect(repo.consumeScoped(request.requestId, 'memphis_exec', 'session-one', 'changed-args')).toBe(false);
+    expect(repo.consumeScoped(request.requestId, 'memphis_exec', 'session-one', 'signed-args')).toBe(true);
+    expect(repo.consumeScoped(request.requestId, 'memphis_exec', 'session-one', 'signed-args')).toBe(false);
+  });
   it('creates a pending request', () => {
     const repo = makeRepo();
     const req = repo.createRequest({ toolName: 'memphis_exec', arguments: { command: 'echo hi' } });

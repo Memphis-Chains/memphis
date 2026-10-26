@@ -28,9 +28,10 @@ import {
 import { findVaultKeyReferences, removeEnvVars, upsertEnvVars } from '../../config/env-file.js';
 import { writeSecurityAudit } from '../../logging/security-audit.js';
 import { resolveInstallRoot } from '../../runtime/install-root.js';
-import { rotateVaultMasterKey, rotateVaultStatePepper } from '../../storage/rust-vault-adapter.js';
+import { rotateVaultMasterKey } from '../../storage/rust-vault-adapter.js';
 import { deleteVaultEntriesByKey, listVaultEntries } from '../../storage/vault-entry-store.js';
 import { resolveVaultPath } from '../../storage/vault-paths.js';
+import { rotateVaultPepperAndConfig } from '../../storage/vault-pepper-transaction.js';
 import type { CliContext } from '../context.js';
 import { generateVaultPepper } from '../utils/onboarding-shared.js';
 import { print } from '../utils/render.js';
@@ -139,8 +140,8 @@ async function handleVaultInit(context: CliContext): Promise<boolean> {
   // We honour either signal (`--force-reinit` flag or the env var) so
   // the CLI surface stays consistent with the boundary's contract.
   const rawEnv = process.env;
-  const envForceReinit = rawEnv.MEMPHIS_VAULT_FORCE_REINIT === '1' ||
-    rawEnv.MEMPHIS_VAULT_FORCE_REINIT === 'true';
+  const envForceReinit =
+    rawEnv.MEMPHIS_VAULT_FORCE_REINIT === '1' || rawEnv.MEMPHIS_VAULT_FORCE_REINIT === 'true';
   const forceReinitAuthorised = Boolean(forceReinit) || envForceReinit;
   const existingEntries = listVaultEntries(rawEnv);
   if (existingEntries.length > 0 && !forceReinitAuthorised) {
@@ -215,9 +216,7 @@ async function handleVaultInit(context: CliContext): Promise<boolean> {
   // sees the same authorisation we just accepted at the CLI surface.
   // Without this, `--force-reinit` would pass the CLI gate but the
   // boundary would still throw `VaultAlreadyInitializedError`.
-  const initEnv = forceReinitAuthorised
-    ? { ...rawEnv, MEMPHIS_VAULT_FORCE_REINIT: '1' }
-    : rawEnv;
+  const initEnv = forceReinitAuthorised ? { ...rawEnv, MEMPHIS_VAULT_FORCE_REINIT: '1' } : rawEnv;
   const vault = initializeVault(
     {
       passphrase: passphrase!,
@@ -308,7 +307,12 @@ async function handleVaultAdd(context: CliContext): Promise<boolean> {
       ok: true,
       entry: toVaultEntryMetadata(stored),
       ...(autoEnabledEnv
-        ? { autoEnabled: { envVar: autoEnabledEnv, hint: 'Restart the service to pick up the new provider configuration.' } }
+        ? {
+            autoEnabled: {
+              envVar: autoEnabledEnv,
+              hint: 'Restart the service to pick up the new provider configuration.',
+            },
+          }
         : {}),
     },
     json,
@@ -611,34 +615,9 @@ async function handleVaultPepperRotate(context: CliContext): Promise<boolean> {
     }
   }
 
-  // Rotate state first so the re-encrypted vault-state.json is on disk,
-  // then update .env. If the .env write fails (permissions, disk full,
-  // concurrent write), we attempt a reverse rotation to restore the state
-  // file to oldPepper — leaving operator disk in the pre-rotation shape
-  // rather than a state/.env desync that would break vault reads on next
-  // startup. Best-effort: if the reverse rotation itself also fails, we
-  // surface a loud structured error that names both mismatched halves.
-  let result: ReturnType<typeof rotateVaultStatePepper> | undefined;
   try {
-    result = rotateVaultStatePepper(oldPepper, newPepper, process.env);
-  } catch (err) {
-    writeSecurityAudit({
-      action: 'vault.pepper-rotate',
-      status: 'error',
-      details: {
-        surface: 'cli',
-        command: 'vault pepper-rotate',
-        stage: 'rotate-state',
-        reason: err instanceof Error ? err.message : 'unknown_error',
-      },
-    });
-    throw err;
-  }
-
-  try {
-    const envUpdate = upsertEnvVars([{ key: 'MEMPHIS_VAULT_PEPPER', value: newPepper }]);
+    const result = rotateVaultPepperAndConfig(oldPepper, newPepper, process.env);
     process.env.MEMPHIS_VAULT_PEPPER = newPepper;
-
     writeSecurityAudit({
       action: 'vault.pepper-rotate',
       status: 'allowed',
@@ -646,73 +625,32 @@ async function handleVaultPepperRotate(context: CliContext): Promise<boolean> {
         surface: 'cli',
         command: 'vault pepper-rotate',
         statePath: result.statePath,
-        envPath: envUpdate.path,
+        envPath: result.envPath,
         fromVersion: result.fromVersion,
         toVersion: result.toVersion,
-        generated: context.args.generate === true,
       },
     });
-
     print(
       {
         ok: true,
-        statePath: result.statePath,
-        envPath: envUpdate.path,
-        fromVersion: result.fromVersion,
-        toVersion: result.toVersion,
+        ...result,
         nextSteps: [
-          '# The .env file now holds the NEW pepper. Back it up off-host IMMEDIATELY:',
-          `grep '^MEMPHIS_VAULT_PEPPER=' ${envUpdate.path}`,
-          '# Verify the vault still reads:',
-          'memphis vault list',
+          'Back up the protected configuration and encrypted vault together.',
+          'Restart running Memphis processes to load the new configuration.',
+          'Verify credentials with memphis providers credential-check --json.',
         ],
       },
-      false,
+      context.args.json,
     );
     return true;
-  } catch (err) {
-    const envMessage = err instanceof Error ? err.message : 'unknown_error';
-    // .env write failed after state rotation succeeded. Try to reverse the
-    // rotation so disk state matches the (unchanged) operator .env file.
-    let rollbackOk = false;
-    let rollbackError: string | null = null;
-    try {
-      rotateVaultStatePepper(newPepper, oldPepper, process.env);
-      rollbackOk = true;
-    } catch (rollbackErr) {
-      rollbackError = rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr);
-    }
-
+  } catch {
     writeSecurityAudit({
       action: 'vault.pepper-rotate',
       status: 'error',
-      details: {
-        surface: 'cli',
-        command: 'vault pepper-rotate',
-        stage: 'update-env',
-        reason: envMessage,
-        rollback: rollbackOk ? 'reverted-state-to-old-pepper' : 'rollback-failed',
-        rollbackError,
-        statePath: result.statePath,
-        fromVersion: result.fromVersion,
-        toVersion: result.toVersion,
-      },
+      details: { surface: 'cli', reason: 'rotation_not_completed' },
     });
-
-    if (rollbackOk) {
-      throw new Error(
-        `vault pepper-rotate failed at .env write (${envMessage}). State file was ` +
-          `reverted to the OLD pepper — vault remains readable with the current ` +
-          `MEMPHIS_VAULT_PEPPER. Fix the .env permission/disk issue and retry.`,
-      );
-    }
     throw new Error(
-      `vault pepper-rotate FAILED CATASTROPHICALLY: .env write failed ` +
-        `(${envMessage}) AND rollback of the rotated state also failed (${rollbackError}). ` +
-        `vault-state.json is now encrypted with the NEW pepper but .env still ` +
-        `holds the OLD pepper. Manually set MEMPHIS_VAULT_PEPPER=<new-pepper> in ` +
-        `${result.statePath ? `${result.statePath.replace(/vault-state\.json$/, '.env')}` : '.env'} ` +
-        `or restore data/vault-state.json from a backup before the next start.`,
+      'Vault rotation did not complete. A prepared transaction is recovered at the next Memphis configuration load; retain the private .env.transactions directory.',
     );
   }
 }
@@ -826,17 +764,19 @@ async function handleVaultMasterKeyRotate(context: CliContext): Promise<boolean>
       json,
     );
     return true;
-  } catch (err) {
+  } catch {
     writeSecurityAudit({
       action: 'vault.master-key-rotate',
       status: 'error',
       details: {
         surface: 'cli',
         command: 'vault master-key-rotate',
-        reason: err instanceof Error ? err.message : 'unknown_error',
+        reason: 'rotation_not_completed',
       },
     });
-    throw err;
+    throw new Error(
+      'VAULT_MASTER_KEY_ROTATION_FAILED: rotation did not complete; retain the private transaction journal and run memphis doctor before retrying.',
+    );
   }
 }
 
@@ -906,7 +846,9 @@ async function handleVaultMigrate(context: CliContext): Promise<boolean> {
     if (context.args.json) {
       console.log(JSON.stringify({ ok: true, migrated: 0, reason: 'no-legacy-vault' }, null, 2));
     } else {
-      console.log(`No legacy vault files at ${path.join(installRoot, 'data')} — nothing to migrate.`);
+      console.log(
+        `No legacy vault files at ${path.join(installRoot, 'data')} — nothing to migrate.`,
+      );
       console.log(`Active vault location: ${newDir}`);
     }
     return true;

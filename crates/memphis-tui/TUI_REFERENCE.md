@@ -56,30 +56,30 @@ All commands are entered at the prompt. Prefix `/` is required for all commands 
 
 #### Native Commands (processed directly in Rust)
 
-| Command                    | Description                                                          |
-| -------------------------- | -------------------------------------------------------------------- |
-| `/help`                    | Print all available commands grouped by route                        |
-| `/clear`                   | Clear the output buffer                                              |
-| `/refresh`                 | Force immediate snapshot refresh                                     |
-| `/overview`                | Append Overview surface to output                                    |
-| `/chat`                    | Append Chat surface (session, provider, model, context pressure)     |
-| `/memory`                  | Append Memory surface (semantic + exact search state)                |
-| `/sessions`                | Append Sessions surface (recent operator sessions)                   |
-| `/vault`                   | Append Vault surface (metadata-first entry listing)                  |
-| `/cases`                   | Append Cases surface (recent case rows)                              |
-| `/system`                  | Append System surface (runtime paths, Matrix, Telegram, Rust bridge) |
-| `/providers`               | Print provider status table (name, model, [up]/[down][!]/[nocfg])    |
-| `/models`                  | Print models per provider                                            |
-| `/provider <name>`         | Set active chat provider                                             |
-| `/provider set <name>`     | Set active chat provider (same as above)                             |
-| `/model <id>`              | Set active chat model                                                |
-| `/model set <id>`          | Set active chat model                                                |
-| `/session <id>`            | Switch to a named chat session; prints transcript                    |
-| `/telegram`                | Append Telegram readiness surface                                    |
-| `/telegram status`         | Same as `/telegram`                                                  |
-| `/memory semantic <query>` | Run semantic memory search, append results                           |
-| `/memory exact <query>`    | Run exact phrase memory search, append results                       |
-| `/vault get <key>`         | Read a vault secret (warns: plaintext displayed)                     |
+| Command                    | Description                                                                   |
+| -------------------------- | ----------------------------------------------------------------------------- |
+| `/help`                    | Print all available commands grouped by route                                 |
+| `/clear`                   | Clear the output buffer                                                       |
+| `/refresh`                 | Force immediate snapshot refresh                                              |
+| `/overview`                | Append Overview surface to output                                             |
+| `/chat`                    | Append Chat surface (session, provider, model, context pressure)              |
+| `/memory`                  | Append Memory surface (semantic + exact search state)                         |
+| `/sessions`                | Append Sessions surface (recent operator sessions)                            |
+| `/vault`                   | Append Vault surface (metadata-first entry listing)                           |
+| `/cases`                   | Append Cases surface (recent case rows)                                       |
+| `/system`                  | Append System surface (runtime paths, Matrix, Telegram, Rust bridge)          |
+| `/providers`               | Print provider status table (name, model, [up]/[down][!]/[nocfg])             |
+| `/models`                  | Print active/default models, provider state, context, stream + vision support |
+| `/provider <name>`         | Set active chat provider                                                      |
+| `/provider set <name>`     | Set active chat provider (same as above)                                      |
+| `/model <id>`              | Set active chat model                                                         |
+| `/model set <id>`          | Set active chat model                                                         |
+| `/session <id>`            | Switch to a named chat session; prints transcript                             |
+| `/telegram`                | Append Telegram readiness surface                                             |
+| `/telegram status`         | Same as `/telegram`                                                           |
+| `/memory semantic <query>` | Run semantic memory search, append results                                    |
+| `/memory exact <query>`    | Run exact phrase memory search, append results                                |
+| `/vault get <key>`         | Read a vault secret (warns: plaintext displayed)                              |
 
 #### Host-Backed Commands (routed through TypeScript extension host)
 

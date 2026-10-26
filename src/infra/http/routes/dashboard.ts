@@ -1,3 +1,7 @@
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { getAppVersion } from '../../../config/paths.js';
 
 type RouteReply = {
@@ -128,9 +132,58 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
 </body>
 </html>`;
 
+
+// The portal is a standalone operator surface: one static file that talks to
+// the endpoints below over loopback. It is read from disk rather than embedded
+// as a template literal, because its own JS is full of backticks and ${} —
+// embedding it would mean escaping 32 template delimiters for no benefit.
+// The file holds no secrets: the operator pastes their API token into it, which
+// the page keeps in sessionStorage and never persists.
+
+let cachedPortal: string | null = null;
+
+function loadPortalHtml(): string {
+  if (cachedPortal !== null) return cachedPortal;
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  // Walk up until we find the repo root, so this works from both src/ (tsx,
+  // three levels up) and dist/ (four). Guessing a fixed depth is how the first
+  // version silently served the "not found" page from one of the two.
+  let root = here;
+  for (let i = 0; i < 6; i++) {
+    if (existsSync(path.join(root, 'package.json'))) break;
+    const parent = path.dirname(root);
+    if (parent === root) break;
+    root = parent;
+  }
+  for (const candidate of [
+    path.join(root, 'portal', 'index.html'),
+    path.join(root, 'dist', 'portal.html'),
+  ]) {
+    try {
+      cachedPortal = readFileSync(candidate, 'utf8');
+      return cachedPortal;
+    } catch {
+      // try the next candidate
+    }
+  }
+  cachedPortal =
+    '<!DOCTYPE html><meta charset="utf-8"><body style="font-family:sans-serif;padding:2rem">' +
+    '<h1>Portal niedostępny</h1>' +
+    '<p>Nie znaleziono <code>portal/index.html</code> w katalogu projektu.</p></body>';
+  return cachedPortal;
+}
+
 export function registerDashboardRoute(app: RouteApp): void {
   app.get('/dashboard', async (_request, reply) => {
     reply.header('content-type', 'text/html; charset=utf-8');
     return reply.send(DASHBOARD_HTML);
+  });
+
+  // Static page, so serving it needs no auth. What it can actually reach is
+  // decided by the endpoints behind it, which keep their existing policy:
+  // /api/status is public, /api/recall and /api/search require the token.
+  app.get('/portal', async (_request, reply) => {
+    reply.header('content-type', 'text/html; charset=utf-8');
+    return reply.send(loadPortalHtml());
   });
 }

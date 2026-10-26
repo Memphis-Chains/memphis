@@ -21,11 +21,9 @@ export function resolveVaultSecret(
   const keyName = value.slice(VAULT_PREFIX.length).trim();
   if (keyName.length === 0) return undefined;
 
-  // Bounded access: the plaintext is returned by the callback, so it is
-  // only ever in this function's frame — never a field on a result object
-  // that a caller can log or serialise. 2026-10-09: this used to call
-  // `useVaultSecretByKey`, which had the same body as the plain read and
-  // handed back `plaintext` on the result object.
+  // Trusted resolution returns plaintext to the configuration owner, which can
+  // retain it after the callback. Public config/diagnostic projections must
+  // redact it; the callback itself does not enforce lifetime or disclosure.
   try {
     return withVaultSecret(
       keyName,

@@ -79,7 +79,7 @@ pub enum EmbedMode {
     Cascade(Vec<EmbedMode>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct EmbedConfig {
     pub mode: EmbedMode,
     pub dim: usize,
@@ -88,6 +88,33 @@ pub struct EmbedConfig {
     pub provider_api_key: Option<String>,
     pub provider_model: Option<String>,
     pub provider_timeout_ms: u64,
+    /// Ollama `keep_alive` for the provider request body.
+    ///
+    /// Without this field the Rust provider omitted `keep_alive` entirely,
+    /// so Ollama fell back to its 5-minute idle unload. A rebuild that
+    /// embeds ~80 chunks then paid a cold model load on EVERY request:
+    /// measured 18-39 s per embed (2026-10-24), so a journal reindex took
+    /// ~30 minutes instead of ~2. The TypeScript provider has sent
+    /// `keep_alive` since the beginning (`src/providers/index.ts`); this
+    /// mirrors that behaviour on the Rust side.
+    pub provider_keep_alive: Option<String>,
+}
+
+// Debug is a diagnostic projection; serialized credential contracts stay unchanged.
+impl std::fmt::Debug for EmbedConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mode = match &self.mode {
+            EmbedMode::LocalDeterministic => "local-deterministic",
+            EmbedMode::Provider(_) => "provider",
+            EmbedMode::Cascade(_) => "cascade",
+        };
+        f.debug_struct("EmbedConfig")
+            .field("mode", &mode)
+            .field("dim", &self.dim)
+            .field("max_text_bytes", &self.max_text_bytes)
+            .field("provider_timeout_ms", &self.provider_timeout_ms)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for EmbedConfig {
@@ -100,6 +127,7 @@ impl Default for EmbedConfig {
             provider_api_key: None,
             provider_model: None,
             provider_timeout_ms: 8_000,
+            provider_keep_alive: None,
         }
     }
 }
@@ -156,6 +184,7 @@ pub struct OllamaProvider {
     base_url: String,
     model: String,
     timeout: Duration,
+    keep_alive: Option<String>,
 }
 
 impl OllamaProvider {
@@ -177,6 +206,12 @@ impl OllamaProvider {
             base_url,
             model,
             timeout: Duration::from_millis(config.provider_timeout_ms),
+            keep_alive: config
+                .provider_keep_alive
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
         })
     }
 }
@@ -226,6 +261,27 @@ pub(crate) fn sanitize_for_embed(text: &str, max_bytes: usize) -> String {
     out
 }
 
+/// Build the Ollama embeddings request body.
+///
+/// `keep_alive` is optional on purpose: when it is absent the body must
+/// stay exactly `{model, prompt}` so the server keeps its own default
+/// (5-minute idle unload). When present it keeps the model resident
+/// between requests — see `EmbedConfig::provider_keep_alive`.
+pub(crate) fn ollama_embed_payload(
+    model: &str,
+    prompt: &str,
+    keep_alive: Option<&str>,
+) -> serde_json::Value {
+    let mut payload = serde_json::json!({
+        "model": model,
+        "prompt": prompt,
+    });
+    if let Some(keep_alive) = keep_alive.map(str::trim).filter(|v| !v.is_empty()) {
+        payload["keep_alive"] = serde_json::Value::String(keep_alive.to_string());
+    }
+    payload
+}
+
 impl EmbeddingProvider for OllamaProvider {
     fn name(&self) -> &str {
         "ollama"
@@ -251,10 +307,7 @@ impl EmbeddingProvider for OllamaProvider {
         if prompt.trim().is_empty() {
             return Err(EmbedError::EmptyInput);
         }
-        let payload = serde_json::json!({
-            "model": &self.model,
-            "prompt": prompt,
-        });
+        let payload = ollama_embed_payload(&self.model, &prompt, self.keep_alive.as_deref());
 
         let resp = ureq::post(&url)
             .timeout(self.timeout)
@@ -666,6 +719,76 @@ struct EmbedDiskDocV2 {
 /// `~/.../embed_index.json` → `~/.../embed_index.ndjson`.
 fn ndjson_sibling_path(json_path: &Path) -> PathBuf {
     json_path.with_extension("ndjson")
+}
+
+/// Build a collision-free temp path for an atomic index write.
+///
+/// Two processes can persist the same index concurrently (the Rust
+/// operator runtime and the TS/CLI path both reach this crate through
+/// the napi bridge). A shared `index-v1.tmp` lets one process's
+/// `write` interleave with another's, so the later `rename` can move a
+/// file that contains the other process's bytes.
+///
+/// Naming the temp after pid + nanos keeps each writer isolated; the
+/// `rename` itself stays atomic, so readers only ever observe a
+/// complete file. Mirrors the TS-side pattern in
+/// `src/infra/storage/chain-file-io.ts` (`${filename}.tmp-${pid}-${now}`).
+fn unique_tmp_path(target: &Path) -> PathBuf {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    let file_name = target
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "index".to_string());
+    let tmp_name = format!("{file_name}.tmp-{pid}-{stamp}");
+    match target.parent() {
+        Some(parent) => parent.join(tmp_name),
+        None => PathBuf::from(tmp_name),
+    }
+}
+
+/// Read the index back after `rename` and confirm the bytes on disk are
+/// the ones this process serialized.
+///
+/// The rename is atomic, so a reader can never observe a half-written
+/// file — but atomicity alone does not prove the right bytes landed.
+/// A truncated write, a concurrent writer, or a serializer that appended
+/// trailing bytes all survive `rename` silently: the file is complete and
+/// well-formed, just not what we meant to store. Catching that here keeps
+/// a bad index from being discovered only when recall returns nonsense.
+///
+/// On mismatch the on-disk copy is removed so the next load reports
+/// `Missing` (a clean rebuild) rather than reading a known-bad index.
+/// Returns the read error as `Ok` only when the file is byte-identical.
+fn verify_persisted_index(path: &Path, expected: &str) -> Result<(), EmbedError> {
+    let written = match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(error) => {
+            return Err(EmbedError::DiskError(format!(
+                "index_verification_read_failed: {}: {error}",
+                path.display()
+            )))
+        }
+    };
+    if written == expected {
+        return Ok(());
+    }
+    // Quarantine rather than delete: an operator debugging a bad index
+    // wants the bytes, and the load path already ignores unknown siblings.
+    let quarantine = unique_tmp_path(path);
+    let _ = fs::remove_file(&quarantine);
+    let _ = fs::rename(path, &quarantine);
+    Err(EmbedError::DiskError(format!(
+        "index_verification_failed: {} (on-disk {} bytes vs expected {}); \
+         mismatched file quarantined at {}",
+        path.display(),
+        written.len(),
+        expected.len(),
+        quarantine.display()
+    )))
 }
 
 /// Read env var to decide whether to write v2 NDJSON.
@@ -1123,12 +1246,16 @@ impl EmbedPipeline {
         let serialized = serde_json::to_string(&payload)
             .map_err(|e| EmbedError::SerializationError(format!("serialize_failed: {e}")))?;
 
-        let tmp_path = state.index_path.with_extension("tmp");
+        let tmp_path = unique_tmp_path(&state.index_path);
         fs::write(&tmp_path, serialized.as_bytes())
             .map_err(|e| EmbedError::DiskError(e.to_string()))?;
-        fs::rename(&tmp_path, &state.index_path)
-            .map_err(|e| EmbedError::DiskError(e.to_string()))?;
-        Ok(())
+        if let Err(error) = fs::rename(&tmp_path, &state.index_path) {
+            // Best-effort cleanup: the rename failed, so the temp file is
+            // still ours and would otherwise linger as `index-v1.tmp`.
+            let _ = fs::remove_file(&tmp_path);
+            return Err(EmbedError::DiskError(error.to_string()));
+        }
+        verify_persisted_index(&state.index_path, &serialized)
     }
 
     fn persist_now_ndjson_v2(&self, state: &EmbedPersistenceState) -> Result<(), EmbedError> {
@@ -1161,10 +1288,13 @@ impl EmbedPipeline {
             buf.push('\n');
         }
 
-        let tmp_path = ndjson_path.with_extension("ndjson.tmp");
+        let tmp_path = unique_tmp_path(&ndjson_path);
         fs::write(&tmp_path, buf.as_bytes()).map_err(|e| EmbedError::DiskError(e.to_string()))?;
-        fs::rename(&tmp_path, &ndjson_path).map_err(|e| EmbedError::DiskError(e.to_string()))?;
-        Ok(())
+        if let Err(error) = fs::rename(&tmp_path, &ndjson_path) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(EmbedError::DiskError(error.to_string()));
+        }
+        verify_persisted_index(&ndjson_path, &buf)
     }
 
     fn validate_text(&self, text: &str) -> Result<(), EmbedError> {
@@ -1213,12 +1343,15 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use std::path::Path;
+
     use super::{
         sanitize_for_embed, CascadeProvider, EmbedConfig, EmbedMode, EmbedPersistenceConfig,
         EmbedPersistenceLoadState, EmbedPipeline, LocalDeterministicProvider,
         DEFAULT_EMBEDDING_DIM,
     };
     use crate::{EmbedError, EmbeddingProvider};
+    use crate::pipeline::{ollama_embed_payload, OllamaProvider};
 
     #[test]
     fn sanitize_strips_control_chars_and_keeps_whitespace() {
@@ -1315,6 +1448,51 @@ mod tests {
                 "unknown provider: nonexistent-provider".to_string(),
             ))
         );
+    }
+
+    #[test]
+    fn ollama_payload_carries_keep_alive_when_configured() {
+        // Regression (2026-10-24): the Rust provider omitted `keep_alive`,
+        // so Ollama unloaded the model after 5 idle minutes and every
+        // embed paid a cold load (18-39 s measured). The TypeScript
+        // provider has always sent it.
+        let payload = ollama_embed_payload("nomic-embed-text", "tekst", Some("5m"));
+        assert_eq!(payload["keep_alive"], serde_json::Value::String("5m".to_string()));
+        assert_eq!(payload["model"], "nomic-embed-text");
+        assert_eq!(payload["prompt"], "tekst");
+    }
+
+    #[test]
+    fn ollama_payload_omits_keep_alive_when_unset() {
+        // Absent must mean ABSENT from the body, not a null/empty value:
+        // the server then applies its own default instead of being told
+        // to unload immediately.
+        let payload = ollama_embed_payload("nomic-embed-text", "tekst", None);
+        assert!(payload.get("keep_alive").is_none());
+
+        // A blank value is treated as unset too.
+        let payload = ollama_embed_payload("nomic-embed-text", "tekst", Some("   "));
+        assert!(payload.get("keep_alive").is_none());
+    }
+
+    #[test]
+    fn embed_config_keep_alive_flows_into_the_provider() {
+        let mut config = EmbedConfig {
+            mode: EmbedMode::Provider("ollama".to_string()),
+            provider_url: Some("http://127.0.0.1:11434".to_string()),
+            provider_model: Some("nomic-embed-text".to_string()),
+            provider_keep_alive: Some("24h".to_string()),
+            ..EmbedConfig::default()
+        };
+        config.dim = 8;
+        let provider = OllamaProvider::new(&config).expect("provider");
+        assert_eq!(provider.keep_alive.as_deref(), Some("24h"));
+        let payload = ollama_embed_payload(
+            &provider.model,
+            "tekst",
+            provider.keep_alive.as_deref(),
+        );
+        assert_eq!(payload["keep_alive"], serde_json::Value::String("24h".to_string()));
     }
 
     #[test]
@@ -1847,5 +2025,191 @@ mod tests {
 
         let _ = std::fs::remove_file(&ndjson_path);
         let _ = std::fs::remove_file(&path);
+    }
+
+    // ─── 1b: collision-free temp path ─────────────────────────────────
+    // Two processes (Rust operator runtime + TS/CLI through the napi
+    // bridge) persist the same index concurrently. A shared `index-v1.tmp`
+    // lets one process's `write` land inside the other's, so the later
+    // `rename` can move bytes the writer never produced. These tests pin
+    // the per-process temp naming that prevents that.
+
+    #[test]
+    fn unique_tmp_path_is_not_the_shared_with_extension_form() {
+        let index = Path::new("/tmp/embed/index-v1.json");
+        let tmp = super::unique_tmp_path(index);
+        let shared = index.with_extension("tmp");
+        assert_ne!(
+            tmp, shared,
+            "temp path must not collide with the shared with_extension(\"tmp\") form"
+        );
+    }
+
+    #[test]
+    fn unique_tmp_path_differs_between_calls() {
+        let index = Path::new("/tmp/embed/index-v1.json");
+        let a = super::unique_tmp_path(index);
+        let b = super::unique_tmp_path(index);
+        assert_ne!(
+            a, b,
+            "two writes in the same process must not share a temp file"
+        );
+    }
+
+    #[test]
+    fn unique_tmp_path_stays_in_the_target_directory() {
+        let index = Path::new("/tmp/embed/index-v1.json");
+        let tmp = super::unique_tmp_path(index);
+        assert_eq!(
+            tmp.parent(),
+            index.parent(),
+            "rename() is only atomic within the same filesystem, so the temp \
+             file must be a sibling of the target"
+        );
+        let name = tmp.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(
+            name.starts_with("index-v1.json.tmp-"),
+            "temp name must keep the full target name for traceability, got {name}"
+        );
+    }
+
+    #[test]
+    fn unique_tmp_path_embeds_the_writing_pid() {
+        let index = Path::new("index-v1.json");
+        let tmp = super::unique_tmp_path(index);
+        let name = tmp.file_name().unwrap().to_string_lossy().into_owned();
+        let pid = std::process::id().to_string();
+        assert!(
+            name.contains(&pid),
+            "temp name must carry the pid so concurrent writers are separable, got {name}"
+        );
+    }
+
+    #[test]
+    fn unique_tmp_path_handles_extensionless_target() {
+        let tmp = super::unique_tmp_path(Path::new("index"));
+        let name = tmp.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(
+            name.starts_with("index.tmp-"),
+            "extensionless targets must still get a namespaced temp, got {name}"
+        );
+    }
+
+    // ─── 1a: read-after-write verification ─────────────────────────────
+    // Mirrors `writeBlockAtomic` in src/infra/storage/chain-file-io.ts,
+    // which already does this for chain blocks. The embed index was the
+    // remaining gap in issue #628: atomic rename, no read-back.
+
+    fn temp_index_path(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "memphis-embed-verify-{}-{}",
+            std::process::id(),
+            tag
+        ));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        dir.join("index-v1.json")
+    }
+
+    #[test]
+    fn verify_accepts_byte_identical_file() {
+        let path = temp_index_path("identical");
+        std::fs::write(&path, b"{\"version\":1}").expect("write");
+        let result = super::verify_persisted_index(&path, "{\"version\":1}");
+        assert!(result.is_ok(), "identical bytes must pass: {result:?}");
+        assert!(
+            path.exists(),
+            "a passing verification must leave the file in place"
+        );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn verify_rejects_truncated_write() {
+        let path = temp_index_path("truncated");
+        std::fs::write(&path, b"{\"version\":1,\"docs\":[]}").expect("write");
+        let result = super::verify_persisted_index(&path, "{\"version\":1}");
+        assert!(
+            result.is_err(),
+            "a truncated write must not pass verification"
+        );
+        let message = result.unwrap_err().to_string();
+        assert!(
+            message.contains("index_verification_failed"),
+            "error must be classifiable, got: {message}"
+        );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn verify_rejects_trailing_garbage_like_issue_385() {
+        // Issue #04 case #385: a stray '}' appended after the JSON close.
+        let path = temp_index_path("trailing-brace");
+        std::fs::write(&path, b"{\"version\":1}}").expect("write");
+        assert!(
+            super::verify_persisted_index(&path, "{\"version\":1}").is_err(),
+            "trailing brace (issue #385 pattern) must fail verification"
+        );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn verify_quarantines_instead_of_deleting() {
+        // An operator debugging a bad index needs the bytes, so the
+        // mismatched file is moved aside rather than dropped.
+        let path = temp_index_path("quarantine");
+        std::fs::write(&path, b"corrupted").expect("write");
+        let _ = super::verify_persisted_index(&path, "expected");
+        let dir = path.parent().unwrap();
+        assert!(
+            !path.exists(),
+            "the bad index must not stay at the load path"
+        );
+        let quarantined = std::fs::read_dir(dir)
+            .expect("readdir")
+            .filter_map(Result::ok)
+            .any(|entry| {
+                entry.file_name().to_string_lossy().contains("quarantine")
+                    || entry.file_name().to_string_lossy().contains("tmp-")
+            });
+        assert!(
+            quarantined,
+            "the mismatched bytes must be preserved for inspection"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn verify_reports_read_failure_distinctly() {
+        let dir = std::env::temp_dir().join(format!(
+            "memphis-embed-verify-missing-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let result = super::verify_persisted_index(&dir.join("absent.json"), "x");
+        let message = result.unwrap_err().to_string();
+        assert!(
+            message.contains("index_verification_read_failed"),
+            "a missing file is not a content mismatch, got: {message}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn credential_debug_embed_config_omits_key_and_url_credentials() {
+        let secret = "synthetic-native-private-debug-material";
+        let config = EmbedConfig {
+            mode: EmbedMode::Provider(secret.into()),
+            provider_api_key: Some(secret.into()),
+            provider_url: Some(format!(
+                "https://user:{secret}@example.test/?token={secret}"
+            )),
+            provider_model: Some(secret.into()),
+            ..EmbedConfig::default()
+        };
+        for debug in [format!("{config:?}"), format!("{config:#?}")] {
+            assert!(!debug.contains(secret));
+            assert!(!debug.contains(&secret[..16]));
+            assert!(!debug.contains(&secret[secret.len() - 16..]));
+        }
+        assert_eq!(config.provider_api_key.as_deref(), Some(secret));
     }
 }

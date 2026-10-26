@@ -20,9 +20,22 @@ type BuildRuntimeTelemetryInput = {
   compactionCount?: number;
   degraded?: boolean;
   degradationReason?: string;
+  /**
+   * Context window the provider's account actually granted on this turn.
+   * Only ever lowers the declared model capability: a provider may not widen
+   * its own limit, but it may report that the account is more restrictive.
+   */
+  effectiveContextWindow?: number;
 };
 
 const latestTurnTelemetry = new Map<string, TurnTelemetrySnapshot>();
+
+/**
+ * Conservative prompt estimate shared by telemetry and the preflight guard.
+ * Tool-heavy transcripts and JSON routinely tokenize more densely than the
+ * old four-characters-per-token heuristic.
+ */
+export const ESTIMATED_CHARS_PER_TOKEN = 3;
 
 function serializeMessage(message: ChatMessage): string {
   switch (message.role) {
@@ -30,9 +43,12 @@ function serializeMessage(message: ChatMessage): string {
     case 'user':
       return message.content;
     case 'assistant':
-      return message.tool_calls?.length
-        ? `${message.content}\n${JSON.stringify(message.tool_calls)}`
-        : message.content;
+      return (
+        (message.tool_calls?.length
+          ? `${message.content}\n${JSON.stringify(message.tool_calls)}`
+          : message.content) +
+        (message.reasoning_content !== undefined ? `\n${message.reasoning_content}` : '')
+      );
     case 'tool':
       return `${message.tool_call_id}\n${message.content}`;
   }
@@ -40,7 +56,7 @@ function serializeMessage(message: ChatMessage): string {
 
 function estimateTokensFromText(value: string): number {
   if (!value.trim()) return 0;
-  return Math.ceil(value.length / 4);
+  return Math.ceil(value.length / ESTIMATED_CHARS_PER_TOKEN);
 }
 
 export function normalizeTokenUsage(usage?: TokenUsage): TokenUsage | undefined {
@@ -92,7 +108,21 @@ export function buildRuntimeTelemetry(input: BuildRuntimeTelemetryInput): Runtim
     messages: input.messages,
   });
   const capability = resolveModelCapabilitySnapshot(input.provider, input.model);
-  const contextWindowTokens = capability?.contextWindowTokens;
+  const declaredContextWindow = capability?.contextWindowTokens;
+  const accountContextWindow =
+    typeof input.effectiveContextWindow === 'number' &&
+    Number.isFinite(input.effectiveContextWindow) &&
+    input.effectiveContextWindow > 0
+      ? Math.trunc(input.effectiveContextWindow)
+      : undefined;
+  // The account may only narrow the window. Widening it would let a prompt
+  // past a limit the upstream API still enforces.
+  const contextWindowTokens =
+    declaredContextWindow === undefined
+      ? accountContextWindow
+      : accountContextWindow === undefined
+        ? declaredContextWindow
+        : Math.min(declaredContextWindow, accountContextWindow);
   const remainingContextTokens =
     typeof contextWindowTokens === 'number'
       ? Math.max(0, contextWindowTokens - estimatedPromptTokens)
@@ -117,6 +147,7 @@ export function buildRuntimeTelemetry(input: BuildRuntimeTelemetryInput): Runtim
   return {
     usage,
     contextWindowTokens,
+    ...(accountContextWindow !== undefined ? { effectiveContextWindow: accountContextWindow } : {}),
     estimatedPromptTokens,
     remainingContextTokens,
     compactionPressure: {

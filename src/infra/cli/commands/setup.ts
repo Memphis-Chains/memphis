@@ -23,6 +23,7 @@ import {
   type FirstRunStatus,
   type GuidedFirstRunAnswers,
 } from '../../../onboarding/first-run.js';
+import { DEFAULT_MINIMAX_MODEL } from '../../../providers/minimax/config.js';
 import { initializeVault, probeVaultCipherCycle } from '../../../security/vault-boundary.js';
 import { DEFAULT_AGENT_NAME, DEFAULT_OWNER_NAME, writeAgentProfile } from '../../agent-profile.js';
 import {
@@ -267,7 +268,7 @@ export function buildSetupEnv(answers: SetupAnswers): {
     case 'minimax':
       env.DEFAULT_PROVIDER = 'minimax';
       if (providerBaseUrl) env.MINIMAX_BASE_URL = providerBaseUrl;
-      env.MINIMAX_MODEL = 'MiniMax-M2.7'; // default model
+      env.MINIMAX_MODEL = DEFAULT_MINIMAX_MODEL; // 1M context, multimodal
       // MINIMAX_VAULT_KEY auto-set by `vault add minimax_api_key`. See
       // anthropic case above for rationale.
       break;

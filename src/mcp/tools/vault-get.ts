@@ -11,6 +11,7 @@ export interface VaultGetOutput {
   plaintext?: string;
   createdAt?: string;
   error?: string;
+  errorCode?: string;
 }
 
 export interface VaultListOutput {

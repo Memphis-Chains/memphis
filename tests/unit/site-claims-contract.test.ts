@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { NATIVE_TOOL_CONTRACTS } from '../../src/gateway/tool-contract.js';
 import { TOOL_REGISTRY } from '../../src/gateway/tool-registry.js';
 import { getChainNames } from '../../src/memory/chain-catalog.js';
 
@@ -101,10 +102,19 @@ describe('sites/memphis-v5/index.html — claims match the code', () => {
     );
     expect(unflagged, 'tool-count metric not found').toBeGreaterThan(0);
 
-    const registryTools = Object.keys(TOOL_REGISTRY).length;
-    const flagged = Object.values(TOOL_REGISTRY as Record<string, { featureFlag?: string }>).filter(
-      (t) => t?.featureFlag,
-    ).length;
+    // The page counts the tools the GATEWAY offers. A tool marked
+    // `gatewayHidden` in the native tool contract runs in the Rust operator
+    // cockpit and is not advertised by the gateway, so it is not one of the
+    // "narzędzi" the page describes. Counting it made the page claim a tool
+    // it does not offer.
+    const gatewayHidden = new Set(
+      NATIVE_TOOL_CONTRACTS.filter((contract) => contract.gatewayHidden).map((c) => c.name),
+    );
+    const visibleRegistry = Object.entries(
+      TOOL_REGISTRY as Record<string, { featureFlag?: string }>,
+    ).filter(([name]) => !gatewayHidden.has(name));
+    const registryTools = visibleRegistry.length;
+    const flagged = visibleRegistry.filter(([, meta]) => meta?.featureFlag).length;
     expect(unflagged, `page says ${unflagged}, registry has ${registryTools - flagged}`).toBe(
       registryTools - flagged,
     );

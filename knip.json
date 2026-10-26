@@ -21,6 +21,14 @@
     "benchmarks/performance-suite.ts",
     "sites/**",
     "tests/helpers/concurrent-writer.mjs",
-    "scripts/backup-db-snapshot.d.mts"
+    "scripts/backup-db-snapshot.d.mts",
+    "tests/helpers/vault-init-process.mts",
+    "tests/helpers/vault-rotation-process.mts",
+    "src/providers/openai-codex/bridge.ts",
+    "tests/helpers/runtime-path-process.mts",
+    "tests/helpers/secret-cli-process.mts",
+    ".probe/probe-audit.mts",
+    ".probe/probe-manifest.mts",
+    "analytics/.venv/**"
   ]
 }

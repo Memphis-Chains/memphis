@@ -44,6 +44,7 @@ import {
   LEGACY_SCHEDULER_TASK_IDS,
   LEGACY_SCHEDULER_TASK_NAMES,
 } from './scheduler-defaults.js';
+import { isSchedulerTaskStatus, type SchedulerTaskStatus } from './scheduler-status.js';
 import { getUserServiceStatus, resolveRuntimeRoot } from './user-service.js';
 import { HOME } from '../../config/env-registry.js';
 import { getConfigPath } from '../../config/paths.js';
@@ -51,6 +52,8 @@ import { runDeployPipeline, type DeployProfile } from '../deploy/pipeline.js';
 import { appendBlock } from '../storage/chain-adapter.js';
 import { SCHEDULER_EXECUTE_WORK_CAPABILITY } from '../work/work-capabilities.js';
 import type { WorkPollingService } from '../work/work-polling-service.js';
+
+export type { SchedulerTaskStatus } from './scheduler-status.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -76,14 +79,6 @@ export interface ScheduledTask {
   runCount: number;
 }
 
-export type SchedulerTaskStatus =
-  | 'pending'
-  | 'running'
-  | 'success'
-  | 'failed'
-  | 'skipped'
-  | 'timed_out';
-
 export type SchedulerCommand =
   | { type: 'git-pull-build' }
   | { type: 'shell'; script: string }
@@ -107,7 +102,7 @@ export function getSchedulerLogsDir(): string {
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 
-function hostTimezone(): string {
+export function hostTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 }
 
@@ -137,7 +132,7 @@ function normalizeTask(value: unknown): ScheduledTask | null {
     enabled: raw.enabled,
     lastRun: typeof raw.lastRun === 'string' ? raw.lastRun : null,
     nextRun: typeof raw.nextRun === 'string' ? raw.nextRun : null,
-    lastStatus: typeof raw.lastStatus === 'string' ? (raw.lastStatus as SchedulerTaskStatus) : null,
+    lastStatus: isSchedulerTaskStatus(raw.lastStatus) ? raw.lastStatus : null,
     startedAt: typeof raw.startedAt === 'string' ? raw.startedAt : null,
     finishedAt: typeof raw.finishedAt === 'string' ? raw.finishedAt : null,
     lastError: typeof raw.lastError === 'string' ? raw.lastError : null,
@@ -188,7 +183,7 @@ export function saveTasks(tasks: ScheduledTask[]): void {
   chmodSync(tasksPath, 0o600);
 }
 
-function withTaskStoreLock<T>(operation: () => T): T {
+export function withTaskStoreLock<T>(operation: () => T): T {
   mkdirSync(getSchedulerDir(), { recursive: true });
   const lockPath = join(getSchedulerDir(), 'tasks.lock');
   let fd: number;

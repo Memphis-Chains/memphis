@@ -1,3 +1,5 @@
+import { DEFAULT_MINIMAX_MODEL } from './minimax/config.js';
+
 export interface ProviderCapabilities {
   name: string;
   models: ModelCapabilities[];
@@ -193,15 +195,44 @@ export class CapabilityMatrix {
       },
     });
 
+    // Default-model profile, verified against MiniMax's 2026-10-19 release.
+    // Prices are per 1k tokens (published per-million prices divided by 1000).
+    // Runtime budget caps are separate from the API's maximum output capacity.
     this.providers.set('minimax', {
       name: 'minimax',
       models: [
+        {
+          // 1M context, multimodal (text/image/video), tunable thinking
+          // depth. Source: platform.minimax.io/docs/guides/models-intro.md
+          // and /docs/api-reference/text-openai-api.md — both list
+          // "MiniMax-M3.1-Flash | 1,000,000". Confirmed live 2026-10-24:
+          // a 999_209-token prompt was accepted, 1_530_000 was rejected
+          // with "context window exceeds limit (2013)".
+          name: DEFAULT_MINIMAX_MODEL,
+          contextWindow: 1000000,
+          maxOutputTokens: 524288,
+          supportsStreaming: true,
+          supportsFunctionCalling: true,
+          supportsVision: true,
+          supportsJson: true,
+        },
+        {
+          name: 'MiniMax-M3',
+          contextWindow: 1000000,
+          maxOutputTokens: 524288,
+          supportsStreaming: true,
+          supportsFunctionCalling: true,
+          supportsVision: true,
+          supportsJson: true,
+        },
         {
           name: 'MiniMax-M2.7',
           contextWindow: 204800,
           maxOutputTokens: 32768,
           supportsStreaming: true,
           supportsFunctionCalling: true,
+          // The M3 family is natively multimodal; M2.7 and the abab series
+          // are text-only. Source: platform.minimax.io/docs/api-reference/text-openai-api.md
           supportsVision: false,
           supportsJson: true,
         },
@@ -215,14 +246,14 @@ export class CapabilityMatrix {
           supportsJson: false,
         },
       ],
-      supportedFeatures: ['streaming', 'function-calling', 'json-mode'],
+      supportedFeatures: ['streaming', 'function-calling', 'json-mode', 'vision'],
       rateLimits: {
         requestsPerMinute: 60,
         tokensPerMinute: 60000,
       },
       pricing: {
-        inputCostPer1k: 0.001,
-        outputCostPer1k: 0.003,
+        inputCostPer1k: 0.00015,
+        outputCostPer1k: 0.0006,
       },
       reliability: {
         uptimePercent: 99.0,

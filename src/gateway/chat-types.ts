@@ -8,7 +8,12 @@
 import type { ConversationContextService } from './conversation-context-service.js';
 import type { TokenUsage } from '../core/types.js';
 import type { RecallMode } from '../mcp/tools/recall.js';
-import type { ChatMessage, ChatToolDefinition, ChatToolCall } from '../providers/index.js';
+import type {
+  ChatMessage,
+  ChatToolDefinition,
+  ChatToolCall,
+  ChatOptions,
+} from '../providers/index.js';
 
 export type ChannelName = 'telegram' | 'discord' | 'terminal';
 
@@ -88,6 +93,11 @@ export type ToolCall = ChatToolCall;
 export type LlmResponse = {
   content: string;
   tool_calls?: ChatToolCall[];
+  /**
+   * Opaque MiniMax reasoning state for interleaved tool use. Kept only in
+   * the live message loop; it is neither user-visible nor durable memory.
+   */
+  reasoning_content?: string;
   usage?: TokenUsage;
   /**
    * Provider-reported reason the response ended (e.g. 'stop',
@@ -96,6 +106,12 @@ export type LlmResponse = {
    * truncation and surface a warning to the operator.
    */
   finishReason?: string;
+  /**
+   * Context window the provider's account granted on this call, when stricter
+   * than the model's declared capability. Carried to turn-runtime so history
+   * trimming follows the account, not the advertised limit.
+   */
+  effectiveContextWindow?: number;
 };
 
 export type LlmClient = {
@@ -111,6 +127,7 @@ export type LlmClient = {
      */
     temperature?: number;
     maxTokens?: number;
+    reasoningEffort?: ChatOptions['reasoningEffort'];
   }): Promise<LlmResponse>;
 };
 

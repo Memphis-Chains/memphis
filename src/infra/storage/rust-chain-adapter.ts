@@ -10,6 +10,7 @@ import {
   type NapiBlock,
   type NapiBlockData,
 } from './chain-file-io.js';
+import { assertChainWriteAllowed } from './chain-write-guard.js';
 import {
   loadPlatformAwareBridge,
   resolveBridgeContract,
@@ -300,7 +301,8 @@ export class NapiChainAdapter {
 
   async appendBlock(chain: string, data: Record<string, unknown>): Promise<AppendBlockResult> {
     const normalizedChain = normalizeChainName(chain) ?? chain;
-    const chainsDir = getChainPath(undefined, this.rawEnv);
+    const chainsDir = getChainPath(normalizedChain, this.rawEnv);
+    assertChainWriteAllowed(chainsDir, this.rawEnv);
     return withNapiAppendLock(chainsDir, async () => {
       const bridge = this.getBridgeOrThrow().resolved as ResolvedChainBridge;
       const appendFn = bridge.chain_append;

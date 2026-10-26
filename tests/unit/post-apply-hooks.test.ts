@@ -62,7 +62,7 @@ describe('post-apply hook registry', () => {
     });
     expect(fired).toEqual(['first', 'second']);
     expect(outcomes[0]?.ok).toBe(false);
-    expect(outcomes[0]?.error).toBe('boom');
+    expect(outcomes[0]?.error).toBe('CONFIG_HOOK_FAILED');
     expect(outcomes[1]?.ok).toBe(true);
   });
 

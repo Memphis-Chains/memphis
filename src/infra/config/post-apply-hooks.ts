@@ -35,7 +35,7 @@ export interface PostApplyHookOutcome {
   key: string;
   hookName: string;
   ok: boolean;
-  error?: string;
+  error?: 'CONFIG_HOOK_FAILED';
 }
 
 interface RegistryEntry {
@@ -111,12 +111,12 @@ export async function runPostApplyHooks(
           rawEnv: baseEnv,
         });
         outcomes.push({ key: change.key, hookName: entry.hookName, ok: true });
-      } catch (error) {
+      } catch {
         outcomes.push({
           key: change.key,
           hookName: entry.hookName,
           ok: false,
-          error: error instanceof Error ? error.message : String(error),
+          error: 'CONFIG_HOOK_FAILED',
         });
       }
     }

@@ -11,6 +11,11 @@ describe('CLI providers:health', () => {
     const data = JSON.parse(out);
     expect(data.defaultProvider).toBe('local-fallback');
     expect(Array.isArray(data.providers)).toBe(true);
-    expect(data.providers[0].name).toBe('local-fallback');
+    // Which providers are registered depends on the environment, so assert
+    // membership rather than position: the registry order is an
+    // implementation detail, the presence of the local fallback is not.
+    expect(data.providers.map((provider: { name: string }) => provider.name)).toContain(
+      'local-fallback',
+    );
   });
 });

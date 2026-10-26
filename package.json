@@ -37,7 +37,7 @@
     "test:rust": "./scripts/run-rust.sh test --workspace",
     "test:smoke": "./scripts/smoke-test.sh",
     "test:smoke:acceptance": "./scripts/smoke-test.sh",
-    "build:rust": "./scripts/run-rust.sh build --workspace",
+    "build:rust": "./scripts/run-rust.sh build --workspace --lib --bins --examples",
     "build:rust:release": "./scripts/run-rust.sh build -p memphis-napi --release",
     "build": "npm run build:rust && tsc -p tsconfig.json",
     "build:release": "npm run build:rust:release && tsc -p tsconfig.json",
@@ -47,6 +47,7 @@
     "ops:sync-site-metrics": "tsx scripts/sync-site-metrics.mts",
     "ops:mutation-gate": "tsx scripts/mutation-gate.mts",
     "ops:check-scan-parity": "tsx scripts/check-scan-parity.mts",
+    "ops:check-systemd-units": "tsx scripts/check-systemd-units.mts",
     "prepack": "npm run build:release",
     "pack:dry-run": "npm pack --dry-run",
     "predev": "node -e \"try{require('fs').accessSync('crates/memphis-napi/index.node')}catch{console.log('\\n  .node binary missing — building Rust crates...\\n');require('child_process').execSync('npm run build:rust',{stdio:'inherit'})}\"",
@@ -196,7 +197,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.7.6",
-    "@modelcontextprotocol/sdk": "^1.31.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-http": "^0.219.0",
     "@opentelemetry/resources": "^2.8.0",
@@ -212,7 +213,7 @@
     "pino": "^10.3.1",
     "prompts": "^2.4.2",
     "yaml": "^2.8.2",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   },
   "optionalDependencies": {
     "@memphis-chains/memphis-darwin-arm64": "*",
@@ -226,21 +227,26 @@
     "@grpc/grpc-js": "^1.14.5",
     "@hono/node-server": "^1.19.15",
     "@opentelemetry/propagator-jaeger": "^2.10.0",
-    "body-parser": "^2.2.3",
-    "brace-expansion": "^5.0.6",
+    "body-parser": "^2.4.0",
+    "brace-expansion": "^5.0.12",
     "esbuild": "^0.28.1",
     "fast-uri": "^3.1.6",
     "find-my-way": ">=9.7.0",
     "hono": "^4.13.5",
     "ip-address": ">=10.3.1",
-    "js-yaml": "^4.2.0",
-    "markdown-it": "^14.2.0",
+    "js-yaml": "^4.3.2",
+    "linkify-it": "^5.0.2",
+    "markdown-it": "^14.3.3",
+    "nanoid": "^3.3.20",
+    "postcss": "^8.5.31",
     "protobufjs": "^8.7.0",
     "proxy-addr": "^2.0.8",
     "qs": "6.16.0",
     "sharp": "^0.35.5",
+    "smol-toml": "^1.9.1",
+    "source-map-js": "^1.2.2",
     "tar": "^7.5.21",
-    "vite": "^8.0.16"
+    "vite": "^8.3.5"
   },
   "peerDependencies": {
     "ollama": ">=0.5.0"

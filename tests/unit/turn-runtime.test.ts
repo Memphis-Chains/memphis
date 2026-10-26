@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  ESTIMATED_CHARS_PER_TOKEN,
+  estimatePromptTokens,
   resetTurnTelemetryForTests,
   snapshotTurnTelemetry,
 } from '../../src/infra/runtime/turn-telemetry.js';
@@ -246,6 +248,48 @@ describe('turn runtime', () => {
       userText: 'hello',
       assistantReply: 'Visible answer',
     });
+  });
+
+  it('retains reasoning only in continuation history, not the sent reply or durable memory', async () => {
+    runAgentLoop.mockImplementationOnce(async () => ({
+      reply: 'Visible answer',
+      messages: [
+        { role: 'user', content: 'hello' },
+        {
+          role: 'assistant',
+          content: 'Visible answer',
+          reasoning_content: 'private continuation marker',
+        },
+      ],
+    }));
+    const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
+    const sendReply = vi.fn(async () => undefined);
+    const memory = {
+      recall: vi.fn(async () => ({ items: [] })),
+      store: vi.fn(async () => undefined),
+      isAvailable: vi.fn(() => true),
+    };
+    const result = await runTurnRuntime({
+      input: 'hello',
+      messages: [],
+      llm: { complete: vi.fn() },
+      providerLabel: 'minimax',
+      model: 'MiniMax-M3.1-Flash',
+      memory,
+      memoryUserId: 'telegram:test',
+      surface: 'telegram',
+      sendReply,
+    });
+    expect(result.output).toBe('Visible answer');
+    expect(result.messages.at(-1)).toMatchObject({
+      reasoning_content: 'private continuation marker',
+    });
+    expect(sendReply).toHaveBeenCalledWith('Visible answer');
+    expect(memory.store).toHaveBeenCalled();
+    expect(JSON.stringify(memory.store.mock.calls)).not.toContain('private continuation marker');
+    expect(JSON.stringify(runPostResponseCognitivePass.mock.calls)).not.toContain(
+      'private continuation marker',
+    );
   });
 
   it('stamps real provider/model labels when MEMPHIS_PROVIDER_STAMP=1 (no fallback to "provider/unknown")', async () => {
@@ -727,6 +771,37 @@ describe('turn runtime', () => {
     ).toBe(true);
   });
 
+  it('counts reasoning in estimates and refuses an oversized exchange before trimming it', async () => {
+    const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
+    const reasoning = 'x'.repeat(4_000_000);
+    const messages = [
+      { role: 'user' as const, content: 'lookup' },
+      {
+        role: 'assistant' as const,
+        content: '',
+        reasoning_content: reasoning,
+        tool_calls: [{ id: 'call-a', name: 'lookup', arguments: {} }],
+      },
+      { role: 'tool' as const, tool_call_id: 'call-a', content: '42' },
+    ];
+    expect(estimatePromptTokens({ messages })).toBeGreaterThan(1_000_000);
+    await expect(
+      runTurnRuntime({
+        input: 'continue',
+        messages,
+        llm: { complete: vi.fn() },
+        providerLabel: 'minimax',
+        model: 'MiniMax-M3.1-Flash',
+        surface: 'cli.chat',
+        cognitiveRuntimeEnabled: false,
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR', retriable: false });
+    expect(runAgentLoop).not.toHaveBeenCalled();
+    expect(messages).toHaveLength(3);
+    expect(messages[1].reasoning_content).toBe(reasoning);
+    expect(messages[2].tool_call_id).toBe('call-a');
+  });
+
   it('blocks durable memory persistence when the transcript fails content scan', async () => {
     const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
 
@@ -818,5 +893,145 @@ describe('turn runtime', () => {
     expect(runCall.systemPrompt).toContain('adopt sqlite for queue');
 
     getModeSpy.mockRestore();
+  });
+});
+
+describe('account context window', () => {
+  beforeEach(() => {
+    resetTurnTelemetryForTests();
+    runAgentLoop.mockReset();
+    runAgentLoop.mockImplementation(async () => ({
+      reply: 'assistant raw reply',
+      messages: [
+        { role: 'user', content: 'placeholder user' },
+        { role: 'assistant', content: 'assistant raw reply' },
+      ],
+      usage: { inputTokens: 32, outputTokens: 14, totalTokens: 46 },
+    }));
+  });
+
+  it('measures remaining context against the account limit, not the declared model limit', async () => {
+    const { buildRuntimeTelemetry } = await import('../../src/infra/runtime/turn-telemetry.js');
+
+    const declared = buildRuntimeTelemetry({
+      provider: 'openai',
+      model: 'astra-gtp6-max',
+      messages: [{ role: 'user', content: 'hi' }],
+      usage: { inputTokens: 1000, outputTokens: 10, totalTokens: 1010 },
+    });
+    // The declared model ceiling is 1050000, but the account may be granted
+    // less, so the effective value is at most that. Assert the rule, not a
+    // machine-specific number: the local account catalog is consulted.
+    expect(declared.contextWindowTokens).toBeLessThanOrEqual(1_050_000);
+    expect(declared.contextWindowTokens).toBeGreaterThan(0);
+
+    const accountAware = buildRuntimeTelemetry({
+      provider: 'openai',
+      model: 'astra-gtp6-max',
+      messages: [{ role: 'user', content: 'hi' }],
+      usage: { inputTokens: 1000, outputTokens: 10, totalTokens: 1010 },
+      effectiveContextWindow: 258400,
+    });
+
+    // The account grants less, and that smaller limit must win.
+    expect(accountAware.contextWindowTokens).toBe(258400);
+    // remainingContextTokens subtracts the estimated prompt size, not reported
+    // usage: the guard runs before the provider answers.
+    expect(accountAware.remainingContextTokens).toBe(258400 - accountAware.estimatedPromptTokens);
+    // Without the override the local account catalog already narrows the
+    // ceiling, so the override must not make it any larger.
+    expect(accountAware.remainingContextTokens).toBeLessThanOrEqual(
+      declared.remainingContextTokens ?? Number.POSITIVE_INFINITY,
+    );
+  });
+
+  it('never raises the declared limit when a provider overstates its account window', async () => {
+    const { buildRuntimeTelemetry } = await import('../../src/infra/runtime/turn-telemetry.js');
+
+    const telemetry = buildRuntimeTelemetry({
+      provider: 'openai',
+      model: 'astra-gtp6-max',
+      messages: [{ role: 'user', content: 'hi' }],
+      usage: { inputTokens: 10, outputTokens: 1, totalTokens: 11 },
+      effectiveContextWindow: 2000000,
+    });
+
+    // A provider may not widen the ceiling, whatever it claims.
+    expect(telemetry.contextWindowTokens).toBeLessThanOrEqual(1_050_000);
+  });
+
+  it('estimates tool-heavy transcripts conservatively', () => {
+    const transcriptChars = 884_000;
+    const estimated = estimatePromptTokens({
+      messages: [{ role: 'tool', tool_call_id: 'incident', content: 'x'.repeat(transcriptChars) }],
+    });
+
+    expect(ESTIMATED_CHARS_PER_TOKEN).toBe(3);
+    expect(estimated).toBeGreaterThan(Math.floor(258_400 * 0.85));
+  });
+});
+
+describe('account context window trims real history', () => {
+  beforeEach(() => {
+    resetTurnTelemetryForTests();
+    runAgentLoop.mockReset();
+    runAgentLoop.mockImplementation(async (call: { messages: unknown[] }) => ({
+      reply: 'assistant raw reply',
+      messages: [
+        ...(call.messages as Array<Record<string, unknown>>),
+        { role: 'assistant', content: 'assistant raw reply' },
+      ],
+      usage: { inputTokens: 32, outputTokens: 14, totalTokens: 46 },
+    }));
+  });
+
+  const openaiProvider = {
+    name: 'openai',
+    isConfigured: () => true,
+    isAvailable: async () => true,
+    listModels: async () => ['astra-gtp6-max'],
+    defaultModel: () => 'astra-gtp6-max',
+    healthCheck: async () => ({ name: 'openai', ok: true }),
+    chat: vi.fn(),
+    generate: vi.fn(),
+  };
+
+  it('trims history to the account window even though the model declares more', async () => {
+    const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
+    // ~400k tokens of history: under the declared 1050000, over a 272000 account.
+    const huge = 'x'.repeat(400_000);
+    const messages: Array<{ role: string; content: string }> = [
+      { role: 'user', content: huge },
+      { role: 'assistant', content: huge },
+      { role: 'user', content: huge },
+      { role: 'assistant', content: huge },
+    ];
+
+    // A limit above what the history needs keeps every message.
+    await runTurnRuntime({
+      input: 'summarize',
+      messages,
+      provider: openaiProvider,
+      surface: 'http.chat.generate',
+      effectiveContextWindow: 2_000_000,
+    });
+    const beforeGuard = runAgentLoop.mock.calls[0]?.[0] as { messages: unknown[] };
+    const untouchedLength = beforeGuard.messages.length;
+
+    // A limit below what the history needs drops messages before the call.
+    runAgentLoop.mockClear();
+    await runTurnRuntime({
+      input: 'summarize',
+      messages,
+      provider: openaiProvider,
+      surface: 'http.chat.generate',
+      effectiveContextWindow: 50_000,
+    });
+    const afterGuard = runAgentLoop.mock.calls[0]?.[0] as { messages: unknown[] };
+    expect(afterGuard.messages.length).toBeLessThan(untouchedLength);
+    // The history really is shorter, not merely re-indexed.
+    const totalChars = (list: unknown[]) =>
+      list.reduce((sum, m) => sum + String((m as { content?: string }).content ?? '').length, 0);
+    expect(totalChars(afterGuard.messages)).toBeLessThan(totalChars(beforeGuard.messages));
   });
 });

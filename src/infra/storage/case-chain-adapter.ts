@@ -215,6 +215,10 @@ export class CaseChainAdapter {
   }
 
   private async appendViaTs(entry: CaseEntry): Promise<CaseAppendResult> {
+    return withNapiAppendLock(getChainPath(CHAIN_NAME, this.rawEnv), () => this.appendViaTsLocked(entry));
+  }
+
+  private async appendViaTsLocked(entry: CaseEntry): Promise<CaseAppendResult> {
     const chainBlocks = await readChainBlocks(CHAIN_NAME, this.rawEnv);
     const nextIndex = (chainBlocks.at(-1)?.index ?? 0) + 1;
     const prevHash = chainBlocks.at(-1)?.hash ?? '0'.repeat(64);

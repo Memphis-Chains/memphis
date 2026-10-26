@@ -1,4 +1,5 @@
 use chrono::Utc;
+use zeroize::Zeroize;
 
 use crate::crypto::{decrypt, encrypt};
 use crate::did::MemphisDid;
@@ -17,6 +18,12 @@ use crate::types::{
 pub struct Vault {
     pub salt: [u8; 32],
     master_key: [u8; 32],
+}
+
+impl Drop for Vault {
+    fn drop(&mut self) {
+        self.master_key.zeroize();
+    }
 }
 
 pub struct VaultInitConfig {
