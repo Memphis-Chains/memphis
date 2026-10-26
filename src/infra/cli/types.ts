@@ -118,6 +118,9 @@ export type CliArgs = {
   // arbitrary strings.
   format?: 'table' | 'json' | 'csv' | 'mv2';
   include?: string;
+  fromMv2?: string;
+  into?: string;
+  trustedSigner?: string;
   intervalMs?: number;
   limit?: number;
   safeMode: boolean;

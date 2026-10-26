@@ -33,7 +33,7 @@ function reportCleanupFailure(operation: 'close' | 'unlink', error: unknown): vo
  */
 export function writePrivateAtomicFile(
   path: string,
-  content: string,
+  content: string | Uint8Array,
   options: { exclusive?: boolean } = {},
 ): void {
   const temporary = `${path}.tmp-${randomUUID()}`;

@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -30,6 +31,8 @@ const env = {
   RUST_CHAIN_ENABLED: 'true',
   RUST_CHAIN_BRIDGE_PATH: join(root, 'crates/memphis-napi/index.node'),
   MEMPHIS_KARTOGRAF_ENABLE: 'true',
+  // Generated in memory for this throwaway vault; never inherits the operator pepper.
+  MEMPHIS_VAULT_PEPPER: randomBytes(32).toString('hex'),
 };
 const checks = [];
 function command(args) {
@@ -113,6 +116,13 @@ probe(
   [0, 1],
 );
 
+const fixture = spawnSync(process.execPath, [join(root, 'scripts/quarterly-mv2-fixture.mjs')], {
+  cwd: work,
+  env,
+  encoding: 'utf8',
+  timeout: 120_000,
+  maxBuffer: 1024 * 1024,
+});
 const mv2 = join(work, 'quarter.mv2');
 const exported = probe(
   'mv2-export',
@@ -125,7 +135,12 @@ const exported = probe(
     '--include',
     'journal,decisions,reflections,cases,patterns,system',
   ],
-  () => existsSync(mv2) && statSync(mv2).isFile() && statSync(mv2).size > 0,
+  (s) =>
+    fixture.status === 0 &&
+    s?.blockCount >= 6 &&
+    existsSync(mv2) &&
+    statSync(mv2).isFile() &&
+    statSync(mv2).size > 0,
 );
 if (exported) {
   probe(
