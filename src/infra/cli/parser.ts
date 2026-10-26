@@ -92,6 +92,9 @@ export function parseCommand(argv: string[]): CliArgs {
     provider: readFlagValue(flags, '--provider') as CliArgs['provider'],
     model: readFlagValue(flags, '--model'),
     file: readFlagValue(flags, '--file'),
+    fromMv2: readFlagValue(flags, '--from-mv2'),
+    into: readFlagValue(flags, '--into'),
+    trustedSigner: readFlagValue(flags, '--trusted-signer'),
     // `--out` (verbose `--output`) — both populate the same slot. The
     // mv2 export plan + Q1 exit test docs use `--output`; older
     // commands (`memphis export trajectories`) used `--out`. Accepting

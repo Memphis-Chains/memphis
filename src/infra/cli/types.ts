@@ -116,8 +116,11 @@ export type CliArgs = {
   // values (`table`, `json`, `csv`) remain valid for the legacy listing
   // commands. Keep the union narrow so handlers don't have to catch
   // arbitrary strings.
-  format?: 'table' | 'json' | 'csv' | 'mv2';
+  format?: 'table' | 'json' | 'csv' | 'mv2' | 'hf-dataset';
   include?: string;
+  fromMv2?: string;
+  into?: string;
+  trustedSigner?: string;
   intervalMs?: number;
   limit?: number;
   safeMode: boolean;

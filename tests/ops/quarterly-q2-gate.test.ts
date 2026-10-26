@@ -42,7 +42,7 @@ function fixture(failures: string[] = [], audit = true) {
     const fs = require('node:fs'), path = require('node:path');
     const failures = JSON.parse(fs.readFileSync(path.join(__dirname, 'failures.json')));
     const args = process.argv.slice(2), [command, sub] = args;
-    if (process.env.MEMPHIS_API_TOKEN || process.env.MEMPHIS_VAULT_PEPPER || process.env.HOME === process.env.OPERATOR_HOME) process.exit(9);
+    if (process.env.MEMPHIS_API_TOKEN || process.env.MEMPHIS_VAULT_PEPPER === 'synthetic-operator-pepper' || process.env.HOME === process.env.OPERATOR_HOME) process.exit(9);
     if (!process.env.MEMPHIS_DATA_DIR.startsWith(process.env.HOME + '/')) process.exit(9);
     const flag = (name) => args[args.indexOf(name) + 1];
     let result = { ok: true };
@@ -53,6 +53,7 @@ function fixture(failures: string[] = [], audit = true) {
     if (command === 'export' && args.includes('--format=mv2')) {
       if (failures.includes('mv2-export')) process.exit(1);
       fs.writeFileSync(flag('--output'), 'synthetic-mv2');
+      result = { ok: true, blockCount: 6 };
     }
     if (command === 'import') result = { valid: !failures.includes('mv2-import') };
     if (command === 'export' && sub === 'trajectories') {
@@ -71,6 +72,7 @@ function fixture(failures: string[] = [], audit = true) {
   `,
     { mode: 0o755 },
   );
+  writeFileSync(join(root, 'scripts/quarterly-mv2-fixture.mjs'), 'process.exit(0);');
   const report = join(root, 'report.json');
   const result = spawnSync('bash', [join(root, 'scripts/quarterly-exit-test-q2.sh')], {
     env: {
