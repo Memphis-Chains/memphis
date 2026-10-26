@@ -7,6 +7,13 @@ Two Hugging Face `.no_exist/.../model.safetensors` entries are negative-cache
 markers, not model weights. The repository's `models/` directory is absent.
 No training job was started and no substitute weights were generated.
 
+A broader filename-only host inventory also found Basal generative-model weights
+under `~/.local/share/basal/models/` (one safetensors model and two GGUF files),
+Piper Polish voice ONNX files and Python-package inference fixtures. These are
+not installed or signed Kartograf checkpoints; their presence does not satisfy
+Kartograf inference/training acceptance. No existing weights were moved or read
+into model memory by this audit.
+
 `nvidia-smi --query-gpu=name,memory.total --format=csv,noheader` reports an
 NVIDIA GeForce GTX 960 with 4096 MiB. This inventory does not establish training
 capacity or compatibility for a particular architecture; that needs a bounded
