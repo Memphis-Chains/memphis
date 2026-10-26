@@ -2649,7 +2649,7 @@ mod tests {
             "memphis_exec",
             "memphis_self_modify",
             "memphis_test",
-            "memphis_cron",
+            "memphis_cron_script",
             "memphis_classify",
             "memphis_code_read",
             "memphis_web_fetch",
