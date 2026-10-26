@@ -11,7 +11,7 @@ This is not a penetration test or independent certification of Rust cryptography
 | Reflection returned before its memory-action append completed; that append omitted the supplied environment | PR #692 awaits persistence and captures environment paths. A deterministic delayed-writer regression failed before the fix.                                                                                                            |
 | Vault archival failure wrote an extra plaintext memory archive and cleared active memory                    | This change postpones rotation and retains active entries. A regression verifies unchanged active bytes, no plaintext archive, no secret in the warning, and a successful later vault retry.                                           |
 | Old MV2 omitted hashes/signatures and lacked a trusted snapshot restore                                     | Separate MV2 work preserves full JSON, signs a manifest, requires an expected DID, validates hashes/signatures/continuity, and stages a fresh restore. Vault, embedding and privileged soul restoration remain outside generic import. |
-| Native MV2 object payloads rounded some floating-point values, invalidating signed snapshots | The MV2 change carries block JSON as opaque strings and declares its encoding in the signed manifest; a real native-codec regression includes the affected value. The first refused operator snapshot was retained privately. |
+| Native MV2 object payloads rounded some floating-point values, invalidating signed snapshots                | The MV2 change carries block JSON as opaque strings and declares its encoding in the signed manifest; a real native-codec regression includes the affected value. The first refused operator snapshot was retained privately.          |
 | Quarterly acceptance counted any nonempty audit file                                                        | This change requires completed external-review evidence bound to the report SHA-256. An internal report cannot pass. Evidence is an operator-reviewed attestation, not proof of reviewer identity.                                     |
 
 `npm audit --omit=dev --json` initially reported five affected packages: four
@@ -19,8 +19,10 @@ moderate, one low, zero high/critical. Scoped compatible lockfile updates fixed
 those production findings: express-rate-limit 8.3.2 → 8.7.1, fast-uri 3.1.8 →
 3.1.9, fastify 5.12.5 → 5.12.7, hono 4.13.9 → 4.13.14, ip-address 10.7.2 →
 10.7.5. The production audit now reports zero vulnerabilities. No package ranges
-changed. The complete graph still reports four moderate development findings;
-this is not a claim that every dependency is audit-clean. The private operator
+changed. A follow-up upgrades Vitest/coverage to 4.1.12 and humanfs/node to
+0.16.8; the complete locked graph and fresh installation now both report zero
+vulnerabilities. This is point-in-time advisory coverage, not proof that all
+dependencies are free of defects. The private operator
 archive retains initial and remediated machine-readable results. Compatibility
 is checked by the required PR tests against a fresh install.
 
