@@ -30,6 +30,7 @@ type Frame = { track: 'journal' | 'chains'; id: string; payload: unknown };
 export interface Mv2Manifest {
   kind: 'memphis-mv2-snapshot';
   version: 1;
+  blockEncoding: 'json-string-v1';
   createdAt: string;
   chains: string[];
   counts: Record<string, number>;
@@ -147,13 +148,15 @@ export async function exportMv2Snapshot(
       frames.push({
         track: name === 'journal' ? 'journal' : 'chains',
         id: frameId(block),
-        payload: block,
+        // Keep numbers opaque to serde_json's float parser; Node owns block JSON.
+        payload: JSON.stringify(block),
       });
     }
   }
   const unsigned = {
     kind: 'memphis-mv2-snapshot' as const,
     version: 1 as const,
+    blockEncoding: 'json-string-v1' as const,
     createdAt: new Date().toISOString(),
     chains: names,
     counts,
@@ -279,6 +282,7 @@ export async function inspectMv2Snapshot(
     !manifest ||
     manifest.kind !== 'memphis-mv2-snapshot' ||
     manifest.version !== 1 ||
+    manifest.blockEncoding !== 'json-string-v1' ||
     !Array.isArray(manifest.chains) ||
     !manifest.chains.length ||
     manifest.chains.some((name) => !knownChain(name)) ||
@@ -308,7 +312,14 @@ export async function inspectMv2Snapshot(
     throw new Error('MV2 snapshot signature or content digest mismatch');
   const blocks = new Map<string, ChainBlock[]>(manifest.chains.map((name) => [name, []]));
   for (const frame of frames) {
-    const block = frame.payload as ChainBlock;
+    if (typeof frame.payload !== 'string') throw new Error('Unsupported MV2 block encoding');
+    let block: ChainBlock;
+    try {
+      block = JSON.parse(frame.payload) as ChainBlock;
+      checkJson(block);
+    } catch {
+      throw new Error('Malformed MV2 block JSON');
+    }
     if (
       !block ||
       !blocks.has(block.chain) ||
