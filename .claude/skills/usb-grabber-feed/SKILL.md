@@ -106,11 +106,24 @@ systemctl --user enable --now memphis-grabber-feed.service
 systemctl --user status memphis-grabber-feed.service
 ```
 
-### Dzienny audyt (memphis_cron)
+### Dzienny audyt (zadanie harmonogramu)
+
+Skrypt audytu jest plikiem w `~/memphis/crons/` z nagłówkiem `# schedule:`.
+Harmonogram Memphis rejestruje go jako zadanie i uruchamia w podanym czasie.
 
 ```bash
-memphis_cron add grabber-feed-audit "0 6 * * *" 'bash /home/memphis/memphis/scripts/usb-grabber-test.py /dev/video0 2 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"video\",{}).get(\"verdict\",\"?\"),d.get(\"audio\",{}).get(\"verdict\",\"?\"))" >> /home/memphis/.memphis/logs/grabber-feed-daily.log'
+# plik: ~/memphis/crons/grabber-feed-audit.sh
+#!/usr/bin/env bash
+# schedule: 0 6 * * *
+set -euo pipefail
+
+bash /home/memphis/memphis/scripts/usb-grabber-test.py /dev/video0 2>&1 | tail -20 >> /home/memphis/.memphis/logs/grabber-feed-daily.log
 ```
+
+Narzędzie modelu, które tym zarządza, to `memphis_cron_script` (natywna
+powierzchnia operatora): `action: add` z `cron`, `name` i `script`.
+`memphis_cron` to osobne narzędzie — ono zarządza ZADANIAMI harmonogramu,
+nie plikami skryptów.
 
 ## Diagnostyka
 

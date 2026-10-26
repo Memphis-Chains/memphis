@@ -592,7 +592,7 @@ export async function bootstrap(): Promise<void> {
     executionTarget: resolveConfiguredSchedulerExecutionTarget(process.env),
   });
 
-  // Register the scripts the native `memphis_cron` tool manages as
+  // Register the scripts the native `memphis_cron_script` tool manages as
   // scheduler tasks. The tool writes a `# schedule:` header and manages the
   // executable bit; without this bridge nothing ever read either one, so a
   // scheduled script never ran. The bridge re-syncs on a timer, so a script
