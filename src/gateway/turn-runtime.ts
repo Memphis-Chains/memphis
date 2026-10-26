@@ -54,6 +54,7 @@ import { createPinoLogger } from '../infra/logging/pino.js';
 import { instrument } from '../infra/observability/instrument.js';
 import {
   buildRuntimeTelemetry,
+  ESTIMATED_CHARS_PER_TOKEN,
   estimatePromptTokens,
   recordTurnTelemetry,
 } from '../infra/runtime/turn-telemetry.js';
@@ -439,6 +440,12 @@ export type TurnRuntimeInput = {
   memoryUserId?: string;
   conversationId?: string;
   conversationContext?: ConversationContextService;
+  /**
+   * Context window the provider's account granted on an earlier turn. Takes
+   * precedence over the persisted overlay value, so a caller that already
+   * observed the account limit can pass it without a snapshot round-trip.
+   */
+  effectiveContextWindow?: number;
   cognitiveRuntimeEnabled?: boolean;
   surface: string;
   auditSurface?: string;
@@ -626,6 +633,10 @@ type ContextWindowGuardResult = {
   truncatedMessages: number;
 };
 
+// Leave room for provider framing, tool schemas, and the response. Those are
+// not represented in ChatMessage[] but still consume the upstream window.
+const CONTEXT_TARGET_RATIO = 0.85;
+
 function truncateChatMessageContent(message: ChatMessage, maxChars: number): ChatMessage {
   if (!('content' in message) || message.content.length <= maxChars) return message;
   const marker = '\n\n[context trimmed: message shortened before provider call]';
@@ -651,20 +662,49 @@ function enforceContextWindowBeforeProvider(input: {
   model: string;
   systemPrompt: string;
   messages: ChatMessage[];
+  /** Account limit observed on an earlier turn in this conversation. */
+  effectiveContextWindow?: number;
 }): ContextWindowGuardResult {
   const capability = resolveModelCapabilitySnapshot(input.provider, input.model);
-  const contextWindowTokens = capability?.contextWindowTokens;
+  const declaredContextWindow = capability?.contextWindowTokens;
+  const accountContextWindow =
+    typeof input.effectiveContextWindow === 'number' &&
+    Number.isFinite(input.effectiveContextWindow) &&
+    input.effectiveContextWindow > 0
+      ? Math.trunc(input.effectiveContextWindow)
+      : undefined;
+  // An account may narrow the model's declared window but never widen it.
+  const contextWindowTokens =
+    declaredContextWindow === undefined
+      ? accountContextWindow
+      : accountContextWindow === undefined
+        ? declaredContextWindow
+        : Math.min(declaredContextWindow, accountContextWindow);
   if (!contextWindowTokens || contextWindowTokens <= 0) {
     return { messages: input.messages, trimmedMessages: 0, truncatedMessages: 0 };
   }
 
-  const targetTokens = Math.max(512, Math.floor(contextWindowTokens * 0.92));
+  const targetTokens = Math.max(512, Math.floor(contextWindowTokens * CONTEXT_TARGET_RATIO));
   let messages = [...input.messages];
   let trimmedMessages = 0;
   let truncatedMessages = 0;
 
-  const estimate = () =>
-    estimatePromptTokens({ systemPrompt: input.systemPrompt, messages });
+  const estimate = () => estimatePromptTokens({ systemPrompt: input.systemPrompt, messages });
+
+  // Reasoning carries continuation state. Trimming individual messages can
+  // break that state or orphan a tool result, so reject protected history intact.
+  if (
+    messages.some(
+      (message) => message.role === 'assistant' && message.reasoning_content !== undefined,
+    ) &&
+    estimate() > targetTokens
+  ) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'Conversation with reasoning exceeds the estimated context budget; start a shorter conversation',
+      400,
+    );
+  }
 
   while (messages.length > 1 && estimate() > targetTokens) {
     const dropIndex = messages.findIndex(
@@ -686,7 +726,10 @@ function enforceContextWindowBeforeProvider(input: {
 
     const currentTokens = estimate();
     const excessTokens = currentTokens - targetTokens;
-    const reduceChars = Math.max(excessTokens * 4 + 512, Math.floor(largest.message.content.length * 0.25));
+    const reduceChars = Math.max(
+      excessTokens * ESTIMATED_CHARS_PER_TOKEN + 512,
+      Math.floor(largest.message.content.length * 0.25),
+    );
     const maxChars = Math.max(128, largest.message.content.length - reduceChars);
     const nextMessage = truncateChatMessageContent(largest.message, maxChars);
     if (nextMessage.content.length >= largest.message.content.length) break;
@@ -1232,6 +1275,8 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
       ? undefined
       : hardenToolExecutor(constrainedTools.toolExecutor, auditSurface);
     const availableTools = normalizedToolExecutor?.listTools().map((tool) => tool.name) ?? [];
+    const accountContextWindow =
+      options.effectiveContextWindow ?? conversationOverlay?.effectiveContextWindow;
     const baseMessages = trimConversationMessages(
       options.messages ?? [],
       conversationOverlay?.trimRecentMessagesTo,
@@ -1292,6 +1337,7 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
       model: llm.model,
       systemPrompt: prepared.systemPrompt,
       messages: prepared.messages,
+      effectiveContextWindow: accountContextWindow,
     });
     let result: Awaited<ReturnType<typeof runAgentLoop>>;
     try {
@@ -1384,9 +1430,9 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
     // and cross-reference the tool calls that fired in this turn. If
     // a forbidden phrase appears WITHOUT the matching whitelisted tool,
     // emit a runtime security event AND, depending on
-  // `MEMPHIS_ANTICONFAB_PHASE`, optionally mutate the reply
-  // (strip-sentence at phase 3 — the default; warn-append at
-  // phase 2 — legacy/tuning mode).
+    // `MEMPHIS_ANTICONFAB_PHASE`, optionally mutate the reply
+    // (strip-sentence at phase 3 — the default; warn-append at
+    // phase 2 — legacy/tuning mode).
     //
     // Hoisted out of the try{} so the cleanedOutput chain below can
     // splice the warning footer in. Audit failure is non-fatal — `null`
@@ -1522,6 +1568,7 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
         systemPrompt: prepared.systemPrompt,
         messages: contextGuard.messages,
         usage: result.usage,
+        effectiveContextWindow: result.effectiveContextWindow,
         trimmedMessages,
         compactionCount: conversationOverlay?.compactions?.length ?? 0,
         degraded: options.providerCascade?.degraded === true || persistence.degraded,
@@ -1581,15 +1628,10 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
           // (N8.2). Memory clients that don't plumb binding through
           // just ignore the extra argument (default MemoryClient.store
           // signature accepts it but defaults to undefined).
-          await options.memory.store(
-            options.memoryUserId,
-            prepared.memoryUserText,
-            cleanedOutput,
-            {
-              turnId,
-              conversationId: options.conversationId,
-            },
-          );
+          await options.memory.store(options.memoryUserId, prepared.memoryUserText, cleanedOutput, {
+            turnId,
+            conversationId: options.conversationId,
+          });
           persistence.memoryStored = true;
         } catch (error) {
           recordWriteFailure(persistence, error instanceof Error ? error.message : String(error));

@@ -7,6 +7,9 @@
 # it on every commit would tax unrelated work for nothing — it spawns vitest
 # and tsx, and its mutations only mean something when one of those files is
 # in the diff.
+#
+# The systemd unit gate is conditional on the same principle: it only means
+# something when a unit file is in the diff.
 set -e
 
 npm run lint
@@ -19,7 +22,7 @@ sites/memphis-v5/api/_boot.php
 scripts/sync-site-metrics.mts
 scripts/sync-native-tiers.mts
 tests/unit/site-claims-contract.test.ts
-crates/memphis-operator/src/chat.rs
+crates/memphis-operator/src/chat_tool_catalog.rs
 sites/memphis-v5/index.html
 src/security/content-scan.ts'
 
@@ -33,4 +36,22 @@ done
 
 if [ "$NEEDS_MUTATION_GATE" -eq 1 ]; then
   npm run -s ops:mutation-gate
+fi
+
+# Two alert units shipped as a 71-byte stub with no [Service] section, so
+# systemd refused to run them on every boot and a failed digest was never
+# reported to the operator. Run the unit gate whenever a unit file is in
+# the diff.
+NEEDS_SYSTEMD_GATE=0
+for file in $STAGED; do
+  case "$file" in
+    scripts/systemd/*.service|scripts/systemd/*.timer)
+      NEEDS_SYSTEMD_GATE=1
+      break
+      ;;
+  esac
+done
+
+if [ "$NEEDS_SYSTEMD_GATE" -eq 1 ]; then
+  npm run -s ops:check-systemd-units
 fi

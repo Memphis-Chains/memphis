@@ -93,3 +93,55 @@ not gated by the runtime. `Wants=` is the soft dependency that allows
 parallel startup without ordering pain. If the chains directory is on
 a network mount that's only mounted when `memphis.service` runs, swap
 to `Requires=` and add `After=memphis.service` to the `[Unit]` section.
+
+### Failure alerts (`memphis-monday-admin-failure-alert.service`,
+### `memphis-tuesday-code-failure-alert.service`)
+
+These two units are the `OnFailure=` targets of the Monday admin digest and
+the Tuesday code digest. They exist so that a failed digest reaches the
+operator instead of dying silently.
+
+They shipped as a 71-byte stub — `[Unit]` + `Description`, no `[Service]`
+section — so systemd refused to run them on every boot:
+
+```
+Service has no ExecStart=, ExecStop=, or SuccessAction=. Refusing.
+```
+
+The `OnFailure=` wiring in the parent units was correct all along; only the
+alert side was missing. The result was the worst possible failure mode: the
+units whose whole job was to report a failure could not report one.
+
+Both now run `scripts/systemd/failure-alert.sh`, which:
+
+- delivers the alert to Telegram through the `memphis` CLI, because the bot
+  token is vault-backed (`MEMPHIS_TELEGRAM_BOT_TOKEN` in `.env` is the
+  literal `VAULT:telegram_bot_token`) and only the CLI resolves that
+  reference — the literal must never reach the Telegram API;
+- throttles to one message per failed unit per hour
+  (`MEMPHIS_ALERT_THROTTLE_SECONDS`, default 3600). The stub was started in
+  bursts — five attempts within three seconds on 2026-10-23, and once per
+  boot on 2026-10-24 — so an unthrottled alert would bury the operator;
+- always writes the full failure detail to the journal, whether or not the
+  message was sent.
+
+The alert unit is not chained to anything further, so a failed alert cannot
+escalate into a second failed unit.
+
+To install:
+
+```bash
+cp scripts/systemd/memphis-*-failure-alert.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+```
+
+### The unit gate
+
+`scripts/check-systemd-units.mts` (`npm run -s ops:check-systemd-units`)
+fails when a `.service` has no `ExecStart=`/`ExecStop=`, when an
+`OnFailure=` target does not exist, or when the target is itself a stub.
+
+The fix restores two `ExecStart` lines; the gate is what stops the next
+stub unit from shipping the same way, and what catches an `OnFailure=`
+target that reports a failure into the void. It runs in CI
+(`quality-gate`) and in `.githooks/pre-commit` when a unit file is staged.

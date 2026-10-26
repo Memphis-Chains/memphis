@@ -29,11 +29,12 @@
  *   { backups: { lastSuccessAt, lastDrillAt, lastError, ageMs, isStale, ... } }
  */
 
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 import { LOG_LEVEL } from '../../config/env-registry.js';
+import { getDataDir } from '../../config/paths.js';
+import { writePrivateAtomicFile } from '../config/private-atomic-file.js';
 import { createPinoLogger } from '../logging/pino.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
 
@@ -63,6 +64,7 @@ export interface ScheduledBackupState {
 export interface ScheduledBackupOptions {
   rawEnv?: NodeJS.ProcessEnv;
   intervalMs?: number;
+  schedule?: 'interval' | 'cron';
   /** Test seam — substitute the backup creator. */
   createBackupFn?: () => Promise<{
     backupPath: string;
@@ -84,12 +86,70 @@ export interface ScheduledBackupHandle {
   state: () => ScheduledBackupState;
 }
 
-const state: ScheduledBackupState = {
-  enabled: false,
-  totalSuccess: 0,
-  totalFailures: 0,
-  totalDrills: 0,
-};
+const states = new Map<string, ScheduledBackupState>();
+function statePath(rawEnv: NodeJS.ProcessEnv): string {
+  return join(getDataDir(rawEnv), 'state', 'scheduled-backup.json');
+}
+function stateFor(rawEnv: NodeJS.ProcessEnv): ScheduledBackupState {
+  const path = statePath(rawEnv);
+  const cached = states.get(path);
+  if (cached) return cached;
+  const state: ScheduledBackupState = {
+    enabled: false,
+    totalSuccess: 0,
+    totalFailures: 0,
+    totalDrills: 0,
+  };
+  // Unit tests without an explicit root must never inspect operator state.
+  if (!process.env.VITEST || rawEnv.MEMPHIS_DATA_DIR) {
+    try {
+      const saved = JSON.parse(readFileSync(path, 'utf8'));
+      if (saved.schemaVersion === 1 && typeof saved.state === 'object' && saved.state) {
+        for (const key of ['totalSuccess', 'totalFailures', 'totalDrills'] as const) {
+          if (Number.isSafeInteger(saved.state[key]) && saved.state[key] >= 0)
+            state[key] = saved.state[key];
+        }
+        for (const key of [
+          'lastSuccessAt',
+          'lastSuccessFile',
+          'lastError',
+          'lastErrorAt',
+          'lastDrillAt',
+          'lastDrillError',
+        ] as const) {
+          if (typeof saved.state[key] === 'string') state[key] = saved.state[key];
+        }
+        if (typeof saved.state.lastDrillOk === 'boolean')
+          state.lastDrillOk = saved.state.lastDrillOk;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        state.lastError = 'Persisted backup status is unreadable';
+      }
+    }
+  }
+  states.set(path, state);
+  return state;
+}
+function cronBackupEnabled(rawEnv: NodeJS.ProcessEnv): boolean {
+  if (process.env.VITEST && !rawEnv.MEMPHIS_DATA_DIR) return false;
+  const path = join(getDataDir(rawEnv), 'config', 'scheduler', 'tasks.json');
+  if (!existsSync(path)) return false;
+  try {
+    const tasks: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    return (
+      Array.isArray(tasks) &&
+      tasks.some(
+        (task) =>
+          task?.enabled === true &&
+          task?.command?.type === 'builtin' &&
+          task?.command?.job === 'scheduled-backup',
+      )
+    );
+  } catch {
+    return false;
+  }
+}
 
 function readIntervalFromEnv(rawEnv: NodeJS.ProcessEnv): number | null {
   const raw = rawEnv.MEMPHIS_BACKUP_INTERVAL_MS?.trim();
@@ -116,32 +176,10 @@ function readKeep(rawEnv: NodeJS.ProcessEnv): number {
   return Math.floor(parsed);
 }
 
-/**
- * Default restore-drill: verify the archive is listable + contains at
- * least one chain block file.
- *
- * Codex Round 6 P1 fix (PR #120): the old drill unconditionally ran
- * `tar -tzf`, but `createBackup` can produce a fallback gzip/JSON
- * archive when tar is unavailable (EPERM/EACCES path). That made every
- * drill on those hosts emit a false drill_failed alert. Use the
- * canonical `listArchiveContents` from backup.ts which already
- * handles BOTH formats.
- */
+/** Extract and validate archived chains and SQLite, without touching live state. */
 async function defaultDrill(backupPath: string): Promise<void> {
-  const drillDir = mkdtempSync(join(tmpdir(), 'memphis-backup-drill-'));
-  try {
-    const { listArchiveContents } = await import('../cli/commands/backup.js');
-    const entries = listArchiveContents(backupPath);
-    if (entries.length === 0) {
-      throw new Error('drill failed: archive has no entries');
-    }
-    const hasBlocks = entries.some((e) => /chains\/.+\.json/.test(e));
-    if (!hasBlocks) {
-      throw new Error('drill failed: archive contains no chain block files');
-    }
-  } finally {
-    rmSync(drillDir, { recursive: true, force: true });
-  }
+  const { drillBackup } = await import('../cli/commands/backup.js');
+  await drillBackup(backupPath);
 }
 
 /**
@@ -155,10 +193,12 @@ export function startScheduledBackupLoop(
   options: ScheduledBackupOptions = {},
 ): ScheduledBackupHandle {
   const rawEnv = options.rawEnv ?? process.env;
+  const state = stateFor(rawEnv);
   // Interval is bound at setInterval and can't change post-start.
   // drillEveryN + keep ARE classified hot in mutability.ts, so we
   // re-read them on every tick (Codex Round 6 P2 fix on PR #120).
-  const interval = options.intervalMs ?? readIntervalFromEnv(rawEnv);
+  const cron = options.schedule === 'cron' || cronBackupEnabled(rawEnv);
+  const interval = cron ? null : (options.intervalMs ?? readIntervalFromEnv(rawEnv));
   const drillFn = options.drillFn ?? defaultDrill;
 
   const createBackupFn =
@@ -235,7 +275,7 @@ export function startScheduledBackupLoop(
           state.totalDrills += 1;
           log.info(
             { event: 'backup.scheduled.drill.success', file: result.file },
-            'restore-drill verified backup is restorable',
+            'restore-drill verified archived chains and SQLite; credentials not verified',
           );
         } catch (err) {
           state.lastDrillAt = new Date().toISOString();
@@ -258,9 +298,9 @@ export function startScheduledBackupLoop(
         }
       }
 
-      // Cleanup old backups
+      // Preserve previous recovery candidates if the newest drill failed.
       try {
-        await cleanFn();
+        if (state.lastDrillOk !== false) await cleanFn();
       } catch (err) {
         log.warn(
           {
@@ -282,6 +322,16 @@ export function startScheduledBackupLoop(
         details: { error: message },
       });
     } finally {
+      if (!options.createBackupFn || rawEnv.MEMPHIS_DATA_DIR) {
+        try {
+          const path = statePath(rawEnv);
+          mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+          writePrivateAtomicFile(path, JSON.stringify({ schemaVersion: 1, state }));
+        } catch {
+          state.lastError = 'Backup status could not be persisted';
+          state.lastErrorAt = new Date().toISOString();
+        }
+      }
       inFlight = false;
       options.onTick?.(state);
     }
@@ -289,7 +339,8 @@ export function startScheduledBackupLoop(
   };
 
   if (interval === null) {
-    state.enabled = false;
+    state.enabled = cron;
+    state.intervalMs = undefined;
     return {
       stop: () => {},
       tickNow,
@@ -327,8 +378,13 @@ export function getScheduledBackupState(rawEnv: NodeJS.ProcessEnv = process.env)
   ageMs: number | null;
   isStale: boolean;
 } {
+  const state = stateFor(rawEnv);
+  if (cronBackupEnabled(rawEnv)) state.enabled = true;
   const ageMs = state.lastSuccessAt ? Date.now() - new Date(state.lastSuccessAt).getTime() : null;
-  const intervalMs = state.intervalMs ?? readIntervalFromEnv(rawEnv) ?? null;
+  const intervalMs =
+    state.intervalMs ??
+    readIntervalFromEnv(rawEnv) ??
+    (cronBackupEnabled(rawEnv) ? DEFAULT_BACKUP_INTERVAL_MS : null);
   const staleThreshold = readStaleThresholdMs(rawEnv, intervalMs);
   const isStale =
     state.enabled && ageMs !== null && staleThreshold !== null && ageMs > staleThreshold;
@@ -347,17 +403,5 @@ function readStaleThresholdMs(rawEnv: NodeJS.ProcessEnv, intervalMs: number | nu
 
 /** Test-only: clear state so a fresh loop can be started. */
 export function __resetScheduledBackupForTests(): void {
-  state.enabled = false;
-  state.intervalMs = undefined;
-  state.lastSuccessAt = undefined;
-  state.lastSuccessFile = undefined;
-  state.lastSuccessSizeBytes = undefined;
-  state.lastError = undefined;
-  state.lastErrorAt = undefined;
-  state.lastDrillAt = undefined;
-  state.lastDrillOk = undefined;
-  state.lastDrillError = undefined;
-  state.totalSuccess = 0;
-  state.totalFailures = 0;
-  state.totalDrills = 0;
+  states.clear();
 }

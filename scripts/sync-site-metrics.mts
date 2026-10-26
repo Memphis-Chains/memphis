@@ -26,6 +26,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+import { NATIVE_TOOL_CONTRACTS } from '../src/gateway/tool-contract.js';
 import { TOOL_REGISTRY } from '../src/gateway/tool-registry.js';
 
 // The single master for memphis-v5.pl. It used to be docs/site/index.html —
@@ -37,8 +38,24 @@ const VERSION = (JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as { 
   .version;
 
 const registry = TOOL_REGISTRY as Record<string, { featureFlag?: string }>;
-const totalTools = Object.keys(registry).length;
-const flaggedTools = Object.values(registry).filter((t) => t?.featureFlag).length;
+
+/**
+ * The page counts the tools the GATEWAY offers. A tool marked
+ * `gatewayHidden` in the native tool contract is executed by the Rust
+ * operator cockpit and is not advertised by the gateway, so it is not one of
+ * the "narzędzi" this page talks about. Counting it made the page claim a
+ * tool it does not offer — the same class of drift the contract test exists
+ * to catch.
+ */
+const gatewayHiddenTools = new Set(
+  NATIVE_TOOL_CONTRACTS.filter((contract) => contract.gatewayHidden).map((c) => c.name),
+);
+const gatewayVisibleRegistry = Object.fromEntries(
+  Object.entries(registry).filter(([name]) => !gatewayHiddenTools.has(name)),
+);
+
+const totalTools = Object.keys(gatewayVisibleRegistry).length;
+const flaggedTools = Object.values(gatewayVisibleRegistry).filter((t) => t?.featureFlag).length;
 const unflaggedTools = totalTools - flaggedTools;
 
 /**

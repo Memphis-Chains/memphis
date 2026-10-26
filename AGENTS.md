@@ -23,6 +23,15 @@ This file contains Memphis-managed workspace context for agent tools.
 
 Add tool-specific notes below this line. Memphis only manages the block above.
 
+### Current recovery priority
+
+For Memphis status or continuation, first read
+[the October 14 recovery handoff](notes/next-session-memphis-recovery-2026-10-14.md).
+The user authorized execution. Recovery and deployment completed October 15;
+read the updated handoff and test-isolation postmortem before continuing S1.
+The October 12 and October 14 failure descriptions are historical. Recheck live
+state before reporting current status. Preserve the mixed Git index/worktree.
+
 ---
 
 ## Runtime profile — Memphis + MiniMax (Mavis)
@@ -308,12 +317,11 @@ curl -sS -X POST http://localhost:6200/auth/login \
   | python3 -c 'import sys,json;print(json.load(sys.stdin)["accessToken"])'
 ```
 
-> ⚠️ **2026-04-19 SECURITY NOTICE:** an earlier revision of this file
-> committed a literal Synjar OWNER password (`marcin@watra.local`) to the
-> public repo. Even though the Synjar instance is local-only, that
-> credential lived in git history and on every public clone. The owner
-> password has been rotated; agents and operators must re-set local
-> `$SYNJAR_OWNER_PASSWORD` after pulling. The git-history scrub
-> (filter-branch / BFG) is a separate operator action — see `git log
---all -S 'WatraAdmin'` to confirm which historical commits still expose
-> it.
+> **Historical security notice — 2026-04-19; sanitized 2026-10-18:**
+> An earlier revision exposed a literal Synjar owner password. The April notice
+> recorded that it was rotated. That dated claim is not a current account check.
+> The remaining password fragment was removed from this maintained notice on
+> October 18. Do not copy historical credential values into commands, notes or logs.
+> Inspect history privately by path (`git log --all -- AGENTS.md`) if needed.
+> No history rewrite is authorized by this notice. See the sanitized
+> [October 18 triage record](docs/postmortems/2026-10-18-credential-prose-triage.md).

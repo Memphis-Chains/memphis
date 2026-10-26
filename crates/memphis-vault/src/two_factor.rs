@@ -4,12 +4,21 @@ use sha2::{Digest, Sha256};
 use crate::error::VaultError;
 
 /// Question + Answer for 2FA recovery
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[derive(Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct QAChallenge {
     pub question: String,
     /// Hashed answer (SHA-256)
     pub answer_hash: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+// Debug is a diagnostic projection; serialized credential contracts stay unchanged.
+impl std::fmt::Debug for QAChallenge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("QAChallenge")
+            .field("created_at", &self.created_at)
+            .finish_non_exhaustive()
+    }
 }
 
 impl QAChallenge {
@@ -172,5 +181,20 @@ mod tests {
         let result: Result<[u8; 32], VaultError> =
             derive_vault_key_with_2fa_v2(&master_key, "sample-answer");
         assert!(result.is_ok(), "valid input must produce Ok(_)");
+    }
+    #[test]
+    fn credential_debug_qa_challenge_omits_recovery_verifier() {
+        let secret = "synthetic-native-private-debug-material";
+        let value = QAChallenge::new(secret.into(), secret).unwrap();
+        for debug in [format!("{value:?}"), format!("{value:#?}")] {
+            assert!(!debug.contains(secret));
+            assert!(!debug.contains(&value.answer_hash));
+            assert!(!debug.contains(&value.answer_hash[..16]));
+        }
+        assert!(value.verify(secret));
+        assert_eq!(
+            serde_json::to_value(&value).unwrap()["answer_hash"],
+            value.answer_hash
+        );
     }
 }

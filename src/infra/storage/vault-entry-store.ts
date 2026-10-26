@@ -1,11 +1,22 @@
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-import type { VaultEntry } from './rust-vault-adapter.js';
+import {
+  parseVaultEntries,
+  VaultEntryError,
+  vaultDecrypt,
+  withVaultReadSnapshot,
+  type VaultEntry,
+} from './rust-vault-adapter.js';
 import { healSensitiveFilePerms } from './secure-file.js';
-import { resolveVaultPath } from './vault-paths.js';
+import { resolveVaultJournals, resolveVaultPath } from './vault-paths.js';
 import { secureCompare } from '../../security/constant-time.js';
+import {
+  withConfigurationSnapshot,
+  withConfigurationWriteLock,
+} from '../config/config-transaction.js';
+import { writePrivateAtomicFile } from '../config/private-atomic-file.js';
 
 export interface StoredVaultEntry extends VaultEntry {
   createdAt: string;
@@ -21,31 +32,21 @@ function computeFingerprint(entry: Pick<VaultEntry, 'key' | 'encrypted' | 'iv'>)
   return createHash('sha256').update(payload).digest('hex');
 }
 
-function readAll(path: string): StoredVaultEntry[] {
-  if (!existsSync(path)) return [];
-  // Heal-on-load: existing operator installs from before PR #275
-  // started enforcing 0600 may still have group/world-readable
-  // vault-entries.json on disk (664 was the umask default).
-  // Tighten silently with a one-time warn so the next CLI invocation
-  // already fixes it without operator intervention.
-  healSensitiveFilePerms(path);
+function readAll(
+  path: string,
+  rawEnv: NodeJS.ProcessEnv,
+  key?: string,
+  latest = false,
+): StoredVaultEntry[] {
+  let raw: string;
   try {
-    const raw = readFileSync(path, 'utf8');
-    if (!raw.trim()) return [];
-    const parsed = JSON.parse(raw) as StoredVaultEntry[];
-    if (!Array.isArray(parsed)) return [];
-
-    // migration-safe normalization: older records may miss fingerprint
-    return parsed.map((item) => ({
-      ...item,
-      fingerprint:
-        typeof item.fingerprint === 'string' && item.fingerprint.length > 0
-          ? item.fingerprint
-          : computeFingerprint(item),
-    }));
-  } catch {
-    return [];
+    raw = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(readFileSync(path));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw new VaultEntryError('VAULT_ENTRIES_UNREADABLE');
   }
+  healSensitiveFilePerms(path);
+  return parseVaultEntries(raw, rawEnv, key, latest);
 }
 
 function writeAll(path: string, entries: StoredVaultEntry[]): void {
@@ -58,51 +59,55 @@ function writeAll(path: string, entries: StoredVaultEntry[]): void {
   // integrations to any local user reading the file. POSIX 0600 closes
   // that read by anyone but the runtime user; on Windows the mode arg
   // is ignored which is fine (NTFS ACLs don't honor POSIX modes).
-  writeFileSync(path, JSON.stringify(entries, null, 2), { mode: 0o600 });
-  // Tighten existing files in case they were created before this fix
-  // (or restored from a backup with permissive perms).
-  try {
-    chmodSync(path, 0o600);
-  } catch {
-    // Best-effort — Windows / non-POSIX filesystems may reject; don't
-    // fail the write because chmod is unavailable.
-  }
+  writePrivateAtomicFile(path, JSON.stringify(entries, null, 2));
 }
 
 export function saveVaultEntry(
   entry: VaultEntry,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): StoredVaultEntry {
-  const path = getStorePath(rawEnv);
-  const all = readAll(path);
+  return withConfigurationWriteLock(resolveVaultJournals(rawEnv).paths, () => {
+    const path = getStorePath(rawEnv);
+    const all = readAll(path, rawEnv);
+    // Encryption can precede a concurrent key rotation. Validate under the same
+    // lock used for publication so stale ciphertext never enters the store.
+    if (existsSync(resolveVaultPath('vault-state.json', rawEnv))) {
+      try {
+        vaultDecrypt(entry, rawEnv);
+      } catch {
+        throw new Error('Entry cannot be decrypted by the current vault; encrypt again and retry');
+      }
+    }
 
-  const stored: StoredVaultEntry = {
-    ...entry,
-    createdAt: entry.createdAt ?? new Date().toISOString(),
-    fingerprint: computeFingerprint(entry),
-  };
+    const stored: StoredVaultEntry = {
+      ...entry,
+      createdAt: entry.createdAt ?? new Date().toISOString(),
+      fingerprint: computeFingerprint(entry),
+    };
 
-  all.push(stored);
-  writeAll(path, all);
-  return stored;
+    all.push(stored);
+    writeAll(path, all);
+    return stored;
+  });
 }
 
 export function listVaultEntries(
   rawEnv: NodeJS.ProcessEnv = process.env,
   key?: string,
 ): StoredVaultEntry[] {
-  const path = getStorePath(rawEnv);
-  const all = readAll(path);
-  if (!key) return all;
-  return all.filter((e) => e.key === key);
+  return withConfigurationSnapshot(resolveVaultJournals(rawEnv).paths, () =>
+    readAll(getStorePath(rawEnv), rawEnv, key || undefined),
+  );
 }
 
 export function getLatestVaultEntry(
   key: string,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): StoredVaultEntry | undefined {
-  const entries = listVaultEntries(rawEnv, key);
-  return entries.at(-1);
+  return withConfigurationSnapshot(
+    resolveVaultJournals(rawEnv).paths,
+    () => readAll(getStorePath(rawEnv), rawEnv, key, true)[0],
+  );
 }
 
 export function verifyVaultEntry(entry: StoredVaultEntry): boolean {
@@ -110,14 +115,31 @@ export function verifyVaultEntry(entry: StoredVaultEntry): boolean {
   return secureCompare(expected, entry.fingerprint);
 }
 
+/** Selection and decryption must see the same recovered rotation snapshot. */
+export function readLatestVaultSecret(
+  key: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): { entry: StoredVaultEntry; plaintext: string } | undefined {
+  // Preserve missing-entry behavior even when no vault state exists yet.
+  const exists = getLatestVaultEntry(key, rawEnv);
+  if (!exists) return undefined;
+  return withVaultReadSnapshot(() => {
+    const entry = getLatestVaultEntry(key, rawEnv);
+    if (!entry) return undefined;
+    return { entry, plaintext: vaultDecrypt(entry, rawEnv) };
+  }, rawEnv);
+}
+
 export function deleteVaultEntriesByKey(
   key: string,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): { removedCount: number; remainingCount: number; path: string } {
-  const path = getStorePath(rawEnv);
-  const all = readAll(path);
-  const kept = all.filter((entry) => entry.key !== key);
-  const removedCount = all.length - kept.length;
-  writeAll(path, kept);
-  return { removedCount, remainingCount: kept.length, path };
+  return withConfigurationWriteLock(resolveVaultJournals(rawEnv).paths, () => {
+    const path = getStorePath(rawEnv);
+    const all = readAll(path, rawEnv);
+    const kept = all.filter((entry) => entry.key !== key);
+    const removedCount = all.length - kept.length;
+    writeAll(path, kept);
+    return { removedCount, remainingCount: kept.length, path };
+  });
 }

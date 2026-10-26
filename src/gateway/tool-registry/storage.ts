@@ -182,4 +182,28 @@ export const STORAGE_TOOLS: Record<string, ToolMeta> = {
       },
     ],
   },
+  /**
+   * Native-only: the Rust operator cockpit executes this tool, the
+   * gateway does not advertise it.
+   *
+   * It used to be absent from the registry entirely, with a hand-written
+   * tier in `native-tool-policy.ts`. Nothing registry-driven could see
+   * it, so the tool had two policy homes and no comparison. It is listed
+   * here so its tier and capabilities have one home, and the shared
+   * contract marks it `gatewayHidden`.
+   */
+  memphis_vault_list: {
+    name: 'memphis_vault_list',
+    tier: 0,
+    capabilities: ['read'],
+    description:
+      'List encrypted vault entry metadata; never export credentials. Native operator surface only.',
+    inputSchema: z
+      .object({
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+    helpText:
+      'Read-only listing of vault entry keys and metadata. It never returns plaintext. Executed by the native Rust operator cockpit; the gateway does not advertise it.',
+  },
 };

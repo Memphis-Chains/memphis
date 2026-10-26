@@ -54,6 +54,27 @@ import { handleInteractionCommand } from '../../src/infra/cli/commands/interacti
 import type { CliContext } from '../../src/infra/cli/context.js';
 import type { CliArgs } from '../../src/infra/cli/types.js';
 
+/** Capture CLI output through console.log and explicit streams under Vitest. */
+function captureStdout(): { output: () => string; restore: () => void } {
+  let captured = '';
+  const streamSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((
+    chunk: string | Uint8Array,
+  ) => {
+    captured += String(chunk);
+    return true;
+  }) as typeof process.stdout.write);
+  const consoleSpy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+    captured += args.map(String).join(' ') + '\n';
+  });
+  return {
+    output: () => captured,
+    restore: () => {
+      streamSpy.mockRestore();
+      consoleSpy.mockRestore();
+    },
+  };
+}
+
 function baseArgs(overrides: Partial<CliArgs>): CliArgs {
   return {
     json: false,
@@ -100,7 +121,7 @@ afterEach(() => {
 
 describe('input path convergence', () => {
   it('CLI canonical chat always reaches runTurnRuntime', async () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const stdout = captureStdout();
     const provider = mockProvider();
     const generate = vi.fn();
 
@@ -131,13 +152,13 @@ describe('input path convergence', () => {
     // orchestration.generate must NOT be called for canonical mode
     expect(generate).not.toHaveBeenCalled();
 
-    const payload = JSON.parse(log.mock.calls[0]?.[0] as string);
+    const payload = JSON.parse(stdout.output());
     expect(payload.mode).toBe('canonical');
-    log.mockRestore();
+    stdout.restore();
   });
 
   it('CLI ask command reaches runTurnRuntime in canonical mode', async () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const stdout = captureStdout();
     const provider = mockProvider();
 
     const context = {
@@ -163,11 +184,11 @@ describe('input path convergence', () => {
     await handleInteractionCommand(context);
 
     expect(runTurnRuntime).toHaveBeenCalledOnce();
-    log.mockRestore();
+    stdout.restore();
   });
 
   it('provider-only mode bypasses runTurnRuntime and uses orchestration.generate', async () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const stdout = captureStdout();
     const generate = vi.fn().mockResolvedValue({
       id: 'gen_1',
       providerUsed: 'local-fallback',
@@ -195,13 +216,13 @@ describe('input path convergence', () => {
     expect(runTurnRuntime).not.toHaveBeenCalled();
     expect(generate).toHaveBeenCalledOnce();
 
-    const payload = JSON.parse(log.mock.calls[0]?.[0] as string);
+    const payload = JSON.parse(stdout.output());
     expect(payload.mode).toBe('provider-only');
-    log.mockRestore();
+    stdout.restore();
   });
 
   it('canonical mode includes degradation info when cascade degrades', async () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const stdout = captureStdout();
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const ollamaProvider = mockProvider('ollama');
 
@@ -230,13 +251,13 @@ describe('input path convergence', () => {
 
     expect(runTurnRuntime).toHaveBeenCalledOnce();
 
-    const payload = JSON.parse(log.mock.calls[0]?.[0] as string);
+    const payload = JSON.parse(stdout.output());
     expect(payload.mode).toBe('canonical');
     expect(payload.degradation).toBeDefined();
     expect(payload.degradation.degraded).toBe(true);
     expect(payload.degradation.tier).toBe(3);
 
-    log.mockRestore();
+    stdout.restore();
     warnSpy.mockRestore();
   });
 
@@ -252,7 +273,7 @@ describe('input path convergence', () => {
     expect(typeof runTurnRuntime).toBe('function');
 
     // After any canonical CLI call, runTurnRuntime must have been called
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const stdout = captureStdout();
     const provider = mockProvider();
     const context = {
       argv: [],
@@ -281,6 +302,6 @@ describe('input path convergence', () => {
     const callArgs = runTurnRuntime.mock.calls[0]?.[0] as { surface?: string } | undefined;
     expect(callArgs?.surface).toBe('cli.chat');
 
-    log.mockRestore();
+    stdout.restore();
   });
 });

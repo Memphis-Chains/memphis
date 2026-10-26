@@ -93,9 +93,38 @@ describe('gateway exec-policy', () => {
       expect(() => enforceGatewayExecPolicy('pwd && rm -rf /', policy)).toThrow();
     });
 
-    it('strips path from command base', () => {
+    it('allows canonical system paths for allowlisted commands', () => {
       const policy = loadGatewayExecPolicy({});
       expect(() => enforceGatewayExecPolicy('/bin/pwd', policy)).not.toThrow();
+      expect(() => enforceGatewayExecPolicy('/usr/bin/whoami', policy)).not.toThrow();
+      expect(() => enforceGatewayExecPolicy('/usr/bin/ls -la /tmp', policy)).not.toThrow();
+    });
+
+    it.each([
+      '/tmp/whoami',
+      './whoami',
+      '../whoami',
+      'tools/ls',
+      '/home/memphis/.local/bin/ls',
+      '/usr/bin/../../tmp/ls',
+      '/usr/bin/subdir/ls',
+      '/usr/bin/"../../tmp"/ls',
+      '//tmp/ls',
+    ])('blocks an untrusted executable path even with an allowed basename: %s', (command) => {
+      const policy = loadGatewayExecPolicy({
+        GATEWAY_EXEC_ALLOWLIST: 'ls,whoami',
+      });
+      expect(() => enforceGatewayExecPolicy(command, policy)).toThrow(/command path/);
+    });
+
+    it('still checks the allowlist for trusted system paths', () => {
+      const policy = loadGatewayExecPolicy({ GATEWAY_EXEC_ALLOWLIST: 'pwd' });
+      expect(() => enforceGatewayExecPolicy('/usr/bin/whoami', policy)).toThrow(/allowlist/);
+    });
+
+    it('preserves explicitly unrestricted execution of custom paths', () => {
+      const policy = loadGatewayExecPolicy({ MEMPHIS_AUTONOMY_MODE: 'full' });
+      expect(() => enforceGatewayExecPolicy('/opt/custom/tool', policy)).not.toThrow();
     });
 
     it('passes in unrestricted mode', () => {

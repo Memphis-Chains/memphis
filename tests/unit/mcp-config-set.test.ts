@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -36,6 +36,22 @@ describe('runMemphisConfigSet (closes deferred item #7)', () => {
     const result = runMemphisConfigSet({ key: 'GEN_TIMEOUT_MS', value: '123456' });
     expect(result.ok).toBe(true);
     expect(readFileSync(join(tmpDir, '.env'), 'utf8')).toContain('GEN_TIMEOUT_MS=123456');
+  });
+
+  it('refuses generic pepper replacement and clearing before any write', () => {
+    const statePath = join(tmpDir, 'vault-state.json');
+    process.env.MEMPHIS_VAULT_STATE_PATH = statePath;
+    writeFileSync(statePath, '{"version":2}');
+    writeFileSync(join(tmpDir, '.env'), 'MEMPHIS_VAULT_PEPPER=original-synthetic-pepper\n');
+    for (const value of ['', 'replacement-synthetic-pepper']) {
+      expect(runMemphisConfigSet({ key: 'MEMPHIS_VAULT_PEPPER', value })).toMatchObject({
+        ok: false,
+        reason: 'vault-rotation-required',
+      });
+    }
+    expect(readFileSync(join(tmpDir, '.env'), 'utf8')).toBe(
+      'MEMPHIS_VAULT_PEPPER=original-synthetic-pepper\n',
+    );
   });
 
   it('refuses cold fields with cold-field reason', () => {

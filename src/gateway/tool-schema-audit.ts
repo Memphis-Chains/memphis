@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { NATIVE_TOOL_CONTRACTS } from './tool-contract.js';
 import { createInProcessToolExecutor } from './tool-executor.js';
 import { TOOL_REGISTRY } from './tool-registry.js';
 import { createMemphisMcpServer } from '../mcp/server.js';
@@ -45,6 +46,21 @@ export type ToolSchemaConstraintAuditEntry = {
   mcpConstraints: string;
 };
 
+/**
+ * Tools the contract marks as gateway-hidden.
+ *
+ * They run on the native surface only. The registry still carries them —
+ * that is where the tier, the capabilities and the schema live — but the
+ * gateway executor and the MCP server must NOT expose them, so their
+ * absence there is the contract working, not a missing schema. Reporting
+ * it as one made `memphis readiness` fail on a healthy runtime.
+ */
+const GATEWAY_HIDDEN_TOOLS: ReadonlySet<string> = new Set(
+  NATIVE_TOOL_CONTRACTS.filter((contract) => contract.gatewayHidden).map(
+    (contract) => contract.name,
+  ),
+);
+
 export type ToolSchemaAuditReport = {
   ok: boolean;
   checked: number;
@@ -79,8 +95,9 @@ function normalizeKeys(keys: Iterable<string>): string[] {
 
 function zodObjectShape(schema: unknown): Record<string, unknown> | undefined {
   if (!schema || typeof schema !== 'object') return undefined;
-  const maybeShape = (schema as { shape?: unknown; _def?: { shape?: unknown } }).shape
-    ?? (schema as { _def?: { shape?: unknown } })._def?.shape;
+  const maybeShape =
+    (schema as { shape?: unknown; _def?: { shape?: unknown } }).shape ??
+    (schema as { _def?: { shape?: unknown } })._def?.shape;
   const shape = typeof maybeShape === 'function' ? maybeShape() : maybeShape;
   if (!shape || typeof shape !== 'object' || Array.isArray(shape)) return undefined;
   return shape as Record<string, unknown>;
@@ -114,8 +131,9 @@ function unwrapZodSchema(schema: unknown): unknown {
   for (let i = 0; i < 8; i += 1) {
     if (!current || typeof current !== 'object') return current;
     const constructorName = (current as { constructor?: { name?: string } }).constructor?.name;
-    const def = (current as { _def?: Record<string, unknown>; def?: Record<string, unknown> })._def
-      ?? (current as { def?: Record<string, unknown> }).def;
+    const def =
+      (current as { _def?: Record<string, unknown>; def?: Record<string, unknown> })._def ??
+      (current as { def?: Record<string, unknown> }).def;
     if (
       constructorName === 'ZodOptional' ||
       constructorName === 'ZodDefault' ||
@@ -127,6 +145,15 @@ function unwrapZodSchema(schema: unknown): unknown {
     }
     if (constructorName === 'ZodEffects') {
       current = def?.schema;
+      continue;
+    }
+    // Zod v4 keeps the preprocessed schema in `out` and the input side in
+    // `in`. `z.preprocess(fn, z.enum([...]))` is a ZodPreprocess whose
+    // `out` is the enum — without this the audit reported the type as the
+    // literal string "ZodPreprocess" and flagged a mismatch that was an
+    // artefact of the reader, not of the contract.
+    if (constructorName === 'ZodPreprocess') {
+      current = def?.out;
       continue;
     }
     if (constructorName === 'ZodPipeline' || constructorName === 'ZodPipe') {
@@ -142,14 +169,26 @@ function zodTypeSignature(schema: unknown): string {
   const unwrapped = unwrapZodSchema(schema);
   if (!unwrapped || typeof unwrapped !== 'object') return 'unknown';
   const constructorName = (unwrapped as { constructor?: { name?: string } }).constructor?.name;
-  const def = (unwrapped as { _def?: Record<string, unknown>; def?: Record<string, unknown> })._def
-    ?? (unwrapped as { def?: Record<string, unknown> }).def;
+  const def =
+    (unwrapped as { _def?: Record<string, unknown>; def?: Record<string, unknown> })._def ??
+    (unwrapped as { def?: Record<string, unknown> }).def;
   switch (constructorName) {
     case 'ZodString':
     case 'ZodEnum':
     case 'ZodNativeEnum':
-    case 'ZodLiteral':
       return 'string';
+    case 'ZodLiteral': {
+      // Zod v4 stores the literal in `_def.values`. A numeric literal is
+      // a number, not a string: `z.union([z.literal(1), z.literal(2)])`
+      // is a number union, and reporting it as a string made the audit
+      // claim a type mismatch where none existed.
+      const values = def?.values;
+      const value = Array.isArray(values) ? values[0] : def?.value;
+      if (typeof value === 'number') return 'number';
+      if (typeof value === 'boolean') return 'boolean';
+      if (typeof value === 'string') return 'string';
+      return 'unknown';
+    }
     case 'ZodNumber':
       return 'number';
     case 'ZodBoolean':
@@ -220,11 +259,13 @@ function jsonSchemaTypeSignature(propertySchema: unknown): string {
     return 'union';
   }
   if (Array.isArray(property.type)) {
-    return property.type
-      .filter((value): value is string => typeof value === 'string')
-      .map((value) => (value === 'integer' ? 'number' : value))
-      .sort((a, b) => a.localeCompare(b))
-      .join('|') || 'unknown';
+    return (
+      property.type
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => (value === 'integer' ? 'number' : value))
+        .sort((a, b) => a.localeCompare(b))
+        .join('|') || 'unknown'
+    );
   }
   if (property.type === 'integer') return 'number';
   if (typeof property.type === 'string') return property.type;
@@ -257,7 +298,11 @@ function zodToJsonSchema(schema: unknown): Record<string, unknown> | undefined {
   }
 }
 
-function normalizeConstraintValue(key: string, value: unknown, propertySchema: Record<string, unknown>): unknown {
+function normalizeConstraintValue(
+  key: string,
+  value: unknown,
+  propertySchema: Record<string, unknown>,
+): unknown {
   const type = propertySchema.type;
   if (key === 'maximum' && value === JSON_SCHEMA_SAFE_INTEGER_MAX) return undefined;
   if (key === 'minimum' && value === JSON_SCHEMA_SAFE_INTEGER_MIN) return undefined;
@@ -265,11 +310,12 @@ function normalizeConstraintValue(key: string, value: unknown, propertySchema: R
   if (type === 'integer' && key === 'minimum' && value === 1) return 1;
   if (Array.isArray(value)) {
     return value
-      .filter((item): item is string | number | boolean | null =>
-        item === null ||
-        typeof item === 'string' ||
-        typeof item === 'number' ||
-        typeof item === 'boolean',
+      .filter(
+        (item): item is string | number | boolean | null =>
+          item === null ||
+          typeof item === 'string' ||
+          typeof item === 'number' ||
+          typeof item === 'boolean',
       )
       .sort((a, b) => String(a).localeCompare(String(b)));
   }
@@ -397,7 +443,9 @@ export function buildToolSchemaAuditReport(
       : undefined;
     const mcpRequiredKeys = mcpTool ? zodObjectRequiredKeys(mcpTool.inputSchema) : undefined;
     const registryTypes = zodObjectTypeSignatures(meta.inputSchema);
-    const executorTypes = executorTool ? jsonSchemaTypeSignatures(executorTool.inputSchema) : undefined;
+    const executorTypes = executorTool
+      ? jsonSchemaTypeSignatures(executorTool.inputSchema)
+      : undefined;
     const mcpTypes = mcpTool ? zodObjectTypeSignatures(mcpTool.inputSchema) : undefined;
     const registryJsonSchema = zodToJsonSchema(meta.inputSchema);
     const executorJsonSchema = executorTool?.inputSchema;
@@ -410,6 +458,11 @@ export function buildToolSchemaAuditReport(
 
     if (!registryKeys) {
       missingRegistrySchema.push(meta.name);
+      continue;
+    }
+    // A gateway-hidden tool is absent from the gateway surfaces on purpose.
+    // Only its registry schema is required.
+    if (GATEWAY_HIDDEN_TOOLS.has(meta.name)) {
       continue;
     }
     if (!executorKeys) {

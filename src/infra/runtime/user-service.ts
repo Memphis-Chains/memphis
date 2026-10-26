@@ -125,6 +125,8 @@ export function buildUserServiceUnit(
     'Description=Memphis local runtime',
     'After=network-online.target',
     'Wants=network-online.target',
+    'StartLimitIntervalSec=300',
+    'StartLimitBurst=5',
     '',
     '[Service]',
     'Type=simple',

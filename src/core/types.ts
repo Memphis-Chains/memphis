@@ -2,6 +2,7 @@ import type { RuntimeProvider } from '../providers/runtime.js';
 
 export const PROVIDER_NAMES = [
   'anthropic',
+  'openai',
   'shared-llm',
   'decentralized-llm',
   'local-fallback',
@@ -70,6 +71,12 @@ export type CompactionPressure = {
 export type RuntimeTelemetry = {
   usage?: TokenUsage;
   contextWindowTokens?: number;
+  /**
+   * Context window the provider's account granted, when stricter than the
+   * model's declared `contextWindowTokens`. Persisted per conversation so the
+   * next turn trims history to the limit the account actually enforces.
+   */
+  effectiveContextWindow?: number;
   estimatedPromptTokens?: number;
   remainingContextTokens?: number;
   compactionPressure?: CompactionPressure;

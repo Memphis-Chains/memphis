@@ -22,7 +22,7 @@ export interface ProviderAdapterMeta {
 
 export function providerToLlmClient(
   provider: Pick<RuntimeProvider, 'chat'>,
-  defaults: Pick<ChatOptions, 'model' | 'temperature' | 'maxTokens'> = {},
+  defaults: Pick<ChatOptions, 'model' | 'temperature' | 'maxTokens' | 'reasoningEffort'> = {},
   meta: ProviderAdapterMeta = {},
 ): LlmClient {
   return {
@@ -32,6 +32,7 @@ export function providerToLlmClient(
       tools?: ChatToolDefinition[];
       temperature?: number;
       maxTokens?: number;
+      reasoningEffort?: ChatOptions['reasoningEffort'];
     }): Promise<LlmResponse> {
       const providerName = meta.providerLabel ?? 'unknown';
       const modelName = defaults.model ?? meta.modelLabel ?? 'unknown';
@@ -51,13 +52,18 @@ export function providerToLlmClient(
             model: defaults.model,
             temperature: input.temperature ?? defaults.temperature,
             maxTokens: input.maxTokens ?? defaults.maxTokens,
+            reasoningEffort: input.reasoningEffort ?? defaults.reasoningEffort,
             systemPrompt: input.system,
             tools: input.tools,
           });
 
           return {
             content: response.content,
+            ...(response.reasoning_content !== undefined
+              ? { reasoning_content: response.reasoning_content }
+              : {}),
             tool_calls: response.tool_calls,
+            reasoning_content: response.reasoning_content,
             usage: response.tokens
               ? {
                   inputTokens: response.tokens.prompt,

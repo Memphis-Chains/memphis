@@ -28,6 +28,15 @@ export type MutabilityTier = 'hot' | 'warm' | 'cold' | 'secret';
  */
 export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   // ── Process/runtime — cold (restart-bound) ──
+  MEMPHIS_RUNTIME_ROOT: 'cold',
+  MEMPHIS_RUNTIME_ROOT_SOURCE: 'cold',
+  MEMPHIS_ENV_FILE: 'cold',
+  MEMPHIS_ENV_FILE_SOURCE: 'cold',
+  MEMPHIS_DATA_DIR: 'cold',
+  MEMPHIS_HOME: 'cold',
+  MEMPHIS_VAULT_STATE_PATH: 'cold',
+  MEMPHIS_VAULT_ENTRIES_PATH: 'cold',
+  MEMPHIS_CONFIG_GENERATION: 'cold',
   NODE_ENV: 'cold',
   HOST: 'cold',
   PORT: 'cold',
@@ -69,6 +78,12 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   ANTHROPIC_OAUTH_TOKEN_URL: 'hot',
   ANTHROPIC_OAUTH_SECRET_VAULT_KEY: 'warm',
 
+  // ── OpenAI through the locally authenticated Codex app server ──
+  OPENAI_AUTH_MODE: 'cold',
+  OPENAI_MODEL: 'warm',
+  CODEX_BIN: 'cold',
+  OPENAI_CODEX_TIMEOUT_MS: 'warm',
+
   // ── OpenAI-compat / Shared-LLM / Decentralized-LLM ──
   OPENAI_COMPATIBLE_API_BASE: 'hot',
   OPENAI_COMPATIBLE_API_KEY: 'secret',
@@ -93,11 +108,24 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   OLLAMA_REPEAT_PENALTY: 'hot',
   OLLAMA_NUM_PREDICT_OFFLINE: 'hot',
   OLLAMA_REQUEST_TIMEOUT_MS: 'hot',
+  // Operator 2026-10-14: OLLAMA_KEEP_ALIVE exists in envSchema but was absent
+  // here, so it fell through to DEFAULT_TIER_FOR_UNKNOWN ('warm') in
+  // classifyField(). 'warm' accepts the swap but the owning subsystem may keep
+  // serving the old value until its own reload. This key feeds the per-request
+  // keep_alive field in src/providers/index.ts (read on every call), so it is
+  // genuinely 'hot' — and on a RAM-bound box an operator toggling it must see
+  // it take effect on the next request, not after an unrelated restart.
+  OLLAMA_KEEP_ALIVE: 'hot',
 
   // ── Minimax / DeepSeek / GLM ──
   MINIMAX_API_KEY: 'secret',
   MINIMAX_MODEL: 'hot',
   MINIMAX_BASE_URL: 'hot',
+  // Read on every MiniMax request, so a change takes effect on the next
+  // turn — 'hot', not 'warm'.
+  MINIMAX_REASONING_EFFORT: 'hot',
+  MINIMAX_MAX_COMPLETION_TOKENS: 'hot',
+  MINIMAX_REQUEST_TIMEOUT_MS: 'hot',
   MINIMAX_VAULT_KEY: 'warm',
   MINIMAX_VIDEO_VAULT_KEY: 'warm',
   DEEPSEEK_API_KEY: 'secret',

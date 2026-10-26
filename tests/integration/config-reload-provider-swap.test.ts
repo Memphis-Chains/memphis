@@ -112,7 +112,7 @@ describe('hot-reload → DEFAULT_PROVIDER hot-swap end-to-end', () => {
     expect(process.env.DEFAULT_PROVIDER).toBe('shared-llm');
     expect(orchestration.getDefaultProvider()).toBe('anthropic');
     expect(result.hookOutcomes?.[0]?.ok).toBe(false);
-    expect(result.hookOutcomes?.[0]?.error).toMatch(/not registered/);
+    expect(result.hookOutcomes?.[0]?.error).toBe('CONFIG_HOOK_FAILED');
   });
 
   it('skips hook firing when DEFAULT_PROVIDER did not change', async () => {

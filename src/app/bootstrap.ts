@@ -34,6 +34,7 @@ import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
 import { checkOllama, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
 import { resolveDotEnvPath } from '../infra/config/dotenv-file.js';
 import { loadConfigDetailed } from '../infra/config/env.js';
+import { initializeRuntimeConfigSnapshot } from '../infra/config/runtime-config-snapshot.js';
 import type { AppConfig } from '../infra/config/schema.js';
 import { createHttpServer } from '../infra/http/server.js';
 import { startAlertSuppressionFlushLoop } from '../infra/logging/alert-runtime.js';
@@ -44,6 +45,7 @@ import { createPinoLogger } from '../infra/logging/pino.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 import { initOtelIfEnabled } from '../infra/observability/otel.js';
 import { startChainRotationLoop } from '../infra/runtime/chain-rotation-loop.js';
+import { startCronsBridge } from '../infra/runtime/crons-bridge.js';
 import { inStrictMode } from '../infra/runtime/emergency-log.js';
 import { EXIT_CODES, MemphisExitError } from '../infra/runtime/exit-codes.js';
 import { installShutdownHandlers } from '../infra/runtime/graceful-shutdown.js';
@@ -186,6 +188,7 @@ export async function bootstrap(): Promise<void> {
     throw new AppError('CONFIG_ERROR', rust.detail, 500, rust.meta, rust.fix);
   }
 
+  initializeRuntimeConfigSnapshot();
   const { config, degradedReasons: configDegradedReasons } = loadConfigDetailed();
   const rustBridgeManifest = assessRustBridgeManifestStatus(process.env);
   if (!rustBridgeManifest.ok) {
@@ -588,6 +591,13 @@ export async function bootstrap(): Promise<void> {
     workPollingService: container.workPollingService,
     executionTarget: resolveConfiguredSchedulerExecutionTarget(process.env),
   });
+
+  // Register the scripts the native `memphis_cron` tool manages as
+  // scheduler tasks. The tool writes a `# schedule:` header and manages the
+  // executable bit; without this bridge nothing ever read either one, so a
+  // scheduled script never ran. The bridge re-syncs on a timer, so a script
+  // added between two syncs starts without a daemon restart.
+  startCronsBridge();
   await reportSchedulerWorkerFallback(getSchedulerRuntimeStatus(process.env), process.env);
 
   // Phase 1.1 production sprint: graceful shutdown on SIGTERM / SIGINT.

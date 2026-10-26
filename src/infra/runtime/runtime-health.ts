@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 import Database from 'better-sqlite3';
 
+import { readEmbeddingMetadata, type EmbeddingMetadata } from './embedding-metadata.js';
 import { probeOllamaReadiness, type OllamaReadiness } from './ollama-readiness.js';
 import { getChainPath, getDataDir, getReadableChainPaths } from '../../config/paths.js';
 import { getChainNames, getSearchableChainNames } from '../../memory/chain-catalog.js';
@@ -99,6 +100,7 @@ export type RuntimeHealthSnapshot = {
     recommendedAction: string;
   };
   embeddings: {
+    persistence?: EmbeddingMetadata;
     mode: string;
     status: EmbeddingRuntimeStatus;
     rustEnabled: boolean;
@@ -401,6 +403,7 @@ function collectEmbeddingSnapshot(rawEnv: NodeJS.ProcessEnv): RuntimeHealthSnaps
     bridgeLoaded: adapter.bridgeLoaded,
     embedApiAvailable: adapter.embedApiAvailable,
     tunedSearchAvailable: adapter.tunedSearchAvailable,
+    persistence: readEmbeddingMetadata(rawEnv),
     repairable: false,
     recommendedAction:
       status === 'degraded'

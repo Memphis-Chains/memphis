@@ -1,4 +1,5 @@
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -28,6 +29,9 @@ function encryptUnder(masterKey, plaintext) {
 }
 
 module.exports = {
+  vault_load_state: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_load_state,
+  vault_parse_entries: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_parse_entries,
+  vault_decode_entry: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_decode_entry,
   vault_init_full: () => ({
     vault: { salt: Buffer.alloc(32, 1), master_key: randomBytes(32) },
     did: 'did:memphis:test',
@@ -72,6 +76,33 @@ function makeEnv(dir: string): NodeJS.ProcessEnv {
 describe('rotateVaultMasterKey', () => {
   beforeEach(() => {
     resetActiveVault();
+  });
+
+  it('rotates a legacy v1 state without a separate migration invalidating its expected hash', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mv4-mkrotate-v1-'));
+    const env = makeEnv(dir);
+    vaultInit({ passphrase: 'p', recovery_question: 'q', recovery_answer: 'a' }, env);
+    saveVaultEntry(vaultEncrypt('first', 'synthetic-first', env), env);
+    const bridge = createRequire(import.meta.url)(env.RUST_CHAIN_BRIDGE_PATH!);
+    const loaded = bridge.vault_load_state(
+      env.MEMPHIS_VAULT_STATE_PATH!,
+      env.MEMPHIS_VAULT_PEPPER!,
+    );
+    const vault = loaded.vault;
+    writeFileSync(
+      env.MEMPHIS_VAULT_STATE_PATH!,
+      JSON.stringify({
+        salt: vault.salt.toString('base64'),
+        masterKey: (vault.master_key ?? vault.masterKey).toString('base64'),
+      }),
+    );
+    resetActiveVault();
+
+    expect(rotateVaultMasterKey(env).rotatedCount).toBe(1);
+    expect(JSON.parse(readFileSync(env.MEMPHIS_VAULT_STATE_PATH!, 'utf8')).version).toBe(2);
+    const entries = JSON.parse(readFileSync(env.MEMPHIS_VAULT_ENTRIES_PATH!, 'utf8'));
+    resetActiveVault();
+    expect(vaultDecrypt(entries[0], env)).toBe('synthetic-first');
   });
 
   it('re-encrypts every entry under a fresh master key and the secrets still decrypt', () => {
@@ -144,7 +175,59 @@ describe('rotateVaultMasterKey', () => {
     expect(() => rotateVaultMasterKey(env)).toThrow(/vault state not found/i);
   });
 
-  it('tolerates a completely empty entries file (no entries to rotate)', () => {
+  it('clears plaintext and the new key when re-encryption fails before publication', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mv4-mkrotate-store-fail-'));
+    const env = makeEnv(dir);
+    vaultInit({ passphrase: 'p', recovery_question: 'q', recovery_answer: 'a' }, env);
+    saveVaultEntry(vaultEncrypt('first', 'synthetic-first', env), env);
+    saveVaultEntry(vaultEncrypt('second', 'synthetic-second', env), env);
+    const beforeState = readFileSync(env.MEMPHIS_VAULT_STATE_PATH!);
+    const beforeEntries = readFileSync(env.MEMPHIS_VAULT_ENTRIES_PATH!);
+    const bridge = createRequire(import.meta.url)(env.RUST_CHAIN_BRIDGE_PATH!);
+    const originalStore = bridge.vault_store;
+    const plaintexts: Buffer[] = [];
+    let newKey: Buffer | undefined;
+    bridge.vault_store = (vault: { master_key: Buffer }, key: string, plaintext: Buffer) => {
+      newKey = vault.master_key;
+      plaintexts.push(plaintext);
+      if (plaintexts.length === 2) throw new Error('synthetic re-encryption failure');
+      return originalStore(vault, key, plaintext);
+    };
+
+    expect(() => rotateVaultMasterKey(env)).toThrow('synthetic re-encryption failure');
+    expect(plaintexts).toHaveLength(2);
+    for (const plaintext of plaintexts)
+      expect(plaintext.equals(Buffer.alloc(plaintext.length))).toBe(true);
+    expect(newKey?.equals(Buffer.alloc(32))).toBe(true);
+    expect(readFileSync(env.MEMPHIS_VAULT_STATE_PATH!)).toEqual(beforeState);
+    expect(readFileSync(env.MEMPHIS_VAULT_ENTRIES_PATH!)).toEqual(beforeEntries);
+    resetActiveVault();
+    expect(vaultDecrypt(JSON.parse(beforeEntries.toString())[0], env)).toBe('synthetic-first');
+  });
+
+  it.each(['', '[null]', '{"private-sentinel":'])(
+    'preserves state and entries when rotation input is malformed: %j',
+    (contents) => {
+      const dir = mkdtempSync(join(tmpdir(), 'mv4-mkrotate-malformed-'));
+      const env = makeEnv(dir);
+      // A v1 fixture avoids unrelated KDF work and exercises rotation's real loader.
+      writeFileSync(
+        env.MEMPHIS_VAULT_STATE_PATH!,
+        JSON.stringify({
+          version: 1,
+          salt: Buffer.alloc(32, 1).toString('base64'),
+          masterKey: Buffer.alloc(32, 2).toString('base64'),
+        }),
+      );
+      writeFileSync(env.MEMPHIS_VAULT_ENTRIES_PATH!, contents);
+      const beforeState = readFileSync(env.MEMPHIS_VAULT_STATE_PATH!);
+      expect(() => rotateVaultMasterKey(env)).toThrow('VAULT_ENTRIES_MALFORMED');
+      expect(readFileSync(env.MEMPHIS_VAULT_STATE_PATH!)).toEqual(beforeState);
+      expect(readFileSync(env.MEMPHIS_VAULT_ENTRIES_PATH!, 'utf8')).toBe(contents);
+    },
+  );
+
+  it('allows a missing entries file (no entries to rotate)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mv4-mkrotate-empty-'));
     const env = makeEnv(dir);
 

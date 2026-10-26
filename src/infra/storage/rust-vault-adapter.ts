@@ -1,17 +1,12 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
+import { createCipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
 import {
   chmodSync,
-  closeSync,
   copyFileSync,
   existsSync,
-  fsyncSync,
   mkdirSync,
-  openSync,
   readdirSync,
   readFileSync,
-  renameSync,
   unlinkSync,
-  writeFileSync,
 } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -22,47 +17,20 @@ import {
   type BridgeAliasMap,
   type BridgeResolution,
 } from './napi-contract.js';
-import { resolveVaultPath } from './vault-paths.js';
+import type { StoredVaultEntry } from './vault-entry-store.js';
+import { resolveVaultJournals, resolveVaultPath } from './vault-paths.js';
 import { parseBool } from '../../core/env.js';
 import { errorTemplates } from '../../core/errors.js';
+import {
+  commitConfigurationTransaction,
+  configurationFileHash,
+  recoverConfigurationTransaction,
+  withConfigurationSnapshot,
+  withConfigurationWriteLock,
+} from '../config/config-transaction.js';
+import { writePrivateAtomicFile } from '../config/private-atomic-file.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
 import { resolveRustBridgePath } from '../runtime/install-root.js';
-
-/**
- * fsync a file so writes are durable on disk. Used between
- * writeFileSync(tmp) and renameSync(tmp, live) during vault rotation
- * (#145). Silently tolerates platforms/filesystems where fsync isn't
- * available — the rename itself is still the primary durability
- * barrier, fsync just closes the crash-between-write-and-rename window.
- */
-function fsyncFile(path: string): void {
-  let fd: number | null = null;
-  try {
-    fd = openSync(path, 'r+');
-    fsyncSync(fd);
-  } catch (err) {
-    // Best-effort; proceed with the rename even if fsync isn't supported
-    // (e.g. tmpfs, network mount). Sprint 2.4: surface to stderr so the
-    // operator notices durability degradation — silent swallow used to
-    // mean nobody could tell whether vault writes were actually durable
-    // until a power-cut audit. Stderr instead of pino so this module
-    // stays free of logger dependencies (loaded during shutdown paths
-    // where pino transports may already be torn down).
-    process.stderr.write(
-      `[memphis-vault] fsync(${path}) failed — durability degraded for this write: ${
-        err instanceof Error ? err.message : String(err)
-      }\n`,
-    );
-  } finally {
-    if (fd !== null) {
-      try {
-        closeSync(fd);
-      } catch {
-        // noop
-      }
-    }
-  }
-}
 
 export interface RustVaultAdapterStatus {
   rustEnabled: boolean;
@@ -106,7 +74,17 @@ const NEW_VAULT_BRIDGE_ALIASES = {
   vault_init_full: ['vault_init_full', 'vaultInitFull'],
   vault_store: ['vault_store', 'vaultStore'],
   vault_retrieve: ['vault_retrieve', 'vaultRetrieve'],
-} satisfies BridgeAliasMap<'vault_init_full' | 'vault_store' | 'vault_retrieve'>;
+  vault_load_state: ['vault_load_state', 'vaultLoadState'],
+  vault_parse_entries: ['vault_parse_entries', 'vaultParseEntries'],
+  vault_decode_entry: ['vault_decode_entry', 'vaultDecodeEntry'],
+} satisfies BridgeAliasMap<
+  | 'vault_init_full'
+  | 'vault_store'
+  | 'vault_retrieve'
+  | 'vault_load_state'
+  | 'vault_parse_entries'
+  | 'vault_decode_entry'
+>;
 
 const LEGACY_VAULT_BRIDGE_ALIASES = {
   vault_init_json: ['vault_init_json', 'vault_init', 'vaultInitJson'],
@@ -117,7 +95,21 @@ const LEGACY_VAULT_BRIDGE_ALIASES = {
 type NewVaultBridgeKey = keyof typeof NEW_VAULT_BRIDGE_ALIASES;
 type LegacyVaultBridgeKey = keyof typeof LEGACY_VAULT_BRIDGE_ALIASES;
 
+interface EntryBridgeResult {
+  entries_json?: string;
+  entriesJson?: string;
+  entry?: JsVaultEntry;
+  error_code?: string;
+  errorCode?: string;
+}
+
 interface ResolvedNewVaultBridge {
+  vault_parse_entries?: (
+    raw: string,
+    key: string | undefined,
+    latest: boolean,
+  ) => EntryBridgeResult;
+  vault_decode_entry?: (raw: string) => EntryBridgeResult;
   vault_init_full?: (
     passphrase: string,
     qa_question: string,
@@ -126,6 +118,15 @@ interface ResolvedNewVaultBridge {
     vault: JsVault;
     did: string;
     qa_question: string;
+  };
+  vault_load_state?: (
+    path: string,
+    pepper: string,
+  ) => {
+    vault?: JsVault;
+    version?: number;
+    error_code?: string;
+    errorCode?: string;
   };
   vault_store?: (vault: JsVault, key: string, plaintext: Buffer) => JsVaultEntry;
   vault_retrieve?: (vault: JsVault, entry: JsVaultEntry) => Buffer;
@@ -158,13 +159,42 @@ interface PersistedVaultStateV2 {
   tag: string;
 }
 
-type PersistedVaultState = PersistedVaultStateV1 | PersistedVaultStateV2;
+export class VaultStateError extends Error {
+  readonly code: string;
 
-function isV2State(state: PersistedVaultState): state is PersistedVaultStateV2 {
-  return 'version' in state && state.version === 2;
+  constructor(code: string) {
+    const messages: Record<string, string> = {
+      VAULT_STATE_MISSING: 'vault state not found',
+      VAULT_STATE_UNREADABLE: 'vault state cannot be read',
+      VAULT_STATE_MALFORMED: 'vault state is malformed',
+      VAULT_STATE_UNSUPPORTED_VERSION: 'unsupported vault state version',
+      VAULT_PEPPER_REQUIRED: 'MEMPHIS_VAULT_PEPPER missing or too short (min 12 chars)',
+      VAULT_STATE_AUTH_FAILED: 'failed to decrypt vault state',
+    };
+    const safeCode = Object.hasOwn(messages, code) ? code : 'VAULT_STATE_READER_UNAVAILABLE';
+    super(
+      `${safeCode}: ${messages[safeCode] ?? 'vault state reader unavailable; rebuild Rust bridge'}`,
+    );
+    this.code = safeCode;
+    this.name = 'VaultStateError';
+  }
+}
+
+function readVaultState(rawEnv: NodeJS.ProcessEnv, pepper = getVaultPepper(rawEnv)) {
+  const { newContract } = resolveVaultBridge(rawEnv);
+  const loader = (newContract.resolved as ResolvedNewVaultBridge).vault_load_state;
+  if (!loader) throw new VaultStateError('VAULT_STATE_READER_UNAVAILABLE');
+  const result = loader(resolveVaultPath('vault-state.json', rawEnv), pepper);
+  const code = result.error_code ?? result.errorCode;
+  if (code) throw new VaultStateError(code);
+  if (!result.vault || (result.version !== 1 && result.version !== 2)) {
+    throw new VaultStateError('VAULT_STATE_MALFORMED');
+  }
+  return { vault: normalizeVault(result.vault), version: result.version as 1 | 2 };
 }
 
 let activeVault: JsVault | null = null;
+let activeVaultIdentity: string | null = null;
 
 function getVaultMasterKey(vault: JsVault): Buffer {
   const key = vault.master_key ?? vault.masterKey;
@@ -205,33 +235,6 @@ function serializeVaultStateV2(vault: JsVault, pepper: string): PersistedVaultSt
     encryptedMasterKey: encrypted.toString('base64'),
     iv: iv.toString('base64'),
     tag: tag.toString('base64'),
-  };
-}
-
-function deserializeVaultStateV2(state: PersistedVaultStateV2, pepper: string): JsVault | null {
-  try {
-    const encKey = deriveStateEncryptionKey(pepper);
-    const iv = Buffer.from(state.iv, 'base64');
-    const encrypted = Buffer.from(state.encryptedMasterKey, 'base64');
-    const tag = Buffer.from(state.tag, 'base64');
-
-    const decipher = createDecipheriv('aes-256-gcm', encKey, iv);
-    decipher.setAuthTag(tag);
-    const masterKey = Buffer.concat([decipher.update(encrypted), decipher.final()]);
-
-    return {
-      salt: Buffer.from(state.salt, 'base64'),
-      master_key: masterKey,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function deserializeVaultStateV1(state: PersistedVaultStateV1): JsVault {
-  return {
-    salt: Buffer.from(state.salt, 'base64'),
-    master_key: Buffer.from(state.masterKey, 'base64'),
   };
 }
 
@@ -288,79 +291,21 @@ function snapshotVaultStateBeforeWrite(statePath: string): void {
 function persistVaultState(vault: JsVault, rawEnv: NodeJS.ProcessEnv = process.env): void {
   const statePath = resolveVaultPath('vault-state.json', rawEnv);
   const pepper = getVaultPepper(rawEnv);
-
   mkdirSync(dirname(statePath), { recursive: true });
   snapshotVaultStateBeforeWrite(statePath);
 
   if (pepper.length >= 12) {
-    const serialized = serializeVaultStateV2(vault, pepper);
-    // Sprint 2.2 (#275): create with 0600 mode at write time so there's
-    // no umask-window where the file is world-readable. Previous logic
-    // used default mode + chmod-after — race-prone on multi-user hosts.
-    writeFileSync(statePath, JSON.stringify(serialized, null, 2), { mode: 0o600 });
+    writePrivateAtomicFile(
+      statePath,
+      JSON.stringify(serializeVaultStateV2(vault, pepper), null, 2),
+    );
   } else {
-    // Fallback to v1 if pepper is too short (should not happen in normal flow)
     const normalized = normalizeVault(vault);
     const serialized: PersistedVaultStateV1 = {
       salt: normalized.salt.toString('base64'),
       masterKey: getVaultMasterKey(normalized).toString('base64'),
     };
-    writeFileSync(statePath, JSON.stringify(serialized, null, 2), { mode: 0o600 });
-  }
-
-  // Belt-and-suspenders: tighten if the file existed before this write
-  // (writeFileSync `mode` only applies to file creation, not overwrite).
-  try {
-    chmodSync(statePath, 0o600);
-  } catch {
-    // chmod may fail on some platforms (Windows); non-fatal
-  }
-}
-
-function loadPersistedVaultState(rawEnv: NodeJS.ProcessEnv = process.env): JsVault | null {
-  const statePath = resolveVaultPath('vault-state.json', rawEnv);
-  if (!existsSync(statePath)) return null;
-
-  try {
-    const raw = readFileSync(statePath, 'utf8');
-    if (!raw.trim()) return null;
-    const parsed = JSON.parse(raw) as PersistedVaultState;
-
-    let vault: JsVault | null = null;
-
-    if (isV2State(parsed)) {
-      const pepper = getVaultPepper(rawEnv);
-      if (pepper.length < 12) {
-        throw new Error('MEMPHIS_VAULT_PEPPER required to decrypt v2 vault state');
-      }
-      vault = deserializeVaultStateV2(parsed, pepper);
-    } else {
-      // v1: plaintext base64
-      if (
-        typeof parsed?.salt !== 'string' ||
-        parsed.salt.length === 0 ||
-        typeof parsed?.masterKey !== 'string' ||
-        parsed.masterKey.length === 0
-      ) {
-        return null;
-      }
-      vault = deserializeVaultStateV1(parsed);
-
-      // Transparent upgrade: re-persist as v2 if pepper is available
-      const pepper = getVaultPepper(rawEnv);
-      if (vault && pepper.length >= 12) {
-        persistVaultState(vault, rawEnv);
-        writeSecurityAudit({
-          action: 'vault.state.upgrade',
-          status: 'allowed',
-          details: { from: 'v1', to: 'v2', reason: 'transparent upgrade on load' },
-        });
-      }
-    }
-
-    return vault;
-  } catch {
-    return null;
+    writePrivateAtomicFile(statePath, JSON.stringify(serialized, null, 2));
   }
 }
 
@@ -394,50 +339,140 @@ function resolveVaultBridge(rawEnv: NodeJS.ProcessEnv = process.env): {
   };
 }
 
+function vaultCacheIdentity(rawEnv: NodeJS.ProcessEnv): string {
+  const path = resolveVaultPath('vault-state.json', rawEnv);
+  // Hash stays process-local. Include file content to detect atomic replacement,
+  // even when inode timestamps or file size are unchanged.
+  let state: Buffer;
+  try {
+    state = readFileSync(path);
+  } catch (error) {
+    throw new VaultStateError(
+      (error as NodeJS.ErrnoException).code === 'ENOENT'
+        ? 'VAULT_STATE_MISSING'
+        : 'VAULT_STATE_UNREADABLE',
+    );
+  }
+  return createHash('sha256')
+    .update(JSON.stringify([path, getVaultPepper(rawEnv), rawEnv.MEMPHIS_CONFIG_GENERATION ?? '0']))
+    .update(state)
+    .digest('hex');
+}
+
 function getActiveVaultOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): JsVault {
-  if (!activeVault) {
-    activeVault = loadPersistedVaultState(rawEnv);
+  try {
+    return loadActiveVault(rawEnv);
+  } catch (error) {
+    // A missing, unreadable or rejected replacement must release the old key,
+    // even if this attempt never reaches the native decoder.
+    resetActiveVault();
+    throw error;
   }
-  if (!activeVault) {
-    throw new Error('vault not initialized; run vault init first');
-  }
-  activeVault = normalizeVault(activeVault);
-  return activeVault;
 }
 
-function decodeBase64(value: string): Buffer {
-  return Buffer.from(value, 'base64');
-}
+function loadActiveVault(rawEnv: NodeJS.ProcessEnv): JsVault {
+  const journals = resolveVaultJournals(rawEnv).paths;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const snapshot = withConfigurationSnapshot(journals, () => {
+      const identity = vaultCacheIdentity(rawEnv);
+      if (activeVaultIdentity !== identity) resetActiveVault();
+      return { identity, vault: activeVault };
+    });
+    if (snapshot.vault) return normalizeVault(snapshot.vault);
 
-function convertToJsVaultEntry(entry: VaultEntry): JsVaultEntry {
-  const tag = entry.tag ? decodeBase64(entry.tag) : Buffer.alloc(0);
-
-  // v1 entries (created before Memphis 0.4.0): tag is empty but ciphertext
-  // includes the GCM auth tag at the last 16 bytes. Rust's retrieve() handles
-  // this format inline. Only throw for entries that have empty tag AND
-  // ciphertext that is too short to contain a valid tag (genuinely corrupt).
-  if (tag.length === 0 && entry.encrypted) {
-    const ciphertextBytes = decodeBase64(entry.encrypted);
-    if (ciphertextBytes.length <= 16) {
-      const entryId = entry.id ? ` (id: ${entry.id})` : '';
-      const entryKey = entry.key ? ` (key: ${entry.key})` : '';
-      throw new Error(
-        `Vault entry${entryId}${entryKey} appears corrupt — empty tag and ciphertext ` +
-          'is too short to contain a valid auth tag.',
-      );
+    // Do the expensive KDF outside the lock, then validate the snapshot before
+    // publishing its key. A rotation must never give an old key a new identity.
+    const loaded = readVaultState(rawEnv);
+    let published = false;
+    try {
+      const current = withConfigurationSnapshot(journals, () => {
+        if (vaultCacheIdentity(rawEnv) !== snapshot.identity) return null;
+        if (loaded.version === 1 && getVaultPepper(rawEnv).length >= 12) {
+          persistVaultState(loaded.vault, rawEnv);
+          writeSecurityAudit({
+            action: 'vault.state.upgrade',
+            status: 'allowed',
+            details: { from: 'v1', to: 'v2', reason: 'transparent upgrade on load' },
+          });
+        }
+        const identity = vaultCacheIdentity(rawEnv);
+        activeVault = normalizeVault(loaded.vault);
+        activeVaultIdentity = identity;
+        published = true;
+        return activeVault;
+      });
+      if (current) return current;
+    } finally {
+      if (!published) getVaultMasterKey(loaded.vault).fill(0);
     }
-    // v1 format: pass through with empty tag; Rust handles it
   }
+  throw new Error('Vault state changed during loading; retry operation');
+}
 
-  return {
-    id: entry.id && entry.id.trim().length > 0 ? entry.id : `entry-${Date.now()}`,
-    key: entry.key,
-    ciphertext: decodeBase64(entry.encrypted),
-    nonce: decodeBase64(entry.iv),
-    tag,
-    created_at: entry.createdAt ?? new Date().toISOString(),
-    createdAt: entry.createdAt ?? new Date().toISOString(),
-  };
+/** Preload outside the lock, then pin state and entry reads to that generation. */
+export function withVaultReadSnapshot<T>(
+  read: () => T,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): T {
+  const journals = resolveVaultJournals(rawEnv).paths;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    getActiveVaultOrThrow(rawEnv);
+    const identity = activeVaultIdentity;
+    const snapshot = withConfigurationSnapshot(journals, () => {
+      if (vaultCacheIdentity(rawEnv) !== identity) return { current: false } as const;
+      return { current: true, value: read() } as const;
+    });
+    if (snapshot.current) return snapshot.value;
+  }
+  throw new Error('Vault state changed during loading; retry operation');
+}
+
+export class VaultEntryError extends Error {
+  readonly code: string;
+  constructor(code: string) {
+    const messages: Record<string, string> = {
+      VAULT_ENTRIES_UNREADABLE: 'vault entries cannot be read',
+      VAULT_ENTRIES_MALFORMED: 'vault entries are malformed',
+      VAULT_ENTRY_NOT_FOUND: 'vault entry not found',
+      VAULT_ENTRY_INTEGRITY_FAILED: 'vault entry integrity verification failed',
+      VAULT_ENTRY_AUTH_FAILED: 'vault entry decryption failed',
+      VAULT_ENTRY_INVALID_TEXT: 'vault entry is not valid UTF-8',
+    };
+    const safeCode = Object.hasOwn(messages, code) ? code : 'VAULT_ENTRY_READER_UNAVAILABLE';
+    super(
+      `${safeCode}: ${messages[safeCode] ?? 'vault entry reader unavailable; rebuild Rust bridge'}`,
+    );
+    this.name = 'VaultEntryError';
+    this.code = safeCode;
+  }
+}
+
+export function parseVaultEntries(
+  raw: string,
+  rawEnv: NodeJS.ProcessEnv,
+  key?: string,
+  latest = false,
+): StoredVaultEntry[] {
+  const parser = (resolveVaultBridge(rawEnv).newContract.resolved as ResolvedNewVaultBridge)
+    .vault_parse_entries;
+  if (!parser) throw new VaultEntryError('VAULT_ENTRY_READER_UNAVAILABLE');
+  const result = parser(raw, key, latest);
+  const code = result.error_code ?? result.errorCode;
+  if (code) throw new VaultEntryError(code);
+  const json = result.entries_json ?? result.entriesJson;
+  if (typeof json !== 'string') throw new VaultEntryError('VAULT_ENTRIES_MALFORMED');
+  return JSON.parse(json) as StoredVaultEntry[];
+}
+
+function convertToJsVaultEntry(entry: VaultEntry, rawEnv: NodeJS.ProcessEnv): JsVaultEntry {
+  const decoder = (resolveVaultBridge(rawEnv).newContract.resolved as ResolvedNewVaultBridge)
+    .vault_decode_entry;
+  if (!decoder) throw new VaultEntryError('VAULT_ENTRY_READER_UNAVAILABLE');
+  const result = decoder(JSON.stringify(entry));
+  const code = result.error_code ?? result.errorCode;
+  if (code) throw new VaultEntryError(code);
+  if (!result.entry) throw new VaultEntryError('VAULT_ENTRIES_MALFORMED');
+  return result.entry;
 }
 
 function parseEnvelope<T>(raw: string): T {
@@ -480,6 +515,9 @@ export function getRustVaultAdapterStatus(
     'vault_init_full',
     'vault_store',
     'vault_retrieve',
+    'vault_load_state',
+    'vault_parse_entries',
+    'vault_decode_entry',
   ]);
 
   const legacyVaultApiAvailable = hasRequiredBridgeExports(legacyContract, [
@@ -496,7 +534,10 @@ export function getRustVaultAdapterStatus(
   };
 }
 
-function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): {
+function getBridgeOrThrow(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+  requirePepper = true,
+): {
   newContract: ResolvedNewVaultBridge;
   legacyContract: ResolvedLegacyVaultBridge;
 } {
@@ -518,8 +559,8 @@ function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): {
   }
 
   const pepper = getVaultPepper(rawEnv);
-  if (pepper.length < 12) {
-    throw new Error('MEMPHIS_VAULT_PEPPER missing or too short (min 12 chars)');
+  if (requirePepper && pepper.length < 12) {
+    throw new VaultStateError('VAULT_PEPPER_REQUIRED');
   }
 
   const { newContract, legacyContract } = resolveVaultBridge(rawEnv);
@@ -554,32 +595,24 @@ export class VaultAlreadyInitializedError extends Error {
   }
 }
 
-function refuseIfVaultStateExists(rawEnv: NodeJS.ProcessEnv): void {
+function refuseIfVaultDataExists(rawEnv: NodeJS.ProcessEnv): void {
   if (parseBool(rawEnv.MEMPHIS_VAULT_FORCE_REINIT, false)) return;
-  const statePath = resolveVaultPath('vault-state.json', rawEnv);
-  if (!existsSync(statePath)) return;
-  let raw: string;
-  try {
-    raw = readFileSync(statePath, 'utf8').trim();
-  } catch {
-    return;
-  }
-  if (!raw) return;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return;
-  }
-  const obj = parsed as Record<string, unknown> | null;
-  const hasSalt = typeof obj?.salt === 'string' && (obj.salt as string).length > 0;
-  const hasKey =
-    (typeof obj?.encryptedMasterKey === 'string' &&
-      (obj.encryptedMasterKey as string).length > 0) ||
-    (typeof obj?.masterKey === 'string' && (obj.masterKey as string).length > 0);
-  if (hasSalt && hasKey) {
+  for (const file of ['vault-state.json', 'vault-entries.json'] as const) {
+    const path = resolveVaultPath(file, rawEnv);
+    try {
+      const raw = readFileSync(path, 'utf8').trim();
+      if (file === 'vault-state.json' && !raw) continue;
+      if (file === 'vault-entries.json') {
+        const entries: unknown = JSON.parse(raw);
+        if (Array.isArray(entries) && entries.length === 0) continue;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      // Unreadable or malformed data is not an empty vault. Preserve it for
+      // recovery instead of silently replacing the key that could unlock it.
+    }
     throw new VaultAlreadyInitializedError(
-      `Vault state already initialized at ${statePath}. ` +
+      `Vault data already exists or cannot be read at ${path}. ` +
         `Refusing to re-initialize — this would generate a new master key and ` +
         `leave existing encrypted entries unreadable. ` +
         `If you intentionally want to wipe the vault, set MEMPHIS_VAULT_FORCE_REINIT=1. ` +
@@ -592,7 +625,17 @@ export function vaultInit(
   input: VaultInitInput,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): { version: number; did: string } {
-  refuseIfVaultStateExists(rawEnv);
+  const journalPath = resolveVaultJournals(rawEnv).paths;
+  return withConfigurationWriteLock(journalPath, () => {
+    refuseIfVaultDataExists(rawEnv);
+    return initializeVaultUnderLock(input, rawEnv);
+  });
+}
+
+function initializeVaultUnderLock(
+  input: VaultInitInput,
+  rawEnv: NodeJS.ProcessEnv,
+): { version: number; did: string } {
   const bridge = getBridgeOrThrow(rawEnv);
 
   if (typeof bridge.newContract.vault_init_full === 'function') {
@@ -601,15 +644,28 @@ export function vaultInit(
       input.recovery_question,
       input.recovery_answer,
     );
-    activeVault = normalizeVault(result.vault);
-    persistVaultState(activeVault, rawEnv);
+    const vault = normalizeVault(result.vault);
+    persistVaultState(vault, rawEnv);
+    resetActiveVault();
+    activeVault = vault;
+    activeVaultIdentity = vaultCacheIdentity(rawEnv);
     return { version: 1, did: result.did };
   }
 
   if (typeof bridge.legacyContract.vault_init_json === 'function') {
-    return parseEnvelope<{ version: number; did: string }>(
+    const result = parseEnvelope<unknown>(
       bridge.legacyContract.vault_init_json(JSON.stringify(input)),
     );
+    // A TS type assertion does not strip private fields from a legacy ABI result.
+    // Keep the public result explicit; the Rust compatibility payload is unchanged.
+    if (!result || typeof result !== 'object') {
+      throw new Error('invalid legacy vault initialization result');
+    }
+    const { version, did } = result as Record<string, unknown>;
+    if ((version !== 1 && version !== 2) || typeof did !== 'string' || !did.trim()) {
+      throw new Error('invalid legacy vault initialization result');
+    }
+    return { version, did };
   }
 
   throw new Error('vault_init_full unavailable');
@@ -620,7 +676,7 @@ export function vaultEncrypt(
   plaintext: string,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): VaultEntry {
-  const bridge = getBridgeOrThrow(rawEnv);
+  const bridge = getBridgeOrThrow(rawEnv, false);
 
   if (typeof bridge.newContract.vault_store === 'function') {
     const vault = getActiveVaultOrThrow(rawEnv);
@@ -641,13 +697,22 @@ export function vaultEncrypt(
 }
 
 export function vaultDecrypt(entry: VaultEntry, rawEnv: NodeJS.ProcessEnv = process.env): string {
-  const bridge = getBridgeOrThrow(rawEnv);
+  const bridge = getBridgeOrThrow(rawEnv, false);
 
   if (typeof bridge.newContract.vault_retrieve === 'function') {
     const vault = getActiveVaultOrThrow(rawEnv);
-    const jsEntry = convertToJsVaultEntry(entry);
-    const plaintext = bridge.newContract.vault_retrieve(vault, jsEntry);
-    return plaintext.toString('utf8');
+    const jsEntry = convertToJsVaultEntry(entry, rawEnv);
+    let plaintext: Buffer;
+    try {
+      plaintext = bridge.newContract.vault_retrieve(vault, jsEntry);
+    } catch {
+      throw new VaultEntryError('VAULT_ENTRY_AUTH_FAILED');
+    }
+    try {
+      return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(plaintext);
+    } catch {
+      throw new VaultEntryError('VAULT_ENTRY_INVALID_TEXT');
+    }
   }
 
   throw new Error(
@@ -655,11 +720,11 @@ export function vaultDecrypt(entry: VaultEntry, rawEnv: NodeJS.ProcessEnv = proc
   );
 }
 
-/**
- * Reset the in-memory active vault. For testing only.
- */
+/** Release key material after invalidation, rotation or a failed reload. */
 export function resetActiveVault(): void {
+  if (activeVault) getVaultMasterKey(activeVault).fill(0);
   activeVault = null;
+  activeVaultIdentity = null;
 }
 
 export interface VaultPepperRotateResult {
@@ -685,38 +750,16 @@ export function rotateVaultStatePepper(
     throw new Error(`Vault state not found at ${statePath}. Run "memphis vault init" first.`);
   }
 
-  const raw = readFileSync(statePath, 'utf8');
-  const parsed = JSON.parse(raw) as PersistedVaultState;
+  const { vault, version: fromVersion } = readVaultState(rawEnv, oldPepper);
 
-  let vault: JsVault;
-  let fromVersion: 1 | 2;
-  if (isV2State(parsed)) {
-    fromVersion = 2;
-    const unwrapped = deserializeVaultStateV2(parsed, oldPepper);
-    if (!unwrapped) {
-      throw new Error(
-        'Failed to decrypt vault state with the provided OLD pepper. Either the pepper is wrong or the state is corrupt.',
-      );
-    }
-    vault = unwrapped;
-  } else {
-    fromVersion = 1;
-    vault = deserializeVaultStateV1(parsed);
-  }
-
-  const wrapped = serializeVaultStateV2(vault, newPepper);
-  const tmpPath = `${statePath}.tmp-${process.pid}-${Date.now()}`;
-  writeFileSync(tmpPath, JSON.stringify(wrapped, null, 2));
   try {
-    chmodSync(tmpPath, 0o600);
-  } catch {
-    // chmod non-fatal on some platforms
+    const wrapped = serializeVaultStateV2(vault, newPepper);
+    writePrivateAtomicFile(statePath, JSON.stringify(wrapped, null, 2));
+    return { statePath, fromVersion, toVersion: 2 };
+  } finally {
+    getVaultMasterKey(vault).fill(0);
+    resetActiveVault();
   }
-  renameSync(tmpPath, statePath);
-
-  activeVault = normalizeVault(vault);
-
-  return { statePath, fromVersion, toVersion: 2 };
 }
 
 export interface VaultMasterKeyRotateFailure {
@@ -735,44 +778,23 @@ function getEntriesStorePath(rawEnv: NodeJS.ProcessEnv): string {
   return resolveVaultPath('vault-entries.json', rawEnv);
 }
 
-/**
- * Load and validate the entries JSON before a master-key rotation.
- *
- * Exported for regression-test access: guarantees that a corrupt or missing
- * entries file aborts rotation loudly rather than getting silently
- * reinterpreted as empty (which would cause `rotateVaultMasterKey` to
- * overwrite every stored ciphertext record with `[]`).
+/** Read the same persisted entry contract used by normal credential reads.
+ * Missing files represent an empty vault; existing malformed files must abort.
  */
 export function loadEntriesForRotationOrThrow(
   entriesPath: string,
-): Array<VaultEntry & { createdAt?: string; fingerprint?: string }> {
-  if (!existsSync(entriesPath)) return [];
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): StoredVaultEntry[] {
   let raw: string;
   try {
-    raw = readFileSync(entriesPath, 'utf8');
-  } catch (err) {
-    throw new Error(
-      `Master-key rotation aborted: cannot read ${entriesPath} — ${err instanceof Error ? err.message : String(err)}. ` +
-        `Fix the file (check permissions or restore from backup) before retrying.`,
+    raw = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
+      readFileSync(entriesPath),
     );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw new VaultEntryError('VAULT_ENTRIES_UNREADABLE');
   }
-  if (!raw.trim()) return [];
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    throw new Error(
-      `Master-key rotation aborted: ${entriesPath} is not valid JSON — ${err instanceof Error ? err.message : String(err)}. ` +
-        `Restore a valid entries file from backup before retrying; rotation will not silently discard ciphertext records.`,
-    );
-  }
-  if (!Array.isArray(parsed)) {
-    throw new Error(
-      `Master-key rotation aborted: ${entriesPath} must contain a JSON array of entries, got ${typeof parsed}. ` +
-        `Restore a valid entries file from backup before retrying.`,
-    );
-  }
-  return parsed as Array<VaultEntry & { createdAt?: string; fingerprint?: string }>;
+  return parseVaultEntries(raw, rawEnv);
 }
 
 export function rotateVaultMasterKey(
@@ -781,16 +803,18 @@ export function rotateVaultMasterKey(
   const statePath = resolveVaultPath('vault-state.json', rawEnv);
   const entriesPath = getEntriesStorePath(rawEnv);
 
+  const journalPath = resolveVaultJournals(rawEnv).paths;
+  recoverConfigurationTransaction(journalPath);
+  const originalStateHash = configurationFileHash(statePath);
+  const originalEntriesHash = configurationFileHash(entriesPath);
+
   if (!existsSync(statePath)) {
     throw new Error(`Vault state not found at ${statePath}. Run "memphis vault init" first.`);
   }
 
-  const oldVault = loadPersistedVaultState(rawEnv);
-  if (!oldVault) {
-    throw new Error(
-      `Failed to load vault state from ${statePath}. Check MEMPHIS_VAULT_PEPPER matches the state.`,
-    );
-  }
+  // Rotation publishes v2 transactionally. A transparent v1 upgrade here would
+  // mutate the state after capturing its expected hash and invalidate the plan.
+  const oldVault = readVaultState(rawEnv).vault;
 
   const bridge = getBridgeOrThrow(rawEnv);
   if (
@@ -808,26 +832,27 @@ export function rotateVaultMasterKey(
   // ciphertext records. When the file exists and can't be parsed, abort the
   // rotation so the operator can investigate (or restore from a backup)
   // before touching the live vault.
-  const entries = loadEntriesForRotationOrThrow(entriesPath);
+  const entries = loadEntriesForRotationOrThrow(entriesPath, rawEnv);
 
   const decrypted: Array<{ key: string; plaintext: Buffer; createdAt?: string }> = [];
   const failed: VaultMasterKeyRotateFailure[] = [];
 
   for (const entry of entries) {
     try {
-      const jsEntry = convertToJsVaultEntry(entry);
+      const jsEntry = convertToJsVaultEntry(entry, rawEnv);
       const plaintext = bridge.newContract.vault_retrieve(oldVault, jsEntry);
       decrypted.push({ key: entry.key, plaintext, createdAt: entry.createdAt });
-    } catch (err) {
+    } catch {
       failed.push({
         key: entry.key,
         id: entry.id,
-        reason: err instanceof Error ? err.message : 'unknown_error',
+        reason: 'credential-decryption-failed',
       });
     }
   }
 
   if (failed.length > 0) {
+    for (const record of decrypted) record.plaintext.fill(0);
     const summary = failed
       .slice(0, 5)
       .map((f) => `  • key=${f.key} id=${f.id ?? '(none)'} — ${f.reason}`)
@@ -838,125 +863,51 @@ export function rotateVaultMasterKey(
     );
   }
 
-  const newVault: JsVault = {
+  const newVault = {
     salt: oldVault.salt,
     master_key: randomBytes(32),
   };
 
-  const reencrypted = decrypted.map((record) => {
-    const out = bridge.newContract.vault_store!(newVault, record.key, record.plaintext);
-    return {
-      id: out.id,
-      key: out.key,
-      encrypted: out.ciphertext.toString('base64'),
-      iv: out.nonce.toString('base64'),
-      tag: out.tag.toString('base64'),
-      createdAt: record.createdAt ?? out.createdAt ?? out.created_at ?? new Date().toISOString(),
-    };
-  });
-
-  const reencryptedStored = reencrypted.map((e) => {
-    const payload = JSON.stringify({ key: e.key, encrypted: e.encrypted, iv: e.iv });
-    const fingerprint = createHash('sha256').update(payload).digest('hex');
-    return { ...e, fingerprint };
-  });
-
-  const stateBackup = `${statePath}.bak-${process.pid}-${Date.now()}`;
-  const entriesBackup = `${entriesPath}.bak-${process.pid}-${Date.now()}`;
-
-  copyFileSync(statePath, stateBackup);
-  if (existsSync(entriesPath)) {
-    copyFileSync(entriesPath, entriesBackup);
-  }
-
-  const tmpState = `${statePath}.tmp-${process.pid}-${Date.now()}`;
-  const tmpEntries = `${entriesPath}.tmp-${process.pid}-${Date.now()}`;
-
   try {
+    const reencrypted = decrypted.map((record) => {
+      const out = bridge.newContract.vault_store!(newVault, record.key, record.plaintext);
+      return {
+        id: out.id,
+        key: out.key,
+        encrypted: out.ciphertext.toString('base64'),
+        iv: out.nonce.toString('base64'),
+        tag: out.tag.toString('base64'),
+        createdAt: record.createdAt ?? out.createdAt ?? out.created_at ?? new Date().toISOString(),
+      };
+    });
+
+    const reencryptedStored = reencrypted.map((e) => {
+      const payload = JSON.stringify({ key: e.key, encrypted: e.encrypted, iv: e.iv });
+      const fingerprint = createHash('sha256').update(payload).digest('hex');
+      return { ...e, fingerprint };
+    });
+
     const pepper = getVaultPepper(rawEnv);
-    if (pepper.length < 12) {
+    if (pepper.length < 12)
       throw new Error('MEMPHIS_VAULT_PEPPER must be at least 12 characters to write v2 state.');
-    }
     const wrapped = serializeVaultStateV2(newVault, pepper);
-    // Sprint 2.2 (#275): create with 0600 at write time (closes umask race).
-    writeFileSync(tmpState, JSON.stringify(wrapped, null, 2), { mode: 0o600 });
-    try {
-      chmodSync(tmpState, 0o600);
-    } catch {
-      // chmod non-fatal
-    }
-
-    mkdirSync(dirname(entriesPath), { recursive: true });
-    writeFileSync(tmpEntries, JSON.stringify(reencryptedStored, null, 2));
-    try {
-      chmodSync(tmpEntries, 0o600);
-    } catch {
-      // chmod non-fatal
-    }
-
-    // Fsync both tmp files before the first rename (#145). writeFileSync
-    // doesn't guarantee durability until the buffer is flushed to disk —
-    // a crash between writeFileSync and renameSync could leave a torn
-    // tmp that the catch-block rollback then restores from a half-written
-    // state. Explicit fsync here closes that window.
-    fsyncFile(tmpState);
-    fsyncFile(tmpEntries);
-
-    renameSync(tmpState, statePath);
-    try {
-      renameSync(tmpEntries, entriesPath);
-    } catch (entriesRenameErr) {
-      copyFileSync(stateBackup, statePath);
-      throw entriesRenameErr;
-    }
-
-    activeVault = normalizeVault(newVault);
-
-    try {
-      unlinkSync(stateBackup);
-    } catch {
-      // backup cleanup non-fatal
-    }
-    if (existsSync(entriesBackup)) {
-      try {
-        unlinkSync(entriesBackup);
-      } catch {
-        // backup cleanup non-fatal
-      }
-    }
-
-    return {
-      statePath,
-      entriesPath,
-      rotatedCount: reencryptedStored.length,
-    };
-  } catch (err) {
-    try {
-      if (existsSync(tmpState)) unlinkSync(tmpState);
-    } catch {
-      /* noop */
-    }
-    try {
-      if (existsSync(tmpEntries)) unlinkSync(tmpEntries);
-    } catch {
-      /* noop */
-    }
-    if (existsSync(stateBackup)) {
-      try {
-        copyFileSync(stateBackup, statePath);
-        unlinkSync(stateBackup);
-      } catch {
-        /* noop — backup still on disk for manual recovery */
-      }
-    }
-    if (existsSync(entriesBackup)) {
-      try {
-        copyFileSync(entriesBackup, entriesPath);
-        unlinkSync(entriesBackup);
-      } catch {
-        /* noop */
-      }
-    }
-    throw err;
+    mkdirSync(dirname(entriesPath), { recursive: true, mode: 0o700 });
+    commitConfigurationTransaction(journalPath, [
+      {
+        path: statePath,
+        content: JSON.stringify(wrapped, null, 2),
+        expectedHash: originalStateHash,
+      },
+      {
+        path: entriesPath,
+        content: JSON.stringify(reencryptedStored, null, 2),
+        expectedHash: originalEntriesHash,
+      },
+    ]);
+    return { statePath, entriesPath, rotatedCount: reencryptedStored.length };
+  } finally {
+    resetActiveVault();
+    for (const record of decrypted) record.plaintext.fill(0);
+    newVault.master_key.fill(0);
   }
 }

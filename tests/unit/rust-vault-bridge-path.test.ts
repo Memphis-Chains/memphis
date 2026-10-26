@@ -17,10 +17,14 @@
  * root can be resolved.
  */
 
+import { resolve } from 'node:path';
+
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { resetInstallRootMemoForTests } from '../../src/infra/runtime/install-root.js';
 import { getRustVaultAdapterStatus } from '../../src/infra/storage/rust-vault-adapter.js';
+
+const installRoot = resolve(import.meta.dirname, '../..');
 
 afterEach(() => {
   resetInstallRootMemoForTests();
@@ -49,11 +53,12 @@ describe('rust vault bridge path anchoring', () => {
       const out = getRustVaultAdapterStatus({
         RUST_CHAIN_ENABLED: 'true',
         RUST_CHAIN_BRIDGE_PATH: './crates/memphis-napi',
+        MEMPHIS_RUNTIME_ROOT: installRoot,
       } as NodeJS.ProcessEnv);
 
       // Must resolve to an absolute path under the install root, NOT /tmp/...
       expect(out.rustBridgePath.startsWith('/')).toBe(true);
-      expect(out.rustBridgePath.startsWith('/tmp/')).toBe(false);
+      expect(out.rustBridgePath).toBe(resolve(installRoot, 'crates/memphis-napi'));
       expect(out.rustBridgePath.endsWith('crates/memphis-napi')).toBe(true);
     } finally {
       process.chdir(original);
@@ -68,6 +73,7 @@ describe('rust vault bridge path anchoring', () => {
     // crates/memphis-napi suffix.
     const out = getRustVaultAdapterStatus({
       RUST_CHAIN_ENABLED: 'true',
+      MEMPHIS_RUNTIME_ROOT: installRoot,
     } as NodeJS.ProcessEnv);
 
     expect(out.rustBridgePath.startsWith('/')).toBe(true);
@@ -83,9 +89,10 @@ describe('rust vault bridge path anchoring', () => {
       process.chdir('/tmp');
       const out = getRustVaultAdapterStatus({
         RUST_CHAIN_ENABLED: 'true',
+        MEMPHIS_RUNTIME_ROOT: installRoot,
       } as NodeJS.ProcessEnv);
 
-      expect(out.rustBridgePath.startsWith('/tmp/')).toBe(false);
+      expect(out.rustBridgePath).toBe(resolve(installRoot, 'crates/memphis-napi'));
       expect(out.rustBridgePath.endsWith('crates/memphis-napi')).toBe(true);
     } finally {
       process.chdir(original);

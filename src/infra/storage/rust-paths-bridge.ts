@@ -136,10 +136,7 @@ function getBridge(): BridgeResolution<PathsBridgeKey> {
   return resolution;
 }
 
-function callBridge<T>(
-  fnName: PathsBridgeKey,
-  args: readonly unknown[],
-): T {
+function callBridge<T>(fnName: PathsBridgeKey, args: readonly unknown[]): T {
   const resolution = getBridge();
   if (!resolution.bridgeLoaded) {
     throw new Error(
@@ -236,12 +233,24 @@ function envToJson(rawEnv: NodeJS.ProcessEnv): string {
   return JSON.stringify(map);
 }
 
+/** Explicit runtime roots anchor relative storage paths independently of launch cwd. */
+function pathResolutionBase(rawEnv: NodeJS.ProcessEnv): string {
+  const runtimeRoot = rawEnv.MEMPHIS_RUNTIME_ROOT?.trim();
+  return runtimeRoot ? resolve(runtimeRoot) : process.cwd();
+}
+
 export function bridgeResolveDataDir(rawEnv: NodeJS.ProcessEnv = process.env): string {
-  return callBridge<string>('paths_resolve_data_dir', [envToJson(rawEnv), process.cwd()]);
+  return callBridge<string>('paths_resolve_data_dir', [
+    envToJson(rawEnv),
+    pathResolutionBase(rawEnv),
+  ]);
 }
 
 export function bridgeResolveChainsDir(rawEnv: NodeJS.ProcessEnv = process.env): string {
-  return callBridge<string>('paths_resolve_chains_dir', [envToJson(rawEnv), process.cwd()]);
+  return callBridge<string>('paths_resolve_chains_dir', [
+    envToJson(rawEnv),
+    pathResolutionBase(rawEnv),
+  ]);
 }
 
 export function bridgeResolveChainPath(
@@ -250,7 +259,7 @@ export function bridgeResolveChainPath(
 ): string {
   return callBridge<string>('paths_resolve_chain_path', [
     envToJson(rawEnv),
-    process.cwd(),
+    pathResolutionBase(rawEnv),
     chainName,
   ]);
 }

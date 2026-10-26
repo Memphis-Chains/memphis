@@ -1,0 +1,30 @@
+[
+  {
+    "provider": "minimax",
+    "referenceEnv": "MINIMAX_VAULT_KEY",
+    "plaintextEnv": "MINIMAX_API_KEY",
+    "defaultKey": "minimax_api_key",
+    "customKey": "team-minimax"
+  },
+  {
+    "provider": "deepseek",
+    "referenceEnv": "DEEPSEEK_VAULT_KEY",
+    "plaintextEnv": "DEEPSEEK_API_KEY",
+    "defaultKey": "deepseek_api_key",
+    "customKey": "team-deepseek"
+  },
+  {
+    "provider": "glm",
+    "referenceEnv": "GLM_VAULT_KEY",
+    "plaintextEnv": "GLM_API_KEY",
+    "defaultKey": "glm_api_key",
+    "customKey": "team-glm"
+  },
+  {
+    "provider": "anthropic",
+    "referenceEnv": "ANTHROPIC_VAULT_KEY",
+    "plaintextEnv": "ANTHROPIC_API_KEY",
+    "defaultKey": "anthropic_api_key",
+    "customKey": "team-anthropic"
+  }
+]

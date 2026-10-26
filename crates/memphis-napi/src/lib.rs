@@ -56,6 +56,9 @@ pub fn bridge_manifest() -> String {
             "vault_init_full",
             "vault_store",
             "vault_retrieve",
+            "vault_load_state",
+            "vault_parse_entries",
+            "vault_decode_entry",
             "embed_store",
             "embed_store_many",
             "embed_flush",
@@ -89,6 +92,9 @@ pub fn bridge_manifest() -> String {
             "vault_init_full",
             "vault_store",
             "vault_retrieve",
+            "vault_load_state",
+            "vault_parse_entries",
+            "vault_decode_entry",
             "embed_store",
             "embed_store_many",
             "embed_flush",
@@ -289,6 +295,11 @@ fn embed_config_from_env() -> EmbedConfig {
         provider_api_key: trim_opt_env("RUST_EMBED_PROVIDER_API_KEY"),
         provider_model: trim_opt_env("RUST_EMBED_PROVIDER_MODEL"),
         provider_timeout_ms: parse_u64_env("RUST_EMBED_PROVIDER_TIMEOUT_MS", 8000),
+        // Same env var the TypeScript provider reads
+        // (`src/providers/index.ts`). Without it the Rust side omits
+        // `keep_alive` from the Ollama request, so the server unloads the
+        // model after 5 idle minutes and every embed pays a cold load.
+        provider_keep_alive: trim_opt_env("OLLAMA_KEEP_ALIVE"),
     }
 }
 
@@ -297,18 +308,10 @@ fn embed_persistence_enabled_from_env() -> bool {
 }
 
 fn embed_persistence_path_from_env() -> PathBuf {
-    if let Ok(path) = std::env::var("RUST_EMBED_PERSIST_PATH") {
-        let trimmed = path.trim();
-        if !trimmed.is_empty() {
-            return PathBuf::from(trimmed);
-        }
-    }
-
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home)
-        .join(".memphis")
-        .join("embed")
-        .join("index-v1.json")
+    let env = std::env::vars().collect();
+    let root = std::env::var("MEMPHIS_RUNTIME_ROOT").map(PathBuf::from)
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    memphis_paths::resolve_embed_index_path(&env, &root)
 }
 
 fn load_state_to_str(state: EmbedPersistenceLoadState) -> &'static str {
@@ -344,6 +347,11 @@ fn get_embed_pipeline() -> Result<&'static Mutex<EmbedPipeline>, String> {
         .map_err(|e| format!("embed_pipeline_init_failed: {e}"))?;
 
     Ok(EMBED_PIPELINE.get_or_init(|| Mutex::new(pipeline)))
+}
+
+#[napi(js_name = "embed_index_metadata")]
+pub fn embed_index_metadata(path: String) -> String {
+    ok(memphis_embed::metadata::inspect_index(std::path::Path::new(&path)))
 }
 
 #[napi(js_name = "chain_validate")]

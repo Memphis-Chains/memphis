@@ -30,7 +30,7 @@ import {
 } from '../infra/storage/rust-chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../infra/storage/rust-embed-adapter.js';
 import { buildInstalledSkillsPromptFragment } from '../modules/skills/runtime.js';
-import type { ChatMessage } from '../providers/index.js';
+import type { ChatMessage, ChatOptions } from '../providers/index.js';
 import {
   buildSoulBootPrompt,
   buildSoulManifestFragment,
@@ -258,6 +258,13 @@ export type AgentLoopResult = {
    * partial answer thinking it's complete.
    */
   finishReason?: string;
+  /**
+   * Smallest context window the provider reported across this loop's calls.
+   * An account may grant less than the model's declared capability, and
+   * turn-runtime uses this to trim history on subsequent turns instead of
+   * waiting for an upstream rejection.
+   */
+  effectiveContextWindow?: number;
 };
 
 function mergeTokenUsage(
@@ -307,6 +314,7 @@ export async function runAgentLoop(options: {
    */
   temperature?: number;
   maxTokens?: number;
+  reasoningEffort?: ChatOptions['reasoningEffort'];
   /**
    * Originating channel surface (telegram | http | cli | mcp | …),
    * forwarded to confabulation events so operators can see WHICH channel
@@ -320,6 +328,7 @@ export async function runAgentLoop(options: {
   const limits = options.loopLimits ?? DEFAULT_LOOP_LIMITS;
   let state = newLoopState();
   let usage: TokenUsage | undefined;
+  let effectiveContextWindow: number | undefined;
 
   const workingMessages = [...options.messages];
   // Sprint 0.2: snapshot of the most recent tool results, used by the
@@ -335,8 +344,19 @@ export async function runAgentLoop(options: {
       tools: tools.length > 0 ? tools : undefined,
       temperature: options.temperature,
       maxTokens: options.maxTokens,
+      reasoningEffort: options.reasoningEffort,
     });
     usage = mergeTokenUsage(usage, response.usage);
+    if (
+      typeof response.effectiveContextWindow === 'number' &&
+      Number.isFinite(response.effectiveContextWindow) &&
+      response.effectiveContextWindow > 0
+    ) {
+      effectiveContextWindow =
+        effectiveContextWindow === undefined
+          ? response.effectiveContextWindow
+          : Math.min(effectiveContextWindow, response.effectiveContextWindow);
+    }
 
     void auditLlmCall('provider', response.tool_calls?.length ?? 0);
 
@@ -365,7 +385,13 @@ export async function runAgentLoop(options: {
           log.warn({ err }, 'confabulation detector error — continuing');
         }
       }
-      workingMessages.push({ role: 'assistant', content: response.content });
+      workingMessages.push({
+        role: 'assistant',
+        content: response.content,
+        ...(response.reasoning_content !== undefined
+          ? { reasoning_content: response.reasoning_content }
+          : {}),
+      });
       return {
         reply: response.content,
         messages: workingMessages,
@@ -378,6 +404,7 @@ export async function runAgentLoop(options: {
       role: 'assistant',
       content: response.content,
       tool_calls: response.tool_calls,
+      reasoning_content: response.reasoning_content,
     });
 
     let halted = false;
@@ -449,9 +476,7 @@ export async function runAgentLoop(options: {
     // outputs in its next turn. Belt-and-suspenders with the prompt
     // rule in TOOL_DISCIPLINE_PREAMBLE; both target the same failure
     // mode (rationalising 403/permission-denied as success).
-    const errorOutputs = toolResults.filter(
-      (tr) => classifyToolOutput(tr.output) === 'error',
-    );
+    const errorOutputs = toolResults.filter((tr) => classifyToolOutput(tr.output) === 'error');
     if (errorOutputs.length > 0) {
       const summary = errorOutputs
         .map((tr) => {
@@ -525,6 +550,7 @@ export async function runAgentLoop(options: {
         messages: workingMessages,
         haltReason: state.halt_reason ?? undefined,
         usage,
+        ...(effectiveContextWindow !== undefined ? { effectiveContextWindow } : {}),
       };
     }
   }

@@ -61,9 +61,20 @@ function serializeConversation(messages: ChatMessage[], opts?: ChatOptions): str
 }
 
 function buildGenerateInputFromChat(messages: ChatMessage[], opts?: ChatOptions): GenerateInput {
+  // Generate-only fallback providers do not consume MiniMax continuation data.
+  // Strip it from both the text prompt and structured history at this boundary.
+  const publicMessages: ChatMessage[] = messages.map((message) =>
+    message.role === 'assistant'
+      ? {
+          role: 'assistant',
+          content: message.content,
+          ...(message.tool_calls ? { tool_calls: message.tool_calls } : {}),
+        }
+      : message,
+  );
   return {
-    input: serializeConversation(messages, opts),
-    messages,
+    input: serializeConversation(publicMessages, opts),
+    messages: publicMessages,
     model: opts?.model,
     systemPrompt: opts?.systemPrompt,
     tools: opts?.tools,
@@ -86,6 +97,8 @@ function buildChatMessagesFromGenerateInput(input: GenerateInput): ChatMessage[]
 
 function defaultModelForGenerateProvider(name: ProviderName): string {
   switch (name) {
+    case 'openai':
+      return process.env.OPENAI_MODEL ?? 'astra-gtp6-max';
     case 'anthropic':
       return process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6';
     case 'local-fallback':
@@ -99,7 +112,7 @@ function defaultModelForGenerateProvider(name: ProviderName): string {
     case 'ollama':
       return process.env.OLLAMA_MODEL ?? 'qwen2.5-coder:3b';
     case 'minimax':
-      return process.env.MINIMAX_MODEL ?? 'MiniMax-M2.7';
+      return process.env.MINIMAX_MODEL ?? 'MiniMax-M3.1-Flash';
     case 'deepseek':
       return process.env.DEEPSEEK_MODEL ?? 'deepseek-chat';
   }

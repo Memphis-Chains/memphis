@@ -42,6 +42,27 @@ import type { CliContext } from '../../src/infra/cli/context.js';
 import type { CliArgs } from '../../src/infra/cli/types.js';
 import { printDoctorHumanV2, runDoctorChecksV2 } from '../../src/infra/cli/utils/doctor-v2.js';
 
+/** Capture CLI output through console.log and explicit streams under Vitest. */
+function captureStdout(): { output: () => string; restore: () => void } {
+  let captured = '';
+  const streamSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((
+    chunk: string | Uint8Array,
+  ) => {
+    captured += String(chunk);
+    return true;
+  }) as typeof process.stdout.write);
+  const consoleSpy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+    captured += args.map(String).join(' ') + '\n';
+  });
+  return {
+    output: () => captured,
+    restore: () => {
+      streamSpy.mockRestore();
+      consoleSpy.mockRestore();
+    },
+  };
+}
+
 function baseArgs(overrides: Partial<CliArgs>): CliArgs {
   return {
     json: false,
@@ -75,7 +96,8 @@ afterEach(() => {
 
 describe('CLI ask + doctor', () => {
   it('supports ask alias with JSON output', async () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    // `ask --json` prints through print(), which writes to process.stdout.
+    const stdout = captureStdout();
     const context = {
       argv: [],
       args: baseArgs({ command: 'ask', input: 'hello ask', json: true }),
@@ -114,8 +136,7 @@ describe('CLI ask + doctor', () => {
     const handled = await handleInteractionCommand(context);
 
     expect(handled).toBe(true);
-    expect(log).toHaveBeenCalledOnce();
-    const payload = JSON.parse(log.mock.calls[0]?.[0] as string);
+    const payload = JSON.parse(stdout.output());
     expect(payload.providerUsed).toBe('local-fallback');
     expect(payload.output).toContain('hello ask');
   });
@@ -156,6 +177,7 @@ describe('CLI ask + doctor', () => {
   }, 60000);
 
   it('doctor prints human-readable output with indicators', async () => {
+    // printDoctorHumanReport writes through console.log, not through print().
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const report = await runDoctorChecksV2();
 

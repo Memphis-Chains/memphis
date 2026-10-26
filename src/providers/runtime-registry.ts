@@ -10,6 +10,7 @@ import {
   type ProviderKeyResolution,
 } from './index.js';
 import { LocalFallbackProvider } from './local-fallback/adapter.js';
+import { OpenAICodexProvider } from './openai-codex/adapter.js';
 import { adaptChatProvider, adaptGenerateProvider, type RuntimeProvider } from './runtime.js';
 import { SharedLlmProvider } from './shared-llm/adapter.js';
 import { SharedLlmClient } from './shared-llm/client.js';
@@ -27,6 +28,12 @@ export function createConfiguredRuntimeProviders(
 ): { providers: RuntimeProvider[]; checks: ProviderCheck[] } {
   const providers: RuntimeProvider[] = [];
   const checks: ProviderCheck[] = [];
+
+  if (rawEnv.OPENAI_AUTH_MODE === 'codex' || config.DEFAULT_PROVIDER === 'openai') {
+    providers.push(
+      adaptChatProvider(new OpenAICodexProvider({ model: config.OPENAI_MODEL, rawEnv })),
+    );
+  }
 
   if (config.LOCAL_FALLBACK_ENABLED) {
     providers.push(
@@ -148,6 +155,7 @@ export function createConfiguredRuntimeProviders(
           apiKey: minimaxResult.key,
           model: rawEnv.MINIMAX_MODEL,
           baseUrl: rawEnv.MINIMAX_BASE_URL,
+          rawEnv,
         }),
       ),
     );

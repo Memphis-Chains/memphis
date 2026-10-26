@@ -1,8 +1,16 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createBackup, restoreBackup } from '../../src/infra/cli/commands/backup.js';
 
@@ -38,9 +46,13 @@ describe('restoreBackup — --pepper-restore validates BEFORE destructive swap',
 
   beforeEach(() => {
     env = setup();
+    // The restore target and the install-root dotenv are separate paths.
+    // Never let this fixture's pepper reach the operator's checkout.
+    vi.stubEnv('MEMPHIS_ENV_FILE', join(env.memphisRoot, '.env'));
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     tearDown(env);
   });
 
@@ -89,5 +101,8 @@ describe('restoreBackup — --pepper-restore validates BEFORE destructive swap',
       pepperRestore: 'sufficientlyLongPepper999',
     });
     expect(result.ok).toBe(true);
+    expect(readFileSync(join(env.memphisRoot, '.env'), 'utf8')).toContain(
+      'MEMPHIS_VAULT_PEPPER=sufficientlyLongPepper999',
+    );
   });
 });

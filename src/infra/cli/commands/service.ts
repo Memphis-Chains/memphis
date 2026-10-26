@@ -3,11 +3,11 @@ import { isAbsolute, resolve } from 'node:path';
 
 import { getDataDir } from '../../../config/paths.js';
 import { requireOperatorAuth } from '../../auth/operator-gate.js';
+import { resolveRuntimeConfigSnapshot } from '../../config/runtime-config-snapshot.js';
 import {
   getUserServiceStatus,
   installUserService,
   readUserServiceLogs,
-  resolveRuntimeRoot,
   restartUserService,
   uninstallUserService,
   type UserServiceInstallResult,
@@ -73,7 +73,7 @@ function printServiceLogsHuman(result: UserServiceLogs): void {
 }
 
 function runtimeRootFromContext(): string {
-  return resolveRuntimeRoot(process.cwd());
+  return resolveRuntimeConfigSnapshot(process.env, { cwd: process.cwd() }).runtimeRoot.path;
 }
 
 function parseDotEnv(envPath: string): Record<string, string> {

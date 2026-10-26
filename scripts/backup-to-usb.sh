@@ -29,6 +29,36 @@ MIN_FREE_MB=200  # refuse copy if less than 200 MB free on USB
 #    Probe candidates in order, use the first real mountpoint.
 #    MEMPHIS_USB_DIR override wins, so a re-labelled drive or a
 #    different mount layout is handled without a code change.
+# 0. Offsite state, so a missing copy is visible instead of silent.
+#
+#    The unit ran 58 times refusing to copy and 25 times reporting no mount,
+#    and every one of those was invisible in `memphis health`: the health
+#    payload described the LOCAL backup only. An offsite copy that silently
+#    stops is the failure this state file exists to make loud.
+#
+#    Written atomically (temp file + rename) so a reader never sees a
+#    half-written JSON, and with 0600 because it names a path on the drive.
+STATE_FILE="${MEMPHIS_OFFSITE_STATE:-$HOME/.memphis/offsite-backup-state.json}"
+
+write_state() {
+    # $1 status: ok | up-to-date | no-usb | no-archive | copy-failed
+    # $2 detail: free text, may be empty
+    local status="$1" detail="${2:-}" tmp
+    tmp="$(mktemp "${STATE_FILE}.XXXXXX" 2>/dev/null || echo "")"
+    [ -n "$tmp" ] || return 0
+    {
+        printf '{\n'
+        printf '  "status": "%s",\n' "$status"
+        printf '  "detail": "%s",\n' "$(printf '%s' "$detail" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+        printf '  "updatedAt": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        printf '  "mount": "%s",\n' "${USB_DIR:-}"
+        printf '  "archive": "%s"\n' "$(basename "${latest:-}" 2>/dev/null || echo "")"
+        printf '}\n'
+    } > "$tmp"
+    chmod 600 "$tmp" 2>/dev/null || true
+    mv -f "$tmp" "$STATE_FILE" 2>/dev/null || rm -f "$tmp" 2>/dev/null || true
+}
+
 resolve_usb_dir() {
     local candidates=()
     # `set -u` is active and systemd does export USER on this host, but any
@@ -54,6 +84,7 @@ resolve_usb_dir() {
 
 if ! USB_DIR=$(resolve_usb_dir); then
     echo "[backup-to-usb] ERROR: no USB mount found (tried MEMPHIS_USB_DIR, /run/media/$(id -un)/memphis-usb-back, /media/$(id -un)/usb-backup, /media/memphis/usb-backup)" >&2
+    write_state "no-usb" "no mountpoint found"
     exit 2
 fi
 
@@ -62,6 +93,7 @@ echo "[backup-to-usb] using USB mount: $USB_DIR"
 # 2. Verify write access
 if ! touch "$USB_DIR/.write-test" 2>/dev/null; then
     echo "[backup-to-usb] ERROR: no write access to $USB_DIR (chown needed?)" >&2
+    write_state "no-usb" "no write access to $USB_DIR"
     exit 2
 fi
 rm -f "$USB_DIR/.write-test" 2>/dev/null || true
@@ -71,6 +103,7 @@ free_kb=$(df --output=avail "$USB_DIR" | tail -1 | tr -d ' ')
 free_mb=$((free_kb / 1024))
 if [ "$free_mb" -lt "$MIN_FREE_MB" ]; then
     echo "[backup-to-usb] ERROR: only ${free_mb} MB free on USB (need ${MIN_FREE_MB})" >&2
+    write_state "no-usb" "only ${free_mb} MB free"
     exit 2
 fi
 
@@ -85,6 +118,7 @@ latest=$(find "$LOCAL_BACKUP_DIR" -maxdepth 1 -type f -name "*.tar.gz" ! -name "
     | sort -rn | head -1 | cut -d' ' -f2- || true)
 if [ -z "$latest" ]; then
     echo "[backup-to-usb] ERROR: no published archives in $LOCAL_BACKUP_DIR" >&2
+    write_state "no-archive" "no published archives"
     exit 1
 fi
 
@@ -103,6 +137,7 @@ if [ ! -f "$MEMPHIS_BIN" ]; then
 fi
 if [ -z "$MEMPHIS_BIN" ] || [ ! -f "$MEMPHIS_BIN" ]; then
     echo "[backup-to-usb] ERROR: memphis CLI not found (set MEMPHIS_BIN)" >&2
+    write_state "no-archive" "memphis CLI not found"
     exit 1
 fi
 
@@ -114,6 +149,7 @@ fi
 verify_out=$("${MEMPHIS_BIN}" backup verify "$latest" 2>&1) && verify_rc=0 || verify_rc=$?
 if [ "$verify_rc" -ne 0 ]; then
     echo "[backup-to-usb] ERROR: latest archive $latest failed verify (rc=$verify_rc): $verify_out" >&2
+    write_state "verify-failed" "latest archive failed verify"
     exit 1
 fi
 
@@ -125,12 +161,14 @@ if [ -f "$dest" ]; then
     if [ "$src_sha" = "$dest_sha" ]; then
         chmod 600 "$dest" 2>/dev/null || true
         echo "[backup-to-usb] already up to date: $dest"
+        write_state "up-to-date" "$(basename "$dest")"
         exit 0
     fi
 fi
 
 if ! cp "$latest" "$dest"; then
     echo "[backup-to-usb] ERROR: copy $latest -> $dest failed" >&2
+    write_state "copy-failed" "copy of $(basename "$latest") failed"
     exit 3
 fi
 
@@ -142,6 +180,7 @@ sidecar="$latest.sha256"
 if [ -f "$sidecar" ]; then
     if ! cp "$sidecar" "$dest.sha256"; then
         echo "[backup-to-usb] ERROR: copy $sidecar -> $dest.sha256 failed" >&2
+        write_state "copy-failed" "copy of the digest sidecar failed"
         exit 3
     fi
     chmod 600 "$dest" "$dest.sha256" 2>/dev/null || true
@@ -156,5 +195,6 @@ ls -t *.tar.gz 2>/dev/null | tail -n +$((USB_KEEP + 1)) | while read -r old; do
     rm -f "$old" 2>/dev/null || true
 done
 
+write_state "ok" "$(basename "$latest")"
 echo "[backup-to-usb] OK: copied $(basename "$latest") to USB"
 ls -la "$USB_DIR" 2>/dev/null | tail -n $((USB_KEEP + 2))
