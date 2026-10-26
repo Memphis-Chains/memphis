@@ -25,10 +25,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import {
-  TOOL_REGISTRY,
-  isToolEnabledByFeatureFlag,
-} from '../../src/gateway/tool-registry.js';
+import { NATIVE_TOOL_CONTRACTS } from '../../src/gateway/tool-contract.js';
+import { TOOL_REGISTRY, isToolEnabledByFeatureFlag } from '../../src/gateway/tool-registry.js';
 import { createMemphisMcpServer } from '../../src/mcp/server.js';
 import type { SoulManifest } from '../../src/soul/types.js';
 
@@ -55,6 +53,10 @@ const PERMISSIVE_MANIFEST: SoulManifest = {
   mode: 'quiet',
   trustRules: [{ tool: '*', autoApprove: true, addedAt: new Date().toISOString() }],
 };
+
+const nativeOnlyTools = new Set(
+  NATIVE_TOOL_CONTRACTS.filter((tool) => tool.gatewayHidden).map((tool) => tool.name),
+);
 
 async function snapshotMcpToolNames(env: NodeJS.ProcessEnv): Promise<{
   names: string[];
@@ -93,7 +95,7 @@ describe('MCP introspection contract', () => {
   // memphis_media_ingest into mcp/server.ts (see same commit). The two
   // registry entries existed without matching `server.registerTool` calls,
   // tripping the symmetric and asymmetric assertions below.
-  it('registers EVERY non-feature-flagged TOOL_REGISTRY entry on the MCP server (default env)', async () => {
+  it('registers every enabled gateway-visible tool on MCP (default env)', async () => {
     // Default env: no MEMPHIS_FEATURES — only non-experimental tools should
     // be discoverable. Verifies that experimental gating is honored
     // identically by registry-side `isToolEnabledByFeatureFlag` and
@@ -104,6 +106,7 @@ describe('MCP introspection contract', () => {
     cleanup = snap.cleanup;
 
     const expectedNames = Object.values(TOOL_REGISTRY)
+      .filter((tool) => !nativeOnlyTools.has(tool.name))
       .filter((tool) => isToolEnabledByFeatureFlag(tool.name, env))
       .map((tool) => tool.name)
       .sort();
@@ -111,7 +114,7 @@ describe('MCP introspection contract', () => {
     expect(snap.names).toEqual(expectedNames);
   });
 
-  it('registers EVERY TOOL_REGISTRY entry when experimental flag is set', async () => {
+  it('registers every gateway-visible tool when the experimental flag is set', async () => {
     // With MEMPHIS_FEATURES=experimental-tools, every entry in
     // TOOL_REGISTRY must show up in MCP discovery — no orphans on either
     // side. Drift here means a tool was added to one source but not the
@@ -124,6 +127,7 @@ describe('MCP introspection contract', () => {
     cleanup = snap.cleanup;
 
     const registryNames = Object.values(TOOL_REGISTRY)
+      .filter((tool) => !nativeOnlyTools.has(tool.name))
       .map((tool) => tool.name)
       .sort();
 
@@ -165,7 +169,10 @@ describe('MCP introspection contract', () => {
     const experimental = Object.values(TOOL_REGISTRY).filter(
       (tool) => tool.featureFlag === 'experimental-tools',
     );
-    expect(experimental.length, 'fixture: at least one experimental tool registered').toBeGreaterThan(0);
+    expect(
+      experimental.length,
+      'fixture: at least one experimental tool registered',
+    ).toBeGreaterThan(0);
     for (const tool of experimental) {
       expect(
         snap.names,

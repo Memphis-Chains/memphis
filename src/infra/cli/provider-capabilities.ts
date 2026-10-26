@@ -3,9 +3,9 @@ import type { ProviderName } from '../../core/types.js';
 import { DEFAULT_MINIMAX_MODEL } from '../../providers/minimax/config.js';
 import { resolveModelCapabilitySnapshot } from '../../providers/model-capabilities.js';
 import {
-  GPT56_SOL_MAX_PRESET,
-  GPT56_SOL_MODEL,
+  CODEX_SUPPORTED_MODEL_PRESETS,
   codexBinaryAvailable,
+  listAccountModelSlugs,
   readAccountContextWindow,
   resolveCodexModel,
 } from '../../providers/openai-codex/client.js';
@@ -299,12 +299,12 @@ export async function listModelsWithCapabilities(env: NodeJS.ProcessEnv): Promis
   for (const provider of configured) {
     switch (provider) {
       case 'openai':
-        for (const model of new Set([
+        // The account catalog is authoritative for what this workspace may
+        // run; the Memphis presets add the effort-carrying aliases.
+        for (const model of new Set<string>([
           resolveRemoteProviderConfig(provider, env).model,
-          'astra-gtp6-max',
-          'gpt-6-astra',
-          GPT56_SOL_MAX_PRESET,
-          GPT56_SOL_MODEL,
+          ...CODEX_SUPPORTED_MODEL_PRESETS,
+          ...listAccountModelSlugs(env),
         ])) {
           rows.push({ provider, model, capabilities: toCliCapability(provider, model, env) });
         }

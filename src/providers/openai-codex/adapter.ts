@@ -2,6 +2,7 @@ import {
   CODEX_SUPPORTED_MODEL_PRESETS,
   codexBinaryAvailable,
   DEFAULT_CODEX_MODEL,
+  listAccountModelSlugs,
   readAccountContextWindow,
   resolveCodexModel,
   runCodexChat,
@@ -38,8 +39,16 @@ export class OpenAICodexProvider implements Provider {
   }
 
   async listModels(): Promise<string[]> {
-    // Supported presets, not an entitlement claim.
-    return [...new Set([this.model, ...CODEX_SUPPORTED_MODEL_PRESETS])];
+    // Supported presets plus the models this account may actually run: the
+    // catalog the Codex CLI maintains is the only source that knows about
+    // models released after Memphis was built.
+    return [
+      ...new Set([
+        this.model,
+        ...CODEX_SUPPORTED_MODEL_PRESETS,
+        ...listAccountModelSlugs(this.rawEnv),
+      ]),
+    ];
   }
 
   defaultModel(): string {

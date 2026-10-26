@@ -101,6 +101,9 @@ async function cliRead() {
     stdout += String(chunk);
     return true;
   });
+  const log = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+    stdout += args.map(String).join(' ') + '\n';
+  });
   const err = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
     stderr.push(args.map(String).join(' '));
   });
@@ -112,6 +115,7 @@ async function cliRead() {
   } finally {
     process.exitCode = previousExitCode;
     out.mockRestore();
+    log.mockRestore();
     err.mockRestore();
   }
   let data: Record<string, unknown> | null = null;

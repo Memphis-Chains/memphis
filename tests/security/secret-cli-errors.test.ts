@@ -43,6 +43,9 @@ async function invoke(command: string, json = true) {
     stdout += String(chunk);
     return true;
   });
+  const log = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+    stdout += args.map(String).join(' ') + '\n';
+  });
   const err = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
     stderr.push(args.map(String).join(' '));
   });
@@ -54,6 +57,7 @@ async function invoke(command: string, json = true) {
     failure = error;
   } finally {
     out.mockRestore();
+    log.mockRestore();
     err.mockRestore();
   }
   let data: Record<string, unknown> | undefined;

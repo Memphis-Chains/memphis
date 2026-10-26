@@ -147,24 +147,49 @@ function anthropicCapabilities(model: string): ModelCapabilitySnapshot {
   };
 }
 
+/**
+ * Documented context window of the Codex model family. OpenAI documents
+ * 1,050,000 for every Codex chat model; it only bounds the account grant from
+ * above, because the account grant is what the server actually enforces.
+ */
+const CODEX_FAMILY_CONTEXT_WINDOW = 1_050_000;
+
+/**
+ * Codex model ids Memphis recognises even when the account catalog is not
+ * available (the Codex CLI has not run on this machine yet). Whenever the
+ * catalog exists it is authoritative and covers models released after this
+ * code was written.
+ */
+const CODEX_FAMILY_MODELS = new Set(['gpt-6-astra', 'gpt-5.6-sol', 'gpt-6.1-sol']);
+
 function openAiCodexCapabilities(
   model: string,
   rawEnv: NodeJS.ProcessEnv,
 ): ModelCapabilitySnapshot | undefined {
   const resolved = resolveCodexModel(model).model;
-  if (!['gpt-6-astra', 'gpt-5.6-sol'].includes(resolved)) {
+  const account = readAccountContextWindow(rawEnv, resolved);
+  if (account !== undefined) {
+    // The catalog names the models this workspace may use and the window
+    // each one was granted. Reading it here means the FIRST request of a
+    // conversation is already trimmed to the real ceiling, instead of
+    // waiting for the server to report it after a turn has been sent.
+    return {
+      contextWindowTokens: Math.min(CODEX_FAMILY_CONTEXT_WINDOW, account),
+      supportsStreaming: true,
+      // This adapter currently forwards text and Memphis tool calls.
+      supportsVision: false,
+      source: 'heuristic',
+    };
+  }
+  // No catalog on this machine: fall back to the documented ceiling for the
+  // codex families Memphis ships presets for. An unknown model id gets no
+  // capability at all, which leaves trimming to the server-reported value.
+  if (!CODEX_FAMILY_MODELS.has(resolved)) {
     return undefined;
   }
-  // Both supported families document a 1,050,000-token ceiling. The account
-  // is usually granted less, and the Codex catalog on disk records that grant,
-  // so the effective limit is the smaller value. Reading it here means the
-  // FIRST request of a conversation is already trimmed to the real ceiling.
-  const declared = 1_050_000;
-  const account = readAccountContextWindow(rawEnv, resolved);
   return {
-    contextWindowTokens: account === undefined ? declared : Math.min(declared, account),
+    contextWindowTokens: CODEX_FAMILY_CONTEXT_WINDOW,
     supportsStreaming: true,
-    // This adapter currently forwards text and Memphis tool calls.
     supportsVision: false,
     source: 'heuristic',
   };

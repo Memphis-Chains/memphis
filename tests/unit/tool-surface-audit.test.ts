@@ -30,4 +30,29 @@ describe('tool surface audit', () => {
       expect(surface.missingFromSurface).toEqual([]);
     }
   });
+
+  // A tool the native surface executes but the gateway must not advertise
+  // stays in the registry (so tier, capabilities and schema have one home)
+  // and is absent from the gateway surfaces on purpose. The audit has to
+  // know that difference, or it reports a deliberate design as a defect.
+  it('does not report a gateway-hidden native tool as missing from the gateway', () => {
+    const report = buildToolSurfaceAuditReport({
+      MEMPHIS_RUNTIME_ROOT: process.cwd(),
+    } as NodeJS.ProcessEnv);
+
+    expect(report.gatewayHidden.length).toBeGreaterThan(0);
+    expect(report.gatewayHidden).toContain('memphis_vault_list');
+    for (const name of report.gatewayHidden) {
+      const gateway = report.surfaces.filter((surface) => surface.surface !== 'registry');
+      for (const surface of gateway) {
+        expect(surface.missingFromSurface).not.toContain(name);
+      }
+    }
+    // The hidden tool still has to live in the registry — that is the one
+    // place its tier and capabilities are recorded.
+    const registry = report.surfaces.find((surface) => surface.surface === 'registry');
+    for (const name of report.gatewayHidden) {
+      expect(registry?.names).toContain(name);
+    }
+  });
 });

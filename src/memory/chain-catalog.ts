@@ -63,8 +63,7 @@ export interface ChainDefinition {
 export const CHAIN_CATALOG = {
   journal: {
     name: 'journal',
-    purpose:
-      'Persistent memory — thoughts, observations, learnings. Semantic-indexed for recall.',
+    purpose: 'Persistent memory — thoughts, observations, learnings. Semantic-indexed for recall.',
     blockTypes: ['journal', 'insight'],
     writeFrequency: 'high',
     consentDefault: 'local-only',
@@ -143,8 +142,7 @@ export const CHAIN_CATALOG = {
   },
   insights: {
     name: 'insights',
-    purpose:
-      'Generated insights from the insight generator (daily/weekly/topic-scoped analyses).',
+    purpose: 'Generated insights from the insight generator (daily/weekly/topic-scoped analyses).',
     blockTypes: ['insight'],
     writeFrequency: 'low',
     consentDefault: 'exportable',
@@ -184,9 +182,7 @@ export function getSearchableChainNames(): ChainName[] {
 
 /** Chain definitions whose blocks default to `exportable` consent (training-safe). */
 export function getExportableByDefaultChains(): ChainName[] {
-  return getChainNames().filter(
-    (name) => CHAIN_CATALOG[name].consentDefault === 'exportable',
-  );
+  return getChainNames().filter((name) => CHAIN_CATALOG[name].consentDefault === 'exportable');
 }
 
 export function getChainDefinition(name: string): ChainDefinition | undefined {
@@ -209,4 +205,9 @@ export function getChainDefinition(name: string): ChainDefinition | undefined {
  */
 export function isKnownChainName(value: string): value is ChainName {
   return Object.hasOwn(CHAIN_CATALOG, value);
+}
+
+/** Recovery copies use either epoch milliseconds or the legacy ISO filename stamp. */
+export function isChainBackupDirectory(name: string): boolean {
+  return /^[a-zA-Z0-9_-]+\.backup-(?:\d+|\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)$/.test(name);
 }

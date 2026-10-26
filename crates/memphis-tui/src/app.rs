@@ -1611,6 +1611,9 @@ impl AppState {
                         ) | (
                             "gpt-5.6-sol",
                             "gpt-5.6-sol-max" | "gpt-5.6-Sol Max"
+                        ) | (
+                            "gpt-6.1-sol",
+                            "gpt-6.1-sol-max" | "gpt-6.1-Sol Max"
                         )
                     );
                 self.chat_provider = Some(exchange.provider.clone());
@@ -5376,6 +5379,27 @@ mod tests {
                 app.apply_worker_event(WorkerEvent::ChatCompleted(
                     serde_json::from_value(serde_json::json!({
                         "session_id": "synthetic-codex", "provider": "openai", "model": "gpt-5.6-sol",
+                        "reply": "fixture", "messages": []
+                    }))
+                    .unwrap(),
+                ));
+                assert_eq!(app.chat_model.as_deref(), Some(preset));
+            }
+        }
+    }
+
+    /// The transport reports the canonical model id, so a "max" preset has to
+    /// survive the turn or the reasoning effort is silently dropped.
+    #[test]
+    fn gpt_61_sol_max_alias_survives_completed_turns() {
+        for preset in ["gpt-6.1-sol-max", "gpt-6.1-Sol Max"] {
+            let mut app = AppState::new(config());
+            app.chat_provider = Some("openai".into());
+            app.chat_model = Some(preset.into());
+            for _ in 0..2 {
+                app.apply_worker_event(WorkerEvent::ChatCompleted(
+                    serde_json::from_value(serde_json::json!({
+                        "session_id": "synthetic-codex", "provider": "openai", "model": "gpt-6.1-sol",
                         "reply": "fixture", "messages": []
                     }))
                     .unwrap(),

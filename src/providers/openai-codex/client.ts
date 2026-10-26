@@ -15,11 +15,15 @@ const TOOL_CALL_SETTLE_MS = 120;
 export const DEFAULT_CODEX_MODEL = 'astra-gtp6-max';
 export const GPT56_SOL_MODEL = 'gpt-5.6-sol';
 export const GPT56_SOL_MAX_PRESET = 'gpt-5.6-sol-max';
+export const GPT61_SOL_MODEL = 'gpt-6.1-sol';
+export const GPT61_SOL_MAX_PRESET = 'gpt-6.1-sol-max';
 export const CODEX_SUPPORTED_MODEL_PRESETS = [
   DEFAULT_CODEX_MODEL,
   'gpt-6-astra',
   GPT56_SOL_MAX_PRESET,
   GPT56_SOL_MODEL,
+  GPT61_SOL_MAX_PRESET,
+  GPT61_SOL_MODEL,
 ] as const;
 
 const ERROR_MESSAGES = {
@@ -57,7 +61,110 @@ export function resolveCodexModel(model = DEFAULT_CODEX_MODEL): {
     return { model: GPT56_SOL_MODEL, effort: 'max' };
   }
   if (normalized === GPT56_SOL_MODEL) return { model: GPT56_SOL_MODEL };
+  // GPT-6.1 Sol follows the same shape: the Memphis preset carries the
+  // reasoning effort, the official id carries the model.
+  if ([GPT61_SOL_MAX_PRESET, `${GPT61_SOL_MODEL} max`].includes(normalized)) {
+    return { model: GPT61_SOL_MODEL, effort: 'max' };
+  }
+  if (normalized === GPT61_SOL_MODEL) return { model: GPT61_SOL_MODEL };
   return { model: requested };
+}
+
+/**
+ * One model the logged-in ChatGPT account may use, as recorded in the account
+ * catalog the Codex CLI keeps under CODEX_HOME.
+ */
+export type CodexAccountModel = {
+  /** Official model id, e.g. `gpt-6.1-sol`. */
+  slug: string;
+  /** Human-readable name from the catalog. */
+  displayName: string;
+  /** Context window the account was granted for this model, if any. */
+  accountContextWindow: number | undefined;
+  /** False for models the CLI keeps out of its own picker. */
+  visible: boolean;
+};
+
+type CatalogCacheEntry = {
+  path: string;
+  fingerprint: string;
+  models: CodexAccountModel[];
+};
+
+let catalogCache: CatalogCacheEntry | undefined;
+
+/**
+ * The account's Codex model catalog: which models this workspace may use and
+ * how much context each one gets.
+ *
+ * The catalog is account-specific (it carries an account identity hash) and
+ * is maintained by the Codex CLI itself, so it is the only place that knows
+ * about models released after Memphis was built. It is cached on the file's
+ * (size, mtime) so a CLI refresh is picked up without re-reading the catalog
+ * on every turn.
+ */
+export function readAccountModelCatalog(
+  rawEnv: NodeJS.ProcessEnv,
+): CodexAccountModel[] | undefined {
+  const codexHome = rawEnv.CODEX_HOME?.trim() || join(rawEnv.HOME ?? '', '.codex');
+  if (!codexHome) return undefined;
+  const path = join(codexHome, 'models_cache.json');
+  let fingerprint: string;
+  try {
+    const stat = statSync(path);
+    fingerprint = `${stat.size}:${stat.mtimeMs}`;
+  } catch {
+    // No catalog on this machine yet (the Codex CLI never ran here). Callers
+    // fall back to the documented API ceiling.
+    return undefined;
+  }
+  if (catalogCache && catalogCache.path === path && catalogCache.fingerprint === fingerprint) {
+    return catalogCache.models;
+  }
+  let models: CodexAccountModel[];
+  try {
+    const raw = readFileSync(path, 'utf8');
+    const parsed = JSON.parse(raw) as { models?: unknown };
+    const entries = Array.isArray(parsed.models) ? parsed.models : [];
+    models = entries.flatMap((entry) => {
+      if (!entry || typeof entry !== 'object') return [];
+      const record = entry as Record<string, unknown>;
+      const slug = typeof record.slug === 'string' ? record.slug : '';
+      if (!slug) return [];
+      const pool = record.context_window;
+      const percent = record.effective_context_window_percent;
+      let accountContextWindow: number | undefined;
+      if (typeof pool === 'number' && Number.isFinite(pool) && pool > 0) {
+        const share =
+          typeof percent === 'number' && Number.isFinite(percent) && percent > 0
+            ? percent / 100
+            : 1;
+        const effective = Math.floor(pool * share);
+        accountContextWindow = effective > 0 ? effective : undefined;
+      }
+      return [
+        {
+          slug,
+          displayName: typeof record.display_name === 'string' ? record.display_name : slug,
+          accountContextWindow,
+          visible: record.visibility !== 'hide',
+        },
+      ];
+    });
+  } catch {
+    return undefined;
+  }
+  catalogCache = { path, fingerprint, models };
+  return models;
+}
+
+/**
+ * Slugs of the models this account may use, in catalog order.
+ */
+export function listAccountModelSlugs(rawEnv: NodeJS.ProcessEnv): string[] {
+  return (readAccountModelCatalog(rawEnv) ?? [])
+    .filter((model) => model.visible)
+    .map((model) => model.slug);
 }
 
 /**
@@ -74,29 +181,8 @@ export function readAccountContextWindow(
   rawEnv: NodeJS.ProcessEnv,
   model: string,
 ): number | undefined {
-  const codexHome = rawEnv.CODEX_HOME?.trim() || join(rawEnv.HOME ?? '', '.codex');
-  if (!codexHome) return undefined;
-  try {
-    const raw = readFileSync(join(codexHome, 'models_cache.json'), 'utf8');
-    const parsed = JSON.parse(raw) as { models?: unknown };
-    const models = Array.isArray(parsed.models) ? parsed.models : [];
-    for (const entry of models) {
-      if (!entry || typeof entry !== 'object') continue;
-      const record = entry as Record<string, unknown>;
-      if (String(record.slug ?? '') !== model) continue;
-      const pool = record.context_window;
-      const percent = record.effective_context_window_percent;
-      if (typeof pool !== 'number' || !Number.isFinite(pool) || pool <= 0) return undefined;
-      const share =
-        typeof percent === 'number' && Number.isFinite(percent) && percent > 0 ? percent / 100 : 1;
-      const effective = Math.floor(pool * share);
-      return effective > 0 ? effective : undefined;
-    }
-  } catch {
-    // A missing or unreadable catalog is not an error: the server-reported
-    // value still arrives with the first completed turn.
-  }
-  return undefined;
+  return readAccountModelCatalog(rawEnv)?.find((entry) => entry.slug === model)
+    ?.accountContextWindow;
 }
 
 export function codexBinaryAvailable(rawEnv: NodeJS.ProcessEnv): boolean {

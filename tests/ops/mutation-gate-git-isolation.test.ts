@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -7,10 +7,15 @@ import { expect, it } from 'vitest';
 
 it('preserves the hook repository when the mutation gate creates scratch commits', () => {
   const root = mkdtempSync(join(tmpdir(), 'memphis-hook-git-'));
+  const checkout = mkdtempSync(join(tmpdir(), 'memphis-hook-source-'));
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
   );
   try {
+    // Mutation checks edit source files. Give this process its own staged
+    // checkout so parallel suites never observe deliberately broken sources.
+    execFileSync('git', ['checkout-index', '--all', `--prefix=${checkout}/`], { env });
+    symlinkSync(resolve('node_modules'), join(checkout, 'node_modules'), 'dir');
     execFileSync('git', ['init', '-q', root], { env });
     writeFileSync(join(root, 'operator-change.txt'), 'staged operator work\n');
     execFileSync('git', ['-C', root, 'add', 'operator-change.txt'], { env });
@@ -22,12 +27,12 @@ it('preserves the hook repository when the mutation gate creates scratch commits
       'crates/memphis-operator/src/chat_tool_catalog.rs',
       'src/security/content-scan.ts',
     ];
-    const sourceBytes = sources.map((path) => readFileSync(path));
+    const sourceBytes = sources.map((path) => readFileSync(join(checkout, path)));
     const result = spawnSync(
       process.execPath,
       ['--import', resolve('node_modules/tsx/dist/loader.mjs'), 'scripts/mutation-gate.mts'],
       {
-        cwd: resolve('.'),
+        cwd: checkout,
         env: {
           ...env,
           GIT_DIR: join(root, '.git'),
@@ -41,10 +46,13 @@ it('preserves the hook repository when the mutation gate creates scratch commits
     expect(result.status, result.stdout + result.stderr).toBe(0);
     expect(result.stdout).toContain('5/5 mutations killed');
     paths.forEach((path, index) => expect(readFileSync(path)).toEqual(before[index]));
-    sources.forEach((path, index) => expect(readFileSync(path)).toEqual(sourceBytes[index]));
+    sources.forEach((path, index) =>
+      expect(readFileSync(join(checkout, path))).toEqual(sourceBytes[index]),
+    );
     const head = spawnSync('git', ['-C', root, 'rev-parse', '--verify', 'HEAD'], { env });
     expect(head.status).not.toBe(0);
   } finally {
     rmSync(root, { recursive: true, force: true });
+    rmSync(checkout, { recursive: true, force: true });
   }
 }, 90000);
