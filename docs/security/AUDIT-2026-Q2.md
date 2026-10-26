@@ -13,11 +13,15 @@ This is not a penetration test or independent certification of Rust cryptography
 | Old MV2 omitted hashes/signatures and lacked a trusted snapshot restore                                     | Separate MV2 work preserves full JSON, signs a manifest, requires an expected DID, validates hashes/signatures/continuity, and stages a fresh restore. Vault, embedding and privileged soul restoration remain outside generic import. |
 | Quarterly acceptance counted any nonempty audit file                                                        | This change requires completed external-review evidence bound to the report SHA-256. An internal report cannot pass. Evidence is an operator-reviewed attestation, not proof of reviewer identity.                                     |
 
-`npm audit --omit=dev --json` reported five affected packages: four moderate,
-one low, zero high/critical. Packages: express-rate-limit, fast-uri, fastify,
-hono, ip-address. Fixes were advertised; remediation and compatibility checks
-remain pending. The private operator archive retains the machine-readable result.
-This review does not label dependencies clean.
+`npm audit --omit=dev --json` initially reported five affected packages: four
+moderate, one low, zero high/critical. Scoped compatible lockfile updates fixed
+those production findings: express-rate-limit 8.3.2 → 8.7.1, fast-uri 3.1.8 →
+3.1.9, fastify 5.12.5 → 5.12.7, hono 4.13.9 → 4.13.14, ip-address 10.7.2 →
+10.7.5. The production audit now reports zero vulnerabilities. No package ranges
+changed. The complete graph still reports four moderate development findings;
+this is not a claim that every dependency is audit-clean. The private operator
+archive retains initial and remediated machine-readable results. Compatibility
+is checked by the required PR tests against a fresh install.
 
 An actual independent external review remains required; no third party was
 contacted. MV2 snapshots are signed, not encrypted, and require private storage.
