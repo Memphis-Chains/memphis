@@ -8,12 +8,6 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-// These tests exercise routing after onboarding, independent of host state.
-vi.mock('../../src/onboarding/first-run.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/onboarding/first-run.js')>()),
-  inspectFirstRunStatus: () => ({ state: 'initialized-clean' }),
-}));
-
 // ── Mock runTurnRuntime at the gateway level ────────────────────────────────
 const { runTurnRuntime } = vi.hoisted(() => ({
   runTurnRuntime: vi.fn(async () => ({
@@ -60,22 +54,25 @@ import { handleInteractionCommand } from '../../src/infra/cli/commands/interacti
 import type { CliContext } from '../../src/infra/cli/context.js';
 import type { CliArgs } from '../../src/infra/cli/types.js';
 
-/**
- * Capture what the CLI writes to stdout.
- *
- * The CLI prints through `print()`, which writes to `process.stdout` — not
- * through `console.log`. Vitest captures console output itself, so a
- * `console.log` spy sees nothing the CLI printed.
- */
+/** Capture CLI output through console.log and explicit streams under Vitest. */
 function captureStdout(): { output: () => string; restore: () => void } {
   let captured = '';
-  const spy = vi.spyOn(process.stdout, 'write').mockImplementation(((
+  const streamSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((
     chunk: string | Uint8Array,
   ) => {
     captured += String(chunk);
     return true;
   }) as typeof process.stdout.write);
-  return { output: () => captured, restore: () => spy.mockRestore() };
+  const consoleSpy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+    captured += args.map(String).join(' ') + '\n';
+  });
+  return {
+    output: () => captured,
+    restore: () => {
+      streamSpy.mockRestore();
+      consoleSpy.mockRestore();
+    },
+  };
 }
 
 function baseArgs(overrides: Partial<CliArgs>): CliArgs {

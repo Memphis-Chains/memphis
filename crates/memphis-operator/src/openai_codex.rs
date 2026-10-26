@@ -9,9 +9,10 @@ use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{self, RecvTimeoutError},
+        Mutex, OnceLock,
     },
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use serde::Deserialize;
@@ -71,12 +72,128 @@ const CHILD_ENV_KEYS: &[&str] = &[
     "OPENAI_CODEX_TIMEOUT_MS",
 ];
 
+/// One model the logged-in ChatGPT account may use, as recorded in the account
+/// catalog the Codex CLI keeps under CODEX_HOME.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CodexAccountModel {
+    /// Official model id, e.g. `gpt-6.1-sol`.
+    pub(crate) slug: String,
+    /// Human-readable name from the catalog.
+    pub(crate) display_name: String,
+    /// Context window the account was granted for this model, if any.
+    pub(crate) account_context_window: Option<u64>,
+    /// False for models the CLI keeps out of its own picker.
+    pub(crate) visible: bool,
+}
+
+/// Cached catalog read: (path, size, mtime, models).
+type CatalogCache = (PathBuf, u64, u64, Vec<CodexAccountModel>);
+
+fn catalog_cache() -> &'static Mutex<Option<CatalogCache>> {
+    static CACHE: OnceLock<Mutex<Option<CatalogCache>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
+}
+
+/// Lock the catalog cache, recovering from a poisoned lock: a panic in one
+/// reader must not turn every later catalog read into a panic.
+fn lock_catalog_cache() -> std::sync::MutexGuard<'static, Option<CatalogCache>> {
+    match catalog_cache().lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+/// The account's Codex model catalog: which models this workspace may use and
+/// how much context each one gets.
+///
+/// The catalog is account-specific and maintained by the Codex CLI itself, so
+/// it is the only place that knows about models released after Memphis was
+/// built. It is cached on the file's (size, mtime) so a CLI refresh is picked
+/// up without re-reading the catalog on every call. A missing or unreadable
+/// catalog is not an error: callers fall back to the documented API ceiling.
+pub(crate) fn read_account_model_catalog(
+    config: &OperatorConfig,
+) -> Option<Vec<CodexAccountModel>> {
+    read_account_model_catalog_at(&codex_home_dir(config)?)
+}
+
+/// The Codex home directory the CLI keeps its account catalog in.
+fn codex_home_dir(config: &OperatorConfig) -> Option<PathBuf> {
+    config.env("CODEX_HOME").map(PathBuf::from).or_else(|| {
+        config
+            .env("HOME")
+            .map(|home| PathBuf::from(home).join(".codex"))
+    })
+}
+
+/// Catalog read for a known Codex home. Every caller goes through this one
+/// function, so the model list and the context window can never disagree.
+fn read_account_model_catalog_at(codex_home: &Path) -> Option<Vec<CodexAccountModel>> {
+    let path = codex_home.join("models_cache.json");
+    let metadata = std::fs::metadata(&path).ok()?;
+    let size = metadata.len();
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|delta| delta.as_nanos() as u64)
+        .unwrap_or(0);
+    {
+        let cache = lock_catalog_cache();
+        if let Some((cached_path, cached_size, cached_modified, models)) = cache.as_ref() {
+            if cached_path == &path && *cached_size == size && *cached_modified == modified {
+                return Some(models.clone());
+            }
+        }
+    }
+    let raw = std::fs::read_to_string(&path).ok()?;
+    let parsed: Value = serde_json::from_str(&raw).ok()?;
+    let entries = parsed.get("models")?.as_array()?;
+    let models: Vec<CodexAccountModel> = entries
+        .iter()
+        .filter_map(|entry| {
+            let record = entry.as_object()?;
+            let slug = record.get("slug").and_then(Value::as_str)?.trim().to_string();
+            if slug.is_empty() {
+                return None;
+            }
+            let pool = record
+                .get("context_window")
+                .and_then(Value::as_u64)
+                .filter(|pool| *pool > 0);
+            let share = record
+                .get("effective_context_window_percent")
+                .and_then(Value::as_f64)
+                .filter(|percent| percent.is_finite() && *percent > 0.0)
+                .map(|percent| percent / 100.0)
+                .unwrap_or(1.0);
+            let account_context_window = pool
+                .map(|pool| ((pool as f64) * share).floor() as u64)
+                .filter(|window| *window > 0);
+            Some(CodexAccountModel {
+                slug,
+                display_name: record
+                    .get("display_name")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                account_context_window,
+                visible: record.get("visibility").and_then(Value::as_str) != Some("hide"),
+            })
+        })
+        .collect();
+    *lock_catalog_cache() = Some((path, size, modified, models.clone()));
+    Some(models)
+}
+
 #[derive(Clone)]
 pub(crate) struct CodexBridge {
     runtime_root: PathBuf,
     bridge_path: PathBuf,
     child_env: HashMap<String, String>,
     timeout_ms: u64,
+    /// Directory the Codex CLI keeps its account catalog in.
+    codex_home: Option<PathBuf>,
 }
 
 impl CodexBridge {
@@ -105,6 +222,7 @@ impl CodexBridge {
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(DEFAULT_TIMEOUT_MS)
                 .clamp(1_000, 3_600_000),
+            codex_home: codex_home_dir(config),
         };
         // Resolve before Node switches to the private app-server cwd.
         let binary = bridge
@@ -118,6 +236,33 @@ impl CodexBridge {
                 .insert("CODEX_BIN".into(), path.to_string_lossy().into_owned());
         }
         Ok(bridge)
+    }
+
+    /// Models the logged-in account may run, from the Codex CLI catalog.
+    pub(crate) fn account_models(&self) -> Vec<CodexAccountModel> {
+        self.codex_home
+            .as_deref()
+            .and_then(read_account_model_catalog_at)
+            .unwrap_or_default()
+    }
+
+    /// Slugs of the models the account may run, in catalog order.
+    pub(crate) fn account_model_slugs(&self) -> Vec<String> {
+        self.account_models()
+            .into_iter()
+            .filter(|model| model.visible)
+            .map(|model| model.slug)
+            .collect()
+    }
+
+    /// Context window the account granted for a model, when the catalog knows
+    /// it. The account may narrow a model's window, never widen it.
+    pub(crate) fn account_context_window(&self, model: &str) -> Option<u64> {
+        let slug = resolve_codex_model_slug(model);
+        self.account_models()
+            .into_iter()
+            .find(|entry| entry.slug == slug)?
+            .account_context_window
     }
 
     /// Local readiness only. Codex verifies the logged-in account and model
@@ -515,8 +660,26 @@ pub(crate) fn resolve_codex_model_slug(model: &str) -> &str {
     {
         return "gpt-5.6-sol";
     }
+    // GPT-6.1 Sol follows the same shape: the preset carries the reasoning
+    // effort, the official id carries the model.
+    if normalized.eq_ignore_ascii_case("gpt-6.1-sol-max")
+        || normalized.eq_ignore_ascii_case("gpt-6.1-sol max")
+        || normalized.eq_ignore_ascii_case("gpt-6.1-sol")
+    {
+        return "gpt-6.1-sol";
+    }
     normalized
 }
+
+/// Official model ids of the Codex family Memphis recognises without an
+/// account catalog. The catalog is authoritative whenever it exists; this set
+/// only covers the case where the Codex CLI has never run on this machine.
+pub(crate) const CODEX_FAMILY_MODELS: &[&str] = &["gpt-6-astra", "gpt-5.6-sol", "gpt-6.1-sol"];
+
+/// Documented context window of the Codex model family. It only bounds the
+/// account grant from above, because the account grant is what the server
+/// actually enforces.
+pub(crate) const CODEX_FAMILY_CONTEXT_WINDOW: u64 = 1_050_000;
 
 /// Context window the logged-in account is granted, read from the Codex model
 /// catalog the CLI keeps under CODEX_HOME.
@@ -528,38 +691,11 @@ pub(crate) fn resolve_codex_model_slug(model: &str) -> &str {
 /// instead of the second. A missing or unreadable catalog is not an error:
 /// the declared window still applies.
 pub(crate) fn read_account_context_window(config: &OperatorConfig, model: &str) -> Option<u64> {
-    let codex_home = config.env("CODEX_HOME").map(PathBuf::from).or_else(|| {
-        config
-            .env("HOME")
-            .map(|home| PathBuf::from(home).join(".codex"))
-    })?;
-    let raw = std::fs::read_to_string(codex_home.join("models_cache.json")).ok()?;
-    let parsed: Value = serde_json::from_str(&raw).ok()?;
-    let models = parsed.get("models")?.as_array()?;
     let slug = resolve_codex_model_slug(model);
-    for entry in models {
-        let Some(record) = entry.as_object() else {
-            continue;
-        };
-        if record.get("slug").and_then(Value::as_str) != Some(slug) {
-            continue;
-        }
-        let Some(pool) = record.get("context_window").and_then(Value::as_u64) else {
-            return None;
-        };
-        if pool == 0 {
-            return None;
-        }
-        let share = record
-            .get("effective_context_window_percent")
-            .and_then(Value::as_f64)
-            .filter(|percent| percent.is_finite() && *percent > 0.0)
-            .map(|percent| percent / 100.0)
-            .unwrap_or(1.0);
-        let effective = ((pool as f64) * share).floor() as u64;
-        return if effective > 0 { Some(effective) } else { None };
-    }
-    None
+    read_account_model_catalog(config)?
+        .into_iter()
+        .find(|entry| entry.slug == slug)?
+        .account_context_window
 }
 
 fn ensure_not_cancelled(cancel_flag: Option<&AtomicBool>) -> Result<(), OperatorError> {
@@ -883,7 +1019,89 @@ mod tests {
         assert_eq!(resolve_codex_model_slug("gpt-6-astra-max"), "gpt-6-astra");
         assert_eq!(resolve_codex_model_slug("gpt-5.6-sol-max"), "gpt-5.6-sol");
         assert_eq!(resolve_codex_model_slug("gpt-5.6-sol max"), "gpt-5.6-sol");
+        assert_eq!(resolve_codex_model_slug("gpt-6.1-sol-max"), "gpt-6.1-sol");
+        assert_eq!(resolve_codex_model_slug("gpt-6.1-sol max"), "gpt-6.1-sol");
+        assert_eq!(resolve_codex_model_slug("GPT-6.1-SOL"), "gpt-6.1-sol");
         assert_eq!(resolve_codex_model_slug("gpt-6-astra"), "gpt-6-astra");
         assert_eq!(resolve_codex_model_slug("custom-model"), "custom-model");
+    }
+
+    /// The account catalog is the only source that knows about models
+    /// released after Memphis was built, so it must name them and record the
+    /// window each one was granted.
+    #[test]
+    fn codex_account_catalog_names_models_and_their_windows() {
+        let root = std::env::temp_dir().join(format!(
+            "memphis-native-codex-models-{}-{}",
+            std::process::id(),
+            NEXT_ID.fetch_add(1, Ordering::SeqCst)
+        ));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("models_cache.json"),
+            r#"{"models":[
+                {"slug":"gpt-6.1-sol","display_name":"GPT-6.1-Sol","visibility":"list","context_window":500000,"effective_context_window_percent":95},
+                {"slug":"gpt-6-astra","display_name":"GPT-6-Astra","visibility":"list","context_window":272000,"effective_context_window_percent":95},
+                {"slug":"gpt-reserve","display_name":"GPT-Reserve","visibility":"hide","context_window":272000,"effective_context_window_percent":95}
+            ]}"#,
+        )
+        .unwrap();
+        let config = OperatorConfig::from_iter([
+            ("MEMPHIS_RUNTIME_ROOT", root.to_string_lossy().into_owned()),
+            ("CODEX_HOME", root.to_string_lossy().into_owned()),
+            ("HOME", root.to_string_lossy().into_owned()),
+        ]);
+
+        let models = read_account_model_catalog(&config).expect("catalog");
+        assert_eq!(
+            models.iter().map(|model| model.slug.as_str()).collect::<Vec<_>>(),
+            vec!["gpt-6.1-sol", "gpt-6-astra", "gpt-reserve"]
+        );
+        // 500000 granted pool * 95% share = 475000 usable tokens.
+        assert_eq!(
+            read_account_context_window(&config, "gpt-6.1-sol"),
+            Some(475_000)
+        );
+        assert_eq!(
+            read_account_context_window(&config, "gpt-6.1-sol-max"),
+            Some(475_000)
+        );
+        assert_eq!(
+            read_account_context_window(&config, "gpt-6-astra"),
+            Some(258_400)
+        );
+        // A hidden model is still in the catalog, but it is not offered.
+        assert_eq!(
+            read_account_context_window(&config, "gpt-reserve"),
+            Some(258_400)
+        );
+        assert_eq!(read_account_context_window(&config, "unknown-model"), None);
+
+        let bridge = CodexBridge::from_config(&config).unwrap();
+        assert_eq!(
+            bridge.account_model_slugs(),
+            vec!["gpt-6.1-sol".to_string(), "gpt-6-astra".to_string()]
+        );
+        fs::remove_dir_all(&root).ok();
+    }
+
+    /// A model the catalog does not know must not silently inherit another
+    /// model's window.
+    #[test]
+    fn codex_account_catalog_absent_leaves_the_window_unknown() {
+        let root = std::env::temp_dir().join(format!(
+            "memphis-native-codex-nocatalog-{}-{}",
+            std::process::id(),
+            NEXT_ID.fetch_add(1, Ordering::SeqCst)
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let config = OperatorConfig::from_iter([
+            ("MEMPHIS_RUNTIME_ROOT", root.to_string_lossy().into_owned()),
+            ("CODEX_HOME", root.to_string_lossy().into_owned()),
+            ("HOME", root.to_string_lossy().into_owned()),
+        ]);
+        assert!(read_account_model_catalog(&config).is_none());
+        assert_eq!(read_account_context_window(&config, "gpt-6.1-sol"), None);
+        fs::remove_dir_all(&root).ok();
     }
 }

@@ -17,7 +17,7 @@
  */
 
 import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -87,5 +87,16 @@ describe('chain-write-guard', () => {
         { VITEST: 'true', RUST_CHAIN_ENABLED: 'false', HOME: syntheticHome },
       ),
     ).rejects.toThrow(/chain-write-guard/);
+  });
+  it('keeps the default chain path inside the isolated home', async () => {
+    const home = homedir();
+    expect(isUnderTempDir(home)).toBe(true);
+    await expect(
+      appendBlock(
+        'journal',
+        { type: 'journal', content: 'isolated-fallback-fixture' },
+        { VITEST: 'true', RUST_CHAIN_ENABLED: 'false' },
+      ),
+    ).resolves.toMatchObject({ chain: 'journal' });
   });
 });

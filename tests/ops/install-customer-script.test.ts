@@ -21,8 +21,9 @@
  * where the repair path and the Telegram setup are real.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -156,11 +157,22 @@ describe('install-customer.sh — actually runs', () => {
       });
 
     if (supported) {
-      const out = run();
-      expect(out).toMatch(/Preflight/);
-      expect(out).toMatch(/Re-run without --check-only/);
-      // It must NOT have installed anything.
-      expect(out).not.toMatch(/Installing the runtime/);
+      // A checkout on tmpfs may have less than the installer's required 8 GB.
+      // Give this success-path fixture sufficient disk without installing.
+      const bin = mkdtempSync(join(tmpdir(), 'memphis-install-preflight-'));
+      try {
+        writeFileSync(join(bin, 'df'), "#!/bin/sh\nprintf 'Avail\\n16G\\n'\n", { mode: 0o755 });
+        const out = execFileSync('bash', [SCRIPT, '--check-only'], {
+          encoding: 'utf8',
+          env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}` },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        expect(out).toMatch(/Preflight/);
+        expect(out).toMatch(/Re-run without --check-only/);
+        expect(out).not.toMatch(/Installing the runtime/);
+      } finally {
+        rmSync(bin, { recursive: true, force: true });
+      }
       return;
     }
 

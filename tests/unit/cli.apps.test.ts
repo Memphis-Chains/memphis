@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { vaultEncrypt } from '../../src/infra/storage/rust-vault-adapter.js';
+import { vaultEncrypt, vaultInit } from '../../src/infra/storage/rust-vault-adapter.js';
 import { saveVaultEntry } from '../../src/infra/storage/vault-entry-store.js';
 import { runCli, runCliResult } from '../helpers/cli.js';
 import { realTmpdir as tmpdir } from '../helpers/tmpdir.js';
@@ -19,7 +19,6 @@ vi.mock('../../src/infra/auth/operator-gate.js', () => ({
 
 vi.mock('../../src/infra/storage/rust-vault-adapter.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/infra/storage/rust-vault-adapter.js')>()),
-  vaultInit: vi.fn(() => ({ did: 'did:memphis:test' })),
   vaultEncrypt: vi.fn((key: string, plaintext: string) => ({
     id: `entry-${Date.now()}`,
     key,
@@ -383,6 +382,14 @@ module.exports = {
       RUST_CHAIN_ENABLED: 'true',
       RUST_CHAIN_BRIDGE_PATH: bridgePath,
     };
+    vaultInit(
+      {
+        passphrase: 'VeryStrongPassphrase!123',
+        recovery_question: 'pet?',
+        recovery_answer: 'nori',
+      },
+      env,
+    );
     saveVaultEntry(vaultEncrypt('DEMO_TOKEN', 'secret-demo', env), env);
 
     const out = await runCli(
@@ -490,6 +497,14 @@ module.exports = {
       RUST_CHAIN_ENABLED: 'true',
       RUST_CHAIN_BRIDGE_PATH: bridgePath,
     };
+    vaultInit(
+      {
+        passphrase: 'VeryStrongPassphrase!123',
+        recovery_question: 'pet?',
+        recovery_answer: 'nori',
+      },
+      env,
+    );
     saveVaultEntry(vaultEncrypt('DEMO_FILE_TOKEN', 'secret-file-demo', env), env);
 
     const out = await runCli(

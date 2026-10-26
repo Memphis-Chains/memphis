@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 
+import { applyEnvInPlace } from './isolated-runtime.js';
 import { formatCliError, toAppError } from '../../src/core/errors.js';
 import { runCli as runCliEntry } from '../../src/infra/cli/index.js';
 
@@ -42,19 +43,23 @@ async function withCliLock<T>(operation: () => Promise<T>): Promise<T> {
 function applyEnv(env?: NodeJS.ProcessEnv): () => void {
   const previous = { ...process.env };
   const memphisDataDir =
-    env?.MEMPHIS_DATA_DIR ??
-    (env?.HOME ? resolve(env.HOME, '.memphis') : undefined);
+    env?.MEMPHIS_DATA_DIR ?? (env?.HOME ? resolve(env.HOME, '.memphis') : undefined);
 
-  process.env = {
+  // In place, not by replacing the object: `process.env` assignments are
+  // what reach the process environment, and `os.homedir()` reads that
+  // environment. A replaced object left `os.homedir()` pointing at the
+  // operator's real home, so the sandbox and chain paths resolved outside
+  // the temporary directory the test asked for.
+  applyEnvInPlace(process.env, {
     ...previous,
     NODE_ENV: 'test',
     MEMPHIS_SKIP_FIRST_RUN_CHECKS: '1',
     ...(memphisDataDir ? { MEMPHIS_DATA_DIR: memphisDataDir } : {}),
     ...(env ?? {}),
-  };
+  });
 
   return () => {
-    process.env = previous;
+    applyEnvInPlace(process.env, previous);
   };
 }
 

@@ -69,6 +69,23 @@ describe('verifyChainIntegrity — tampering detection', () => {
     tearDown(env);
   });
 
+  it.each(['../journal', 'journal.backup-invalid', 'not/a/chain'])(
+    'rejects an invalid explicit chain name %s',
+    async (name) => {
+      await expect(verifyChainIntegrity(name)).rejects.toThrow('invalid chain name');
+    },
+  );
+
+  it.each(['journal.backup-1792925651264', 'cases.backup-2026-07-07T15-07-23-108Z'])(
+    'skips the recognized recovery directory %s',
+    async (name) => {
+      await expect(verifyChainIntegrity(name)).resolves.toMatchObject({
+        ok: true,
+        chainsChecked: 0,
+      });
+    },
+  );
+
   it('detects when a block file has been tampered with (hash mismatch)', async () => {
     const chain = 'tamper-test';
     for (let i = 0; i < 5; i += 1) {
@@ -407,7 +424,9 @@ describe('security: chain integrity verification', () => {
     // `memphis repair runtime` only rebuilds derived runtime/index
     // state, not block hashes — the correct command is
     // `memphis chain rebuild` (or `memphis doctor --fix`).
-    expect(message).toMatch(/MEMPHIS_CHAIN_REPAIR_ON_MISMATCH|memphis chain rebuild|memphis doctor --fix/);
+    expect(message).toMatch(
+      /MEMPHIS_CHAIN_REPAIR_ON_MISMATCH|memphis chain rebuild|memphis doctor --fix/,
+    );
   });
 
   it('exposes CLI command: memphis chain verify', async () => {

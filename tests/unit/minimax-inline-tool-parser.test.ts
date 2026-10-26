@@ -14,21 +14,22 @@ import {
  */
 
 function mockMinimaxResponse(content: string, toolCalls?: unknown[]): typeof fetch {
-  return vi.fn(async () =>
-    new Response(
-      JSON.stringify({
-        choices: [
-          {
-            message: {
-              content,
-              ...(toolCalls ? { tool_calls: toolCalls } : {}),
+  return vi.fn(
+    async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content,
+                ...(toolCalls ? { tool_calls: toolCalls } : {}),
+              },
             },
-          },
-        ],
-        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
-      }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } },
-    ),
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
   ) as unknown as typeof fetch;
 }
 
@@ -123,7 +124,7 @@ describe('MinimaxProvider — system-role coalescing', () => {
 
   it('merges multiple system messages into a single leading system', async () => {
     let captured: { messages: Array<{ role: string; content: string }> } | undefined;
-    globalThis.fetch = (vi.fn(async (_url, init) => {
+    globalThis.fetch = vi.fn(async (_url, init) => {
       captured = JSON.parse((init as RequestInit).body as string);
       return new Response(
         JSON.stringify({
@@ -132,7 +133,7 @@ describe('MinimaxProvider — system-role coalescing', () => {
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       );
-    }) as unknown) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const provider = new MinimaxProvider({ apiKey: 'test', model: 'MiniMax-M2.7' });
     await provider.chat(
@@ -160,7 +161,7 @@ describe('MinimaxProvider — system-role coalescing', () => {
 
   it('omits system message entirely when no system pieces present', async () => {
     let captured: { messages: Array<{ role: string }> } | undefined;
-    globalThis.fetch = (vi.fn(async (_url, init) => {
+    globalThis.fetch = vi.fn(async (_url, init) => {
       captured = JSON.parse((init as RequestInit).body as string);
       return new Response(
         JSON.stringify({
@@ -169,7 +170,7 @@ describe('MinimaxProvider — system-role coalescing', () => {
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       );
-    }) as unknown) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const provider = new MinimaxProvider({ apiKey: 'test', model: 'MiniMax-M2.7' });
     await provider.chat([{ role: 'user', content: 'hi' }]);
@@ -271,12 +272,16 @@ describe('MinimaxProvider — MiniMax-M3.1-Flash GA contract', () => {
     expect(assistant?.tool_calls).toBeDefined();
   });
 
-  it('defaults invalid reasoning effort to max and clamps the model ceiling', () => {
-    expect(
+  it('rejects invalid reasoning effort and bounds environment token overrides', () => {
+    expect(() =>
       resolveMinimaxM31GenerationConfig(undefined, {
         MINIMAX_REASONING_EFFORT: 'none',
+      }),
+    ).toThrow();
+    expect(
+      resolveMinimaxM31GenerationConfig(undefined, {
         MINIMAX_MAX_COMPLETION_TOKENS: '999999',
       }),
-    ).toEqual({ maxCompletionTokens: 524288, reasoningEffort: 'max' });
+    ).toEqual({ maxCompletionTokens: 524288, reasoningEffort: 'medium' });
   });
 });

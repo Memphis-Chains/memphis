@@ -19,6 +19,10 @@ reasoning effort `max`. Memphis also accepts the display-like spelling
 commands. Selecting plain `gpt-5.6-sol` leaves reasoning effort at the model or
 account default.
 
+The `gpt-6.1-sol-max` preset works the same way: it selects the official
+`gpt-6.1-sol` model with reasoning effort `max`, and `gpt-6.1-Sol Max` is the
+equivalent display-like spelling.
+
 The requested `astra-gtp6-max` spelling is supported. It selects `gpt-6-astra`
 with reasoning effort `max`; `astra-gpt6-max` and `gpt-6-astra-max` are equivalent
 aliases. The TUI retains the preset across replies. `OPENAI_MODEL` sets the default
@@ -28,17 +32,30 @@ preset, `CODEX_BIN` can point to a Codex executable, and
 in TUI persists that default for later starts; `/model` persists `OPENAI_MODEL`.
 
 Provider status checks local prerequisites. Model listings contain supported
-presets, not proof of account access or remaining credits. A completed real turn
-verifies account/model access at that moment. Account failures are reported by
-this adapter; no API-key billing fallback is implemented.
+presets and the models the account catalog names, not proof of account access
+or remaining credits. A completed real turn verifies account/model access at
+that moment. Account failures are reported by this adapter; no API-key billing
+fallback is implemented.
+
+## The account catalog names the models
+
+The Codex CLI keeps an account-specific model catalog under `CODEX_HOME`
+(`models_cache.json`). It is the only source that knows about models released
+after Memphis was built, so Memphis reads it instead of hardcoding a list:
+`memphis models list` and the native TUI offer every visible model the
+catalog records, alongside the Memphis presets. Models the CLI hides from its
+own picker (`visibility: "hide"`) are not offered. When the catalog is
+absent — the Codex CLI has never run on this machine — Memphis falls back to
+the presets it ships and the documented API ceiling.
 
 ## Account limits versus model limits
 
-The context window in the API documentation (1,050,000 for both `gpt-5.6-sol`
-and `gpt-6-astra`) is the model's ceiling, not what a given account is granted.
-An account is typically granted less, and the Codex model catalog on disk
-records that grant together with the share of it the model may use (`context_window` and
-`effective_context_window_percent`, e.g. 272000 × 95% = 258400).
+The context window in the API documentation (1,050,000 for `gpt-5.6-sol`,
+`gpt-6-astra` and `gpt-6.1-sol`) is the model's ceiling, not what a given
+account is granted. An account is typically granted less, and the Codex model
+catalog on disk records that grant together with the share of it the model may
+use (`context_window` and `effective_context_window_percent`, e.g. 272000 × 95%
+= 258400, or 500000 × 95% = 475000 for `gpt-6.1-sol`).
 
 Memphis reads that local catalog, so the effective limit is known before the
 first request of a conversation rather than only after a completed turn. The
