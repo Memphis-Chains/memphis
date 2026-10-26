@@ -30,18 +30,38 @@
  * so trusting it would defeat the guard.
  */
 
+import { realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { resolve, sep } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 
 function isTruthy(value: string | undefined): boolean {
   const normalized = (value ?? '').trim().toLowerCase();
   return normalized === '1' || normalized === 'true' || normalized === 'on';
 }
 
-/** True when `target` is inside the OS temp directory. */
+/** Resolve existing ancestors even when the chain directory is not created yet. */
+function canonicalPath(target: string): string | undefined {
+  let ancestor = resolve(target);
+  const suffix: string[] = [];
+  while (true) {
+    try {
+      return join(realpathSync(ancestor), ...suffix);
+    } catch (error) {
+      if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? ''))
+        return undefined;
+      const parent = dirname(ancestor);
+      if (parent === ancestor) return undefined;
+      suffix.unshift(basename(ancestor));
+      ancestor = parent;
+    }
+  }
+}
+
+/** True when `target` resolves inside the OS temp directory, including aliases. */
 export function isUnderTempDir(target: string): boolean {
-  const resolvedTarget = resolve(target);
-  const resolvedTmp = resolve(tmpdir());
+  const resolvedTarget = canonicalPath(target);
+  const resolvedTmp = canonicalPath(tmpdir());
+  if (!resolvedTarget || !resolvedTmp) return false;
   return (
     resolvedTarget === resolvedTmp ||
     resolvedTarget.startsWith(resolvedTmp.endsWith(sep) ? resolvedTmp : resolvedTmp + sep)

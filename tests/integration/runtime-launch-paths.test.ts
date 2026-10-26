@@ -69,7 +69,7 @@ function fixture(mode: 'clean' | 'inherited', override = false) {
   const env: NodeJS.ProcessEnv =
     mode === 'clean'
       ? Object.fromEntries(
-          ['PATH', 'HOME', 'LANG', 'TZ'].flatMap((key) =>
+          ['PATH', 'HOME', 'LANG', 'TZ', 'TMPDIR', 'TMP', 'TEMP'].flatMap((key) =>
             f.env[key] === undefined ? [] : [[key, f.env[key]]],
           ),
         )
