@@ -111,8 +111,13 @@ zostaje w treści jako kontekst. Evaluator raportuje teraz `recent`.
 gałąź:    feature/durable-tool-journal (baza PR #688)
           0cf8d592 + 3efb07d5 + 65fe4640 + 86c0ee8d
           pushnięte: 86c0ee8d
-upstream: origin/main = 8257c568 (operator scalil 518c6f5a + 50a42371 jako 57328aaf)
-PR #688:  MERGEABLE, BLOCKED (czeka na approval maintainera — mam tylko `pull`)
+upstream: origin/main = cb258234 (operator scalil PR #688 jako d41dc90b, potem
+          #692, #691, #694)
+PR #688:  SCALONY 2026-10-26 15:27:47Z (merge commit d41dc90b) — moje commity
+          0cf8d592 + 3efb07d5 + 65fe4640 są w main
+PR #695:  OTWARTY (moje 2 pozostałe commity: fix alertów + handoff), MERGEABLE,
+          BLOCKED — GitHub nie uruchamia workflowów z forka, czeka na approval
+          maintainera (mam tylko `pull`)
 memphis:  zdrowy, 9 łańcuchów, 1258 bloków, verify ok:true
 doctor:  47 pass / 13 warn / 0 fail
 readiness: exit 0 ("63 tools; registry/executor/MCP/schema parity OK")
@@ -137,6 +142,8 @@ zadania: runtime-watch → success; scheduled-backup → drill=pass (8,8 MB)
    Do `Memphis-Chains/memphis` mam tylko `pull`. Zamiana na fine-grained:
    <https://github.com/settings/tokens> → Fine-grained → Only select repositories →
    `Memphis-Chains/memphis` → Contents RW + Pull requests RW.
+4. **Approval maintainera dla PR #695** — tak samo jak dla #688. Bez tego checki
+   z forka nie ruszą i każdy push generuje 3 maile.
 
 ---
 
@@ -165,7 +172,8 @@ zadania: runtime-watch → success; scheduled-backup → drill=pass (8,8 MB)
   błąd z 02:00 wczoraj; odświeży się o 02:00. `memphis schedule run` wymaga
   passphrase, a edycja stanu poza API to obejście bramki.
 - **Nie wyłączyliśmy maili GitHuba** — to konto operatora.
-- **Nie przeszliśmy przez PR #688** — BLOCKED, czeka na approval maintainera.
+- **Nie przeszliśmy przez PR #695** — BLOCKED, czeka na approval maintainera
+  (#688 operator już scalił 26.10 15:27 UTC).
 - **Nie zrobiliśmy `memphis chain verify` dla katalogów `chains/*.backup-*`** — są
   zarchiwizowane i usunięte (patrz journal-77).
 - **Nie naprawiliśmy `quarterly-gate`** — to zaplanowana porażka: skrypt Q2
