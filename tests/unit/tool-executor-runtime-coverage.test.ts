@@ -10,8 +10,19 @@
  */
 import { describe, expect, it } from 'vitest';
 
+import { NATIVE_TOOL_CONTRACTS } from '../../src/gateway/tool-contract.js';
 import { createInProcessToolExecutor } from '../../src/gateway/tool-executor.js';
 import { getToolNames } from '../../src/gateway/tool-registry.js';
+
+/**
+ * Tools the contract marks as gateway-hidden. They run on the native
+ * surface only, so the in-process (gateway) executor must not expose them.
+ */
+const gatewayHiddenNames = new Set(
+  NATIVE_TOOL_CONTRACTS.filter((contract) => contract.gatewayHidden).map(
+    (contract) => contract.name,
+  ),
+);
 
 describe('runtime tool executor coverage', () => {
   it('exposes every registered (non-experimental) tool as a runtime handler', () => {
@@ -19,7 +30,9 @@ describe('runtime tool executor coverage', () => {
     const runtimeNames = new Set(executor.listTools().map((t) => t.name));
     const registryNames = getToolNames();
 
-    const missing = registryNames.filter((n) => !runtimeNames.has(n));
+    const missing = registryNames.filter(
+      (n) => !runtimeNames.has(n) && !gatewayHiddenNames.has(n),
+    );
     expect(missing).toEqual([]);
   });
 
@@ -46,7 +59,7 @@ describe('runtime tool executor coverage', () => {
     const names = new Set(executor.listTools().map((t) => t.name));
 
     const flagged = getToolNames({ MEMPHIS_FEATURES: 'experimental-tools' });
-    const missing = flagged.filter((n) => !names.has(n));
+    const missing = flagged.filter((n) => !names.has(n) && !gatewayHiddenNames.has(n));
     expect(missing).toEqual([]);
   });
 });
