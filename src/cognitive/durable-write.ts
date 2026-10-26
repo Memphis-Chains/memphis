@@ -83,7 +83,7 @@ export async function appendDurableBlock(
         hash: block.hash,
         data: payload,
       },
-      process.env,
+      store.getEnvironment?.() ?? process.env,
     );
   } catch {
     // Exact search stays rebuildable derived state.
