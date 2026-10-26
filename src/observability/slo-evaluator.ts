@@ -17,6 +17,31 @@ export interface SloResult {
   reason?: string;
 }
 
+/**
+ * The most recent span of one kind inside the window.
+ *
+ * The window average answers "how have the last days been going"; this
+ * answers "how did the last attempt go". The runtime watch needs the
+ * second one: one failed turn in a week keeps the 7-day error rate above
+ * its threshold for seven days, which reads as a broken system long after
+ * it stopped being broken.
+ */
+export interface RecentActivityEntry {
+  /** When the span happened. */
+  ts: string;
+  /** How it ended. */
+  status: 'ok' | 'error';
+}
+
+export interface RecentActivity {
+  /** The last `turn.dispatch` in the window. */
+  turn: RecentActivityEntry | null;
+  /** The last `provider.completion` in the window. */
+  provider: RecentActivityEntry | null;
+  /** The last `tool.call` in the window. */
+  tool: RecentActivityEntry | null;
+}
+
 export interface SloReport {
   windowDays: number;
   windowHours?: number;
@@ -25,6 +50,8 @@ export interface SloReport {
   spanFilesScanned: number;
   totalSamples: number;
   slos: SloResult[];
+  /** How the most recent attempts in the window ended. */
+  recent: RecentActivity;
 }
 
 interface SpanRecord {
@@ -38,7 +65,10 @@ interface SpanRecord {
 const SPANS_FILE_RE = /^spans-(\d{4}-\d{2}-\d{2})\.jsonl$/;
 const DEFAULT_MIN_SAMPLES = 10;
 
-function insufficientSamples(samples: number, minSamples: number): Pick<SloResult, 'status' | 'reason'> | null {
+function insufficientSamples(
+  samples: number,
+  minSamples: number,
+): Pick<SloResult, 'status' | 'reason'> | null {
   if (samples >= minSamples) return null;
   return {
     status: 'unavailable',
@@ -93,6 +123,30 @@ function readSpansInWindow(
   return { spans, filesScanned };
 }
 
+/**
+ * The most recent span of each kind in the window.
+ *
+ * The spans arrive in file order, which is chronological within a day but
+ * not across days, so the newest one is found by timestamp rather than by
+ * position.
+ */
+function readRecentActivity(spans: SpanRecord[]): RecentActivity {
+  const latest = (name: string): RecentActivityEntry | null => {
+    let best: SpanRecord | undefined;
+    for (const span of spans) {
+      if (span.name !== name) continue;
+      if (!best || Date.parse(span.ts) >= Date.parse(best.ts)) best = span;
+    }
+    if (!best) return null;
+    return { ts: best.ts, status: best.status === 'error' ? 'error' : 'ok' };
+  };
+  return {
+    turn: latest('turn.dispatch'),
+    provider: latest('provider.completion'),
+    tool: latest('tool.call'),
+  };
+}
+
 function percentile(values: number[], p: number): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -107,21 +161,29 @@ function readPositiveNumber(raw: string | undefined, fallback: number): number {
   return parsed;
 }
 
-function computeP99TurnLatency(spans: SpanRecord[], minSamples: number, rawEnv: NodeJS.ProcessEnv): SloResult {
+function computeP99TurnLatency(
+  spans: SpanRecord[],
+  minSamples: number,
+  rawEnv: NodeJS.ProcessEnv,
+): SloResult {
   const turnSpans = spans.filter((s) => s.name === 'turn.dispatch');
   const latencies: number[] = [];
   for (const s of turnSpans) {
     const fromAttr = s.attrs?.['turn.timing_ms'];
     const fromDuration = s.durationMs;
     const v =
-      typeof fromAttr === 'number' ? fromAttr : typeof fromDuration === 'number' ? fromDuration : null;
+      typeof fromAttr === 'number'
+        ? fromAttr
+        : typeof fromDuration === 'number'
+          ? fromDuration
+          : null;
     if (typeof v === 'number' && Number.isFinite(v) && v >= 0) latencies.push(v);
   }
   const p99 = percentile(latencies, 99);
   const threshold = readPositiveNumber(rawEnv.MEMPHIS_SLO_TURN_P99_MS, 3000);
   const insufficient = insufficientSamples(latencies.length, minSamples);
   const status: SloStatus =
-    p99 === null ? 'unavailable' : insufficient?.status ?? (p99 <= threshold ? 'pass' : 'fail');
+    p99 === null ? 'unavailable' : (insufficient?.status ?? (p99 <= threshold ? 'pass' : 'fail'));
   return {
     name: 'p99_turn_latency_ms',
     description: 'p99 of turn.dispatch latency over the window',
@@ -264,9 +326,7 @@ export function evaluateSlos(options: EvaluateSlosOptions = {}): SloReport {
     typeof options.minSamples === 'number' && Number.isFinite(options.minSamples)
       ? Math.max(1, Math.floor(options.minSamples))
       : DEFAULT_MIN_SAMPLES;
-  const windowStart = new Date(
-    now.getTime() - (windowHours ?? windowDays * 24) * 60 * 60 * 1000,
-  );
+  const windowStart = new Date(now.getTime() - (windowHours ?? windowDays * 24) * 60 * 60 * 1000);
 
   const { spans, filesScanned } = readSpansInWindow(rawEnv, windowStart);
   const slos: SloResult[] = [
@@ -284,5 +344,6 @@ export function evaluateSlos(options: EvaluateSlosOptions = {}): SloReport {
     spanFilesScanned: filesScanned,
     totalSamples: spans.length,
     slos,
+    recent: readRecentActivity(spans),
   };
 }
