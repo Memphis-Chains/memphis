@@ -303,12 +303,23 @@ function dirSizeBytes(path: string): number {
   return total;
 }
 
-function checkChainIntegrity(chainsDir: string): { ok: boolean; checked: number; invalid: number } {
+export function checkChainIntegrity(chainsDir: string): {
+  ok: boolean;
+  checked: number;
+  invalid: number;
+} {
   if (!existsSync(chainsDir)) return { ok: false, checked: 0, invalid: 0 };
   let checked = 0;
   let invalid = 0;
 
   for (const chainName of readdirSync(chainsDir)) {
+    // Skip chain backup directories created by rebuildChainHashes runs
+    // (chains/<chain>.backup-<unix-ts>). They are recovery copies, not
+    // live chains: one of them has a broken prev_hash link, and counting
+    // it here made doctor report "Chains integrity: invalid=1" over a
+    // perfectly healthy set of chains — the same false alarm the restore
+    // drill hit, from the same cause.
+    if (/\.backup-\d+$/.test(chainName)) continue;
     const dir = join(chainsDir, chainName);
     if (!statSync(dir).isDirectory()) continue;
     const files = readdirSync(dir)
@@ -764,8 +775,11 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     level: embeddingVectors > 0 ? 'pass' : 'warn',
     ok: embeddingVectors > 0,
     required: false,
-    detail: `stored vectors=${embeddingMetadata.documents ?? "unknown"}, state=${embeddingMetadata.state}, size=${Math.round(embeddingBytes / 1024)}KB`,
-    fix: embeddingMetadata.state === 'unknown' ? 'Build the native bridge with embedding metadata support' : 'Generate embeddings via memphis embed store or memphis embed reindex',
+    detail: `stored vectors=${embeddingMetadata.documents ?? 'unknown'}, state=${embeddingMetadata.state}, size=${Math.round(embeddingBytes / 1024)}KB`,
+    fix:
+      embeddingMetadata.state === 'unknown'
+        ? 'Build the native bridge with embedding metadata support'
+        : 'Generate embeddings via memphis embed store or memphis embed reindex',
   });
   const exactSearchLevel =
     runtimeSnapshot.exactSearch.status === 'indexed'
