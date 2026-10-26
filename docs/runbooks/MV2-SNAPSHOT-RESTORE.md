@@ -1,7 +1,9 @@
 # Signed MV2 snapshots
 
 MV2 export preserves original block hashes, optional signatures, and all JSON
-payload fields. The native v0 container checksum detects damaged bytes; an
+payload fields. Block frames carry JSON strings (`json-string-v1`) so the
+native JSON parser cannot round floating-point values before signature checks.
+The native v0 container checksum detects damaged bytes; an
 Ed25519 signed manifest binds the complete payload, chain selection, counts and
 exporting DID. The vault and embedding tracks are refused. A snapshot is not
 encrypted: keep it private (the exporter creates it with mode 0600).

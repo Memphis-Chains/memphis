@@ -57,7 +57,12 @@ beforeEach(async () => {
   for (const name of chains) {
     await appendBlock(
       name,
-      { type: 'journal', content: name + ' α', tags: ['roundtrip'], extra: { preserved: true } },
+      {
+        type: 'journal',
+        content: name + ' α',
+        tags: ['roundtrip'],
+        extra: { preserved: true, float: 0.000014112000805986721 },
+      },
       env,
     );
     await appendBlock(name, { type: 'journal', content: name + ' second', tags: [] }, env);
@@ -81,7 +86,7 @@ it('round-trips six chains with all payload fields and original hashes through t
       await exportChain(name, { ...env, MEMPHIS_HOME: target, MEMPHIS_DATA_DIR: target })
     ).blocks;
     expect(restored).toEqual(original);
-    expect(restored[0].data.extra).toEqual({ preserved: true });
+    expect(restored[0].data.extra).toEqual({ preserved: true, float: 0.000014112000805986721 });
   }
 });
 
