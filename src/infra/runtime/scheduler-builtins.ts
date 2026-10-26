@@ -14,6 +14,7 @@ import { startScheduledBackupLoop } from './scheduled-backup.js';
 import { getConfigPath, getDataDir } from '../../config/paths.js';
 import { sendTelegramMessage } from '../../gateway/channels/telegram-send.js';
 import { runMemphisSloStatus } from '../../mcp/tools/slo-status.js';
+import type { RecentActivity } from '../../observability/slo-evaluator.js';
 import { runDoctorChecksV2 } from '../cli/utils/doctor-v2.js';
 import { loadConfig } from '../config/env.js';
 import { buildHealthPayload } from '../http/health.js';
@@ -55,13 +56,53 @@ async function notify(message: string, rawEnv: NodeJS.ProcessEnv): Promise<Built
     : { success: false, output: result.error ?? 'Telegram delivery failed', error: result.error };
 }
 
+/**
+ * What counts as a runtime failure worth alerting about.
+ *
+ * WHY NOT THE WINDOW SLO
+ * ----------------------
+ * The watch used to alert on the 7-day SLO, so one failed turn in a week
+ * kept it failing every six hours until the window rolled over — a week of
+ * "something failed" for a system that had been healthy the moment the
+ * failure passed. Measured on this host: the only provider error in the
+ * window was from 2026-10-25 16:48, when the workspace ran out of credits
+ * and recovered; the watch kept reporting `slo=provider_error_rate` for
+ * six days after that.
+ *
+ * So the alert now answers "is it broken RIGHT NOW": the health check, and
+ * whether the last turn or the last provider call failed. The window SLO
+ * still travels in the message as context — a weekly trend the operator
+ * can read — but it no longer decides whether to wake them up.
+ */
+export function runtimeWatchFailures(input: {
+  healthStatus: string;
+  recent: RecentActivity;
+  failingSlos: string[];
+}): string[] {
+  const failures: string[] = [];
+  if (input.healthStatus !== 'healthy') {
+    failures.push(`health=${input.healthStatus}`);
+  }
+  if (input.recent.turn?.status === 'error') {
+    failures.push('last turn failed');
+  }
+  if (input.recent.provider?.status === 'error') {
+    failures.push('last provider call failed');
+  }
+  return failures;
+}
+
 async function runtimeWatch(rawEnv: NodeJS.ProcessEnv): Promise<BuiltinJobResult> {
   const health = await buildHealthPayload(loadConfig(rawEnv), rawEnv);
   const slo = runMemphisSloStatus({ windowDays: 7 }, rawEnv);
-  const failures = [
-    ...(health.status === 'healthy' ? [] : [`health=${health.status}`]),
-    ...slo.failingSlos.map((name) => `slo=${name}`),
-  ];
+  // A separate short window decides the alert: the 7-day window is the
+  // trend, the last day is "now".
+  const recent = runMemphisSloStatus({ windowHours: 24 }, rawEnv);
+  const failures = runtimeWatchFailures({
+    healthStatus: health.status,
+    recent: recent.recent,
+    failingSlos: slo.failingSlos,
+  });
   const statePath = join(getConfigPath('scheduler'), 'runtime-watch-state.json');
   let prior: { failureKey?: string; lastAlertAt?: string } = {};
   try {
@@ -77,7 +118,8 @@ async function runtimeWatch(rawEnv: NodeJS.ProcessEnv): Promise<BuiltinJobResult
     writeFileSync(statePath, `${JSON.stringify({}, null, 2)}\n`, { mode: 0o600 });
     return { success: true, output: 'Runtime health and SLO checks pass' };
   }
-  const message = `Memphis runtime watch: ${failures.join(', ')}`;
+  const sloContext = slo.failingSlos.length > 0 ? ` (SLO 7d: ${slo.failingSlos.join(', ')})` : '';
+  const message = `Memphis runtime watch: ${failures.join(', ')}${sloContext}`;
   const failureKey = [...failures].sort().join('|');
   const lastAlertMs = prior.lastAlertAt ? Date.parse(prior.lastAlertAt) : 0;
   const alertDue =

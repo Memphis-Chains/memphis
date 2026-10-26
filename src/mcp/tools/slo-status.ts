@@ -2,6 +2,12 @@ import { evaluateSlos, type SloReport } from '../../observability/slo-evaluator.
 
 export interface MemphisSloStatusInput {
   windowDays?: number;
+  /**
+   * A window shorter than a day, for "how is it going right now" as opposed
+   * to the weekly trend. The runtime watch needs the short one to decide
+   * whether to alert; the report keeps the long one.
+   */
+  windowHours?: number;
 }
 
 export type MemphisSloStatusOutput = SloReport & {
@@ -16,6 +22,7 @@ export function runMemphisSloStatus(
 ): MemphisSloStatusOutput {
   const report = evaluateSlos({
     windowDays: input.windowDays,
+    windowHours: input.windowHours,
     rawEnv,
   });
   const failingSlos = report.slos.filter((s) => s.status === 'fail').map((s) => s.name);

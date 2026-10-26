@@ -240,6 +240,87 @@ describe('evaluateSlos', () => {
     expect(provider?.reason).toBe('insufficient samples (2 < 10)');
   });
 
+  // The runtime watch needs to know whether the LAST attempt failed, not
+  // only what the window average says. One failed turn in a week keeps the
+  // 7-day provider_error_rate above its threshold for seven days, which
+  // reads as "the system is broken" long after it stopped being broken.
+  it('reports the most recent turn, provider and tool outcome in the window', () => {
+    const today = '2026-04-29';
+    writeSpans(telemetryDir, today, [
+      {
+        ts: '2026-04-29T10:00:00Z',
+        name: 'turn.dispatch',
+        durationMs: 500,
+        status: 'error',
+      },
+      {
+        ts: '2026-04-29T10:00:01Z',
+        name: 'provider.completion',
+        durationMs: 500,
+        status: 'error',
+      },
+      {
+        ts: '2026-04-29T10:05:00Z',
+        name: 'turn.dispatch',
+        durationMs: 500,
+        status: 'ok',
+      },
+      {
+        ts: '2026-04-29T10:05:01Z',
+        name: 'provider.completion',
+        durationMs: 500,
+        status: 'ok',
+      },
+      {
+        ts: '2026-04-29T10:06:00Z',
+        name: 'tool.call',
+        durationMs: 50,
+        status: 'ok',
+      },
+    ]);
+
+    const report = evaluateSlos({ now: fixedNow });
+    expect(report.recent.turn?.status).toBe('ok');
+    expect(report.recent.turn?.ts).toBe('2026-04-29T10:05:00Z');
+    expect(report.recent.provider?.status).toBe('ok');
+    expect(report.recent.tool?.status).toBe('ok');
+  });
+
+  it('reports the last turn as failed when that is how the window ended', () => {
+    const today = '2026-04-29';
+    writeSpans(telemetryDir, today, [
+      {
+        ts: '2026-04-29T10:00:00Z',
+        name: 'turn.dispatch',
+        durationMs: 500,
+        status: 'ok',
+      },
+      {
+        ts: '2026-04-29T10:05:00Z',
+        name: 'turn.dispatch',
+        durationMs: 500,
+        status: 'error',
+      },
+      {
+        ts: '2026-04-29T10:05:01Z',
+        name: 'provider.completion',
+        durationMs: 500,
+        status: 'error',
+      },
+    ]);
+
+    const report = evaluateSlos({ now: fixedNow });
+    expect(report.recent.turn?.status).toBe('error');
+    expect(report.recent.provider?.status).toBe('error');
+  });
+
+  it('reports no recent activity when the window is empty', () => {
+    const report = evaluateSlos({ now: fixedNow });
+    expect(report.recent.turn).toBeNull();
+    expect(report.recent.provider).toBeNull();
+    expect(report.recent.tool).toBeNull();
+  });
+
   it('counts tool output-shape errors as tool errors', () => {
     const spans: SpanLine[] = [];
     for (let i = 0; i < 9; i++) {
