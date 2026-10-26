@@ -102,7 +102,7 @@ export function getSchedulerLogsDir(): string {
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 
-function hostTimezone(): string {
+export function hostTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 }
 
@@ -183,7 +183,7 @@ export function saveTasks(tasks: ScheduledTask[]): void {
   chmodSync(tasksPath, 0o600);
 }
 
-function withTaskStoreLock<T>(operation: () => T): T {
+export function withTaskStoreLock<T>(operation: () => T): T {
   mkdirSync(getSchedulerDir(), { recursive: true });
   const lockPath = join(getSchedulerDir(), 'tasks.lock');
   let fd: number;
