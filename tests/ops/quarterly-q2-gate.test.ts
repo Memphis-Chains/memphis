@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -9,13 +10,31 @@ function fixture(failures: string[] = [], audit = true) {
   const root = mkdtempSync(join(tmpdir(), 'memphis-q2-gate-'));
   for (const path of ['scripts', 'bin', 'docs/security'])
     mkdirSync(join(root, path), { recursive: true });
-  for (const name of ['quarterly-exit-test-q2.sh', 'quarterly-exit-test-q2.mjs'])
+  for (const name of [
+    'quarterly-exit-test-q2.sh',
+    'quarterly-exit-test-q2.mjs',
+    'q2-audit-evidence.mjs',
+  ])
     copyFileSync(join('scripts', name), join(root, 'scripts', name));
-  if (audit)
+  if (audit) {
     writeFileSync(
       join(root, 'docs/security/AUDIT-2026-Q2.md'),
       'Synthetic acceptance audit fixture.',
     );
+    writeFileSync(
+      join(root, 'docs/security/AUDIT-2026-Q2.evidence.json'),
+      JSON.stringify({
+        reviewType: 'external',
+        status: 'completed',
+        reviewer: 'Synthetic fixture reviewer',
+        completedAt: '2026-01-01',
+        source: 'https://example.invalid/synthetic-review',
+        reportSha256: createHash('sha256')
+          .update('Synthetic acceptance audit fixture.')
+          .digest('hex'),
+      }),
+    );
+  }
   writeFileSync(join(root, 'bin/failures.json'), JSON.stringify(failures));
   writeFileSync(
     join(root, 'bin/memphis.js'),
@@ -23,7 +42,7 @@ function fixture(failures: string[] = [], audit = true) {
     const fs = require('node:fs'), path = require('node:path');
     const failures = JSON.parse(fs.readFileSync(path.join(__dirname, 'failures.json')));
     const args = process.argv.slice(2), [command, sub] = args;
-    if (process.env.MEMPHIS_API_TOKEN || process.env.MEMPHIS_VAULT_PEPPER || process.env.HOME === process.env.OPERATOR_HOME) process.exit(9);
+    if (process.env.MEMPHIS_API_TOKEN || process.env.MEMPHIS_VAULT_PEPPER === 'synthetic-operator-pepper' || process.env.HOME === process.env.OPERATOR_HOME) process.exit(9);
     if (!process.env.MEMPHIS_DATA_DIR.startsWith(process.env.HOME + '/')) process.exit(9);
     const flag = (name) => args[args.indexOf(name) + 1];
     let result = { ok: true };
@@ -34,6 +53,7 @@ function fixture(failures: string[] = [], audit = true) {
     if (command === 'export' && args.includes('--format=mv2')) {
       if (failures.includes('mv2-export')) process.exit(1);
       fs.writeFileSync(flag('--output'), 'synthetic-mv2');
+      result = { ok: true, blockCount: 6 };
     }
     if (command === 'import') result = { valid: !failures.includes('mv2-import') };
     if (command === 'export' && sub === 'trajectories') {
@@ -52,6 +72,7 @@ function fixture(failures: string[] = [], audit = true) {
   `,
     { mode: 0o755 },
   );
+  writeFileSync(join(root, 'scripts/quarterly-mv2-fixture.mjs'), 'process.exit(0);');
   const report = join(root, 'report.json');
   const result = spawnSync('bash', [join(root, 'scripts/quarterly-exit-test-q2.sh')], {
     env: {

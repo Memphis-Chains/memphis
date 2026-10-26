@@ -21,10 +21,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
-import {
-  exportTrajectories,
-  type ExportTrajectoriesInput,
-} from '../../../trajectory/exporter.js';
+import { exportTrajectories, type ExportTrajectoriesInput } from '../../../trajectory/exporter.js';
+import { writeHfTrajectoryDataset } from '../../../trajectory/hf-dataset.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
 
@@ -85,8 +83,9 @@ export async function handleExportTrajectoriesCommand(context: CliContext): Prom
   const targetDir = resolve(out as string);
   await mkdir(targetDir, { recursive: true });
 
-  const writtenFiles: string[] = [];
-  for (const trajectory of result.trajectories) {
+  const hfDataset = context.args.format === 'hf-dataset';
+  const writtenFiles: string[] = hfDataset ? await writeHfTrajectoryDataset(targetDir, result) : [];
+  for (const trajectory of hfDataset ? [] : result.trajectories) {
     const fname = `${trajectory.trajectoryId}.jsonl`;
     const fpath = join(targetDir, fname);
     // Self-describing JSONL: first line is `_meta` envelope, then one
