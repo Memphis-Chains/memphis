@@ -945,7 +945,7 @@ pub(crate) fn execute_native_tool(
                 ),
             ))
         }
-        "memphis_cron" => {
+        "memphis_cron_script" => {
             let action = call
                 .arguments
                 .get("action")
@@ -993,7 +993,7 @@ pub(crate) fn execute_native_tool(
                             "tool_output",
                             &serde_json::to_string(&json).unwrap(),
                             None,
-                            Some("memphis_cron"),
+                            Some("memphis_cron_script"),
                         ),
                     ))
                 }
@@ -1005,9 +1005,14 @@ pub(crate) fn execute_native_tool(
                         .ok_or_else(|| {
                             OperatorError::Message("cron add requires name".to_string())
                         })?;
+                    // The script file carries the expression in its
+                    // `# schedule:` header — the format the crons bridge
+                    // reads. The argument is named `cron` because that is
+                    // the word every other surface uses for a cron
+                    // expression.
                     let schedule = call
                         .arguments
-                        .get("schedule")
+                        .get("cron")
                         .and_then(Value::as_str)
                         .unwrap_or("0 * * * *");
                     let script = call
@@ -1057,7 +1062,7 @@ pub(crate) fn execute_native_tool(
                             "tool_output",
                             &serde_json::to_string(&json).unwrap(),
                             None,
-                            Some("memphis_cron"),
+                            Some("memphis_cron_script"),
                         ),
                     ))
                 }
@@ -1086,7 +1091,7 @@ pub(crate) fn execute_native_tool(
                             "tool_output",
                             &serde_json::to_string(&json).unwrap(),
                             None,
-                            Some("memphis_cron"),
+                            Some("memphis_cron_script"),
                         ),
                     ))
                 }
@@ -1116,7 +1121,7 @@ pub(crate) fn execute_native_tool(
                             "tool_output",
                             &serde_json::to_string(&json).unwrap(),
                             None,
-                            Some("memphis_cron"),
+                            Some("memphis_cron_script"),
                         ),
                     ))
                 }
@@ -1146,12 +1151,12 @@ pub(crate) fn execute_native_tool(
                             "tool_output",
                             &serde_json::to_string(&json).unwrap(),
                             None,
-                            Some("memphis_cron"),
+                            Some("memphis_cron_script"),
                         ),
                     ))
                 }
                 other => Err(OperatorError::Message(format!(
-                    "memphis_cron: unknown action '{}'. Use list, add, remove, enable, disable.",
+                    "memphis_cron_script: unknown action '{}'. Use list, add, remove, enable, disable.",
                     other
                 ))),
             }

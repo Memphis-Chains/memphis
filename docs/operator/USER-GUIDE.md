@@ -540,7 +540,7 @@ Memphis exposes an MCP (Model Context Protocol) surface with the same runtime to
 | Tier  | Auth             | Tools                                                                                                                                                                                                                    |
 | ----- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **0** | None             | `memphis_journal`, `memphis_recall`, `memphis_search`, `memphis_decide`, `memphis_health`, `memphis_repair`, `memphis_soul_read`, `memphis_soul_write`, `memphis_case_append`, `memphis_case_query`, `memphis_loop_step` |
-| **2** | Vault passphrase | `memphis_code_read`, `memphis_grep`, `memphis_glob`, `memphis_git`, `memphis_test`, `memphis_deploy`, `memphis_exec`, `memphis_cron`, `memphis_web_fetch`, `memphis_self_modify`                                         |
+| **2** | Vault passphrase | `memphis_code_read`, `memphis_grep`, `memphis_glob`, `memphis_git`, `memphis_test`, `memphis_deploy`, `memphis_exec`, `memphis_cron`, `memphis_cron_script`, `memphis_web_fetch`, `memphis_self_modify` |
 
 In `full` autonomy mode, all tiers are auto-approved without passphrase.
 

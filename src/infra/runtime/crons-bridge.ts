@@ -1,10 +1,10 @@
 /**
- * Bridge between the native `memphis_cron` tool's script directory and the
+ * Bridge between the native `memphis_cron_script` tool's script directory and the
  * Memphis scheduler.
  *
  * WHY THIS EXISTS
  * ---------------
- * The native (Rust) `memphis_cron` tool writes a shell script into
+ * The native (Rust) `memphis_cron_script` tool writes a shell script into
  * `~/memphis/crons/` with a `# schedule: <cron>` header, and manages it with
  * chmod (executable = enabled). The tool had no runner: nothing ever
  * executed those scripts, and nothing ever read the header. On this host
@@ -19,7 +19,7 @@
  * inventing a second runner.
  *
  * The two surfaces keep their own contracts:
- *   - native `memphis_cron` manages the files (add / remove / enable / disable)
+ *   - native `memphis_cron_script` manages the files (add / remove / enable / disable)
  *   - the scheduler executes them, on the schedule the file declares
  *
  * IDEMPOTENT BY DESIGN
@@ -46,7 +46,7 @@ import {
 export const CRON_TASK_ID_PREFIX = 'crons-';
 
 /**
- * The directory the native `memphis_cron` tool writes to. The Rust side
+ * The directory the native `memphis_cron_script` tool writes to. The Rust side
  * resolves it as `<HOME>/memphis/crons`, so this has to match exactly.
  */
 export function resolveCronsDir(rawEnv: NodeJS.ProcessEnv = process.env): string {
@@ -262,7 +262,7 @@ export function reconcileCronTasks(
 /**
  * Keep the store in sync with the scripts on disk.
  *
- * The native `memphis_cron` tool writes a script and expects it to run. A
+ * The native `memphis_cron_script` tool writes a script and expects it to run. A
  * script added between two syncs would otherwise wait for the next daemon
  * restart, so the bridge re-scans on a timer.
  */
