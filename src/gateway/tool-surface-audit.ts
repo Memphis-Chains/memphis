@@ -9,6 +9,14 @@ const TOOL_NAME_PATTERN = /['"`](memphis_[a-z0-9_]+)['"`]/g;
 const REGISTRY_ENTRY_PATTERN = /^\s*(memphis_[a-z0-9_]+):/gm;
 const EXECUTOR_BUILD_TOOL_PATTERN = /buildTool\(\{\s*name:\s*['"`](memphis_[a-z0-9_]+)['"`]/gs;
 const MCP_REGISTER_TOOL_PATTERN = /server\.registerTool\(\s*['"`](memphis_[a-z0-9_]+)['"`]/gs;
+// A tool contract entry is identified by its name; the flags that decide
+// where it may run follow it in the same entry. Splitting the contract
+// source at each name keeps the flags with their own tool, comments and
+// all — a brace-matching pattern does not survive the explanatory comments
+// that sit between the opening brace and the name.
+const CONTRACT_ENTRY_SPLIT_PATTERN = /(?=\bname:\s*['"`]memphis_[a-z0-9_]+['"`])/;
+const CONTRACT_ENTRY_NAME_PATTERN = /\bname:\s*['"`](memphis_[a-z0-9_]+)['"`]/;
+const GATEWAY_HIDDEN_FLAG_PATTERN = /gatewayHidden:\s*true/;
 
 export type ToolSurfaceName = 'registry' | 'inProcessExecutor' | 'mcpServer';
 
@@ -24,6 +32,12 @@ export type ToolSurfaceAuditReport = {
   ok: boolean;
   registryCount: number;
   surfaces: ToolSurfaceAuditSurface[];
+  /**
+   * Tools the native surface executes but the gateway must not advertise.
+   * They stay in the registry — that is where their tier, capabilities and
+   * schema live — and they are absent from the gateway surfaces on purpose.
+   */
+  gatewayHidden: string[];
 };
 
 type ToolSurfaceSource = {
@@ -78,6 +92,35 @@ function readToolSurfaceNames(
   };
 }
 
+/**
+ * Tools the contract marks as gateway-hidden.
+ *
+ * The contract in `src/gateway/tool-contract.ts` is the single place that
+ * says where a tool may run. A tool with `gatewayHidden: true` is executed
+ * by the native surface only, so the gateway surfaces must NOT build it —
+ * while the registry still has to carry it, because that is where its tier,
+ * capabilities and schema live. Without this, the audit reports a deliberate
+ * design as a missing tool.
+ */
+function readGatewayHiddenTools(root: string): string[] {
+  const path = resolve(root, 'src/gateway/tool-contract.ts');
+  let source: string;
+  try {
+    source = readFileSync(path, 'utf8');
+  } catch {
+    return [];
+  }
+  return [
+    ...new Set(
+      source
+        .split(CONTRACT_ENTRY_SPLIT_PATTERN)
+        .filter((entry) => GATEWAY_HIDDEN_FLAG_PATTERN.test(entry))
+        .map((entry) => CONTRACT_ENTRY_NAME_PATTERN.exec(entry)?.[1])
+        .filter((name): name is string => Boolean(name)),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+}
+
 export function buildToolSurfaceAuditReport(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): ToolSurfaceAuditReport {
@@ -93,24 +136,38 @@ export function buildToolSurfaceAuditReport(
     throw new Error('tool registry source missing from audit snapshot');
   }
   const registrySet = new Set(registry.names);
+  const gatewayHidden = readGatewayHiddenTools(root);
+  const gatewayHiddenSet = new Set(gatewayHidden);
 
   const surfaces = [...snapshots.entries()].map(([surface, snapshot]) => {
     const surfaceSet = new Set(snapshot.names);
+    const isGatewaySurface = surface !== 'registry';
     return {
       surface,
       path: snapshot.path,
       names: snapshot.names,
       missingFromRegistry: snapshot.names.filter((name) => !registrySet.has(name)),
-      missingFromSurface: registry.names.filter((name) => !surfaceSet.has(name)),
+      missingFromSurface: registry.names.filter(
+        (name) => !surfaceSet.has(name) && !(isGatewaySurface && gatewayHiddenSet.has(name)),
+      ),
     };
   });
 
+  // A gateway-hidden tool still has to be in the registry. That is the one
+  // place its tier and capabilities are recorded, so a contract entry
+  // without a registry entry is a real defect.
+  const gatewayHiddenMissingFromRegistry = gatewayHidden.filter(
+    (name) => !registrySet.has(name),
+  );
+
   return {
-    ok: surfaces.every(
-      (surface) =>
-        surface.missingFromRegistry.length === 0 && surface.missingFromSurface.length === 0,
-    ),
+    ok:
+      surfaces.every(
+        (surface) =>
+          surface.missingFromRegistry.length === 0 && surface.missingFromSurface.length === 0,
+      ) && gatewayHiddenMissingFromRegistry.length === 0,
     registryCount: registry.names.length,
     surfaces,
+    gatewayHidden,
   };
 }
