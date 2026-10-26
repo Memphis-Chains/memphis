@@ -19,7 +19,29 @@ export function createSchedulerRuntimeTools(): RuntimeToolDefinition[] {
           name: { type: 'string', description: 'Task name (for add)' },
           taskType: {
             type: 'string',
-            description: 'Task type: shell | reflection | git-pull-build | http',
+            enum: ['shell', 'reflection', 'git-pull-build', 'builtin', 'http'],
+            description: 'Task type: shell | reflection | git-pull-build | builtin | http',
+          },
+          timezone: {
+            type: 'string',
+            description:
+              'Timezone for the schedule (e.g. Europe/Warsaw); defaults to the host timezone',
+          },
+          period: {
+            type: 'string',
+            enum: ['daily', 'weekly'],
+            description: 'Run period for a reflection task',
+          },
+          job: {
+            type: 'string',
+            enum: [
+              'runtime-watch',
+              'scheduled-backup',
+              'doctor-diagnose',
+              'operator-briefing',
+              'attachment-retention',
+            ],
+            description: 'Built-in job to schedule (required for taskType builtin)',
           },
           script: { type: 'string', description: 'Shell script (for shell type)' },
           url: { type: 'string', description: 'URL (for http type)' },
@@ -44,7 +66,17 @@ export function createSchedulerRuntimeTools(): RuntimeToolDefinition[] {
             | 'shell'
             | 'reflection'
             | 'git-pull-build'
+            | 'builtin'
             | 'http'
+            | undefined,
+          timezone: optionalString(args, 'timezone'),
+          period: optionalString(args, 'period') as 'daily' | 'weekly' | undefined,
+          job: optionalString(args, 'job') as
+            | 'runtime-watch'
+            | 'scheduled-backup'
+            | 'doctor-diagnose'
+            | 'operator-briefing'
+            | 'attachment-retention'
             | undefined,
           script: optionalString(args, 'script'),
           url: optionalString(args, 'url'),

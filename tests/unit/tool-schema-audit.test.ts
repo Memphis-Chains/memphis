@@ -39,22 +39,75 @@ describe('tool schema audit', () => {
     for (const entry of report.typeMismatches) {
       expect(entry.name).toMatch(/^memphis_/);
       expect(entry.key.length).toBeGreaterThan(0);
-      expect(
-        new Set([entry.registryType, entry.executorType, entry.mcpType]).size,
-      ).toBeGreaterThan(1);
+      expect(new Set([entry.registryType, entry.executorType, entry.mcpType]).size).toBeGreaterThan(
+        1,
+      );
     }
 
     for (const entry of report.constraintMismatches) {
       expect(entry.name).toMatch(/^memphis_/);
       expect(entry.keyPath.length).toBeGreaterThan(0);
       expect(
-        new Set([
-          entry.registryConstraints,
-          entry.executorConstraints,
-          entry.mcpConstraints,
-        ]).size,
+        new Set([entry.registryConstraints, entry.executorConstraints, entry.mcpConstraints]).size,
       ).toBeGreaterThan(1);
     }
+  });
+
+  // A tool the contract marks as gateway-hidden runs on the native surface
+  // only. The gateway executor and the MCP server must NOT expose it, so
+  // its absence there is the contract working. Reporting it as a missing
+  // schema made `memphis readiness` fail on a healthy runtime.
+  it('does not report a gateway-hidden tool as missing a gateway schema', () => {
+    const report = buildToolSchemaAuditReport({
+      ...process.env,
+      MEMPHIS_RUNTIME_ROOT: process.cwd(),
+    } as NodeJS.ProcessEnv);
+
+    expect(report.missingExecutorSchema).not.toContain('memphis_vault_list');
+    expect(report.missingMcpSchema).not.toContain('memphis_vault_list');
+  });
+
+  // `z.union([z.literal(1), z.literal(2)])` is a NUMBER union. Reporting
+  // every literal as a string made the audit claim a type mismatch where
+  // the contract is fine.
+  it('reads a numeric literal as a number, not a string', () => {
+    const report = buildToolSchemaAuditReport({
+      ...process.env,
+      MEMPHIS_RUNTIME_ROOT: process.cwd(),
+    } as NodeJS.ProcessEnv);
+
+    const orders = report.typeMismatches.find(
+      (entry) => entry.name === 'memphis_classify' && entry.key === 'orders',
+    );
+    expect(orders).toBeUndefined();
+  });
+
+  // `z.preprocess(fn, z.enum([...]))` is a ZodPreprocess whose inner schema
+  // is the enum. Without unwrapping it the audit reported the type as the
+  // literal string "ZodPreprocess".
+  it('unwraps a preprocessed schema to its inner type', () => {
+    const report = buildToolSchemaAuditReport({
+      ...process.env,
+      MEMPHIS_RUNTIME_ROOT: process.cwd(),
+    } as NodeJS.ProcessEnv);
+
+    const mode = report.typeMismatches.find(
+      (entry) => entry.name === 'memphis_cognitive_mode_set' && entry.key === 'mode',
+    );
+    expect(mode).toBeUndefined();
+  });
+
+  // The registry is the authority on what a tool accepts. The executor
+  // dropped `timezone`, `period` and `job`, so a builtin task could not be
+  // created through the gateway at all.
+  it('reports no schema drift for the cron tool', () => {
+    const report = buildToolSchemaAuditReport({
+      ...process.env,
+      MEMPHIS_RUNTIME_ROOT: process.cwd(),
+    } as NodeJS.ProcessEnv);
+
+    expect(report.mismatches.filter((entry) => entry.name === 'memphis_cron')).toEqual([]);
+    expect(report.typeMismatches.filter((entry) => entry.name === 'memphis_cron')).toEqual([]);
   });
 
   it('keeps repaired batch-2 and batch-3 tools out of schema drift', () => {
@@ -85,7 +138,8 @@ describe('tool schema audit', () => {
     expect(report.typeMismatches.filter((entry) => repaired.has(entry.name))).toEqual([]);
     expect(
       report.constraintMismatches.filter(
-        (entry) => repaired.has(entry.name) && !allowedConstraintDrift.has(`${entry.name}:${entry.keyPath}`),
+        (entry) =>
+          repaired.has(entry.name) && !allowedConstraintDrift.has(`${entry.name}:${entry.keyPath}`),
       ),
     ).toEqual([]);
   });
