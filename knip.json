@@ -1,6 +1,7 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "entry": [
+    "scripts/quarterly-exit-test-q2.mjs",
     "src/mcp/server.ts",
     "scripts/set-release-version.mjs",
     "scripts/recover-vault-init.mjs",
