@@ -52,6 +52,9 @@ jobs:
       - name: Dead-code gate
         run: npm run deadcode:check
 
+      - name: Kartograf training control tests (no ML downloads)
+        run: python3 -m unittest discover -s tools/training/tests -p 'test_*.py'
+
       - name: Native tool tiers match the TypeScript registry
         # tool_tier in crates/memphis-operator/src/chat.rs is generated from
         # TOOL_REGISTRY. Five tools were one tier lower natively than in the

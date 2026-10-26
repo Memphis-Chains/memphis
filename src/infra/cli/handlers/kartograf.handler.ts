@@ -1,23 +1,17 @@
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, readFileSync, readdirSync, lstatSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import type { CommandHandler } from './command-handler.js';
 import { MEMPHIS_KARTOGRAF_ENABLE } from '../../../config/env-registry.js';
 import { getDataDir } from '../../../config/paths.js';
+import { verifyCheckpoint, type CheckpointEnvelope } from '../../../kartograf/checkpoint.js';
 import {
-  sha256Hex,
-  verifyCheckpoint,
-  type CheckpointEnvelope,
-} from '../../../kartograf/checkpoint.js';
+  activateBundle,
+  inspectInstalledBundle,
+  installBundle,
+  selectedBundle,
+} from '../../../kartograf/installed.js';
+import { closeKartografRuntime, getKartografRuntime } from '../../../kartograf/runtime.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
 
@@ -33,7 +27,7 @@ import { print } from '../utils/render.js';
  *   2. Verify signature via `verifyCheckpoint`.
  *   3. If tier is `file` or `federation`, copy envelope + sibling
  *      artifacts (*.onnx, *.tokenizer.json) into
- *      `<data-dir>/kartograf/checkpoints/<signer-did-short>/`.
+ *      `<data-dir>/kartograf/checkpoints/<canonical-envelope-hash>/`.
  *   4. Refuse install on verify failure.
  *
  * URL sources (`--source hf-hub` / `github-release`) are out of scope
@@ -50,10 +44,11 @@ export const kartografCommandHandler: CommandHandler = {
     const { subcommand } = context.args;
     if (subcommand === 'verify') return handleVerify(context);
     if (subcommand === 'install') return handleInstall(context);
+    if (subcommand === 'activate') return handleActivate(context);
     if (subcommand === 'status') return handleStatus(context);
     if (subcommand === 'query') return handleQuery(context);
     throw new Error(
-      `Unknown kartograf subcommand: ${String(subcommand)}. Available: verify, install, status, query.`,
+      `Unknown kartograf subcommand: ${String(subcommand)}. Available: verify, install, activate, status, query.`,
     );
   },
 };
@@ -65,16 +60,24 @@ type ParsedEnvelope =
 function readEnvelopeFrom(sourcePath: string): ParsedEnvelope {
   const resolved = resolve(sourcePath);
   try {
+    const info = lstatSync(resolved);
+    if (!info.isFile() || info.isSymbolicLink() || info.size > 1024 * 1024) {
+      return {
+        ok: false,
+        error: 'Checkpoint envelope must be a bounded regular file',
+        path: resolved,
+      };
+    }
     const raw = readFileSync(resolved, 'utf8');
     const parsed = JSON.parse(raw) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return { ok: false, error: 'envelope is not a JSON object', path: resolved };
     }
     return { ok: true, envelope: parsed as CheckpointEnvelope, path: resolved };
-  } catch (err) {
+  } catch {
     return {
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: 'Checkpoint envelope could not be read as valid JSON',
       path: resolved,
     };
   }
@@ -87,6 +90,7 @@ async function handleVerify(context: CliContext): Promise<boolean> {
   }
   const read = readEnvelopeFrom(sourcePath);
   if (!read.ok) {
+    process.exitCode = 2;
     print(
       { ok: false, mode: 'kartograf.verify', path: read.path, error: read.error },
       context.args.json,
@@ -94,6 +98,7 @@ async function handleVerify(context: CliContext): Promise<boolean> {
     return true;
   }
   const result = verifyCheckpoint(read.envelope);
+  if (!result.valid) process.exitCode = 2;
   print(
     {
       ok: result.valid,
@@ -111,19 +116,7 @@ async function handleVerify(context: CliContext): Promise<boolean> {
   return true;
 }
 
-const ALLOWED_SOURCES = new Set([
-  'hf-hub',
-  'github-release',
-  'file',
-  'federation',
-  'agora',
-]);
-
-function shortSignerSlug(signerDid: string): string {
-  // did:key:ed25519:<64-hex> → last 12 hex chars, safe for filenames.
-  const hex = signerDid.replace('did:key:ed25519:', '');
-  return hex.length >= 12 ? hex.slice(0, 12) : 'unknown';
-}
+const ALLOWED_SOURCES = new Set(['hf-hub', 'github-release', 'file', 'federation', 'agora']);
 
 async function handleInstall(context: CliContext): Promise<boolean> {
   const sourcePath = (context.args.file ?? context.args.target ?? '').trim();
@@ -150,6 +143,7 @@ async function handleInstall(context: CliContext): Promise<boolean> {
 
   const read = readEnvelopeFrom(sourcePath);
   if (!read.ok) {
+    process.exitCode = 2;
     print(
       { ok: false, mode: 'kartograf.install', path: read.path, error: read.error },
       context.args.json,
@@ -158,6 +152,7 @@ async function handleInstall(context: CliContext): Promise<boolean> {
   }
   const verify = verifyCheckpoint(read.envelope);
   if (!verify.valid) {
+    process.exitCode = 2;
     // Verification failure MUST block install so a tampered envelope
     // can't land on disk where the model loader would later trust it.
     print(
@@ -172,113 +167,83 @@ async function handleInstall(context: CliContext): Promise<boolean> {
     return true;
   }
 
-  const slug = shortSignerSlug(verify.signerDid);
-  const stageDir = join(
-    getDataDir(process.env),
-    'kartograf',
-    'checkpoints',
-    slug,
-  );
-  const envelopeOut = join(stageDir, 'checkpoint.json');
-  const sourceDir = dirname(read.path);
-
-  if (context.args.dryRun) {
-    // Dry-run must be side-effect free. `mkdirSync` BEFORE this branch
-    // was creating the staging directory on a preview command, which
-    // contradicts the `--dry-run` contract. Print what WOULD happen
-    // without touching the filesystem.
+  try {
+    const bundle = await installBundle(read.path, process.env, context.args.dryRun);
+    if (context.args.forceActive) {
+      if (context.args.trustedSigner !== bundle.envelope.signer_did)
+        throw new Error('Activation requires the expected --trusted-signer DID');
+      if (!context.args.dryRun) {
+        await activateBundle(bundle.id, context.args.trustedSigner, process.env);
+        await closeKartografRuntime();
+      }
+    }
     print(
       {
         ok: true,
-        mode: 'kartograf.install.dry-run',
+        mode: context.args.dryRun ? 'kartograf.install.dry-run' : 'kartograf.install',
         path: read.path,
-        stageDir,
-        envelopeOut,
-        signerDid: verify.signerDid,
-        distributionSource: read.envelope.distribution_source,
+        stageDir: dirname(bundle.envelopePath),
+        envelopeOut: bundle.envelopePath,
+        checkpointId: bundle.id,
+        signerDid: bundle.envelope.signer_did,
+        distributionSource: bundle.envelope.distribution_source,
+        activated: Boolean(context.args.forceActive && !context.args.dryRun),
+        restartRequired: Boolean(context.args.forceActive && !context.args.dryRun),
+        artifactWarnings: [],
       },
       context.args.json,
     );
-    return true;
+  } catch (error) {
+    print(
+      {
+        ok: false,
+        mode: 'kartograf.install',
+        reason: error instanceof Error ? error.message : 'Checkpoint install failed',
+      },
+      context.args.json,
+    );
+    process.exitCode = 2;
   }
+  return true;
+}
 
-  // Guard against the "re-install in place" case: `memphis kartograf
-  // install --file <stageDir>/checkpoint.json --source file` would
-  // (before this guard) wipe `model.onnx` / `tokenizer.json` in the
-  // stage dir BEFORE reading them as the source, silently destroying
-  // the operator's good bundle. If source and stage are the same
-  // directory, skip the cleanup — the artifacts already on disk ARE
-  // the ones we want to re-stamp against the envelope.
-  const stageDirReal = resolve(stageDir);
-  const sourceDirReal = resolve(sourceDir);
-  const inPlaceRestage = stageDirReal === sourceDirReal;
-
-  mkdirSync(stageDir, { recursive: true });
-
-  if (!inPlaceRestage) {
-    // Before writing the new envelope, clear any prior staged artifacts
-    // from the same stageDir (same signer may publish multiple
-    // checkpoints over time). A checksum-mismatch install in the
-    // previous run must NOT leave stale `model.onnx` / `tokenizer.json`
-    // beside an updated `checkpoint.json` — that's a "mixed state"
-    // hazard where the loader would hash-verify stale bytes against
-    // new envelope values.
-    for (const stale of ['model.onnx', 'tokenizer.json']) {
-      rmSync(join(stageDir, stale), { force: true });
-    }
+async function handleActivate(context: CliContext): Promise<boolean> {
+  try {
+    const bundle = await activateBundle(
+      context.args.target ?? '',
+      context.args.trustedSigner ?? '',
+      process.env,
+      context.args.dryRun,
+    );
+    await closeKartografRuntime();
+    print(
+      {
+        ok: true,
+        mode: context.args.dryRun ? 'kartograf.activate.dry-run' : 'kartograf.activate',
+        checkpointId: bundle.id,
+        signerDid: bundle.envelope.signer_did,
+        activated: !context.args.dryRun,
+        restartRequired: !context.args.dryRun,
+      },
+      context.args.json,
+    );
+  } catch (error) {
+    print(
+      {
+        ok: false,
+        mode: 'kartograf.activate',
+        reason: error instanceof Error ? error.message : 'Checkpoint activation failed',
+      },
+      context.args.json,
+    );
+    process.exitCode = 2;
   }
-  // Copy envelope into the staging dir under its canonical name.
-  writeFileSync(envelopeOut, JSON.stringify(read.envelope, null, 2));
-
-  // Copy sibling artifacts if present — producer side stamps them
-  // with the sha256s the envelope asserts. We re-verify the sha256s
-  // here so a misassembled bundle can't sneak past.
-  const artifactWarnings: string[] = [];
-  for (const [field, fileName] of [
-    ['onnx_sha256', 'model.onnx'],
-    ['tokenizer_sha256', 'tokenizer.json'],
-  ] as const) {
-    const candidate = join(sourceDir, fileName);
-    const expected = read.envelope[field];
-    try {
-      const bytes = readFileSync(candidate);
-      const actual = sha256Hex(bytes);
-      if (actual !== expected) {
-        artifactWarnings.push(
-          `${fileName}: sha256 mismatch (expected ${expected.slice(0, 12)}..., ` +
-            `got ${actual.slice(0, 12)}...) — artifact not copied`,
-        );
-        continue;
-      }
-      copyFileSync(candidate, join(stageDir, fileName));
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-        artifactWarnings.push(`${fileName}: not found beside envelope — skipped`);
-      } else {
-        artifactWarnings.push(
-          `${fileName}: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
-  }
-
-  print(
-    {
-      ok: true,
-      mode: 'kartograf.install',
-      path: read.path,
-      stageDir,
-      envelopeOut,
-      signerDid: verify.signerDid,
-      distributionSource: read.envelope.distribution_source,
-      artifactWarnings,
-    },
-    context.args.json,
-  );
   return true;
 }
 
 interface InstalledCheckpoint {
+  artifactsValid?: boolean;
+  checkpointId?: string;
   signerSlug: string;
   envelopePath: string;
   ok: boolean;
@@ -290,13 +255,18 @@ interface InstalledCheckpoint {
   reason?: string;
 }
 
-function listInstalledCheckpoints(): { stageRoot: string; checkpoints: InstalledCheckpoint[] } {
+async function listInstalledCheckpoints(): Promise<{
+  stageRoot: string;
+  checkpoints: InstalledCheckpoint[];
+}> {
   const stageRoot = join(getDataDir(process.env), 'kartograf', 'checkpoints');
-  if (!existsSync(stageRoot)) return { stageRoot, checkpoints: [] };
+  if (!existsSync(stageRoot) || lstatSync(stageRoot).isSymbolicLink())
+    return { stageRoot, checkpoints: [] };
 
   const slugs = readdirSync(stageRoot).filter((entry) => {
     try {
-      return statSync(join(stageRoot, entry)).isDirectory();
+      if (!/^(?:[a-f0-9]{12}|[a-f0-9]{64})$/.test(entry)) return false;
+      return lstatSync(join(stageRoot, entry)).isDirectory();
     } catch {
       return false;
     }
@@ -322,30 +292,61 @@ function listInstalledCheckpoints(): { stageRoot: string; checkpoints: Installed
       continue;
     }
     const verify = verifyCheckpoint(read.envelope);
+    let artifactsValid = false;
+    let checkpointId: string | undefined;
+    try {
+      const bundle = await inspectInstalledBundle(envelopePath);
+      artifactsValid = true;
+      checkpointId = bundle.id;
+    } catch {
+      /* report integrity failure without loading a model */
+    }
     checkpoints.push({
-      signerSlug: slug,
+      artifactsValid,
+      checkpointId,
+      signerSlug: verify.valid ? verify.signerDid.slice(-12) : slug,
       envelopePath,
-      ok: verify.valid,
+      ok: verify.valid && artifactsValid,
       signerDid: verify.valid ? verify.signerDid : null,
       distributionSource: read.envelope.distribution_source ?? null,
       version: read.envelope.version ?? null,
       hasOnnx: existsSync(join(stageRoot, slug, 'model.onnx')),
       hasTokenizer: existsSync(join(stageRoot, slug, 'tokenizer.json')),
-      reason: verify.valid ? undefined : verify.reason,
+      reason: !verify.valid
+        ? verify.reason
+        : artifactsValid
+          ? undefined
+          : 'Checkpoint artifacts are missing or failed integrity validation',
     });
   }
   return { stageRoot, checkpoints };
 }
 
 async function handleStatus(context: CliContext): Promise<boolean> {
-  const { stageRoot, checkpoints } = listInstalledCheckpoints();
+  const { stageRoot, checkpoints } = await listInstalledCheckpoints();
+  let selected = null;
+  let selectionError: string | null = null;
+  try {
+    selected = await selectedBundle(process.env);
+  } catch {
+    selectionError = 'Active checkpoint selection failed integrity validation';
+  }
+  if (selectionError) process.exitCode = 2;
+  const runtime = await getKartografRuntime(process.env);
   print(
     {
-      ok: true,
+      ok: selectionError === null,
       mode: 'kartograf.status',
       stageRoot,
       installed: checkpoints.length,
       checkpoints,
+      selected_checkpoint: selected?.id ?? null,
+      active_checkpoint:
+        runtime.kind === 'ready' && selected?.envelopePath === runtime.envelopePath
+          ? selected.id
+          : null,
+      runtime: runtime.kind,
+      selectionError,
     },
     context.args.json,
   );
@@ -353,7 +354,7 @@ async function handleStatus(context: CliContext): Promise<boolean> {
 }
 
 async function handleQuery(context: CliContext): Promise<boolean> {
-  const query = (context.args.query ?? '').toString().trim();
+  const query = (context.args.query ?? context.args.target ?? '').toString().trim();
   if (!query) {
     print(
       {
@@ -363,11 +364,11 @@ async function handleQuery(context: CliContext): Promise<boolean> {
       },
       context.args.json,
     );
-    return false;
+    process.exitCode = 2;
+    return true;
   }
 
-  const { checkpoints } = listInstalledCheckpoints();
-  const usable = checkpoints.find((c) => c.ok);
+  const usable = await selectedBundle(process.env);
   if (!usable) {
     print(
       {
@@ -378,7 +379,8 @@ async function handleQuery(context: CliContext): Promise<boolean> {
       },
       context.args.json,
     );
-    return false;
+    process.exitCode = 2;
+    return true;
   }
 
   if (MEMPHIS_KARTOGRAF_ENABLE.read(process.env) !== '1') {
@@ -394,7 +396,8 @@ async function handleQuery(context: CliContext): Promise<boolean> {
       },
       context.args.json,
     );
-    return false;
+    process.exitCode = 2;
+    return true;
   }
 
   // Top-K parse — accept --top-k <N>, default to all zones.
@@ -409,6 +412,7 @@ async function handleQuery(context: CliContext): Promise<boolean> {
   const { createKartografSession } = await import('../../../kartograf/session.js');
   const read = readEnvelopeFrom(usable.envelopePath);
   if (!read.ok) {
+    process.exitCode = 2;
     print(
       {
         ok: false,
@@ -417,7 +421,8 @@ async function handleQuery(context: CliContext): Promise<boolean> {
       },
       context.args.json,
     );
-    return false;
+    process.exitCode = 2;
+    return true;
   }
   const session = await createKartografSession({
     checkpointPath: usable.envelopePath,
@@ -447,7 +452,8 @@ async function handleQuery(context: CliContext): Promise<boolean> {
       },
       context.args.json,
     );
-    return false;
+    process.exitCode = 2;
+    return true;
   }
 
   try {
@@ -459,13 +465,21 @@ async function handleQuery(context: CliContext): Promise<boolean> {
         ok: true,
         mode: 'kartograf.query',
         checkpointId: result.checkpointId,
-        signerDid: usable.signerDid,
+        selectedCheckpointId: usable.id,
+        signerDid: usable.envelope.signer_did,
         query,
         // Don't dump the full 256-d vector by default — surface the
         // norm + first 8 dims so operators can sanity-check without
         // flooding the terminal. Full vector available via --json
         // consumers can re-derive from .embeddingPreview if they need
         // the demonstration, or call the tool surface in a script.
+        ...(context.args.json
+          ? {
+              embedding: Array.from(result.embedding),
+              topZone: result.zones[0]?.zone,
+              confidence: result.zones[0]?.score,
+            }
+          : {}),
         embeddingDim: result.embedding.length,
         embeddingPreview: Array.from(result.embedding.slice(0, 8)),
         zones: result.zones,

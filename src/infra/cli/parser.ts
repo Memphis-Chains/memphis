@@ -134,6 +134,7 @@ export function parseCommand(argv: string[]): CliArgs {
     nonInteractive: hasBooleanFlag(flags, '--non-interactive'),
     profile: readFlagValue(flags, '--profile') as CliArgs['profile'],
     force: hasBooleanFlag(flags, '--force'),
+    forceActive: hasBooleanFlag(flags, '--force-active'),
     // `--force-reinit` is the explicit opt-in for `vault init`'s
     // refuse-on-nonempty guard. Kept distinct from `--force` so an
     // unrelated handler accepting `--force` cannot transitively

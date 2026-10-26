@@ -143,6 +143,10 @@ export class OnnxKartografSession implements KartografSession {
       throw new Error(`kartograf: tokenizer.json missing beside ${envelopePath}`);
     }
 
+    if (sha256Hex(readFileSync(tokenizerPath)) !== envelope.tokenizer_sha256) {
+      throw new Error('kartograf: tokenizer.json sha mismatch; re-install the checkpoint');
+    }
+
     if (envelope.heads_config.zone_classes !== KARTOGRAF_V1_ZONE_LABELS.length) {
       throw new Error(
         `kartograf: zone class count mismatch (envelope=${envelope.heads_config.zone_classes}, ` +
@@ -166,15 +170,20 @@ export class OnnxKartografSession implements KartografSession {
       logSeverityLevel: 3, // error-only; trims tracer noise from DeBERTa export
     });
 
-    const tokenizer = await AutoTokenizer.from_pretrained(dir);
+    try {
+      const tokenizer = await AutoTokenizer.from_pretrained(dir);
 
-    return new OnnxKartografSession({
-      envelope,
-      session,
-      tokenizer,
-      zoneLabels: KARTOGRAF_V1_ZONE_LABELS,
-      topKZones: options.topKZones ?? null,
-    });
+      return new OnnxKartografSession({
+        envelope,
+        session,
+        tokenizer,
+        zoneLabels: KARTOGRAF_V1_ZONE_LABELS,
+        topKZones: options.topKZones ?? null,
+      });
+    } catch (error) {
+      await session.release().catch(() => undefined);
+      throw error;
+    }
   }
 
   async embed(text: string): Promise<KartografOutput> {
