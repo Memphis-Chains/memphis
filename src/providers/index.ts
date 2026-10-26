@@ -16,16 +16,15 @@ import { sanitizeForJsonRequest } from '../infra/security/sanitizers.js';
 import { readVaultSecretByKey } from '../security/vault-boundary.js';
 import { AnthropicProvider } from './anthropic/adapter.js';
 import { GlmProvider } from './glm/adapter.js';
-import { OpenAICodexProvider } from './openai-codex/adapter.js';
-import { ProviderHttpError } from './request-error.js';
 import {
   DEFAULT_MINIMAX_MODEL,
-  DEFAULT_MINIMAX_MAX_COMPLETION_TOKENS,
   MAX_MINIMAX_COMPLETION_TOKENS,
   resolveMinimaxReasoningEffort,
   type MinimaxReasoningEffort,
 } from './minimax/config.js';
 import { resolveModelCapabilitySnapshot } from './model-capabilities.js';
+import { OpenAICodexProvider } from './openai-codex/adapter.js';
+import { ProviderHttpError } from './request-error.js';
 
 // Module-scoped logger for silent-catch sites — provider-internal causes
 // are surfaced to logs without changing the caller-facing return shape.
@@ -387,10 +386,10 @@ function isMinimaxM31Flash(model: string): boolean {
 
 function readMinimaxReasoningEffort(rawEnv: NodeJS.ProcessEnv): MinimaxReasoningEffort {
   const raw = rawEnv.MINIMAX_REASONING_EFFORT?.trim().toLowerCase();
-  if (raw === undefined || raw === '') return 'max';
-  // An explicitly invalid value is an operator mistake, not a reason to fall
+  // The unset case defers to the shared default in minimax/config.ts. An
+  // explicitly invalid value is an operator mistake, not a reason to fall
   // back to a default: resolveMinimaxReasoningEffort throws on it.
-  return resolveMinimaxReasoningEffort(raw);
+  return resolveMinimaxReasoningEffort(raw === undefined || raw === '' ? undefined : raw);
 }
 
 function readMinimaxCompletionOverride(rawEnv: NodeJS.ProcessEnv): number | undefined {
@@ -405,6 +404,7 @@ function readMinimaxCompletionOverride(rawEnv: NodeJS.ProcessEnv): number | unde
 export function resolveMinimaxM31GenerationConfig(
   opts: ChatOptions | undefined,
   rawEnv: NodeJS.ProcessEnv = process.env,
+  resolvedEffort?: MinimaxReasoningEffort,
 ): {
   maxCompletionTokens: number;
   reasoningEffort: MinimaxReasoningEffort;
@@ -413,12 +413,26 @@ export function resolveMinimaxM31GenerationConfig(
     readMinimaxCompletionOverride(rawEnv) ??
     opts?.maxTokens ??
     MINIMAX_M3_RECOMMENDED_COMPLETION_TOKENS;
+  // An explicit, out-of-range budget is an operator mistake. Clamping it
+  // silently (0 -> 1, 524289 -> 524288) turns a typo into a different
+  // request than the one that was asked for.
+  if (
+    !Number.isSafeInteger(requestedTokens) ||
+    requestedTokens < 1 ||
+    requestedTokens > MINIMAX_M3_MAX_COMPLETION_TOKENS
+  ) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      `MiniMax-M3.1-Flash maxTokens must be an integer from 1 to ${MINIMAX_M3_MAX_COMPLETION_TOKENS}`,
+      400,
+    );
+  }
+  // The per-call override goes through the same resolver as the env value:
+  // an invalid effort must fail, not silently become the default.
+  const effort = opts?.reasoningEffort ?? resolvedEffort ?? readMinimaxReasoningEffort(rawEnv);
   return {
-    maxCompletionTokens: Math.max(
-      1,
-      Math.min(Math.trunc(requestedTokens), MINIMAX_M3_MAX_COMPLETION_TOKENS),
-    ),
-    reasoningEffort: opts?.reasoningEffort ?? readMinimaxReasoningEffort(rawEnv),
+    maxCompletionTokens: requestedTokens,
+    reasoningEffort: resolveMinimaxReasoningEffort(effort),
   };
 }
 
@@ -428,17 +442,26 @@ export class MinimaxProvider implements Provider {
   private model: string;
   private baseUrl: string;
   private rawEnv: NodeJS.ProcessEnv;
+  private reasoningEffort: MinimaxReasoningEffort;
 
   constructor(opts?: {
     apiKey?: string;
     model?: string;
     baseUrl?: string;
     rawEnv?: NodeJS.ProcessEnv;
+    /** Per-provider reasoning effort; overrides the env default. */
+    reasoningEffort?: MinimaxReasoningEffort;
   }) {
-    this.rawEnv = opts?.rawEnv ?? process.env;
+    this.rawEnv = { ...(opts?.rawEnv ?? process.env) };
     this.apiKey = opts?.apiKey || this.rawEnv.MINIMAX_API_KEY || '';
     this.model = normalizeMinimaxModelId(
       opts?.model || this.rawEnv.MINIMAX_MODEL || MINIMAX_M31_FLASH_MODEL,
+    );
+    // Resolve once, at construction. An invalid value throws here rather
+    // than at request time — a silent coercion to 'max' turns an operator
+    // typo into a behaviour change they never asked for.
+    this.reasoningEffort = resolveMinimaxReasoningEffort(
+      opts?.reasoningEffort ?? this.rawEnv.MINIMAX_REASONING_EFFORT,
     );
     this.baseUrl = (
       opts?.baseUrl ||
@@ -538,7 +561,7 @@ export class MinimaxProvider implements Provider {
     const body: Record<string, unknown> = { model, messages: allMessages };
 
     if (isMinimaxM31Flash(model)) {
-      const generation = resolveMinimaxM31GenerationConfig(opts, this.rawEnv);
+      const generation = resolveMinimaxM31GenerationConfig(opts, this.rawEnv, this.reasoningEffort);
       Object.assign(body, {
         max_completion_tokens: generation.maxCompletionTokens,
         reasoning_effort: generation.reasoningEffort,

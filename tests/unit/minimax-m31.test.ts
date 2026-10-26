@@ -57,7 +57,9 @@ describe('MiniMax M3.1 stable request contract', () => {
       model: 'MiniMax-M3.1-Flash',
       messages: [{ role: 'user', content: 'hello' }],
       reasoning_effort: 'medium',
-      max_completion_tokens: 32768,
+      max_completion_tokens: 131072,
+      reasoning_split: true,
+      thinking: { type: 'adaptive' },
     });
     expect(requests[0].init.signal).toBeInstanceOf(AbortSignal);
   });
@@ -220,7 +222,7 @@ describe('MiniMax M3.1 stable request contract', () => {
     },
   );
 
-  it.each(['MiniMax-M2.7', 'abab6.5s-chat', 'MiniMax-M3.1-Flash-Preview'])(
+  it.each(['MiniMax-M2.7', 'abab6.5s-chat'])(
     'retains the legacy request contract for explicit %s',
     async (model) => {
       const { requests } = mockResponse();
@@ -239,6 +241,20 @@ describe('MiniMax M3.1 stable request contract', () => {
       );
     },
   );
+
+  it('canonicalizes the retired M3.1 Flash preview alias to the GA id', async () => {
+    const { requests } = mockResponse();
+    await new MinimaxProvider({
+      apiKey: 'test-key',
+      model: 'MiniMax-M3.1-Flash-Preview',
+      rawEnv: {},
+    }).chat([{ role: 'user', content: 'hello' }]);
+    // The preview id was retired when M3.1 Flash went GA. Sending it would
+    // be a request for a model that no longer exists, so the adapter
+    // canonicalizes it at the boundary.
+    expect(requests[0].body.model).toBe('MiniMax-M3.1-Flash');
+    expect(requests[0].body.reasoning_split).toBe(true);
+  });
 
   it('selects the request contract from the per-call model override', async () => {
     const { requests } = mockResponse();
@@ -275,9 +291,13 @@ describe('MiniMax response and continuation contract', () => {
     expect(response.tokens).toEqual({ prompt: 100, completion: 20, total: 120, cache_read: 80 });
   });
 
-  it.each([undefined, '', 'private\nUnicode: ąę 🚀\u0000'])(
-    'preserves optional reasoning %j without requiring it for direct tool use',
-    async (reasoning) => {
+  it.each([
+    { reasoning: undefined, expected: undefined },
+    { reasoning: '', expected: undefined },
+    { reasoning: 'private\nUnicode: ąę 🚀\u0000', expected: 'private\nUnicode: ąę 🚀' },
+  ])(
+    'preserves optional reasoning $reasoning without requiring it for direct tool use',
+    async ({ reasoning, expected }) => {
       const toolCalls = [
         {
           id: 'call-a',
@@ -310,7 +330,11 @@ describe('MiniMax response and continuation contract', () => {
         role: 'assistant',
         content: null,
         tool_calls: toolCalls,
-        ...(reasoning !== undefined ? { reasoning_content: reasoning } : {}),
+        // An empty reasoning string carries no continuation state, so the
+        // adapter drops it instead of sending `reasoning_content: ""`.
+        // A non-empty one is sanitized: control characters are removed
+        // before the value goes on the wire.
+        ...(expected !== undefined ? { reasoning_content: expected } : {}),
       });
       expect(first.content).toBe('');
     },

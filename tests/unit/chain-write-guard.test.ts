@@ -60,7 +60,9 @@ describe('chain-write-guard', () => {
 
   it('allows a VITEST write inside the temp directory', () => {
     const target = mkdtempSync(join(tmpdir(), 'memphis-guard-ok-'));
-    expect(() => assertChainWriteAllowed(join(target, 'chains', 'journal'), { VITEST: 'true' })).not.toThrow();
+    expect(() =>
+      assertChainWriteAllowed(join(target, 'chains', 'journal'), { VITEST: 'true' }),
+    ).not.toThrow();
   });
 
   it('honours the explicit opt-in escape hatch', () => {
@@ -75,16 +77,15 @@ describe('chain-write-guard', () => {
   it('fires on the real appendBlock path — the layer that caught the incident', async () => {
     // Reproduces the incident shape: a rawEnv that switches the chain
     // backend but forgets MEMPHIS_DATA_DIR, so the resolved path lands
-    // on the operator's live ~/.memphis chain.
-    const liveDir = join(process.env.HOME ?? '/home/memphis', '.memphis', 'chains', 'journal');
+    // outside temp. Use a synthetic home so isolation of the runner's HOME
+    // does not change the path this regression exercises.
+    const syntheticHome = '/var/lib/memphis-test-home';
     await expect(
       appendBlock(
         'journal',
         { type: 'journal', content: 'must-not-reach-the-live-chain' },
-        { VITEST: 'true', RUST_CHAIN_ENABLED: 'false' },
+        { VITEST: 'true', RUST_CHAIN_ENABLED: 'false', HOME: syntheticHome },
       ),
     ).rejects.toThrow(/chain-write-guard/);
-    // The guard must refuse BEFORE any file is written.
-    expect(liveDir).toContain('journal');
   });
 });

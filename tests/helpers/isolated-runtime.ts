@@ -25,16 +25,25 @@ export function createIsolatedTestRuntime(parent: NodeJS.ProcessEnv, repoRoot: s
   }
   Object.assign(env, {
     NODE_ENV: 'test',
-    // MEMPHIS_RUNTIME_ROOT is deliberately NOT set: it points the runtime
-    // discovery at a real directory, so the "every discovery path misses"
-    // case in service.command.test.ts could never be reached.
+    // MEMPHIS_RUNTIME_ROOT points install-root discovery at this fixture.
+    // Two contracts depend on it: the runtime-config snapshot must report
+    // `env-override` provenance, and the vault seed fixtures assert their
+    // paths stay inside a `memphis-vitest-` root. Tests that need the
+    // opposite — no install root discoverable — remove it themselves:
+    // tests/unit/service.command.test.ts deletes it in its own scope, and
+    // the 'state'/'mixed' journal cases in
+    // tests/integration/vault-concurrent-init.test.ts delete it from the
+    // fixture env on purpose.
+    MEMPHIS_RUNTIME_ROOT: root,
     MEMPHIS_ENV_FILE: join(root, '.env'),
     MEMPHIS_HOME: data,
-    // MEMPHIS_DATA_DIR is deliberately NOT set. The data directory is
-    // bridge-resolved (crates/memphis-paths via NAPI) from MEMPHIS_HOME, and
-    // overriding it here made the TypeScript and Rust sides resolve different
-    // directories. Measured effect: the CLI reported provider `undefined`
-    // instead of `local-fallback`, and 8 tests failed that pass without it.
+    // MEMPHIS_DATA_DIR is the data directory the native path resolver reads
+    // (crates/memphis-paths `resolve_data_dir`), NOT MEMPHIS_HOME — that
+    // resolver falls back to `~/.memphis` expanded through HOME. Without
+    // this the fixture points at the operator's LIVE data directory
+    // (/home/memphis/.memphis) instead of its own tmpdir. Both sides
+    // resolve it through the same bridge, so TS and Rust stay in sync.
+    MEMPHIS_DATA_DIR: data,
     MEMPHIS_VAULT_STATE_PATH: join(data, 'vault-state.json'),
     MEMPHIS_VAULT_ENTRIES_PATH: join(data, 'vault-entries.json'),
     MEMPHIS_SECURITY_AUDIT_LOG_PATH: join(data, 'security-audit.jsonl'),

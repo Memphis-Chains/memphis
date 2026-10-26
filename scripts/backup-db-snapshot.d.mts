@@ -8,6 +8,16 @@
 export const SNAPSHOT_DIR_NAME: string;
 export const STAGED_PREFIX: string;
 export const DATABASE_PLACEMENT_MANIFEST: string;
+export const RUNTIME_DB_PREFIX: string;
+
+/**
+ * Where a snapshotted database belongs.
+ *
+ * `data-dir` — inside the data directory; restored relative to it.
+ * `runtime`  — the database `DATABASE_URL` names, which lives outside the
+ *              data directory; restored to the path the runtime reads.
+ */
+export type DatabaseRole = 'data-dir' | 'runtime';
 
 export type DatabaseSnapshotResult = {
   ok: boolean;
@@ -18,6 +28,7 @@ export type DatabaseSnapshotResult = {
     stagedPath: string;
     source: string;
     bytes: number;
+    role: DatabaseRole;
   }>;
   excludedPaths: string[];
   errors: string[];

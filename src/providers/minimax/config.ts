@@ -4,7 +4,9 @@ export const DEFAULT_MINIMAX_MODEL = 'MiniMax-M3.1-Flash';
 export const MINIMAX_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type MinimaxReasoningEffort = (typeof MINIMAX_REASONING_EFFORTS)[number];
 
-// The API defaults to max. Memphis uses an explicit, configurable balanced budget.
+// The API defaults to max. Memphis uses an explicit, configurable budget, so
+// the unset case is `medium` — the balanced setting. Raising it is an
+// operator decision (MINIMAX_REASONING_EFFORT), not a silent default.
 export const DEFAULT_MINIMAX_REASONING_EFFORT: MinimaxReasoningEffort = 'medium';
 export const DEFAULT_MINIMAX_MAX_COMPLETION_TOKENS = 32_768;
 export const MAX_MINIMAX_COMPLETION_TOKENS = 524_288;

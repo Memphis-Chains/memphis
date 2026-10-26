@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { NATIVE_TOOL_CONTRACTS } from './tool-contract.js';
 import { resolveInstallRoot } from '../infra/runtime/install-root.js';
 
 const TOOL_NAME_PATTERN = /['"`](memphis_[a-z0-9_]+)['"`]/g;
@@ -94,6 +95,14 @@ export function buildToolSurfaceAuditReport(
   }
   const registrySet = new Set(registry.names);
 
+  // A tool marked `gatewayHidden` in the native tool contract is executed by
+  // the Rust operator cockpit and is deliberately absent from the TypeScript
+  // executor and the MCP server. Auditing it as "missing from the surface"
+  // reports a gap that does not exist — the gap is the point.
+  const gatewayHidden = new Set(
+    NATIVE_TOOL_CONTRACTS.filter((contract) => contract.gatewayHidden).map((c) => c.name),
+  );
+
   const surfaces = [...snapshots.entries()].map(([surface, snapshot]) => {
     const surfaceSet = new Set(snapshot.names);
     return {
@@ -101,7 +110,9 @@ export function buildToolSurfaceAuditReport(
       path: snapshot.path,
       names: snapshot.names,
       missingFromRegistry: snapshot.names.filter((name) => !registrySet.has(name)),
-      missingFromSurface: registry.names.filter((name) => !surfaceSet.has(name)),
+      missingFromSurface: registry.names.filter(
+        (name) => !surfaceSet.has(name) && !gatewayHidden.has(name),
+      ),
     };
   });
 
