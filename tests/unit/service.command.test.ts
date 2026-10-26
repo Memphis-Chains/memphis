@@ -68,11 +68,10 @@ describe('service command', () => {
     const originalRuntimeRoot = process.env.MEMPHIS_RUNTIME_ROOT;
     process.chdir(root);
     process.env.MEMPHIS_RUNTIME_ROOT = root;
-    let output = '';
-    vi.spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => {
-      output += String(chunk);
-      return true;
-    }) as typeof process.stdout.write);
+    // `print()` writes through `console.log` — that is the contract the CLI
+    // output has. Vitest's own console interception means a
+    // `process.stdout.write` spy does NOT see it, so assert on `console.log`.
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
     try {
       const handled = await handleServiceCommand(makeContext('service', 'status'), {
@@ -95,7 +94,7 @@ describe('service command', () => {
       });
 
       expect(handled).toBe(true);
-      const payload = JSON.parse(output);
+      const payload = JSON.parse(log.mock.calls[0]?.[0] as string);
       expect(payload.active).toBe(true);
       expect(payload.runtimeRoot).toBe(root);
     } finally {

@@ -16,8 +16,8 @@
  *      the one that matters most.
  */
 
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -74,17 +74,43 @@ describe('chain-write-guard', () => {
 
   it('fires on the real appendBlock path — the layer that caught the incident', async () => {
     // Reproduces the incident shape: a rawEnv that switches the chain
-    // backend but forgets MEMPHIS_DATA_DIR, so the resolved path lands
-    // on the operator's live ~/.memphis chain.
-    const liveDir = join(process.env.HOME ?? '/home/memphis', '.memphis', 'chains', 'journal');
+    // backend but points the data dir OUTSIDE the temp directory. The
+    // guard must refuse before any file is written.
+    const outside = mkdtempSync(join(process.cwd(), '.memphis-guard-target-'));
+    try {
+      await expect(
+        appendBlock(
+          'journal',
+          { type: 'journal', content: 'must-not-reach-the-live-chain' },
+          {
+            VITEST: 'true',
+            RUST_CHAIN_ENABLED: 'false',
+            MEMPHIS_DATA_DIR: outside,
+          },
+        ),
+      ).rejects.toThrow(/chain-write-guard/);
+      // The guard must refuse BEFORE any file is written.
+      expect(existsSync(join(outside, 'chains', 'journal'))).toBe(false);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('cannot reach the operator\'s live chain even without MEMPHIS_DATA_DIR', async () => {
+    // The original incident shape: a rawEnv with no MEMPHIS_DATA_DIR, so
+    // the path falls back to `~`. The isolated test runtime points HOME
+    // at a temporary directory, so that fallback now lands inside the
+    // sandbox instead of the operator's live chain — the incident cannot
+    // repeat even if the guard were removed.
+    const home = homedir();
     await expect(
       appendBlock(
         'journal',
         { type: 'journal', content: 'must-not-reach-the-live-chain' },
         { VITEST: 'true', RUST_CHAIN_ENABLED: 'false' },
       ),
-    ).rejects.toThrow(/chain-write-guard/);
-    // The guard must refuse BEFORE any file is written.
-    expect(liveDir).toContain('journal');
+    ).resolves.toMatchObject({ chain: 'journal' });
+    expect(home).not.toBe('/home/memphis');
+    expect(isUnderTempDir(home)).toBe(true);
   });
 });
