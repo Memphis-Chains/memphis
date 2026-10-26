@@ -168,7 +168,11 @@ const trajectoryExport = probe('hf-export', 'Export trajectories in HF dataset f
 if (trajectoryExport) {
   const loaded = spawnSync(
     'python3',
-    ['-c', 'import sys; from datasets import load_dataset; load_dataset(sys.argv[1])', dataset],
+    [
+      '-c',
+      'import sys; from datasets import load_dataset; d = load_dataset(sys.argv[1]); assert len(d["train"]) > 0; assert "events_json" in d["train"].column_names',
+      dataset,
+    ],
     {
       cwd: work,
       env,
@@ -181,6 +185,10 @@ if (trajectoryExport) {
     description: 'Hugging Face datasets loads the exported dataset',
     ok: loaded.status === 0,
     exitCode: loaded.status,
+    diagnostic:
+      loaded.status === 0
+        ? undefined
+        : (loaded.stderr || loaded.error?.message || 'Loader failed').slice(-4000),
   });
 } else {
   checks.push({
