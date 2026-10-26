@@ -1,4 +1,12 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 
@@ -12,7 +20,13 @@ import { envSchema } from '../../src/infra/config/schema.js';
 import type { ChatToolDefinition } from '../../src/providers/index.js';
 import { createProvider } from '../../src/providers/index.js';
 import { OpenAICodexProvider } from '../../src/providers/openai-codex/adapter.js';
-import { resolveCodexModel, runCodexChat } from '../../src/providers/openai-codex/client.js';
+import {
+  listAccountModelSlugs,
+  readAccountContextWindow,
+  readAccountModelCatalog,
+  resolveCodexModel,
+  runCodexChat,
+} from '../../src/providers/openai-codex/client.js';
 import { createConfiguredRuntimeProviders } from '../../src/providers/runtime-registry.js';
 
 type CapturedMessage = {
@@ -106,6 +120,69 @@ afterEach(() => {
     }
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+describe('the Codex account model catalog', () => {
+  function writeCatalog(root: string, models: unknown[]): NodeJS.ProcessEnv {
+    const codexHome = join(root, 'codex-home');
+    mkdirSync(codexHome, { recursive: true });
+    writeFileSync(join(codexHome, 'models_cache.json'), JSON.stringify({ models }), {
+      mode: 0o600,
+    });
+    return { HOME: root, CODEX_HOME: codexHome };
+  }
+
+  it('names the models the account may run and the window it granted them', () => {
+    const root = mkdtempSync(join(tmpdir(), 'memphis-codex-catalog-'));
+    roots.push(root);
+    const rawEnv = writeCatalog(root, [
+      {
+        slug: 'gpt-6.1-sol',
+        display_name: 'GPT-6.1-Sol',
+        visibility: 'list',
+        context_window: 500000,
+        effective_context_window_percent: 95,
+      },
+      {
+        slug: 'gpt-6-astra',
+        display_name: 'GPT-6-Astra',
+        visibility: 'list',
+        context_window: 272000,
+        effective_context_window_percent: 95,
+      },
+      {
+        slug: 'gpt-reserve',
+        display_name: 'GPT-Reserve',
+        visibility: 'hide',
+        context_window: 272000,
+        effective_context_window_percent: 95,
+      },
+    ]);
+
+    const models = readAccountModelCatalog(rawEnv);
+    expect(models?.map((model) => model.slug)).toEqual([
+      'gpt-6.1-sol',
+      'gpt-6-astra',
+      'gpt-reserve',
+    ]);
+    // 500000 granted pool * 95% share = 475000 usable tokens.
+    expect(readAccountContextWindow(rawEnv, 'gpt-6.1-sol')).toBe(475000);
+    expect(readAccountContextWindow(rawEnv, 'gpt-6-astra')).toBe(258400);
+    expect(readAccountContextWindow(rawEnv, 'gpt-reserve')).toBe(258400);
+    expect(readAccountContextWindow(rawEnv, 'unknown-model')).toBeUndefined();
+
+    // A model the CLI hides from its own picker is not offered.
+    expect(listAccountModelSlugs(rawEnv)).toEqual(['gpt-6.1-sol', 'gpt-6-astra']);
+  });
+
+  it('leaves the window unknown when the catalog does not exist', () => {
+    const root = mkdtempSync(join(tmpdir(), 'memphis-codex-nocatalog-'));
+    roots.push(root);
+    const rawEnv = { HOME: root, CODEX_HOME: join(root, 'codex-home') };
+    expect(readAccountModelCatalog(rawEnv)).toBeUndefined();
+    expect(readAccountContextWindow(rawEnv, 'gpt-6.1-sol')).toBeUndefined();
+    expect(listAccountModelSlugs(rawEnv)).toEqual([]);
+  });
 });
 
 describe('OpenAI through Codex app-server', () => {
@@ -210,6 +287,41 @@ describe('OpenAI through Codex app-server', () => {
     });
     expect(requests.find((message) => message.method === 'turn/start')?.params).toMatchObject({
       model: 'gpt-5.6-sol',
+      effort: 'max',
+    });
+    await expectStopped(fixture.root);
+  });
+
+  it('maps the GPT-6.1 Sol Max preset to the official model and max effort', async () => {
+    const fixture = createFixture();
+    expect(resolveCodexModel('gpt-6.1-sol-max')).toEqual({
+      model: 'gpt-6.1-sol',
+      effort: 'max',
+    });
+    expect(resolveCodexModel('gpt-6.1-sol')).toEqual({ model: 'gpt-6.1-sol' });
+
+    const response = await runCodexChat(
+      {
+        messages: [{ role: 'user', content: 'fixture question' }],
+        model: 'gpt-6.1-sol-max',
+        timeoutMs: 3000,
+      },
+      { rawEnv: fixture.rawEnv },
+    );
+
+    expect(response).toMatchObject({
+      provider: 'openai',
+      model: 'gpt-6.1-sol',
+      content: 'fixture answer',
+    });
+    const requests = fixture.requests();
+    expect(requests.find((message) => message.method === 'thread/start')?.params).toMatchObject({
+      model: 'gpt-6.1-sol',
+      modelProvider: 'openai',
+      allowProviderModelFallback: false,
+    });
+    expect(requests.find((message) => message.method === 'turn/start')?.params).toMatchObject({
+      model: 'gpt-6.1-sol',
       effort: 'max',
     });
     await expectStopped(fixture.root);

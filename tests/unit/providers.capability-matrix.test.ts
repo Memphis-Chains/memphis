@@ -1,8 +1,33 @@
-import { describe, expect, test } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterEach, describe, expect, test } from 'vitest';
 
 import { CapabilityMatrix } from '../../src/providers/capability-matrix.js';
 import { DynamicRouter } from '../../src/providers/dynamic-router.js';
 import { resolveModelCapabilitySnapshot } from '../../src/providers/model-capabilities.js';
+
+const catalogRoots: string[] = [];
+
+afterEach(() => {
+  for (const root of catalogRoots.splice(0)) {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * An account catalog written to disk, as the Codex CLI maintains it.
+ */
+function accountCatalog(models: unknown[]): NodeJS.ProcessEnv {
+  const root = mkdtempSync(join(tmpdir(), 'memphis-capability-catalog-'));
+  catalogRoots.push(root);
+  mkdirSync(join(root, 'codex-home'), { recursive: true });
+  writeFileSync(join(root, 'codex-home', 'models_cache.json'), JSON.stringify({ models }), {
+    mode: 0o600,
+  });
+  return { HOME: root, CODEX_HOME: join(root, 'codex-home') };
+}
 
 describe('resolveModelCapabilitySnapshot', () => {
   test('reports MiniMax-M3 as a 1M-context multimodal model', () => {
@@ -68,6 +93,52 @@ describe('resolveModelCapabilitySnapshot', () => {
       contextWindowTokens: 16384,
       supportsVision: false,
     });
+  });
+});
+
+describe('resolveModelCapabilitySnapshot for the OpenAI Codex family', () => {
+  // The catalog is the only source that knows about models released after
+  // Memphis was built, and the grant it records is what the server enforces.
+  test('narrows the declared window to the grant the account received', () => {
+    const rawEnv = accountCatalog([
+      {
+        slug: 'gpt-6.1-sol',
+        display_name: 'GPT-6.1-Sol',
+        visibility: 'list',
+        context_window: 500000,
+        effective_context_window_percent: 95,
+      },
+      {
+        slug: 'gpt-6-astra',
+        display_name: 'GPT-6-Astra',
+        visibility: 'list',
+        context_window: 272000,
+        effective_context_window_percent: 95,
+      },
+    ]);
+    // 500000 * 95% = 475000, which is below the documented 1050000 ceiling.
+    expect(resolveModelCapabilitySnapshot('openai', 'gpt-6.1-sol', rawEnv)).toMatchObject({
+      contextWindowTokens: 475000,
+      supportsStreaming: true,
+      source: 'heuristic',
+    });
+    expect(resolveModelCapabilitySnapshot('openai', 'gpt-6.1-sol-max', rawEnv)).toMatchObject({
+      contextWindowTokens: 475000,
+    });
+    expect(resolveModelCapabilitySnapshot('openai', 'gpt-6-astra', rawEnv)).toMatchObject({
+      contextWindowTokens: 258400,
+    });
+  });
+
+  test('falls back to the documented ceiling when no catalog exists', () => {
+    const rawEnv = { HOME: '/nonexistent-memphis-home' };
+    expect(resolveModelCapabilitySnapshot('openai', 'gpt-6.1-sol', rawEnv)).toMatchObject({
+      contextWindowTokens: 1050000,
+    });
+    // A model Memphis has never heard of gets no window at all.
+    expect(
+      resolveModelCapabilitySnapshot('openai', 'some-unreleased-model', rawEnv),
+    ).toBeUndefined();
   });
 });
 
