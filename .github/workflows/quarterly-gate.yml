@@ -48,7 +48,7 @@ jobs:
           cache: npm
 
       - name: Install npm deps
-        run: npm ci --ignore-scripts
+        run: npm ci
 
       - name: Install jq
         run: sudo apt-get update -qq && sudo apt-get install -y jq
@@ -131,11 +131,39 @@ jobs:
           echo "target=$target" >> "$GITHUB_OUTPUT"
           echo "source=schedule" >> "$GITHUB_OUTPUT"
 
+      - name: Setup Rust for Q2
+        if: steps.quarter.outputs.target == 'q2'
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+          fi
+          if [ -f "$HOME/.cargo/env" ]; then
+            source "$HOME/.cargo/env"
+          fi
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+
+      - name: Build Q2 acceptance runtime
+        if: steps.quarter.outputs.target == 'q2'
+        run: npm run build
+
+      - name: Setup Python for Q2 dataset acceptance
+        if: steps.quarter.outputs.target == 'q2'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Q2 dataset loader
+        if: steps.quarter.outputs.target == 'q2'
+        run: python3 -m pip install datasets==5.1.0
+
       - name: Run exit test for target quarter
+        id: exit-test
         if: steps.quarter.outputs.target != ''
         env:
           # In CI the operator corpus doesn't exist; allow the corpus check to pass.
           QUARTERLY_GATE_ALLOW_MISSING_CORPUS: '1'
+          QUARTERLY_GATE_REPORT: ${{ runner.temp }}/quarterly-q2-report.json
         shell: bash
         run: |
           set -euo pipefail
@@ -144,11 +172,19 @@ jobs:
           if [ ! -f "$script" ]; then
             echo "::error::Exit test script not found: $script"
             echo "The quarter target was '$target' but no matching script ships yet."
-            echo "Q1 script is in tree; Q2-Q4 land in their respective quarters."
+            echo "The selected quarter needs its own acceptance script."
             exit 1
           fi
           echo "Running: $script"
           bash "$script"
+
+      - name: Upload Q2 acceptance report
+        if: always() && steps.quarter.outputs.target == 'q2'
+        uses: actions/upload-artifact@v4
+        with:
+          name: quarterly-q2-report
+          path: ${{ runner.temp }}/quarterly-q2-report.json
+          if-no-files-found: warn
 
       - name: Summary
         if: always()
@@ -159,5 +195,5 @@ jobs:
           if [ "$source" = "skip" ]; then
             echo "No quarter-gate run scheduled for today."
           elif [ -n "$target" ]; then
-            echo "Quarter gate for $target completed (source=$source)."
+            echo "Quarter gate for $target: ${{ steps.exit-test.outcome }} (source=$source)."
           fi
