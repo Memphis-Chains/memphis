@@ -23,13 +23,13 @@ import {
   type SoulMemoryUpdate,
 } from './types.js';
 import { MEMPHIS_AGENT_NAME } from '../config/env-registry.js';
-import { getConfigPath } from '../config/paths.js';
+import { getDataDir } from '../config/paths.js';
 import { appendBlock } from '../infra/storage/chain-adapter.js';
 import { healSensitiveFilePerms, writeSensitiveFile } from '../infra/storage/secure-file.js';
 import { storeVaultSecret } from '../security/vault-boundary.js';
 
-export function getSoulMemoryPath(_rawEnv: NodeJS.ProcessEnv = process.env): string {
-  return getConfigPath('soul-memory.json');
+export function getSoulMemoryPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
+  return path.join(getDataDir(rawEnv), 'config', 'soul-memory.json');
 }
 
 export function emptySoulMemory(): SoulMemory {
@@ -387,8 +387,8 @@ function dedupeAppend(existing: string[], additions: string[]): string[] {
 
 const MEMORY_ROTATION_THRESHOLD = parseInt(process.env.MEMORY_ROTATION_THRESHOLD ?? '50', 10);
 
-export function getMemoryPath(_rawEnv: NodeJS.ProcessEnv = process.env): string {
-  return getConfigPath('memory.md');
+export function getMemoryPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
+  return path.join(getDataDir(rawEnv), 'config', 'memory.md');
 }
 
 export function loadMemoryEntries(rawEnv: NodeJS.ProcessEnv = process.env): MemoryActionEntry[] {
@@ -421,7 +421,7 @@ export function loadMemoryEntries(rawEnv: NodeJS.ProcessEnv = process.env): Memo
   }
 }
 
-export function writeMemoryAction(
+function writeLocalMemoryAction(
   actionType: MemoryActionType,
   summary: string,
   rawEnv: NodeJS.ProcessEnv = process.env,
@@ -443,25 +443,50 @@ export function writeMemoryAction(
   const content = `${line}\n`;
   appendFileSync(memoryPath, content, 'utf8');
 
-  // Write to soul chain. `type` must be a valid Rust BlockType variant
-  // (system_event/insight/etc); the original semantic name is preserved
-  // in `kind` for downstream consumers + soul-history tooling.
-  void appendBlock('soul', {
-    type: 'system_event',
-    kind: 'memory.action',
-    source: 'soul',
-    schemaVersion: 1,
-    payload: { id, actionType, summary },
-  }).catch(() => {
-    // journal write is best-effort
-  });
-
   // Check threshold and rotate if needed
   const entries = loadMemoryEntries(rawEnv);
   if (entries.length >= MEMORY_ROTATION_THRESHOLD) {
     rotateMemoryFile(rawEnv);
   }
 
+  return entry;
+}
+
+function persistMemoryAction(entry: MemoryActionEntry, rawEnv: NodeJS.ProcessEnv) {
+  return appendBlock(
+    'soul',
+    {
+      type: 'system_event',
+      kind: 'memory.action',
+      source: 'soul',
+      schemaVersion: 1,
+      payload: { id: entry.id, actionType: entry.actionType, summary: entry.summary },
+    },
+    rawEnv,
+  );
+}
+
+/** Compatibility API for callers that do not await best-effort persistence. */
+export function writeMemoryAction(
+  actionType: MemoryActionType,
+  summary: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): MemoryActionEntry {
+  const environment = { ...rawEnv };
+  const entry = writeLocalMemoryAction(actionType, summary, environment);
+  void persistMemoryAction(entry, environment).catch(() => undefined);
+  return entry;
+}
+
+/** Resolve only after the chain writer finishes; keep paths anchored to this call. */
+export async function writeMemoryActionPersisted(
+  actionType: MemoryActionType,
+  summary: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): Promise<MemoryActionEntry> {
+  const environment = { ...rawEnv };
+  const entry = writeLocalMemoryAction(actionType, summary, environment);
+  await persistMemoryAction(entry, environment);
   return entry;
 }
 
@@ -537,7 +562,7 @@ export function rotateMemoryFile(rawEnv: NodeJS.ProcessEnv = process.env): void 
   try {
     storeVaultSecret(archiveKey, content, { surface: 'system', command: 'memory-rotate' }, rawEnv);
   } catch {
-    const archivePath = getConfigPath(`memory-archive-${Date.now()}.md`);
+    const archivePath = path.join(getDataDir(rawEnv), 'config', `memory-archive-${Date.now()}.md`);
     writeFileSync(archivePath, content, 'utf8');
     console.warn('Vault unavailable for memory archive — falling back to plaintext.');
   }

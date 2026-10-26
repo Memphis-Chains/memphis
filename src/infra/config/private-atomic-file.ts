@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { closeSync, fsyncSync, openSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  fsyncSync,
+  linkSync,
+  openSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname } from 'node:path';
 
 import { safeIoErrorCode } from '../storage/io-error-code.js';
@@ -23,7 +31,11 @@ function reportCleanupFailure(operation: 'close' | 'unlink', error: unknown): vo
  * temporary, so the failure is reported rather than thrown, and the original
  * cause survives.
  */
-export function writePrivateAtomicFile(path: string, content: string): void {
+export function writePrivateAtomicFile(
+  path: string,
+  content: string,
+  options: { exclusive?: boolean } = {},
+): void {
   const temporary = `${path}.tmp-${randomUUID()}`;
   let fd: number | undefined;
   try {
@@ -32,7 +44,8 @@ export function writePrivateAtomicFile(path: string, content: string): void {
     fsyncSync(fd);
     closeSync(fd);
     fd = undefined;
-    renameSync(temporary, path);
+    if (options.exclusive) linkSync(temporary, path);
+    else renameSync(temporary, path);
     const directory = openSync(dirname(path), 'r');
     try {
       fsyncSync(directory);
