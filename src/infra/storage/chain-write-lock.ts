@@ -6,7 +6,10 @@ import Database from 'better-sqlite3';
 
 /** Shared with native chain_write_lock.rs. SQLite releases locks on process
  * death; no wall-clock lease can steal a slow writer's allocation sequence. */
-export async function withChainWriteLock<T>(chainDirectory: string, write: () => Promise<T>): Promise<T> {
+export async function withChainWriteLock<T>(
+  chainDirectory: string,
+  write: () => Promise<T>,
+): Promise<T> {
   mkdirSync(chainDirectory, { recursive: true });
   const canonical = realpathSync(chainDirectory);
   const parent = dirname(canonical);
@@ -19,20 +22,32 @@ export async function withChainWriteLock<T>(chainDirectory: string, write: () =>
   try {
     chmodSync(path, 0o600);
     const deadline = Date.now() + 10_000;
-    while (!acquired) {
-      try { db.exec('BEGIN IMMEDIATE'); acquired = true; }
-      catch (error) {
-        if ((error as { code?: string }).code !== 'SQLITE_BUSY' || Date.now() >= deadline) throw new Error('Chain writer lock unavailable');
-        await new Promise((done) => setTimeout(done, 10));
+    async function executeWhenAvailable(sql: string): Promise<void> {
+      while (true) {
+        try {
+          db.exec(sql);
+          return;
+        } catch (error) {
+          if ((error as { code?: string }).code !== 'SQLITE_BUSY' || Date.now() >= deadline)
+            throw new Error('Chain writer lock unavailable');
+          await new Promise((done) => setTimeout(done, 10));
+        }
       }
     }
+    await executeWhenAvailable('BEGIN IMMEDIATE');
+    acquired = true;
     db.pragma('user_version = 1');
     const result = await write();
-    db.exec('COMMIT');
+    // SQLite can still have transient readers when upgrading to the exclusive
+    // commit lock. Retry that transition without rerunning the write callback.
+    await executeWhenAvailable('COMMIT');
     acquired = false;
     return result;
   } finally {
-    try { if (acquired) db.exec('ROLLBACK'); }
-    finally { db.close(); }
+    try {
+      if (acquired) db.exec('ROLLBACK');
+    } finally {
+      db.close();
+    }
   }
 }

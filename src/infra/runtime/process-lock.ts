@@ -90,8 +90,15 @@ interface ProcessIdentity {
   startTime: number;
 }
 
-/** Read the kernel boot ID. Empty string when unavailable (non-Linux). */
+/** Read the kernel boot identity on Linux and macOS. */
 function readBootId(): string {
+  if (process.platform === 'darwin') {
+    const result = spawnSync('/usr/sbin/sysctl', ['-n', 'kern.bootsessionuuid'], {
+      encoding: 'utf8',
+      timeout: 1000,
+    });
+    return result.status === 0 ? result.stdout.trim() : '';
+  }
   try {
     return readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
   } catch {
@@ -107,6 +114,17 @@ function readBootId(): string {
  * LAST ')' in the line rather than by splitting the whole line.
  */
 function readProcessStartTime(pid: number): number | undefined {
+  if (process.platform === 'darwin') {
+    // BSD ps exposes an absolute start time, stable across repeated probes.
+    // Force the locale so Date.parse does not depend on the operator's language.
+    const result = spawnSync('/bin/ps', ['-p', String(pid), '-o', 'lstart='], {
+      encoding: 'utf8',
+      timeout: 1000,
+      env: { ...process.env, LC_ALL: 'C' },
+    });
+    const value = result.status === 0 ? Date.parse(result.stdout.trim()) : NaN;
+    return Number.isFinite(value) ? value : undefined;
+  }
   try {
     const raw = readFileSync(`/proc/${pid}/stat`, 'utf8');
     const close = raw.lastIndexOf(')');

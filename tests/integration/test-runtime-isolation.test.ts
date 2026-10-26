@@ -1,5 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -11,6 +18,37 @@ const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
 
 describe('test runtime isolation', () => {
+  it('anchors every fixture path to a canonical temporary root', () => {
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), 'memphis-tmp-alias-')));
+    roots.push(parent);
+    const alias = join(parent, 'alias');
+    symlinkSync(parent, alias, 'dir');
+    const child = spawnSync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        '--input-type=module',
+        '-e',
+        `
+      import { createIsolatedTestRuntime } from './tests/helpers/isolated-runtime.ts';
+      console.log(JSON.stringify(createIsolatedTestRuntime(process.env, process.cwd())));
+    `,
+      ],
+      {
+        env: { ...process.env, TMPDIR: alias, TMP: alias, TEMP: alias },
+        encoding: 'utf8',
+        timeout: 10000,
+      },
+    );
+    expect(child.status, child.stderr).toBe(0);
+    const fixture = JSON.parse(child.stdout);
+    expect(fixture.root).toBe(realpathSync(fixture.root));
+    expect(fixture.env.HOME).toBe(fixture.root);
+    expect(fixture.env.MEMPHIS_ENV_FILE).toBe(join(fixture.root, '.env'));
+    expect(fixture.env.MEMPHIS_DATA_DIR).toBe(join(fixture.root, 'data'));
+  });
+
   it('keeps config and vault mutations away from inherited operator paths', () => {
     const operator = mkdtempSync(join(tmpdir(), 'memphis-operator-sentinel-'));
     roots.push(operator);

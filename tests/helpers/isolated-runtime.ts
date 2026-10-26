@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -33,7 +33,7 @@ export function applyEnvInPlace(target: NodeJS.ProcessEnv, source: NodeJS.Proces
 
 /** Give each test file its own config and persistent state before app imports. */
 export function createIsolatedTestRuntime(parent: NodeJS.ProcessEnv, repoRoot: string) {
-  const root = mkdtempSync(join(tmpdir(), 'memphis-vitest-'));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'memphis-vitest-')));
   const data = join(root, 'data');
   mkdirSync(data, { mode: 0o700 });
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: '@memphis-chains/memphis' }));
