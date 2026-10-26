@@ -94,6 +94,14 @@ export function createIsolatedTestRuntime(parent: NodeJS.ProcessEnv, repoRoot: s
   delete env.OPENAI_AUTH_MODE;
   Object.assign(env, {
     NODE_ENV: 'test',
+    // Keep installed Rust toolchains discoverable when HOME moves into the
+    // fixture. CI rustup shims otherwise search the empty isolated home.
+    ...(parent.HOME
+      ? {
+          CARGO_HOME: parent.CARGO_HOME ?? join(parent.HOME, '.cargo'),
+          RUSTUP_HOME: parent.RUSTUP_HOME ?? join(parent.HOME, '.rustup'),
+        }
+      : {}),
     // HOME follows the isolated root, so `os.homedir()` — which reads the
     // process environment, not the `process.env` object — resolves inside
     // the sandbox instead of the operator's real home directory.

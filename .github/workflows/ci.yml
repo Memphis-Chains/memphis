@@ -24,7 +24,9 @@ jobs:
           if ! command -v rustup >/dev/null 2>&1; then
             curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
           fi
-          source "$HOME/.cargo/env"
+          if [ -f "$HOME/.cargo/env" ]; then
+            source "$HOME/.cargo/env"
+          fi
           rustup toolchain install stable --profile minimal --no-self-update
           rustup default stable
 
@@ -191,7 +193,9 @@ jobs:
           if ! command -v rustup >/dev/null 2>&1; then
             curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
           fi
-          source "$HOME/.cargo/env"
+          if [ -f "$HOME/.cargo/env" ]; then
+            source "$HOME/.cargo/env"
+          fi
           rustup toolchain install stable --profile minimal --no-self-update
           rustup default stable
 

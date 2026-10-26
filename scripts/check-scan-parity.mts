@@ -5,7 +5,7 @@
  * ---------------
  * The memory-profile scanner exists twice: `MEMORY_PATTERNS` in
  * src/security/content-scan.ts and `scan_memory_content` in
- * crates/memphis-operator/src/chat.rs. Measured 2026-10-07, the native copy
+ * crates/memphis-operator/src/chat_guards.rs. Measured 2026-10-07, the native copy
  * guarded 4 of 11 — so exfiltration-shaped content and SSH-persistence
  * content was refused by MCP/gateway and accepted by the TUI, which is the
  * surface that actually writes.
@@ -22,7 +22,7 @@
  * would report differences that are not behavioural. Behavioural parity is
  * pinned separately, on real inputs, by
  * `native_scanner_blocks_every_pattern_the_typescript_profile_blocks` in
- * crates/memphis-operator/src/chat.rs.
+ * crates/memphis-operator/src/chat_guards.rs.
  *
  * Run: `npm run -s ops:check-scan-parity`
  */
@@ -31,7 +31,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const TS_FILE = resolve('src/security/content-scan.ts');
-const RUST_FILE = resolve('crates/memphis-operator/src/chat.rs');
+const RUST_FILE = resolve('crates/memphis-operator/src/chat_guards.rs');
 
 function tsMemoryPatternIds(src: string): string[] {
   const block = src.match(/const MEMORY_PATTERNS: ThreatPattern\[\] = \[([\s\S]*?)\n\];/);
