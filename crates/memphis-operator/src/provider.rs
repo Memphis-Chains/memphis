@@ -12,8 +12,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::{
-    openai_codex::CodexBridge, runtime::try_read_vault_secret_plaintext, OperatorConfig,
-    OperatorError,
+    openai_codex::{
+        resolve_codex_model_slug, CodexBridge, CODEX_FAMILY_CONTEXT_WINDOW, CODEX_FAMILY_MODELS,
+    },
+    runtime::try_read_vault_secret_plaintext,
+    OperatorConfig, OperatorError,
 };
 
 /// Sanitize a string for JSON serialization.
@@ -278,8 +281,9 @@ impl ProviderRuntime {
         }
     }
 
-    /// Context window the model declares. `None` means the provider does not
-    /// publish one; the caller then relies on the account limit alone.
+    /// Context window the model may use, narrowed by the account grant when
+    /// the account is stricter than the model. `None` means neither the
+    /// provider nor the account publishes one.
     pub(crate) fn declared_context_window_tokens(&self, model: &str) -> Option<u64> {
         self.model_capability(model)
             .context_window_tokens
@@ -1320,12 +1324,27 @@ impl ProviderRuntime {
 
     fn list_models(&self) -> Vec<String> {
         match self.kind {
-            ProviderKind::OpenAiCodex => vec![
-                "astra-gtp6-max".into(),
-                "gpt-6-astra".into(),
-                "gpt-5.6-sol-max".into(),
-                "gpt-5.6-sol".into(),
-            ],
+            ProviderKind::OpenAiCodex => {
+                // Presets plus the models this account may actually run: the
+                // catalog the Codex CLI maintains is the only source that
+                // knows about models released after Memphis was built.
+                let mut models = vec![
+                    "astra-gtp6-max".to_string(),
+                    "gpt-6-astra".to_string(),
+                    "gpt-5.6-sol-max".to_string(),
+                    "gpt-5.6-sol".to_string(),
+                    "gpt-6.1-sol-max".to_string(),
+                    "gpt-6.1-sol".to_string(),
+                ];
+                if let Some(codex) = self.codex.as_ref() {
+                    for slug in codex.account_model_slugs() {
+                        if !models.contains(&slug) {
+                            models.push(slug);
+                        }
+                    }
+                }
+                models
+            }
             ProviderKind::LocalFallback => vec!["local-fallback-v0".to_string()],
             ProviderKind::SharedLlm => vec![self.default_model.clone()],
             ProviderKind::DecentralizedLlm => vec![self.default_model.clone()],
@@ -1379,23 +1398,29 @@ impl ProviderRuntime {
     fn model_capability(&self, model: &str) -> ModelCapabilitySummary {
         let normalized = model.to_ascii_lowercase();
         let (context_window_tokens, supports_vision) = match self.kind {
-            ProviderKind::OpenAiCodex => (
-                if matches!(
-                    normalized.as_str(),
-                    "gpt-6-astra"
-                        | "astra-gtp6-max"
-                        | "astra-gpt6-max"
-                        | "gpt-6-astra-max"
-                        | "gpt-5.6-sol"
-                        | "gpt-5.6-sol-max"
-                        | "gpt-5.6-sol max"
-                ) {
-                    Some(1_050_000)
+            ProviderKind::OpenAiCodex => {
+                // The account catalog is authoritative: it names the models
+                // this workspace may run and the window each one was granted.
+                // The documented API ceiling only bounds that grant from
+                // above, because the grant is what the server enforces.
+                let slug = resolve_codex_model_slug(&normalized);
+                let account = self
+                    .codex
+                    .as_ref()
+                    .and_then(|codex| codex.account_context_window(slug));
+                let declared = if CODEX_FAMILY_MODELS.contains(&slug) {
+                    Some(CODEX_FAMILY_CONTEXT_WINDOW)
                 } else {
                     None
-                },
-                false,
-            ),
+                };
+                let window = match (declared, account) {
+                    (Some(declared), Some(account)) => Some(declared.min(account)),
+                    (Some(declared), None) => Some(declared),
+                    (None, Some(account)) => Some(account),
+                    (None, None) => None,
+                };
+                (window.map(|tokens| tokens as u32), false)
+            }
             ProviderKind::LocalFallback => (Some(2048), false),
             ProviderKind::Ollama => (
                 Some(8192),
@@ -3368,6 +3393,90 @@ mod tests {
             Some(1_050_000)
         );
         assert!(!format!("{provider:?}").contains("synthetic-unused-api-key"));
+    }
+
+    /// The native surface must offer the models the account can actually run
+    /// and report the window the account granted, not the API ceiling. A
+    /// model released after Memphis was built only exists in the catalog the
+    /// Codex CLI maintains.
+    #[test]
+    fn openai_codex_status_lists_account_models_with_their_windows() {
+        let root = std::env::temp_dir().join(format!(
+            "memphis-provider-codex-models-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("models_cache.json"),
+            r#"{"models":[
+                {"slug":"gpt-6.1-sol","display_name":"GPT-6.1-Sol","visibility":"list","context_window":500000,"effective_context_window_percent":95},
+                {"slug":"gpt-6-astra","display_name":"GPT-6-Astra","visibility":"list","context_window":272000,"effective_context_window_percent":95},
+                {"slug":"gpt-reserve","display_name":"GPT-Reserve","visibility":"hide","context_window":272000,"effective_context_window_percent":95}
+            ]}"#,
+        )
+        .unwrap();
+        let config = OperatorConfig::from_iter([
+            ("MEMPHIS_RUNTIME_ROOT", root.to_string_lossy().into_owned()),
+            ("CODEX_HOME", root.to_string_lossy().into_owned()),
+            ("HOME", root.to_string_lossy().into_owned()),
+            ("OPENAI_AUTH_MODE", "codex".to_string()),
+            ("DEFAULT_PROVIDER", "openai".to_string()),
+        ]);
+        let provider = resolve_provider(&config, Some("openai")).unwrap();
+
+        let models = provider.list_models();
+        assert!(models.contains(&"gpt-6.1-sol".to_string()));
+        assert!(models.contains(&"gpt-6.1-sol-max".to_string()));
+        // A model the CLI hides from its own picker is not offered.
+        assert!(!models.contains(&"gpt-reserve".to_string()));
+
+        // The account grant (500000 * 95%) is the real ceiling, and it is
+        // narrower than the documented API limit.
+        assert_eq!(
+            provider
+                .model_capability("gpt-6.1-sol")
+                .context_window_tokens,
+            Some(475_000)
+        );
+        assert_eq!(
+            provider
+                .model_capability("gpt-6.1-sol-max")
+                .context_window_tokens,
+            Some(475_000)
+        );
+        assert_eq!(
+            provider
+                .model_capability("gpt-6-astra")
+                .context_window_tokens,
+            Some(258_400)
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// Without a catalog the documented API ceiling is all Memphis knows, and
+    /// a model it has never heard of gets no window at all.
+    #[test]
+    fn openai_codex_status_without_a_catalog_uses_the_documented_ceiling() {
+        let config = config_from(&[
+            ("DEFAULT_PROVIDER", "openai"),
+            ("OPENAI_AUTH_MODE", "codex"),
+            ("CODEX_HOME", "/nonexistent-memphis-codex-home"),
+        ]);
+        let provider = resolve_provider(&config, Some("openai")).unwrap();
+        assert_eq!(
+            provider
+                .model_capability("gpt-6.1-sol")
+                .context_window_tokens,
+            Some(1_050_000)
+        );
+        assert_eq!(
+            provider.model_capability("unknown-model").context_window_tokens,
+            None
+        );
     }
 
     #[test]
