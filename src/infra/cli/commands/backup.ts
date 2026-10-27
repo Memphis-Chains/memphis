@@ -363,8 +363,16 @@ type ArchiveListOptions = {
   tarList?: (archivePath: string) => string[];
 };
 
+// A real 21k-file operator archive exceeds Node's default 1 MiB buffer
+// on verbose listing. Keep both listing paths bounded, but large enough
+// for ordinary runtime backups; oversized listings still fail closed.
+const MAX_TAR_LIST_BYTES = 64 * 1024 * 1024;
+
 function tarListArchiveContents(archivePath: string): string[] {
-  const out = execFileSync('tar', ['-tzf', archivePath], { encoding: 'utf8' });
+  const out = execFileSync('tar', ['-tzf', archivePath], {
+    encoding: 'utf8',
+    maxBuffer: MAX_TAR_LIST_BYTES,
+  });
   return out
     .split('\n')
     .map((v) => v.trim())
@@ -1268,7 +1276,10 @@ export async function drillBackup(backupPath: string): Promise<BackupDrillResult
   if (!fallback) {
     // Refuse links and special files before extraction, including links whose
     // target could escape the scratch directory. GNU tar lists type first.
-    const listing = execFileSync('tar', ['-tvzf', backupPath], { encoding: 'utf8' });
+    const listing = execFileSync('tar', ['-tvzf', backupPath], {
+      encoding: 'utf8',
+      maxBuffer: MAX_TAR_LIST_BYTES,
+    });
     if (listing.split('\n').some((line) => line && !['-', 'd'].includes(line[0]))) {
       throw new Error('Backup drill refuses links and special files');
     }
