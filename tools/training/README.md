@@ -248,3 +248,59 @@ now defaults to the dynamo exporter; relying on that default changed the
 producer's dependencies and artifact behavior. Parity rejects non-finite
 outputs, zero embeddings, shape mismatches and any individual divergent row.
 Full training continues to abort on export failure, preserving trained state.
+
+## Audited v1 corpus candidates
+
+Use a clean Git checkout and a fresh private output directory. The builder
+reads tracked allowlisted source files, rejects symlinks/protected paths and
+secret-pattern matches, records the source commit and builder/contract hashes,
+then deduplicates content before a seeded stratified split. Conflicting labels
+for identical content are excluded; private aliases never gain a public license.
+The default split seed is 42. Populated zones with at least six unique samples
+retain at least two evaluation items for non-self retrieval pairs.
+
+For a repository-only baseline, explicitly disable operator data inputs:
+
+```bash
+python3 tools/training/kartograf-corpus.py \
+  --repo-root /path/to/clean/memphis --chains-dir '' --data-root '' \
+  --out-dir /private/new-corpus --split-seed 42 --no-teacher
+python3 tools/training/kartograf-pair-miner.py \
+  --corpus /private/new-corpus --repo-root /path/to/clean/memphis --source train
+python3 tools/training/kartograf-pair-miner.py \
+  --corpus /private/new-corpus --repo-root /path/to/clean/memphis --source eval
+python3 tools/training/audit-kartograf-corpus.py --corpus /private/new-corpus \
+  --require-pairs --require-eval --report /private/new-corpus-audit.json
+```
+
+Existing corpus/pair/report outputs are preserved: rerun into a fresh candidate.
+Pair mining excludes ambiguous labels and emits the requested uniform number
+of cross-zone hard negatives. Each pair stays inside its own split. The audit
+rehashes/re-scans actual content, checks license provenance, duplicate/overlap
+constraints and pairs, and retains a hash manifest. Summary booleans alone do
+not establish validity. The training loader applies the same boundary before
+loading a tokenizer/model. Legacy augmented/merged corpora must satisfy these
+checks; inherited `clean` flags do not exempt newly added content.
+
+The builder, pair miner and trainer use the frozen runtime v1 ordering, including
+both reserved slots. The newer `messages` and `autonom_archive` chains are not
+v1 classifier labels and are excluded rather than assigned to reserved indices.
+A new schema with `vault` still requires separately versioned, trained and
+evaluated artifacts; this corpus work does not change Q2 classification gates.
+
+The initial repository baseline built on 2026-10-27 from commit
+`e095e10630c1990f407b72e8bd38a63b56d00e6f` contains 1,560 unique samples
+(1,249 train / 311 eval). The scanner excluded 110 files with pattern matches;
+this includes conservative matches in credential fixtures and source examples,
+not evidence of 110 live credentials. The output has zero detected secret-pattern
+hits and zero exact-content train/eval overlap. It includes no operator chains
+or configuration. Labels are path heuristics, not reviewed semantic annotations.
+Of the samples, 1,526 are `system`, 30 `reflections`, and 4 `decisions`.
+This imbalance and absent zones require curation before a release-quality run.
+Exact-content deduplication does not establish independence from near duplicates.
+
+The real loader accepted 1,038 training anchors and 249 evaluation pairs.
+A two-step FP16 GPU smoke run on this corpus with a tiny random ModernBERT
+passed; malformed labels were rejected before either model/tokenizer loader
+was called. This exercises data plumbing only. Smoke output remains an explicit
+placeholder and is not a deployable or evaluated release checkpoint.
