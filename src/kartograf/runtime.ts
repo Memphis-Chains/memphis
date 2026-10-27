@@ -13,12 +13,9 @@
  * also explicitly closes() at exit. For daemon-side tool calls, code
  * should reach for `getKartografRuntime()`.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
 
-import { verifyCheckpoint, type CheckpointEnvelope } from './checkpoint.js';
+import { selectedBundle } from './installed.js';
 import { createKartografSession, type KartografSession } from './session.js';
-import { getDataDir } from '../config/paths.js';
 
 export type KartografRuntimeStatus =
   | { kind: 'disabled'; reason: string }
@@ -28,56 +25,6 @@ export type KartografRuntimeStatus =
 
 let cached: KartografRuntimeStatus | null = null;
 let loading: Promise<KartografRuntimeStatus> | null = null;
-
-/**
- * Resolve the first verifiable installed checkpoint envelope. Returns
- * null if no install dir, no slug subdirs, or every envelope fails
- * verify — caller decides how to surface that to the operator.
- */
-function findFirstVerifiedEnvelope(rawEnv: NodeJS.ProcessEnv): {
-  envelopePath: string;
-  envelope: CheckpointEnvelope;
-} | null {
-  const stageRoot = join(getDataDir(rawEnv), 'kartograf', 'checkpoints');
-  if (!existsSync(stageRoot)) return null;
-  let slugs: string[];
-  try {
-    slugs = readdirSync(stageRoot).filter((entry) => {
-      try {
-        return statSync(join(stageRoot, entry)).isDirectory();
-      } catch {
-        return false;
-      }
-    });
-  } catch {
-    return null;
-  }
-  for (const slug of slugs) {
-    const envelopePath = join(stageRoot, slug, 'checkpoint.json');
-    if (!existsSync(envelopePath)) continue;
-    try {
-      const envelope = JSON.parse(readFileSync(envelopePath, 'utf8')) as CheckpointEnvelope;
-      const verify = verifyCheckpoint(envelope);
-      if (!verify.valid) continue;
-      // Codex review (#573, 2026-05-12): `memphis kartograf install`
-      // can leave a staging dir with a signed envelope but no
-      // model.onnx / tokenizer.json (sha mismatch warning during
-      // install — envelope copied, artifacts skipped). Without this
-      // check the runtime would happily return the envelope, cache it,
-      // and crash on the first embed() call when OnnxKartografSession
-      // tries to read the missing artifact. Skip incomplete checkpoints
-      // here so we fall through to the next slug or report
-      // no-checkpoint cleanly.
-      const slugDir = join(stageRoot, slug);
-      if (!existsSync(join(slugDir, 'model.onnx'))) continue;
-      if (!existsSync(join(slugDir, 'tokenizer.json'))) continue;
-      return { envelopePath, envelope };
-    } catch {
-      // Try next slug
-    }
-  }
-  return null;
-}
 
 /**
  * Get (or lazily create) the singleton Kartograf runtime. Returns a
@@ -100,7 +47,17 @@ export async function getKartografRuntime(
       cached = status;
       return status;
     }
-    const found = findFirstVerifiedEnvelope(rawEnv);
+    let found;
+    try {
+      found = await selectedBundle(rawEnv);
+    } catch {
+      const status: KartografRuntimeStatus = {
+        kind: 'no-checkpoint',
+        reason: 'Active checkpoint selection failed integrity validation',
+      };
+      cached = status;
+      return status;
+    }
     if (!found) {
       const status: KartografRuntimeStatus = {
         kind: 'no-checkpoint',

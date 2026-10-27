@@ -1,40 +1,61 @@
 # Kartograf readiness inventory — 2026-10-26
 
-The inspected operator host has no installed Kartograf checkpoint directory at
-its configured runtime root. No usable ONNX, safetensors or GGUF weights were
-found in the runtime, repository model directory or Hugging Face cache searched.
+No Kartograf checkpoint, training corpus or dedicated training venv is installed
+on the inspected host. The historical May run notes name
+`~/.memphis/kartograf/corpus/v4`, `~/.venvs/memphis-train` and an installed
+checkpoint; those paths no longer exist. No production training was started,
+existing weights were not moved, and no stand-in model was installed.
+
+## Existing implementation and artifacts
+
+The repository contains a real Python training/evaluation/ONNX export pipeline
+in `tools/training/`, plus TypeScript signed-envelope, ONNX session and runtime
+code. The absence of a Rust `memphis-kartograf` crate does not mean that the
+training implementation is missing. Some historical docstrings described only
+placeholders and were stale. Smoke/stub modes intentionally remain fixtures;
+full-mode export failure now aborts instead of signing a placeholder.
+
+No usable Kartograf ONNX/safetensors/GGUF weights were found in the runtime,
+repository model directory, Hugging Face cache or inspected runtime archives.
 Two Hugging Face `.no_exist/.../model.safetensors` entries are negative-cache
-markers, not model weights. The repository's `models/` directory is absent.
-No training job was started and no substitute weights were generated.
+markers. A broader filename inventory found Basal Llama generative weights
+(one safetensors model, two GGUFs), Piper voice ONNX files and Python inference
+fixtures. They are different models and are not installed Kartograf checkpoints.
 
-A broader filename-only host inventory also found Basal generative-model weights
-under `~/.local/share/basal/models/` (one safetensors model and two GGUF files),
-Piper Polish voice ONNX files and Python-package inference fixtures. These are
-not installed or signed Kartograf checkpoints; their presence does not satisfy
-Kartograf inference/training acceptance. No existing weights were moved or read
-into model memory by this audit.
+The [v1.7.0 release](https://github.com/Memphis-Chains/memphis/releases/tag/v1.7.0)
+contains only `memphis-chains-memphis-1.7.0.tgz` (701,392 bytes), not a model
+bundle. Release asset metadata across the repository's available releases showed
+no Kartograf/checkpoint/ONNX/safetensors assets. A public Hugging Face model
+search for `kartograf` returned no model IDs on this date; private or differently
+named artifacts are not ruled out. Local recent backups are about 69 MB each;
+this inventory has not restored a model from them.
 
-`nvidia-smi --query-gpu=name,memory.total --format=csv,noheader` reports an
-NVIDIA GeForce GTX 960 with 4096 MiB. This inventory does not establish training
-capacity or compatibility for a particular architecture; that needs a bounded
-probe after selecting the actual checkpoint, tokenizer and training recipe.
+## Runtime and readiness gaps
 
-The code currently exposes signed local-file checkpoint verification/install,
-status, and query. The install handler requires a checkpoint file; a remote
-`github-release` fetch for the historical v1.7.0 acceptance command is not
-implemented. Status reports installed checkpoints rather than the roadmap's
-`active_checkpoint` field. Query needs a verified checkpoint and opt-in ONNX
-runtime, and explicitly rejects its stub session. There is no
-`crates/memphis-kartograf` training implementation in the inspected checkout.
+The new installer publishes complete hash-verified immutable bundles and requires
+explicit trusted-signer activation with an actual inference probe. Status,
+queries and the daemon resolve the same selection. Tokenizer hashes are checked
+at load as well as install. See [selection runbook](../runbooks/KARTOGRAF-CHECKPOINT-SELECTION.md).
+Remote GitHub/HF transports and embedding-cascade integration remain unimplemented.
 
-The real quarterly probe therefore continues to fail checkpoint install, active
-checkpoint, semantic vault query and tier-0 cascade acceptance. Passing the
-snapshot tests does not change those model-readiness results.
+The Q2 gate demands `topZone == "vault"`, but the frozen v1 labels are journal,
+decisions, reflections, cases, patterns, system, collective, proactive, insights,
+soul and two reserved slots. There is no vault label. Relabeling a reserved slot
+on old weights would misrepresent model output. Closing that criterion requires
+an agreed new signed model/zone schema and corresponding trained/evaluated
+artifact, or an explicitly revised roadmap criterion; it cannot be fixed by
+changing a JSON response. The current gate remains failed for model criteria.
 
-The next concrete deliverable requires the intended real checkpoint artifact
-and its provenance (model, tokenizer, signed envelope, weight checksum, license,
-training/evaluation recipe). Once available, verify it using the existing file
-installer and run bounded ONNX inference plus the vault-zone/cascade checks.
-Remote distribution and active-selection semantics can then be implemented
-against that reviewed artifact. Inventory results alone do not justify training
-or reporting Q2 model readiness.
+The host reports GTX 960, 4096 MiB VRAM. May notes describe a torch 2.3.1 /
+transformers 4.43.4 DeBERTa stack, while the current requirements request torch
+2.5+ / transformers 4.48+ and the harness checks ModernBERT support. The old venv
+is absent. Hardware/library compatibility and the exact pinned model recipe must
+be re-established before an actual training run. Existing legacy signing-file
+instructions are not authorization to read standalone secrets; producer signing
+must follow this host's vault policy before any release run.
+
+The next artifact decision needs a real model/tokenizer bundle, producer DID,
+pinned source revision and license, evaluation recipe, zone mapping and embedding
+index/cascade contract. Independent external security review remains a separate
+unmet requirement. Tooling tests and structural activation are not proof of model
+quality or Q2 completion.

@@ -59,6 +59,7 @@ export type CliArgs = {
     | 'build-only'
     | 'custom';
   force: boolean;
+  forceActive?: boolean;
   /**
    * Opt-in override for `vault init`'s refuse-on-nonempty guard
    * (2026-05-13 — root-cause fix for the pepper desync that bit on

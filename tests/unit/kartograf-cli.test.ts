@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { kartografCommandHandler } from '../../src/infra/cli/handlers/kartograf.handler.js';
 import {
@@ -46,6 +46,14 @@ function mkCtx(args: Record<string, unknown>): {
     getConfig: () => ({}),
   };
 }
+
+const previousExitCode = process.exitCode;
+beforeEach(() => {
+  process.exitCode = 0;
+});
+afterEach(() => {
+  process.exitCode = previousExitCode;
+});
 
 describe('memphis kartograf CLI (N40.2)', () => {
   it('verify succeeds on a freshly signed envelope', async () => {
@@ -106,7 +114,7 @@ describe('memphis kartograf CLI (N40.2)', () => {
     expect(out.reason).toMatch(/signature/);
   });
 
-  it('install removes stale artifacts before staging new ones (P1 safety)', async () => {
+  it('a refused update preserves the previous immutable bundle', async () => {
     const dir = tempDir();
     const dataDir = tempDir('karto-data-');
     process.env.MEMPHIS_DATA_DIR = dataDir;
@@ -123,7 +131,12 @@ describe('memphis kartograf CLI (N40.2)', () => {
     writeFileSync(join(dir, 'checkpoint.json'), JSON.stringify(env1));
     const log1 = vi.spyOn(console, 'log').mockImplementation(() => {});
     await kartografCommandHandler.handle(
-      mkCtx({ subcommand: 'install', file: join(dir, 'checkpoint.json'), source: 'file', json: true }) as any,
+      mkCtx({
+        subcommand: 'install',
+        file: join(dir, 'checkpoint.json'),
+        source: 'file',
+        json: true,
+      }) as any,
     );
     const out1 = JSON.parse(log1.mock.calls[0][0] as string);
     log1.mockRestore();
@@ -143,19 +156,21 @@ describe('memphis kartograf CLI (N40.2)', () => {
     writeFileSync(join(dir, 'checkpoint.json'), JSON.stringify(env2));
     const log2 = vi.spyOn(console, 'log').mockImplementation(() => {});
     await kartografCommandHandler.handle(
-      mkCtx({ subcommand: 'install', file: join(dir, 'checkpoint.json'), source: 'file', json: true }) as any,
+      mkCtx({
+        subcommand: 'install',
+        file: join(dir, 'checkpoint.json'),
+        source: 'file',
+        json: true,
+      }) as any,
     );
     const out2 = JSON.parse(log2.mock.calls[0][0] as string);
     log2.mockRestore();
     delete process.env.MEMPHIS_DATA_DIR;
 
-    expect(out2.ok).toBe(true);
-    // Stale first-round onnx cleared — not coexisting with env2.
-    expect(() => readFileSync(join(out1.stageDir, 'model.onnx'))).toThrow();
-    // Tokenizer still matches so it's restaged in round 2.
-    expect(readFileSync(join(out2.stageDir, 'tokenizer.json')).toString()).toBe(
-      tok1.toString(),
-    );
+    expect(out2.ok).toBe(false);
+    expect(out2.reason).toContain('sha256 mismatch');
+    expect(readFileSync(join(out1.stageDir, 'model.onnx')).toString()).toBe(onnx1.toString());
+    expect(readFileSync(join(out1.stageDir, 'checkpoint.json'), 'utf8')).toContain(env1.signature);
   });
 
   it('install rejects unimplemented network sources with actionable message', async () => {
@@ -295,7 +310,7 @@ describe('memphis kartograf CLI (N40.2)', () => {
     expect(stagedEnvelope.signer_did).toBe(envelope.signer_did);
   });
 
-  it('install warns (non-fatal) when artifact sha256 mismatches envelope', async () => {
+  it('install refuses mismatched artifact bytes', async () => {
     const dir = tempDir();
     const seed = randomBytes(32);
     // Write a truthful onnx but a TAMPERED tokenizer
@@ -322,20 +337,15 @@ describe('memphis kartograf CLI (N40.2)', () => {
     spy.mockRestore();
     delete process.env.MEMPHIS_DATA_DIR;
 
-    expect(out.ok).toBe(true);
-    // Envelope is still valid (signature + declared sha256s match by canonical form);
-    // tokenizer warning surfaces because the on-disk bytes don't match.
-    const joined = (out.artifactWarnings as string[]).join(' | ');
-    expect(joined).toMatch(/tokenizer\.json.*sha256 mismatch/);
+    expect(out.ok).toBe(false);
+    expect(out.reason).toMatch(/tokenizer\.json.*sha256 mismatch/);
   });
 
   it('status reports zero installed when staging dir is empty (Sprint K)', async () => {
     const dir = tempDir();
     process.env.MEMPHIS_DATA_DIR = dir;
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await kartografCommandHandler.handle(
-      mkCtx({ subcommand: 'status', json: true }) as any,
-    );
+    await kartografCommandHandler.handle(mkCtx({ subcommand: 'status', json: true }) as any);
     const out = JSON.parse(spy.mock.calls[0][0] as string);
     spy.mockRestore();
     delete process.env.MEMPHIS_DATA_DIR;
@@ -351,7 +361,14 @@ describe('memphis kartograf CLI (N40.2)', () => {
     process.env.MEMPHIS_DATA_DIR = dir;
     // First install a checkpoint so status has something to find
     const seed = randomBytes(32);
-    const envelope = signCheckpoint(unsigned(), seed);
+    const model = Buffer.from('synthetic status fixture');
+    const tokenizer = Buffer.from('{"synthetic":true}');
+    writeFileSync(join(dir, 'model.onnx'), model);
+    writeFileSync(join(dir, 'tokenizer.json'), tokenizer);
+    const envelope = signCheckpoint(
+      unsigned({ onnx_sha256: sha256Hex(model), tokenizer_sha256: sha256Hex(tokenizer) }),
+      seed,
+    );
     const envelopePath = join(dir, 'checkpoint.json');
     writeFileSync(envelopePath, JSON.stringify(envelope));
     const installSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -361,9 +378,7 @@ describe('memphis kartograf CLI (N40.2)', () => {
     installSpy.mockRestore();
 
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await kartografCommandHandler.handle(
-      mkCtx({ subcommand: 'status', json: true }) as any,
-    );
+    await kartografCommandHandler.handle(mkCtx({ subcommand: 'status', json: true }) as any);
     const out = JSON.parse(spy.mock.calls[0][0] as string);
     spy.mockRestore();
     delete process.env.MEMPHIS_DATA_DIR;
@@ -383,9 +398,7 @@ describe('memphis kartograf CLI (N40.2)', () => {
     const dir = tempDir();
     process.env.MEMPHIS_DATA_DIR = dir;
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await kartografCommandHandler.handle(
-      mkCtx({ subcommand: 'query', json: true }) as any,
-    );
+    await kartografCommandHandler.handle(mkCtx({ subcommand: 'query', json: true }) as any);
     const out = JSON.parse(spy.mock.calls[0][0] as string);
     spy.mockRestore();
     delete process.env.MEMPHIS_DATA_DIR;

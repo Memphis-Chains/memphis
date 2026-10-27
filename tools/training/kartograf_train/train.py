@@ -14,9 +14,8 @@ Smoke mode:
 
 Full mode (Phase 6 operator run):
   - 3 epochs over the full anchor set
-  - Real ONNX export + eval (Phase 4/6 wiring lands in a follow-up;
-    today full mode still emits placeholder ONNX so the envelope
-    verifies, with a WARN log that the model bytes are not shippable).
+  - Real ONNX export + eval. Failed exports preserve the trained state
+    and abort; a placeholder must never become a full-mode release.
 
 GTX 960 4GB / i3 CPU profile per docs/dev/KARTOGRAF-SPEC.md §Training
 paths. 4-bit base loading is attempted first; if bitsandbytes rejects
@@ -59,13 +58,6 @@ from .data import (
 from .eval import EvalResults, empty_eval_results, format_eval_line, run_eval
 from .loss import KartografLoss
 from .model import MODEL_ID, build_model
-
-
-# Placeholder ONNX — identical marker to N37.2 stub so smoke-mode
-# artifacts stay shape-compatible with the existing envelope schema.
-# Real ONNX export lands in Phase 4 (torch.onnx.export opset 17 +
-# onnxruntime.quantization INT8 variant).
-_PLACEHOLDER_ONNX = b"KARTOGRAF_STUB_ONNX_v1\nsee docs/dev/KARTOGRAF-SPEC.md"
 
 
 @dataclass
@@ -441,31 +433,18 @@ def run(config: TrainConfig) -> TrainResult:
         torch.save(state_to_save, state_path)
         print(f"[train] saved trainable state_dict to {state_path}")
 
-    # 6) ONNX export — real in full mode, placeholder in smoke.
-    if config.mode == "smoke":
-        onnx_bytes = _PLACEHOLDER_ONNX
-    else:
+    # 6) Full-mode export errors are fatal: retain trained state, never sign
+    # a successful-looking placeholder bundle after a failed export.
+    from .artifact_policy import export_training_artifact
+    def export_real_onnx() -> bytes:
         from .onnx_export import export_model_to_onnx
-        try:
-            onnx_bytes = export_model_to_onnx(
-                model=model,
-                tokenizer=tokenizer,
-                device=device,
-                max_length=config.max_length,
-            )
-        except Exception as exc:
-            # Export bugs shouldn't block shipping a trained checkpoint.
-            # Fall back to placeholder so envelope stays valid; operator
-            # can run the standalone export tool offline.
-            saved_state = config.out_dir / "best_state.pt"
-            print(
-                f"[train] WARN: ONNX export failed ({type(exc).__name__}: {exc}); "
-                f"emitting placeholder. Best state_dict was saved to "
-                f"{saved_state}; retry export offline by reloading "
-                f"build_model() + state_dict and calling "
-                f"kartograf_train.onnx_export.export_model_to_onnx() directly.",
-            )
-            onnx_bytes = _PLACEHOLDER_ONNX
+        return export_model_to_onnx(
+            model=model, tokenizer=tokenizer, device=device,
+            max_length=config.max_length,
+        )
+    onnx_bytes = export_training_artifact(
+        config.mode, export_real_onnx, config.out_dir / "best_state.pt",
+    )
     onnx_sha = hashlib.sha256(onnx_bytes).hexdigest()
 
     # 7) Eval — in smoke mode skip; in full mode report best-epoch eval
