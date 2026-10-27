@@ -13,7 +13,7 @@ INVARIANTS (binding per docs/dev/KARTOGRAF-SPEC.md + DEPENDENCY-POLICY.md):
   1. Vault NEVER enters corpus.
      Denylist is hard: ~/.memphis/vault/**, .env*, **/secrets/**,
      **/.memphis-backup*/**. Any attempt to read a denylisted path is a
-     fatal error — we do not silently skip.
+     rejected before reading bytes and counted in the audit.
   2. Secret patterns reject the sample, not the build.
      Every sample passes through a regex set mirroring scripts/secret-scan.sh
      (AKIA, AIza, ghp_, sk-ant-, xox[baprs]-, JWT, PEM private keys, api_key="...").
@@ -53,32 +53,17 @@ import time
 from pathlib import Path
 from typing import Iterable, Iterator
 
+from kartograf_train.corpus_contract import ZONE_LABELS, scan_secrets
+
 # ---------------------------------------------------------------------
 # Zone taxonomy — MUST stay aligned with src/memory/chain-catalog.ts.
 # First 10 zones are live chains (assertion below enforces this).
 # ---------------------------------------------------------------------
-# Zone taxonomy. First N entries map 1:1 to live chains in
-# src/memory/chain-catalog.ts; trailing reserved_* are headroom slots
-# the zone-classifier head can be fine-tuned into when a new chain is
-# added without a full retrain. 2026-05-06: 'messages' (MP v0
-# federation envelope log) was added to the catalog post-freeze; took
-# one reserved slot so we now have 11 live + 1 reserved (still 12
-# total). Next chain addition fills the last reserved slot.
-ZONES = [
-    "journal",
-    "decisions",
-    "reflections",
-    "cases",
-    "patterns",
-    "system",
-    "collective",
-    "proactive",
-    "insights",
-    "soul",
-    "messages",
-    "reserved_1",
-]
-LIVE_CHAINS = ZONES[:11]
+# Runtime chain additions do not rename the frozen classifier's output slots.
+ZONES = list(ZONE_LABELS)
+LIVE_CHAINS = ZONES[:10]
+CATALOG_CHAINS = [*LIVE_CHAINS, "messages", "autonom_archive"]
+
 
 
 # ---------------------------------------------------------------------
@@ -106,6 +91,14 @@ CONFIG_ALLOWLIST_FILES = [
 # normalized path (home expanded) for both repo AND memphis-data scans.
 DENYLIST_GLOBS = [
     "**/.memphis/vault/**",
+    "**/.memphis/vault*",
+    "**/.memphis/backups/**",
+    "**/.ssh/**",
+    "**/.github-pat",
+    "**/vault-entries.json",
+    "**/vault-state.json",
+    "**/signing-seed*",
+    "**/master-key*",
     "**/.memphis/vault",
     # .env family — `.env`, `.env.local`, `.env.production`, `.envrc`,
     # `my-service.env`, etc. `**/.env*` covers both the bare `.env` AND
@@ -122,33 +115,7 @@ DENYLIST_GLOBS = [
 # Secret-pattern regexes. Keep aligned with scripts/secret-scan.sh.
 # Every pattern that matches any sample content → sample rejected.
 # ---------------------------------------------------------------------
-SECRET_PATTERNS = [
-    ("aws-access-key", re.compile(rb"AKIA[0-9A-Z]{16}")),
-    ("gcp-api-key", re.compile(rb"AIza[0-9A-Za-z\-_]{35}")),
-    ("github-pat", re.compile(rb"ghp_[0-9A-Za-z]{36}")),
-    ("anthropic-key", re.compile(rb"sk-ant-[A-Za-z0-9\-_]{20,}")),
-    # Issue #274 (2026-04-30): OpenAI scopes the `sk-` prefix without
-    # `ant-`; we need to catch proj/test/live/None forms or fresh OpenAI
-    # keys land in the corpus and ship in embedding space.
-    ("openai-key", re.compile(rb"sk-(admin|proj|test|live|None)-[A-Za-z0-9\-_]{20,}")),
-    # Stripe secret + restricted keys (test + live), and webhook signing
-    # secrets. All three appear in operator notes / runbooks if they
-    # ever build a billing integration.
-    ("stripe-secret-key", re.compile(rb"(sk|rk)_(test|live)_[A-Za-z0-9]{24,}")),
-    ("stripe-webhook-secret", re.compile(rb"whsec_[A-Za-z0-9]{32,}")),
-    ("slack-token", re.compile(rb"xox[baprs]-[0-9A-Za-z\-]{10,}")),
-    ("jwt", re.compile(rb"eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+")),
-    ("pem-private-key", re.compile(rb"-----BEGIN (RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----")),
-    # Require an opening quote to avoid false positives on `api_key: fn_call(...)`
-    # matches scripts/secret-scan.sh:PATTERN exactly (post-v1.5.0 hotfix)
-    ("api-key-assignment", re.compile(rb"api[_-]?key\s*[:=]\s*[\"'][A-Za-z0-9_\-]{16,}")),
-    ("password-assignment", re.compile(rb"password\s*[:=]\s*[\"'][^\"']{8,}")),
-    # Mistral keys are opaque 32-char base64 strings without a dedicated
-    # prefix, so they ride `api-key-assignment` rather than getting a
-    # standalone regex (a prefix-less pattern would false-positive on
-    # UUIDs / hashes). Add a Mistral entry here if Mistral ships scoped
-    # keys with a recognizable prefix.
-]
+
 
 
 # ---------------------------------------------------------------------
@@ -234,6 +201,8 @@ def _resolved_denylist_check(
        `outside-approved-roots`, preserving the "corpus only reads its
        own tree" invariant the operator is explicitly trusting.
     """
+    if path.is_symlink():
+        return "denylist-symlink"
     try:
         resolved = path.resolve(strict=True)
     except (OSError, RuntimeError) as exc:
@@ -256,11 +225,7 @@ def _resolved_denylist_check(
 
 
 def _scan_secrets(data: bytes) -> list[str]:
-    hits: list[str] = []
-    for name, pat in SECRET_PATTERNS:
-        if pat.search(data):
-            hits.append(name)
-    return hits
+    return scan_secrets(data)
 
 
 def _sha256_hex(data: bytes) -> str:
@@ -273,8 +238,13 @@ def _sha256_hex(data: bytes) -> str:
 
 
 def _expand_repo_allowlist(repo_root: Path) -> Iterator[Path]:
-    for pat in REPO_ALLOWLIST_GLOBS:
-        yield from repo_root.glob(pat)
+    result = subprocess.run(
+        ["git", "-C", str(repo_root), "ls-files", "-z", "--",
+         *[":(glob)" + pattern for pattern in REPO_ALLOWLIST_GLOBS]],
+        capture_output=True, check=True,
+    )
+    for raw in sorted(set(result.stdout.split(b"\0")) - {b""}):
+        yield repo_root / os.fsdecode(raw)
 
 
 def _expand_config_allowlist(data_root: Path) -> Iterator[Path]:
@@ -348,7 +318,7 @@ def _git_mutability(repo_root: Path, rel_path: str, now_epoch: float) -> float:
 
 def _read_text(path: Path) -> tuple[bytes, str]:
     data = path.read_bytes()
-    return data, data.decode("utf-8", errors="replace")
+    return data, data.decode("utf-8")
 
 
 def _build_repo_sample(
@@ -361,8 +331,13 @@ def _build_repo_sample(
     reason = _resolved_denylist_check(path, approved_roots)
     if reason is not None:
         return None, SecretHit(rel, reason)
-    data, text = _read_text(path)
-    hits = _scan_secrets(data)
+    try:
+        data, text = _read_text(path)
+    except (OSError, UnicodeError):
+        return None, SecretHit(rel, "unreadable-utf8")
+    if not text.strip():
+        return None, None
+    hits = _scan_secrets(data) + _scan_secrets(rel.encode("utf-8"))
     if hits:
         return None, SecretHit(rel, hits[0])
     zone, ambiguous = _heuristic_zone(rel)
@@ -413,11 +388,9 @@ def _build_chain_sample(
     # patterns bypass). Also re-scan raw as defense-in-depth — catches
     # cases where the secret lives in other block fields, not just
     # data.content.
-    # Use `errors='surrogatepass'` so unpaired surrogates from JSON
-    # string literals don't crash strict UTF-8 encoding (they bypass
-    # regex but don't abort the scan; raw-byte fallback still matches).
+    # Reject malformed Unicode instead of publishing an unencodable sample.
     try:
-        content_bytes = content.encode("utf-8", errors="surrogatepass")
+        content_bytes = content.encode("utf-8")
     except UnicodeEncodeError as exc:
         return None, SecretHit(
             f"chain:{chain_name}/{block_path.name}", f"encode-error:{exc}"
@@ -446,7 +419,7 @@ def _build_chain_sample(
 
 
 def _assert_zone_catalog_alignment(repo_root: Path) -> None:
-    """Verify LIVE_CHAINS matches src/memory/chain-catalog.ts keys."""
+    """Check the frozen model labels separately from the current chain catalog."""
     catalog_path = repo_root / "src" / "memory" / "chain-catalog.ts"
     if not catalog_path.exists():
         # Hard-fail rather than warn: silently skipping the alignment
@@ -462,17 +435,24 @@ def _assert_zone_catalog_alignment(repo_root: Path) -> None:
     # Very lightweight: pull top-level keys inside CHAIN_CATALOG = {...}.
     pattern = re.compile(r"^\s{2}([a-z_]+):\s*\{", re.MULTILINE)
     found = [m.group(1) for m in pattern.finditer(text)]
-    if set(found) != set(LIVE_CHAINS):
+    labels_path = repo_root / "src" / "kartograf" / "zone-labels.ts"
+    labels_text = labels_path.read_text(encoding="utf-8")
+    body = labels_text.split("= [", 1)[1].split("] as const", 1)[0]
+    runtime_labels = re.findall(r"'([a-z_0-9]+)'", body)
+    if runtime_labels != ZONES:
+        raise SystemExit("Frozen v1 zone labels disagree between corpus and runtime")
+    if set(found) != set(CATALOG_CHAINS):
         raise SystemExit(
             "zone catalog drift: "
             f"src/memory/chain-catalog.ts keys={sorted(found)} "
-            f"vs LIVE_CHAINS={sorted(LIVE_CHAINS)}. "
+            f"vs expected catalog={sorted(CATALOG_CHAINS)}. "
             "Update kartograf-corpus.py LIVE_CHAINS + KARTOGRAF-SPEC.md before rebuilding."
         )
 
 
 _DENYLIST_REJECTION_REASONS = {
     "denylist-path",
+    "denylist-symlink",
     "denylist-vault-symlink",
     "outside-approved-roots",
 }
@@ -506,6 +486,13 @@ def build_corpus(args: argparse.Namespace) -> int:
     data_root = Path(args.data_root).expanduser().resolve() if args.data_root else None
     out_dir = Path(args.out_dir).expanduser().resolve()
 
+    if out_dir.exists() and not args.dry_run:
+        raise SystemExit("Corpus output already exists; use a fresh directory")
+    source_commit = subprocess.check_output(
+        ["git", "-C", str(repo_root), "rev-parse", "HEAD"], text=True,
+    ).strip()
+    if subprocess.check_output(["git", "-C", str(repo_root), "status", "--porcelain"]):
+        raise SystemExit("Corpus source checkout must be clean")
     _assert_zone_catalog_alignment(repo_root)
 
     # Approved roots for realpath containment (Codex #251 r3 P1).
@@ -574,41 +561,36 @@ def build_corpus(args: argparse.Namespace) -> int:
     else:
         teacher_calls_queued = 0
 
-    # 80/20 stratified-by-zone split
-    train: list[Sample] = []
-    eval_: list[Sample] = []
-    by_zone: dict[str, list[Sample]] = {}
-    for s in samples:
-        by_zone.setdefault(s.zone, []).append(s)
-    for zone_samples in by_zone.values():
-        zone_samples.sort(key=lambda s: s.source_path)
-        split = max(1, int(len(zone_samples) * 0.8)) if len(zone_samples) > 5 else len(zone_samples)
-        train.extend(zone_samples[:split])
-        eval_.extend(zone_samples[split:])
+    # Content-level deduplication precedes splitting, including chain aliases.
+    # Conflicting zone labels are excluded rather than guessed.
+    input_samples = samples
+    samples, duplicates, conflicts = _deduplicate_samples(input_samples)
+    train, eval_ = _split_samples(samples, args.split_seed)
+    by_zone = {}
+    for sample in samples:
+        by_zone.setdefault(sample.zone, []).append(sample)
 
     per_zone_counts = {z: len(by_zone.get(z, [])) for z in ZONES}
 
-    # Post-filter re-scan: prove that every sample that actually made it
-    # into the output corpus is free of secret-pattern hits. The input
-    # may have matched patterns (that's WHY we reject), but the output
-    # must be clean — this is the invariant the Q1 exit test asserts.
-    # `errors='surrogatepass'` so unpaired surrogates (valid in JSON but
-    # invalid in strict UTF-8) don't crash the re-scan. Such samples
-    # still go through secret-pattern checking — we just skip the
-    # UnicodeEncodeError failure mode.
-    output_hits = 0
-    for s in samples:
-        try:
-            encoded = s.content.encode("utf-8", errors="surrogatepass")
-        except UnicodeEncodeError:
-            continue
-        if _scan_secrets(encoded):
-            output_hits += 1
+    # Validate encoded output again; malformed Unicode cannot become an artifact.
+    output_hits = sum(bool(_scan_secrets(sample.content.encode("utf-8"))) for sample in samples)
 
     summary = {
         "corpus_version": "v1",
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_epoch)),
         "source_count": len(samples),
+        "input_sample_count": len(input_samples),
+        "deduplication": {"same_zone_duplicates_removed": duplicates,
+                          "conflicting_label_samples_removed": conflicts},
+        "split_policy": {"algorithm": "content-sha256-stratified-v1", "seed": args.split_seed,
+                         "train_eval_content_overlap": 0},
+        "zone_schema": "kartograf-v1",
+        "source_provenance": {"git_commit": source_commit, "tracked_only": True,
+                              "runtime_chains_included": chains_dir is not None,
+                              "operator_config_included": data_root is not None,
+                              "excluded_chain_labels": ["messages", "autonom_archive"],
+                              "builder_sha256": _sha256_hex(Path(__file__).read_bytes()),
+                              "contract_sha256": _sha256_hex((Path(__file__).parent / "kartograf_train/corpus_contract.py").read_bytes())},
         "rejected_count": len(rejected),
         "secret_scan": {
             # `clean` = output corpus contains zero secret-pattern hits.
@@ -637,22 +619,67 @@ def build_corpus(args: argparse.Namespace) -> int:
         print(json.dumps(summary, indent=2))
         return 0
 
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # Refuse a concurrent source mutation before publishing the candidate.
+    if subprocess.check_output(["git", "-C", str(repo_root), "status", "--porcelain"]):
+        raise SystemExit("Corpus source changed during collection")
+    if subprocess.check_output(["git", "-C", str(repo_root), "rev-parse", "HEAD"], text=True).strip() != source_commit:
+        raise SystemExit("Corpus source commit changed during collection")
+    if not summary["secret_scan"]["clean"]:
+        raise SystemExit("Output secret scan failed; no corpus published")
+    out_dir.mkdir(mode=0o700, parents=True, exist_ok=False)
     _write_jsonl(out_dir / "train.jsonl", train)
     _write_jsonl(out_dir / "eval.jsonl", eval_)
     (out_dir / "zone-labels.json").write_text(json.dumps(ZONES, indent=2), encoding="utf-8")
+    canonical_paths = {sample.source_path for sample in samples}
+    accepted_hashes = {sample.sha256 for sample in samples}
     license_audit = {
-        s.source_path: {"license": s.license, "sha256": s.sha256}
-        for s in samples
+        sample.source_path: {"license": sample.license, "sha256": sample.sha256,
+                             "zone": sample.zone,
+                             "disposition": "included" if sample.source_path in canonical_paths else
+                             "duplicate" if sample.sha256 in accepted_hashes else "conflicting-label"}
+        for sample in input_samples
     }
     (out_dir / "license-audit.json").write_text(json.dumps(license_audit, indent=2), encoding="utf-8")
     (out_dir / "corpus-v1-summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+    for artifact in out_dir.iterdir():
+        artifact.chmod(0o600)
 
     print(f"[ok] wrote {len(train)} train + {len(eval_)} eval samples to {out_dir}")
     print(f"[ok] rejected {len(rejected)} samples (denylist + secret scan)")
     print(f"[ok] secret_scan.clean={summary['secret_scan']['clean']}")
     print(f"[ok] vault_denylist.enforced={summary['vault_denylist']['enforced']}")
     return 0
+
+
+def _deduplicate_samples(samples: list[Sample]) -> tuple[list[Sample], int, int]:
+    groups: dict[str, list[Sample]] = {}
+    for sample in samples:
+        groups.setdefault(sample.sha256, []).append(sample)
+    unique, duplicates, conflicts = [], 0, 0
+    for sha in sorted(groups):
+        aliases = groups[sha]
+        if len({sample.zone for sample in aliases}) != 1:
+            conflicts += len(aliases)
+            continue
+        # Never upgrade a private duplicate to an exportable license tag.
+        aliases.sort(key=lambda sample: (sample.license != "operator:local-only", sample.source_path))
+        unique.append(aliases[0])
+        duplicates += len(aliases) - 1
+    return unique, duplicates, conflicts
+
+
+def _split_samples(samples: list[Sample], seed: int) -> tuple[list[Sample], list[Sample]]:
+    train, evaluation = [], []
+    for zone in ZONES:
+        group = [sample for sample in samples if sample.zone == zone]
+        group.sort(key=lambda sample: _sha256_hex(f"{seed}:{sample.sha256}".encode()))
+        # Two held-out items per populated zone permit non-self retrieval pairs.
+        heldout = max(2, len(group) // 5) if len(group) >= 6 else 0
+        cut = len(group) - heldout
+        train.extend(group[:cut])
+        evaluation.extend(group[cut:])
+    return train, evaluation
 
 
 def _write_jsonl(path: Path, samples: list[Sample]) -> None:
@@ -672,6 +699,7 @@ def _write_jsonl(path: Path, samples: list[Sample]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Kartograf corpus builder (N37)")
+    parser.add_argument("--split-seed", type=int, default=42, help="Deterministic content split seed")
     parser.add_argument("--repo-root", default=".", help="Memphis repo root (default: cwd)")
     parser.add_argument(
         "--chains-dir",

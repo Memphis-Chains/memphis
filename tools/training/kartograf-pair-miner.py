@@ -62,6 +62,8 @@ import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+from kartograf_train.corpus_contract import validate_corpus
+
 from typing import Iterable
 
 PAIR_MINING_VERSION = "v1.1"
@@ -130,6 +132,7 @@ class Sample:
 
 def load_corpus(corpus_dir: Path, source: str = "train") -> tuple[list[Sample], dict]:
     """Load samples from `<source>.jsonl`. `source` is "train" or "eval"."""
+    validate_corpus(corpus_dir)
     summary_path = corpus_dir / "corpus-v1-summary.json"
     train_path = corpus_dir / f"{source}.jsonl"
     zone_labels_path = corpus_dir / "zone-labels.json"
@@ -291,11 +294,14 @@ def collect_git_history(
     repo_root: Path,
     paths: list[str],
     cache_path: Path,
+    write_cache: bool = True,
 ) -> dict[str, list[str]]:
     """Return {source_path -> list_of_commit_shas}. Cached to disk;
     cache keyed by HEAD sha. Paths not tracked in git return []."""
     head = _git_head_sha(repo_root)
     cache: dict[str, object] = {}
+    if cache_path.is_symlink():
+        raise SystemExit("Git history cache must not be a symlink")
     if cache_path.exists():
         try:
             cache = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -335,10 +341,11 @@ def collect_git_history(
             print(f"[pair-miner]   timeout on {path}; marking empty", file=sys.stderr)
             cached_paths[path] = []
     cache["paths"] = cached_paths
-    cache_path.write_text(
-        json.dumps(cache, separators=(",", ":")),
-        encoding="utf-8",
-    )
+    if write_cache:
+        cache_path.write_text(
+            json.dumps(cache, separators=(",", ":")),
+            encoding="utf-8",
+        )
     return {p: cached_paths.get(p, []) for p in paths}
 
 
@@ -492,6 +499,8 @@ def main() -> int:
                              "writes pairs.jsonl. 'eval' writes eval-pairs.jsonl "
                              "for the retrieval-recall@K eval rig.")
     args = parser.parse_args()
+    if args.top_k_hard_negs < 1:
+        parser.error("--top-k-hard-negs must be positive")
 
     corpus_dir = args.corpus.expanduser().resolve()
     repo_root = args.repo_root.expanduser().resolve()
@@ -502,7 +511,13 @@ def main() -> int:
     t0 = time.time()
 
     # 1) Load — train.jsonl by default, eval.jsonl when --source eval.
+    output_path = corpus_dir / ("pairs.jsonl" if args.source == "train" else "eval-pairs.jsonl")
+    if (output_path.exists() or output_path.is_symlink()) and not args.dry_run:
+        raise SystemExit("Pair output already exists; use a fresh corpus candidate")
     samples, summary = load_corpus(corpus_dir, source=args.source)
+    ambiguous_count = sum(sample.ambiguous for sample in samples)
+    samples = [sample for sample in samples if not sample.ambiguous]
+    print(f"[pair-miner] excluded {ambiguous_count} ambiguous samples", file=sys.stderr)
     print(f"[pair-miner] loaded {len(samples)} samples", file=sys.stderr)
 
     # 2) Symbols + TF-IDF
@@ -544,7 +559,7 @@ def main() -> int:
             seen.add(p)
             repo_paths_unique.append(p)
     cache_path = corpus_dir / ".git-log-cache.json"
-    path_commits = collect_git_history(repo_root, repo_paths_unique, cache_path)
+    path_commits = collect_git_history(repo_root, repo_paths_unique, cache_path, write_cache=not args.dry_run)
     # Build inverse index commit -> {paths}
     commit_index: dict[str, set[str]] = defaultdict(set)
     path_commits_as_sets: dict[str, set[str]] = {}
@@ -639,10 +654,9 @@ def main() -> int:
             anchor, samples, tfidf, zone_buckets, args.top_k_hard_negs,
             exclude_sha={positive_sha},
         )
-        if not hard_negs:
-            # Only one zone populated — impossible in practice since we
-            # have at least 7 zones with samples — but safe-guard.
-            stats["skipped_no_hard_negs"] += 1
+        if len(hard_negs) != args.top_k_hard_negs:
+            # Insufficient cross-zone candidates: keep K uniform for batching.
+            stats["skipped_insufficient_hard_negs"] += 1
             continue
 
         pairs_out.append({
@@ -668,7 +682,8 @@ def main() -> int:
 
     out_filename = "pairs.jsonl" if args.source == "train" else "eval-pairs.jsonl"
     pairs_path = corpus_dir / out_filename
-    with pairs_path.open("w", encoding="utf-8") as fh:
+    with pairs_path.open("x", encoding="utf-8") as fh:
+        pairs_path.chmod(0o600)
         for rec in pairs_out:
             fh.write(json.dumps(rec, separators=(",", ":")) + "\n")
     print(f"[pair-miner] wrote {pairs_path} ({len(pairs_out)} pairs)", file=sys.stderr)
