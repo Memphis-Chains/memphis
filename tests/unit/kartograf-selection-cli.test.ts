@@ -9,7 +9,10 @@ vi.mock('../../src/kartograf/session.js', () => ({ createKartografSession: vi.fn
 
 import type { CliContext } from '../../src/infra/cli/context.js';
 import { kartografCommandHandler } from '../../src/infra/cli/handlers/kartograf.handler.js';
+import { getTensorStatus } from '../../src/infra/tensors/status.js';
 import { sha256Hex, signCheckpoint } from '../../src/kartograf/checkpoint.js';
+import type { CheckpointEnvelope } from '../../src/kartograf/checkpoint.js';
+import { embeddingSpaceFor } from '../../src/kartograf/embedding-space.js';
 import { activateBundle, installBundle } from '../../src/kartograf/installed.js';
 import { closeKartografRuntime } from '../../src/kartograf/runtime.js';
 import { createKartografSession } from '../../src/kartograf/session.js';
@@ -70,12 +73,16 @@ async function call(args: Record<string, unknown>) {
     log.mockRestore();
   }
 }
-function mockEngine(modelHash: string) {
+function mockEngine(envelope: CheckpointEnvelope) {
+  const modelHash = envelope.onnx_sha256;
+  const embeddingSpace = embeddingSpaceFor(envelope);
   return {
     checkpointId: modelHash,
+    embeddingSpace,
     headsConfig: { embedding_dim: 2, zone_classes: 12, multitask_alpha: 0.7 },
     embed: vi.fn(async () => ({
       checkpointId: modelHash,
+      embeddingSpaceId: embeddingSpace.id,
       embedding: new Float32Array([0.3, 0.4]),
       zones: [{ zone: 'patterns', score: 0.9 }],
     })),
@@ -89,11 +96,16 @@ it('uses the explicitly selected bundle consistently in status, runtime and posi
   await installBundle(one.file, process.env);
   const two = await producer('two');
   const selected = await installBundle(two.file, process.env);
-  vi.mocked(createKartografSession).mockResolvedValue(mockEngine(two.envelope.onnx_sha256));
+  vi.mocked(createKartografSession).mockResolvedValue(mockEngine(two.envelope));
   await activateBundle(selected.id, two.envelope.signer_did, process.env);
   const status = await call({ subcommand: 'status' });
   expect(status.installed).toBe(2);
   expect(status.active_checkpoint).toBe(selected.id);
+  const loaded = getTensorStatus({ RUST_CHAIN_ENABLED: 'false', MEMPHIS_KARTOGRAF_ENABLE: '1' });
+  expect(loaded.kartograf.mode).toBe('onnx');
+  expect(loaded.kartograf.checkpointId).toBe(two.envelope.onnx_sha256);
+  expect(loaded.kartograf.embeddingSpace).toEqual(status.active_embedding_space);
+  expect(status.active_embedding_space.id).toBe(embeddingSpaceFor(two.envelope).id);
   const query = await call({ subcommand: 'query', target: 'synthetic query' });
   expect(query.ok).toBe(true);
   expect(query.selectedCheckpointId).toBe(selected.id);
@@ -121,11 +133,25 @@ it('does not claim an active checkpoint while disabled, and install activation d
   expect(existsSync(join(root, 'runtime'))).toBe(false);
   expect(createKartografSession).not.toHaveBeenCalled();
   const selected = await installBundle(fixture.file, process.env);
-  vi.mocked(createKartografSession).mockResolvedValue(mockEngine(fixture.envelope.onnx_sha256));
+  vi.mocked(createKartografSession).mockResolvedValue(mockEngine(fixture.envelope));
   await activateBundle(selected.id, fixture.envelope.signer_did, process.env);
   vi.stubEnv('MEMPHIS_KARTOGRAF_ENABLE', '0');
   const status = await call({ subcommand: 'status' });
   expect(status.selected_checkpoint).toBe(selected.id);
   expect(status.active_checkpoint).toBeNull();
   expect(status.runtime).toBe('disabled');
+});
+
+it('returns a handled inference failure and releases the query session without echoing diagnostics', async () => {
+  const fixture = await producer('failed-query');
+  const bundle = await installBundle(fixture.file, process.env);
+  const engine = mockEngine(fixture.envelope);
+  vi.mocked(createKartografSession).mockResolvedValue(engine);
+  await activateBundle(bundle.id, fixture.envelope.signer_did, process.env);
+  engine.embed.mockRejectedValue(new Error('SYNTHETIC_PRIVATE_DIAGNOSTIC'));
+  const result = await call({ subcommand: 'query', target: 'hello' });
+  expect(result.ok).toBe(false);
+  expect(process.exitCode).toBe(2);
+  expect(JSON.stringify(result)).not.toContain('SYNTHETIC_PRIVATE_DIAGNOSTIC');
+  expect(engine.close).toHaveBeenCalledTimes(2);
 });
