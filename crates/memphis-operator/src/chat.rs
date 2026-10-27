@@ -484,6 +484,9 @@ fn run_turn(
                     stream_guard.push(visible.as_str(), &mut emit_text);
                 }
                 ChatStreamEvent::Usage(usage) => on_chunk(ChatStreamEvent::Usage(usage)),
+                // A provider never reports a tool call — the chat loop
+                // does, after the call has already run.
+                ChatStreamEvent::Tool { .. } => {}
             };
             let mut completion = provider_runtime.chat_stream_with_cancel(
                 &request_context,
@@ -601,6 +604,8 @@ fn run_turn(
                 )?;
                 in_flight_operations.push(operation_id.clone());
 
+                let tool_started = std::time::Instant::now();
+                let mut tool_failed = false;
                 let (tool_display, tool_payload) = match execute_native_tool(
                     runtime, &tool_call, max_tier,
                 ) {
@@ -638,6 +643,7 @@ fn run_turn(
                                 )));
                         }
                         let error_json = json!({ "error": error.to_string() }).to_string();
+                        tool_failed = true;
                         (
                             format!("error: {}", error),
                             build_wrapped_segment(
@@ -649,6 +655,16 @@ fn run_turn(
                         )
                     }
                 };
+
+                // Tell the surface what just ran, in the normalized
+                // form. The raw payload stays in the transcript; the
+                // cockpit gets one discreet line per call.
+                on_chunk(ChatStreamEvent::Tool {
+                    name: tool_call.name.clone(),
+                    display: tool_display.clone(),
+                    failed: tool_failed,
+                    elapsed_ms: tool_started.elapsed().as_millis() as u64,
+                });
 
                 pending.push(MessageToPersist {
                     role: "tool",

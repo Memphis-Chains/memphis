@@ -38,6 +38,7 @@ use crate::chat_guards::{
 use crate::chat_session::open_sqlite_rw;
 use crate::chat_tool_catalog::native_tool_definitions;
 use crate::runtime::{MemoryQueryResult, OperatorRuntime, SearchMode};
+use crate::text_truncation::truncate_with_ellipsis;
 use crate::{JournalWriteResult, OperatorError};
 
 /// Previous-hash value of the first block in a chain.
@@ -675,7 +676,12 @@ pub(crate) fn summarize_content(content: &str) -> String {
     if collapsed.len() <= 160 {
         collapsed
     } else {
-        format!("{}...", &collapsed[..157])
+        // The cut must land on a character boundary. A fixed byte
+        // offset panicked on Polish text: the 2026-10-27 incident was
+        // a journal block whose low-9 quote (`„`) sat at byte 156,
+        // and `&collapsed[..157]` split it. The block landed in the
+        // chain and never reached the index.
+        truncate_with_ellipsis(&collapsed, 157)
     }
 }
 
@@ -1210,5 +1216,80 @@ pub(crate) fn search_result_to_json(result: &MemoryQueryResult) -> Value {
                 "summary": hit.summary,
             })).collect::<Vec<_>>(),
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::summarize_content;
+
+    /// The incident of 2026-10-27, verbatim.
+    ///
+    /// A journal block carrying a Polish low-9 quote panicked the chat
+    /// worker with "end byte index 157 is not a char boundary; it is
+    /// inside '„' (bytes 156..159 of string)". The block was appended
+    /// to the chain first and indexed second, so the panic left it in
+    /// the chain and out of the search index — silently unsearchable.
+    ///
+    /// The content is the real one, trimmed to the part that carries
+    /// the quote at byte 156.
+    const INCIDENT: &str = "2026-10-27 15:50-16:20 UTC — druga tura sesji. Operator doprecyzował objaw: „jak pracujesz to się stroboskop w okół liter zrobił\" oraz poprosił o „współczesne interaktywne TUI dla użytkownika, w którym informacje o tool use są jakoś dyskretnie poinormowane, zobacz na nasze tools\"";
+
+    #[test]
+    fn the_incident_of_2026_10_27_does_not_panic() {
+        let summary = summarize_content(INCIDENT);
+        assert!(
+            summary.ends_with("..."),
+            "a long content must be marked as truncated, got: {summary}"
+        );
+        assert!(
+            summary.len() <= 160,
+            "the summary must stay within its budget, got {} bytes",
+            summary.len()
+        );
+    }
+
+    /// The quote that panicked has to straddle byte 157 for this test
+    /// to be the incident and not an approximation of it.
+    #[test]
+    fn the_incident_content_really_has_a_quote_at_byte_156() {
+        let collapsed = INCIDENT.split_whitespace().collect::<Vec<_>>().join(" ");
+        let bytes = collapsed.as_bytes();
+        let quote = "„".as_bytes();
+        let mut straddling = None;
+        let mut index = 0usize;
+        while index + quote.len() <= bytes.len() {
+            if &bytes[index..index + quote.len()] == quote
+                && index < 157
+                && index + quote.len() > 157
+            {
+                straddling = Some(index);
+                break;
+            }
+            index += 1;
+        }
+        let position = straddling.expect("the incident text must have a quote at byte 156");
+        assert!(
+            position < 157 && position + quote.len() > 157,
+            "the incident's quote must straddle byte 157, the one that panicked; it sits at {position}"
+        );
+    }
+
+    /// Every alignment, not just the one that broke. A truncation that
+    /// only works for ASCII panics on the first non-ASCII prose it
+    /// meets — and prose in Polish is not ASCII.
+    #[test]
+    fn no_alignment_of_a_multibyte_character_panics() {
+        for offset in 0..400usize {
+            let mut content = "x".repeat(offset);
+            content.push('„');
+            content.push_str(&"y".repeat(400));
+            let summary = summarize_content(&content);
+            assert!(
+                summary.len() <= 160,
+                "offset {offset}: summary is {} bytes, over the budget",
+                summary.len()
+            );
+        }
     }
 }

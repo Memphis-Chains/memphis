@@ -19,6 +19,7 @@ use sha2::{Digest, Sha256};
 use crate::chat::PromptRiskClassification;
 use crate::chat_memory::append_generic_block;
 use crate::OperatorError;
+use crate::text_truncation::truncate_with_ellipsis;
 use crate::OperatorRuntime;
 
 pub(crate) fn build_wrapped_segment(
@@ -162,7 +163,9 @@ pub(crate) fn sanitize_json(value: Value) -> Value {
     match value {
         Value::String(text) => {
             if text.len() > 300 {
-                Value::String(format!("{}...", &text[..300]))
+                // Character-boundary cut: a fixed byte offset panicked
+                // on any multi-byte character at that position.
+                Value::String(truncate_with_ellipsis(&text, 300))
             } else {
                 Value::String(text)
             }
@@ -388,4 +391,36 @@ pub(crate) fn write_json_file(path: &Path, value: &Value) -> Result<(), Operator
         serde_json::to_vec_pretty(value).map_err(|error| OperatorError::Json(error.to_string()))?,
     )
     .map_err(|error| OperatorError::Io(error.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_json;
+    use serde_json::Value;
+
+    /// A tool result in Polish is longer than 300 bytes and carries
+    /// multi-byte characters. The cut has to land on a character
+    /// boundary — the same class of bug that killed the chat worker on
+    /// 2026-10-27.
+    #[test]
+    fn sanitize_json_never_splits_a_character() {
+        for offset in 0..400usize {
+            let mut text = "x".repeat(offset);
+            text.push('\u{201e}');
+            text.push_str(&"y".repeat(400));
+            let value = sanitize_json(Value::String(text));
+            let sanitized = value.as_str().expect("a string stays a string");
+            assert!(
+                sanitized.len() <= 303,
+                "offset {offset}: sanitized is {} bytes, over the budget",
+                sanitized.len()
+            );
+        }
+    }
+
+    #[test]
+    fn sanitize_json_keeps_short_strings_intact() {
+        let value = sanitize_json(Value::String("krótko".to_string()));
+        assert_eq!(value.as_str(), Some("krótko"));
+    }
 }

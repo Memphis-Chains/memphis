@@ -15,6 +15,7 @@ mod context;
 mod openai_codex;
 mod provider;
 mod runtime;
+mod text_truncation;
 mod think_stripper;
 
 pub use chat::{ChatExchange, ChatSessionView, ChatTranscriptEntry, JournalWriteResult};
@@ -29,3 +30,4 @@ pub use runtime::{
     SemanticSearchHit, SessionItem, SessionSummary, SystemSummary, TelegramReadinessSummary,
     VaultEntryMetadata, VaultSecretView, VaultSummary,
 };
+pub use text_truncation::{truncate_on_char_boundary, truncate_with_ellipsis};

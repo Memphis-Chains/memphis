@@ -9,11 +9,31 @@ use ratatui::{
 
 use crate::app::{AppState, StatusBarContext};
 use crate::widgets::{
-    prompt_layout, HelpOverlay, NotificationBanner, OutputBody, PromptState, PromptWidget,
-    ScrollState, SearchBar, StatusBar, MAX_PROMPT_ROWS,
+    prompt_layout, ActivityPanel, HelpOverlay, NotificationBanner, OutputBody, PromptState,
+    PromptWidget, ScrollState, SearchBar, StatusBar, MAX_PROMPT_ROWS,
 };
 
+/// The side panel's share of the width, in percent.
+const PANEL_PERCENT: usize = 30;
+/// The panel never gets narrower than this.
+const MIN_PANEL_WIDTH: u16 = 28;
+/// …nor wider than this.
+const MAX_PANEL_WIDTH: u16 = 46;
+/// Below this terminal width the panel is dropped: a cockpit with a
+/// 28-column panel and a 60-column conversation is worse than no
+/// panel at all.
+const MIN_TERMINAL_FOR_PANEL: u16 = 100;
+
 const RENDERER_MODE: &str = "ratatui";
+
+/// How often the busy indicator is allowed to change.
+///
+/// The cockpit redraws ten times a second while a turn is running, and
+/// a character that changes on every one of those redraws is a
+/// high-contrast blink in the operator's peripheral vision — the
+/// "strobe" the operator reported on 2026-10-27. Five changes a second
+/// still reads as "something is happening" and no longer flickers.
+const SPINNER_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
 
 pub struct UiRenderer {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
@@ -21,6 +41,8 @@ pub struct UiRenderer {
     /// Scroll offset + caret position of the input line.
     prompt_state: PromptState,
     busy_frame: usize,
+    /// When the busy indicator last changed.
+    last_spinner_at: std::time::Instant,
 }
 
 impl UiRenderer {
@@ -32,6 +54,7 @@ impl UiRenderer {
             scroll_state: ScrollState::new(),
             prompt_state: PromptState::default(),
             busy_frame: 0,
+            last_spinner_at: std::time::Instant::now() - SPINNER_INTERVAL,
         })
     }
 
@@ -61,7 +84,14 @@ impl UiRenderer {
                 mouse_toast,
             );
         })?;
-        self.busy_frame = self.busy_frame.wrapping_add(1);
+        // The indicator advances on a clock, not on the redraw: the
+        // redraw rate is ten frames a second while a turn is running,
+        // and every one of those frames used to rewrite the indicator's
+        // cell.
+        if self.last_spinner_at.elapsed() >= SPINNER_INTERVAL {
+            self.last_spinner_at = std::time::Instant::now();
+            self.busy_frame = self.busy_frame.wrapping_add(1);
+        }
         Ok(())
     }
 
@@ -164,11 +194,38 @@ fn render_ui(
         idx += 1;
     }
 
-    frame.render_stateful_widget(
-        OutputBody::with_search(output_buffer, search),
-        chunks[idx],
-        scroll_state,
-    );
+    // Two panes, like the first Memphis TUI had: the conversation on
+    // the left, a fixed column on the right for the session's runtime
+    // and the tool calls of the running turn. On a narrow terminal the
+    // panel is dropped rather than squeezing the conversation.
+    let panel_width = if frame_width >= MIN_TERMINAL_FOR_PANEL {
+        (frame_width as usize * PANEL_PERCENT / 100) as u16
+    } else {
+        0
+    };
+    let panel_width = panel_width.clamp(MIN_PANEL_WIDTH, MAX_PANEL_WIDTH);
+
+    if panel_width > 0 {
+        let panes = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(30), Constraint::Length(panel_width)])
+            .split(chunks[idx]);
+        frame.render_stateful_widget(
+            OutputBody::with_search(output_buffer, search),
+            panes[0],
+            scroll_state,
+        );
+        frame.render_widget(
+            ActivityPanel::new(status_context, &app.tool_activity),
+            panes[1],
+        );
+    } else {
+        frame.render_stateful_widget(
+            OutputBody::with_search(output_buffer, search),
+            chunks[idx],
+            scroll_state,
+        );
+    }
 
     let mut next = idx + 1;
     if let Some(search) = search {
@@ -182,13 +239,14 @@ fn render_ui(
         chunks[next + 1],
     );
 
-    // Put the caret where the operator is actually typing. Ratatui
-    // shows the cursor when a position is set and hides it otherwise,
-    // so this is also what makes the caret visible at all — before this
-    // the prompt had no insertion point rendered anywhere.
-    if let Some((x, y)) = prompt_state.caret {
-        frame.set_cursor_position((x, y));
-    }
+    // The caret is drawn by the prompt widget, not by the terminal.
+    //
+    // Asking the terminal for a cursor position means the terminal's
+    // cursor blinks — and the blink rate belongs to the terminal, not
+    // to the cockpit. On this host that was a hard block blinking next
+    // to the operator's text: the "strobe" of 2026-10-27. The prompt
+    // draws its own insertion point instead, so it does not blink and
+    // looks the same in every terminal.
 
     // Toast: short-lived (3s) banner rendered in the top-right of the
     // body area when the operator just toggled mouse capture. Single
@@ -239,117 +297,13 @@ mod tests {
     use super::renderer_mode;
     use crate::app::{ContextPressureLevel, ContextPressureSummary, StatusBarContext};
 
-    fn format_context_window(tokens: Option<u32>) -> String {
-        tokens
-            .map(|tokens| {
-                if tokens >= 1_000 {
-                    if tokens % 1_024 == 0 {
-                        format!("ctx:{}k", tokens / 1_024)
-                    } else if tokens % 1_000 == 0 {
-                        format!("ctx:{}k", tokens / 1_000)
-                    } else {
-                        format!("ctx:{:.1}k", tokens as f32 / 1_000.0)
-                    }
-                } else {
-                    format!("ctx:{tokens}")
-                }
-            })
-            .unwrap_or_else(|| "ctx:?".to_string())
-    }
-
-    fn format_status_token_usage(usage: Option<&memphis_operator::TokenUsageSummary>) -> String {
-        usage
-            .map(|usage| {
-                if usage.estimated {
-                    format!("tok~:{}", usage.total_tokens)
-                } else {
-                    format!("tok:{}", usage.total_tokens)
-                }
-            })
-            .unwrap_or_else(|| "tok:?".to_string())
-    }
-
-    fn format_status_meter(context: &StatusBarContext) -> String {
-        context
-            .live_token_usage
-            .as_ref()
-            .map(|usage| {
-                if usage.estimated {
-                    format!("tok~:{}", usage.total_tokens)
-                } else {
-                    format!("tok:{}", usage.total_tokens)
-                }
-            })
-            .or_else(|| {
-                context
-                    .live_output_tokens
-                    .map(|tokens| format!("out~:{tokens}"))
-            })
-            .unwrap_or_else(|| format_status_token_usage(context.token_usage.as_ref()))
-    }
-
-    fn format_status_pressure(context: &StatusBarContext) -> Option<String> {
-        context
-            .context_pressure
-            .as_ref()
-            .filter(|pressure| pressure.level != ContextPressureLevel::Low)
-            .map(|pressure| {
-                let remaining = if pressure.remaining_context_tokens >= 1_000 {
-                    if pressure.remaining_context_tokens % 1_024 == 0 {
-                        format!("{}k", pressure.remaining_context_tokens / 1_024)
-                    } else if pressure.remaining_context_tokens % 1_000 == 0 {
-                        format!("{}k", pressure.remaining_context_tokens / 1_000)
-                    } else {
-                        format!("{:.1}k", pressure.remaining_context_tokens as f32 / 1_000.0)
-                    }
-                } else {
-                    pressure.remaining_context_tokens.to_string()
-                };
-                if pressure.estimated {
-                    format!("prs:{} rem~:{remaining}", pressure.level.short_label())
-                } else {
-                    format!("prs:{} rem:{remaining}", pressure.level.short_label())
-                }
-            })
-    }
-
+    /// The status bar's text, from the widget that draws it.
+    ///
+    /// Before this the test module had its own copy of the formatting —
+    /// two implementations of one contract in one layer, which is how
+    /// a test ends up asserting on a string the operator never sees.
     fn format_status_bar(context: &StatusBarContext, timestamp: &str, busy_frame: usize) -> String {
-        let indicator = if context.connected { "●" } else { "○" };
-        let degraded_icon = if context.degraded { " ⚠" } else { "" };
-        let activity = if context.busy {
-            let label = context.activity.as_deref().unwrap_or("task");
-            if context.cancelling {
-                if context.cancel_waiting_on_provider {
-                    format!("cancelling {label} (provider wait)")
-                } else {
-                    format!("cancelling {label}")
-                }
-            } else {
-                let spinner = ["|", "/", "-", "\\"][busy_frame % 4];
-                format!("busy {spinner} {label}")
-            }
-        } else {
-            "ready".to_string()
-        };
-        let context_window = format_context_window(context.context_window_tokens);
-        let token_usage = format_status_meter(context);
-        let pressure = format_status_pressure(context);
-        format!(
-            "{degraded_icon}{indicator} [Mode:{}] {}/{} · {}{} · {} · {} · PULSE:{} · session:{} · {}",
-            context.cognitive_mode,
-            context.provider,
-            context.model,
-            context_window,
-            pressure
-                .as_ref()
-                .map(|pressure| format!(" · {pressure}"))
-                .unwrap_or_default(),
-            token_usage,
-            activity,
-            context.pulse_health,
-            context.session_id,
-            timestamp
-        )
+        crate::widgets::status_bar_text(context, timestamp, busy_frame)
     }
 
     fn trim_to_width(value: &str, width: usize) -> String {
@@ -471,9 +425,12 @@ mod tests {
 
         let rendered = format_status_bar(&context, "14:32:05", 2);
 
+        // The indicator sits in front of the activity segment and is a
+        // braille dot — a shape that flips between two silhouettes is
+        // a blink in the operator's peripheral vision.
         assert_eq!(
             rendered,
-            "● [Mode:A] ollama/qwen2.5-coder:3b · ctx:8k · prs:med rem:3.2k · tok:114 · busy - native chat · PULSE:healthy · session:mem0 · 14:32:05"
+            "● [Mode:A] ollama/qwen2.5-coder:3b · ctx:8k · prs:med rem:3.2k · tok:114 · ⠹ busy native chat · PULSE:healthy · session:mem0 · 14:32:05"
         );
     }
 

@@ -25,96 +25,179 @@ impl<'a> StatusBar<'a> {
     }
 }
 
-impl Widget for StatusBar<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        let indicator = if self.context.connected { "●" } else { "○" };
-        let degraded_icon = if self.context.degraded { " ⚠" } else { "" };
+/// The busy indicator's frames.
+///
+/// Braille dots, not `| / - \`: a full-cell shape that flips between
+/// two very different silhouettes reads as a blink, while a dot that
+/// travels around a cell reads as a shimmer. On a saturated bar the
+/// difference is the difference between a strobe and an indicator.
+const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-        let provider = if validate_provider_name(&self.context.provider) {
-            sanitize_for_tui(&self.context.provider)
-        } else {
-            "unknown".to_string()
-        };
-        let model = sanitize_for_tui(&self.context.model);
-        let session = sanitize_for_tui(&self.context.session_id);
-        let context_window = self
-            .context
-            .context_window_tokens
-            .map(format_context_window)
-            .unwrap_or_else(|| "ctx:?".to_string());
-        let token_usage = self
-            .context
-            .live_token_usage
-            .as_ref()
-            .map(format_status_token_usage)
-            .or_else(|| {
-                self.context
-                    .live_output_tokens
-                    .map(|tokens| format!("out~:{tokens}"))
-            })
-            .or_else(|| {
-                self.context
-                    .token_usage
-                    .as_ref()
-                    .map(format_status_token_usage)
-            })
-            .unwrap_or_else(|| "tok:?".to_string());
-        let pressure = self
-            .context
-            .context_pressure
-            .as_ref()
-            .filter(|pressure| pressure.level != ContextPressureLevel::Low)
-            .map(format_status_pressure);
+/// The status bar, split into the parts that need different styles.
+///
+/// The bar is one line of text, but the busy indicator has to be
+/// quieter than the rest of it — it changes while the operator reads
+/// something else, and the bar's own background makes every change
+/// of that one cell a repaint of a saturated patch.
+pub struct StatusBarParts {
+    /// Everything before the activity segment.
+    pub prefix: String,
+    /// The busy indicator, if the session is busy.
+    pub spinner: Option<String>,
+    /// The activity segment: `busy`, `ready` or `cancelling …`.
+    pub activity: String,
+    /// Everything after the activity segment.
+    pub suffix: String,
+}
 
-        let activity = if self.context.busy {
-            let label = self.context.activity.as_deref().unwrap_or("task");
-            if self.context.cancelling {
-                if self.context.cancel_waiting_on_provider {
-                    format!("cancelling {label} (provider wait)")
-                } else {
-                    format!("cancelling {label}")
-                }
+impl StatusBarParts {
+    /// The whole bar as one string — what a test or a log wants.
+    #[cfg(test)]
+    pub fn text(&self) -> String {
+        // The same assembly the widget does, space included — a test
+        // that asserts on a different string than the screen shows is
+        // a test of a second implementation.
+        let spinner = self
+            .spinner
+            .as_ref()
+            .map(|spinner| format!("{spinner} "))
+            .unwrap_or_default();
+        format!("{}{}{}{}", self.prefix, spinner, self.activity, self.suffix)
+    }
+}
+
+/// Build the status bar's parts.
+///
+/// One source of truth: the widget renders these parts and the tests
+/// read them, so the text a test asserts on is the text on the screen.
+pub fn status_bar_parts(
+    context: &StatusBarContext,
+    timestamp: &str,
+    busy_frame: usize,
+) -> StatusBarParts {
+    let indicator = if context.connected { "●" } else { "○" };
+    let degraded_icon = if context.degraded { " ⚠" } else { "" };
+
+    let provider = if validate_provider_name(&context.provider) {
+        sanitize_for_tui(&context.provider)
+    } else {
+        "unknown".to_string()
+    };
+    let model = sanitize_for_tui(&context.model);
+    let session = sanitize_for_tui(&context.session_id);
+    let context_window = context
+        .context_window_tokens
+        .map(format_context_window)
+        .unwrap_or_else(|| "ctx:?".to_string());
+    let token_usage = context
+        .live_token_usage
+        .as_ref()
+        .map(format_status_token_usage)
+        .or_else(|| {
+            context
+                .live_output_tokens
+                .map(|tokens| format!("out~:{tokens}"))
+        })
+        .or_else(|| {
+            context
+                .token_usage
+                .as_ref()
+                .map(format_status_token_usage)
+        })
+        .unwrap_or_else(|| "tok:?".to_string());
+    let pressure = context
+        .context_pressure
+        .as_ref()
+        .filter(|pressure| pressure.level != ContextPressureLevel::Low)
+        .map(format_status_pressure);
+
+    let (activity, spinner) = if context.busy {
+        let label = context.activity.as_deref().unwrap_or("task");
+        if context.cancelling {
+            let text = if context.cancel_waiting_on_provider {
+                format!("cancelling {label} (provider wait)")
             } else {
-                let spinner = ["|", "/", "-", "\\"][self.busy_frame % 4];
-                format!("busy {spinner} {label}")
-            }
+                format!("cancelling {label}")
+            };
+            (text, None)
         } else {
-            "ready".to_string()
-        };
+            (
+                format!("busy {label}"),
+                Some(SPINNER_FRAMES[busy_frame % SPINNER_FRAMES.len()].to_string()),
+            )
+        }
+    } else {
+        ("ready".to_string(), None)
+    };
 
-        let mode = sanitize_for_tui(&self.context.cognitive_mode);
-        let pulse = sanitize_for_tui(&self.context.pulse_health);
+    let mode = sanitize_for_tui(&context.cognitive_mode);
+    let pulse = sanitize_for_tui(&context.pulse_health);
 
-        let text = format!(
-            "{degraded_icon}{indicator} [Mode:{mode}] {provider}/{model} · {context_window}{} · {token_usage} · {activity} · PULSE:{pulse} · session:{session} · {}",
+    StatusBarParts {
+        prefix: format!(
+            "{degraded_icon}{indicator} [Mode:{mode}] {provider}/{model} · {context_window}{} · {token_usage} · ",
             pressure
                 .as_ref()
                 .map(|pressure| format!(" · {pressure}"))
                 .unwrap_or_default(),
-            self.timestamp
-        );
+        ),
+        spinner,
+        activity,
+        suffix: format!(" · PULSE:{pulse} · session:{session} · {timestamp}"),
+    }
+}
+
+/// The whole status bar as one string.
+#[cfg(test)]
+pub fn status_bar_text(
+    context: &StatusBarContext,
+    timestamp: &str,
+    busy_frame: usize,
+) -> String {
+    status_bar_parts(context, timestamp, busy_frame).text()
+}
+
+impl Widget for StatusBar<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let parts = status_bar_parts(self.context, self.timestamp, self.busy_frame);
 
         let style = Style::default()
             .bg(Color::Rgb(0, 0, 128))
             .fg(Color::White)
             .add_modifier(Modifier::BOLD);
+        // The indicator is quieter than the bar: a muted blue-white,
+        // so a change of that one cell is a shimmer instead of a flash
+        // of a saturated colour in the operator's peripheral vision.
+        let indicator_style = Style::default()
+            .bg(Color::Rgb(0, 0, 128))
+            .fg(Color::Rgb(140, 160, 215));
 
         let width = area.width as usize;
-        let padded = if text.chars().count() < width {
-            format!("{text}{}", " ".repeat(width - text.chars().count()))
-        } else {
-            text
-        };
+        let used = parts.prefix.chars().count()
+            + parts.spinner.as_ref().map(|s| s.chars().count()).unwrap_or(0)
+            + parts.activity.chars().count()
+            + parts.suffix.chars().count();
+        let padding = width.saturating_sub(used);
 
-        Paragraph::new(Line::from(Span::styled(padded, style))).render(area, buf);
+        let mut spans: Vec<Span> = vec![Span::styled(parts.prefix, style)];
+        if let Some(spinner) = parts.spinner {
+            spans.push(Span::styled(format!("{spinner} "), indicator_style));
+        }
+        spans.push(Span::styled(parts.activity, style));
+        spans.push(Span::styled(
+            format!("{}{}", parts.suffix, " ".repeat(padding)),
+            style,
+        ));
+
+        Paragraph::new(Line::from(spans)).render(area, buf);
     }
 }
 
-fn format_context_window(tokens: u32) -> String {
+pub(crate) fn format_context_window(tokens: u32) -> String {
     if tokens >= 1_000 {
-        if tokens % 1_024 == 0 {
+        if tokens.is_multiple_of(1_024) {
             format!("ctx:{}k", tokens / 1_024)
-        } else if tokens % 1_000 == 0 {
+        } else if tokens.is_multiple_of(1_000) {
             format!("ctx:{}k", tokens / 1_000)
         } else {
             format!("ctx:{:.1}k", tokens as f32 / 1_000.0)
@@ -124,7 +207,7 @@ fn format_context_window(tokens: u32) -> String {
     }
 }
 
-fn format_status_token_usage(usage: &memphis_operator::TokenUsageSummary) -> String {
+pub(crate) fn format_status_token_usage(usage: &memphis_operator::TokenUsageSummary) -> String {
     if usage.estimated {
         format!("tok~:{}", usage.total_tokens)
     } else {
@@ -132,11 +215,11 @@ fn format_status_token_usage(usage: &memphis_operator::TokenUsageSummary) -> Str
     }
 }
 
-fn format_status_pressure(pressure: &crate::app::ContextPressureSummary) -> String {
+pub(crate) fn format_status_pressure(pressure: &crate::app::ContextPressureSummary) -> String {
     let remaining = if pressure.remaining_context_tokens >= 1_000 {
-        if pressure.remaining_context_tokens % 1_024 == 0 {
+        if pressure.remaining_context_tokens.is_multiple_of(1_024) {
             format!("{}k", pressure.remaining_context_tokens / 1_024)
-        } else if pressure.remaining_context_tokens % 1_000 == 0 {
+        } else if pressure.remaining_context_tokens.is_multiple_of(1_000) {
             format!("{}k", pressure.remaining_context_tokens / 1_000)
         } else {
             format!("{:.1}k", pressure.remaining_context_tokens as f32 / 1_000.0)
@@ -294,8 +377,15 @@ mod tests {
         let content: String = (0..buffer.area.width)
             .map(|x| buffer.cell((x, 0)).unwrap().symbol().to_string())
             .collect();
-        assert!(content.contains("busy / native chat"));
-        assert!(content.contains("tok:114"));
+        assert!(content.contains("busy native chat"), "got: {content}");
+        assert!(content.contains("tok:114"), "got: {content}");
+        // The indicator is a braille dot, not a full-cell shape: a
+        // shape that flips between two silhouettes is a blink, a dot
+        // that travels around a cell is a shimmer.
+        assert!(
+            content.contains('⠋') || content.contains('⠙') || content.contains('⠹'),
+            "the busy indicator must be a braille frame; got: {content}"
+        );
     }
 
     #[test]

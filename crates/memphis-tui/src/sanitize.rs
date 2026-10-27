@@ -53,10 +53,14 @@ pub fn validate_provider_name(name: &str) -> bool {
 }
 
 /// Sanitize degradation reason for status bar
+///
+/// The cut lands on a character boundary: a fixed byte offset panicked
+/// on a Polish degradation reason, because `ę`, `„` and `”` are more
+/// than one byte.
 pub fn sanitize_reason(reason: &str) -> String {
     let clean = sanitize_for_tui(reason);
     if clean.len() > 150 {
-        format!("{}...", &clean[..147])
+        memphis_operator::truncate_with_ellipsis(&clean, 147)
     } else {
         clean
     }
@@ -107,6 +111,25 @@ mod tests {
         let huge = "x".repeat(5000);
         let result = sanitize_for_tui(&huge);
         assert_eq!(result.len(), 2000);
+    }
+
+    /// A degradation reason in Polish is longer than 150 bytes and
+    /// carries multi-byte characters. The cut has to land on a
+    /// character boundary — the same class of bug that killed the chat
+    /// worker on 2026-10-27.
+    #[test]
+    fn sanitizing_a_reason_never_splits_a_character() {
+        for offset in 0..300usize {
+            let mut reason = "x".repeat(offset);
+            reason.push('\u{201e}');
+            reason.push_str(&"y".repeat(300));
+            let result = sanitize_reason(&reason);
+            assert!(
+                result.len() <= 150,
+                "offset {offset}: result is {} bytes, over the budget",
+                result.len()
+            );
+        }
     }
 
     #[test]
