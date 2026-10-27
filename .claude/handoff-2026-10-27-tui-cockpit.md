@@ -250,25 +250,32 @@ journal 1). Po rebuildzie każdy łańcuch ma tyle wpisów, co bloków na dysku
 
 ## 2. Stan środowiska na koniec sesji
 
-Stan sprawdzony **2026-10-27 15:40 UTC**. Merge jest zdarzeniem zewnętrznym — po
+Stan sprawdzony **2026-10-27 18:30 UTC**. Merge jest zdarzeniem zewnętrznym — po
 scaleniu trzeba sprawdzić **zawartość** `origin/main` (`git show origin/main:<plik>`),
-nie tylko status PR.
+nie tylko status PR. Sprawdzone: `auto_scroll_before_search`, `PANEL_MAX_WIDTH` i
+`Ctrl+F` w keymapie są w `origin/main`.
 
 ```
 fork/main   == origin/main   (zsynchronizowane, 0/0 za i przed)
-HEAD        fix/tui-search-unsticks-transcript @ d5bbb650
+HEAD        main @ aef00d55
 PR #698     MERGED 2026-10-26 23:47 UTC (5ae70301) — ADR-011 + Cargo.toml
 PR #699     MERGED 2026-10-27 12:07 UTC (3a7f723b) — implementacja warstwy 1
 PR #702     MERGED 2026-10-27 12:52 UTC (aafea26c) — playbook pomiarowy
-PR #704     OPEN / MERGEABLE — strobe + tool use + panel boczny + fix wyszukiwania
+PR #704     MERGED 2026-10-27 18:28 UTC (aef00d55) — strobe + tool use + panel
+            boczny + fix wyszukiwania + fix cięcia na granicy znaku
 cargo test --workspace  587 testów, wszystko zielone
 cargo clippy -p memphis-tui  0 ostrzeżeń w plikach tej sesji
 ```
 
+Scalenie #704 wymagało tricku z handoffu (`gh pr ready --undo` + `gh pr ready`):
+`pull_request_target` to jedyny event, który w tym repo faktycznie doprowadza do
+merge'u. Head był świeży (zawierał aktualny `origin/main`), więc nie powtórzył się
+błąd ze scalaniem starego headu z 25.10.
+
 **Uwaga operacyjna:** TUI operatora (PID 5149, uruchomiony 16:26:53 lokalnie) ma w
-pamięci binarkę z 13:20 — to jest kod **PRZED** #704. Po scaleniu trzeba przebudować
-(`cargo build -p memphis-tui`) i zrestartować TUI, bo inaczej poprawka nie trafi do
-procesu, który siedzi na ekranie operatora.
+pamięci binarkę z 13:20 — to jest kod **PRZED** #704. Binarka z main jest już
+przebudowana (19:29 lokalnie), ale **proces trzeba zrestartować**, bo nie przebuduje
+się sam.
 
 ---
 
