@@ -49,15 +49,16 @@ output to decide WHERE to look; generation happens in a separate LLM
 
 Totals: {{corpus.train_count}} train / {{corpus.eval_count}} eval / {{corpus.source_count}} source.
 
-| Source | Samples | License | Url |
-|---|---|---|---|
-| Memphis repo (src + docs + tests + crates) | {{corpus.memphis_repo}} | Apache-2.0 | github.com/Memphis-Chains/memphis |
-| Memphis chain blocks (operator runtime history) | {{corpus.memphis_chains}} | operator:local-only | not redistributed |
-| The Rust Programming Language | 905 | Apache-2.0 | github.com/rust-lang/book |
-| TypeScript Handbook | 1440 | CC-BY-4.0 | github.com/microsoft/TypeScript-Website |
-| memphis-v5.pl/docs | 36 | operator:public | memphis-v5.pl/docs |
+| Source                                          | Samples                   | License             | Url                                     |
+| ----------------------------------------------- | ------------------------- | ------------------- | --------------------------------------- |
+| Memphis repo (src + docs + tests + crates)      | {{corpus.memphis_repo}}   | Apache-2.0          | github.com/Memphis-Chains/memphis       |
+| Memphis chain blocks (operator runtime history) | {{corpus.memphis_chains}} | operator:local-only | not redistributed                       |
+| The Rust Programming Language                   | 905                       | Apache-2.0          | github.com/rust-lang/book               |
+| TypeScript Handbook                             | 1440                      | CC-BY-4.0           | github.com/microsoft/TypeScript-Website |
+| memphis-v5.pl/docs                              | 36                        | operator:public     | memphis-v5.pl/docs                      |
 
 **Attribution:**
+
 - The Rust Programming Language © Steve Klabnik, Carol Nichols, and the Rust Project contributors. Apache-2.0.
 - TypeScript Handbook © Microsoft Corporation. CC-BY-4.0.
 - memphis-v5.pl documentation © Memphis-Chains.
@@ -70,12 +71,12 @@ Totals: {{corpus.train_count}} train / {{corpus.eval_count}} eval / {{corpus.sou
 
 Held-out eval set: {{eval.eval_size}} samples.
 
-| Metric | Target (spec §Eval protocol) | Actual |
-|---|---|---|
-| retrieval_recall_at_10 | ≥ 0.75 | {{eval.retrieval_recall_at_10}} |
-| zone_accuracy | ≥ 0.90 | {{eval.zone_accuracy}} |
-| ece | < 0.05 | {{eval.ece}} |
-| latency p99 | < 200ms on GTX 960 FP16 | {{eval.latency_p99_ms}}ms |
+| Metric                 | Target (spec §Eval protocol) | Actual                          |
+| ---------------------- | ---------------------------- | ------------------------------- |
+| retrieval_recall_at_10 | ≥ 0.75                       | {{eval.retrieval_recall_at_10}} |
+| zone_accuracy          | ≥ 0.90                       | {{eval.zone_accuracy}}          |
+| ece                    | < 0.05                       | {{eval.ece}}                    |
+| latency p99            | < 200ms on GTX 960 FP16      | {{eval.latency_p99_ms}}ms       |
 
 **Pass / fail:** {{eval.pass_or_fail}}
 
@@ -126,8 +127,11 @@ python3 tools/training/kartograf-pair-miner.py --corpus ~/.memphis/kartograf/cor
 python3 tools/training/train-kartograf.py \
   --mode full \
   --corpus ~/.memphis/kartograf/corpus/v2 \
-  --out ~/.memphis/kartograf/checkpoints/run-$(date +%s) \
-  --signing-seed-file /path/to/operator.seed
+  --out /private/kartograf-release-candidate --unsigned \
+  --base-model owner/model@REPLACE_WITH_REAL_40_HEX_COMMIT
+
+# Review candidate/evaluation first; authenticate on the operator host:
+memphis kartograf sign --file /private/kartograf-release-candidate/unsigned-checkpoint.json --json
 ```
 
 ## References

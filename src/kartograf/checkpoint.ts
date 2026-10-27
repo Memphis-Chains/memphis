@@ -114,11 +114,12 @@ function ed25519PrivateKeyFromBytes(seed: Buffer) {
     throw new Error(`expected 32-byte Ed25519 seed, got ${seed.length} bytes`);
   }
   const pkcs8Prefix = Buffer.from('302e020100300506032b657004220420', 'hex');
-  return createPrivateKey({
-    key: Buffer.concat([pkcs8Prefix, seed]),
-    format: 'der',
-    type: 'pkcs8',
-  });
+  const encoded = Buffer.concat([pkcs8Prefix, seed]);
+  try {
+    return createPrivateKey({ key: encoded, format: 'der', type: 'pkcs8' });
+  } finally {
+    encoded.fill(0);
+  }
 }
 
 /**
@@ -126,10 +127,7 @@ function ed25519PrivateKeyFromBytes(seed: Buffer) {
  * completed `CheckpointEnvelope` with `signer_did` stamped from the
  * seed's derived public key and a hex `signature`.
  */
-export function signCheckpoint(
-  envelope: UnsignedEnvelope,
-  seed: Buffer,
-): CheckpointEnvelope {
+export function signCheckpoint(envelope: UnsignedEnvelope, seed: Buffer): CheckpointEnvelope {
   const privateKey = ed25519PrivateKeyFromBytes(seed);
   // Derive the public key so signer_did is authoritative relative to
   // the secret, not operator-provided metadata that could disagree.
@@ -146,9 +144,7 @@ export function signCheckpoint(
   return { ...withDid, signature: hex(sig) };
 }
 
-export type VerifyResult =
-  | { valid: true; signerDid: string }
-  | { valid: false; reason: string };
+export type VerifyResult = { valid: true; signerDid: string } | { valid: false; reason: string };
 
 /**
  * Verify a signed checkpoint envelope. Returns `{ valid: true, signerDid }`
