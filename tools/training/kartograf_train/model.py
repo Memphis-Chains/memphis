@@ -136,6 +136,8 @@ def _pick_attn_impl() -> str:
 def build_model(
     prefer_4bit: bool = True,
     gradient_checkpointing: bool = False,
+    model_id: str = MODEL_ID,
+    revision: str | None = None,
 ) -> KartografModel:
     """Instantiate ModernBERT-base + LoRA + heads.
 
@@ -167,14 +169,15 @@ def build_model(
                     bnb_4bit_quant_type="nf4",
                 )
                 _kw = dict(
+                    revision=revision,
                     quantization_config=bnb_cfg,
                     torch_dtype=torch.bfloat16,
                     attn_implementation=_pick_attn_impl(),
                 )
-                if "ModernBERT" in MODEL_ID:
+                if "ModernBERT" in model_id:
                     # ModernBERT-only kwarg; DeBERTa rejects it.
                     _kw["reference_compile"] = False
-                base = AutoModel.from_pretrained(MODEL_ID, **_kw)
+                base = AutoModel.from_pretrained(model_id, **_kw)
                 loaded_precision = "4bit-nf4-bf16"
             except Exception as exc:
                 # Even on supported hardware, peft's fused-QKV wrapper can
@@ -201,10 +204,10 @@ def build_model(
         else:
             dtype = torch.float32
             loaded_precision = "fp32"
-        _kw = dict(torch_dtype=dtype, attn_implementation=_pick_attn_impl())
-        if "ModernBERT" in MODEL_ID:
+        _kw = dict(torch_dtype=dtype, attn_implementation=_pick_attn_impl(), revision=revision)
+        if "ModernBERT" in model_id:
             _kw["reference_compile"] = False
-        base = AutoModel.from_pretrained(MODEL_ID, **_kw)
+        base = AutoModel.from_pretrained(model_id, **_kw)
 
     if gradient_checkpointing:
         # Trade compute for memory: halves activation RAM per layer by

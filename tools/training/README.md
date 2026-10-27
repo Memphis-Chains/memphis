@@ -9,14 +9,14 @@ producing a new Kartograf checkpoint for release.
 
 ## Contents
 
-| Script | Scope | Status |
-|---|---|---|
-| `kartograf-corpus.py` | Y1 Q1 N37 — walk repo + chains, scan for secrets, label zones, write train/eval JSONL | v1 shipped |
-| `kartograf-pair-miner.py` | Y1 Q2 N32 Phase 1 — retrofit corpus with contrastive pairs (git co-occurrence + symbol TF-IDF + cross-zone hard negatives) | Q2 Phase 1 |
-| `kartograf-corpus-augment.py` | Y1 Q2 N32 Phase 2.5 — extend v1 corpus with external reference material (Rust Book + TS Handbook + memphis-v5.pl/docs) → corpus v2 | Q2 Phase 2.5 |
-| `train-kartograf.py` | Y1 Q2 N32 Phase 2-4 — load corpus+pairs, LoRA fine-tune ModernBERT + two heads, eval rig, ONNX export, sign envelope. `--mode stub` = N37.2 behavior; `--mode smoke` = 50-step proof-of-life; `--mode full` = real run with end-of-epoch eval + best-checkpoint tracking. | Q2 Phase 2-4 |
-| `kartograf_train/` package | Y1 Q2 N32 — data loader + model + loss + training loop + eval rig + ONNX export (invoked by `train-kartograf.py`) | Q2 Phase 2-4 |
-| `MODELCARD-TEMPLATE.md` | Template for per-release MODELCARD.md (fill in `{{...}}` slots from checkpoint envelope + eval results) | Q2 Phase 4 |
+| Script                        | Scope                                                                                                                                                                                                                                                                     | Status       |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `kartograf-corpus.py`         | Y1 Q1 N37 — walk repo + chains, scan for secrets, label zones, write train/eval JSONL                                                                                                                                                                                     | v1 shipped   |
+| `kartograf-pair-miner.py`     | Y1 Q2 N32 Phase 1 — retrofit corpus with contrastive pairs (git co-occurrence + symbol TF-IDF + cross-zone hard negatives)                                                                                                                                                | Q2 Phase 1   |
+| `kartograf-corpus-augment.py` | Y1 Q2 N32 Phase 2.5 — extend v1 corpus with external reference material (Rust Book + TS Handbook + memphis-v5.pl/docs) → corpus v2                                                                                                                                        | Q2 Phase 2.5 |
+| `train-kartograf.py`          | Y1 Q2 N32 Phase 2-4 — load corpus+pairs, LoRA fine-tune ModernBERT + two heads, eval rig, ONNX export, sign envelope. `--mode stub` = N37.2 behavior; `--mode smoke` = 50-step proof-of-life; `--mode full` = real run with end-of-epoch eval + best-checkpoint tracking. | Q2 Phase 2-4 |
+| `kartograf_train/` package    | Y1 Q2 N32 — data loader + model + loss + training loop + eval rig + ONNX export (invoked by `train-kartograf.py`)                                                                                                                                                         | Q2 Phase 2-4 |
+| `MODELCARD-TEMPLATE.md`       | Template for per-release MODELCARD.md (fill in `{{...}}` slots from checkpoint envelope + eval results)                                                                                                                                                                   | Q2 Phase 4   |
 
 ## Usage — corpus pipeline (N37)
 
@@ -88,30 +88,52 @@ python3 tools/training/kartograf-pair-miner.py --corpus ~/.memphis/kartograf/cor
 
 ## Usage — training (N32 Phase 2-4)
 
+Training and release signing are separate. Run the trainer in a fresh,
+operator-controlled output directory outside the runtime checkpoint store.
+A synthetic stub needs no model download or signing key:
+
 ```bash
-# Stub: CI-friendly. No ML deps actually executed.
 python3 tools/training/train-kartograf.py --mode stub \
-  --corpus ~/.memphis/kartograf/corpus/v1 \
-  --out /tmp/karto-stub --signing-seed-file <seed>
-
-# Smoke: 50 real optimizer steps, proof-of-life. Any loss decrease is pass.
-python3 tools/training/train-kartograf.py --mode smoke \
-  --corpus ~/.memphis/kartograf/corpus/v2 \
-  --out /tmp/karto-smoke --signing-seed-file <(openssl rand 32)
-
-# Full: real run with end-of-epoch eval + best-checkpoint tracking + ONNX
-# export. Default 3 epochs, seq=512, grad_checkpointing on (4-8h on GTX 960).
-python3 tools/training/train-kartograf.py --mode full \
-  --corpus ~/.memphis/kartograf/corpus/v2 \
-  --out ~/.memphis/kartograf/checkpoints/run-$(date +%s) \
-  --signing-seed-file /path/to/operator-ed25519.seed
+  --corpus /private/corpus --out /private/karto-stub --unsigned
 ```
 
-Full-mode writes alongside `checkpoint.json`:
-- `model.onnx` — FP16 ONNX (LoRA merged into base; opset 17; dynamic batch + seq).
-- `tokenizer.json` — ModernBERT BPE tokenizer (HF format; consumable by `onnxruntime-node` + `@huggingface/tokenizers`).
-- `eval-results.json` — sidecar with the four spec metrics (recall@10, zone_accuracy, ECE, p99 latency) + per-class F1.
-If ONNX export fails (known: LoRA + ModernBERT + older opsets), the envelope still signs correctly with placeholder ONNX bytes and `[train] WARN` logs the path to the saved `best_state.pt` snapshot. Retry export offline by reloading the trainable params via `kartograf_train.model.build_model()` + `torch.load(<out>/best_state.pt)` and calling `kartograf_train.onnx_export.export_model_to_onnx(model, tokenizer, device)` directly — same code path the trainer takes inline, just decoupled from the long full run.
+Smoke/full require an actual 40-hex Hugging Face commit obtained from the
+chosen model's repository. Supply the same source to both modes:
+
+```bash
+python3 tools/training/train-kartograf.py --mode full \
+  --corpus /private/corpus --out /private/karto-full --unsigned \
+  --base-model owner/model@REPLACE_WITH_REAL_40_HEX_COMMIT
+```
+
+The selected model and tokenizer are loaded from that same commit. Do not
+infer GPU compatibility from this example: the host's actual CUDA, torch,
+transformers and architecture combination still requires preflight.
+
+The trainer writes `model.onnx`, `tokenizer.json` and
+`unsigned-checkpoint.json`. This metadata is deliberately not installable.
+Full-mode export failure aborts and retains `best_state.pt` for investigation;
+it never publishes a placeholder as a release. Stub/smoke use fixture ONNX
+bytes and cannot pass the release signer. Existing output artifacts cause an
+error; select a fresh directory rather than replacing an earlier candidate.
+`--signing-seed-file` is retained only for synthetic stub fixtures. It is
+refused for smoke/full before any key file or model is read.
+
+After reviewing the artifacts, measured evaluation and provenance, sign on
+the operator host with its existing vault-held `did_seed` identity:
+
+```bash
+memphis kartograf sign --file /private/karto-full/unsigned-checkpoint.json --json
+memphis kartograf verify --file /private/karto-full/checkpoint.json --json
+```
+
+The sign command requires operator authentication, verifies metadata and
+both complete artifact hashes, rejects known placeholders, and creates a
+0600 signed envelope without overwriting an existing one. Key material stays
+inside the vault callback; Python receives no private key. It does not install
+or activate the model. Follow the [selection runbook](../../docs/runbooks/KARTOGRAF-CHECKPOINT-SELECTION.md)
+for explicit trusted-signer installation and activation. A signature proves
+integrity and attribution, not model accuracy or GPU suitability.
 
 ## Environment
 

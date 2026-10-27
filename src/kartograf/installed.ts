@@ -28,12 +28,12 @@ function pathPresent(file: string): boolean {
 }
 const pointerPath = (env: NodeJS.ProcessEnv) => join(getDataDir(env), 'kartograf', 'active.json');
 
-function regularFile(file: string, limit: number): void {
+export function regularFile(file: string, limit: number): void {
   const info = lstatSync(file);
   if (!info.isFile() || info.isSymbolicLink() || info.size > limit)
     throw new Error('Checkpoint artifact must be a bounded regular file');
 }
-async function fileHash(file: string, limit: number): Promise<string> {
+export async function fileHash(file: string, limit: number): Promise<string> {
   regularFile(file, limit);
   const hash = createHash('sha256');
   let size = 0;

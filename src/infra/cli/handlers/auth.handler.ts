@@ -13,7 +13,7 @@ import { runOAuthBrowserFlow } from '../../../providers/anthropic/oauth-flow.js'
 import { storeVaultSecret } from '../../../security/vault-boundary.js';
 import { GATED_OPERATIONS, type GateRule } from '../../auth/operator-gate.js';
 import type { CliContext } from '../context.js';
-import { CLI_COMPLETION_COMMANDS } from '../registry.js';
+import { CLI_COMMAND_REGISTRY, CLI_COMPLETION_COMMANDS } from '../registry.js';
 
 interface AuditRow {
   command: string;
@@ -149,8 +149,17 @@ export function buildAuthAuditMatrix(): AuditRow[] {
   }
   const enforcing = findEnforcingCommands();
 
+  // Gated namespaces may intentionally be absent from shell completion.
+  // They still need an audit row once a subcommand uses operator authority.
+  const commands = new Set<string>(CLI_COMPLETION_COMMANDS);
+  for (const registration of CLI_COMMAND_REGISTRY) {
+    for (const command of registration.commands) {
+      if (command && rulesByCommand.has(command)) commands.add(command);
+    }
+  }
+
   const rows: AuditRow[] = [];
-  for (const command of CLI_COMPLETION_COMMANDS) {
+  for (const command of commands) {
     const matched = rulesByCommand.get(command) ?? [];
     const registered = matched.length > 0;
     const enforced = enforcing.has(command);
