@@ -30,7 +30,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     tier: 2,
     capabilities: ['read', 'network'],
     description:
-      "Typed decision over a state via the local BASAL-1.0 service. Reads `state` and answers a typed question about it — choice, yes/no, or score — returning a calibrated probability per option, never free text. Options are described in `criteria`, so one model serves many taxonomies without retraining. The point is `auto`: true when `confidence` clears `threshold` (default 0.93, the model's own calibration for ~1% error), false when a human should look. Latency on the operator's GPU-less host is 70-140s per call, so this is not for interactive loops. Requires the BASAL service; returns a structured error with a start command when it is down.",
+      "Advisory typed decision via the local BASAL service: choice, yes/no or score with validated probabilities. Classes are supplied in criteria. auto means the caller's confidence threshold passed and the service did not defer or report unvalidated calibration; it grants no tool permissions and guarantees no domain error rate. Re-evaluate thresholds after changing model or backend. Historical CPU calls took 70-140 seconds; use measured latency rather than assuming an interactive response. Requires the separately running local service.",
     inputSchema: z
       .object({
         state: z.string().min(1).max(32_000),
