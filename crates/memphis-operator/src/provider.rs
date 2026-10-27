@@ -16,6 +16,7 @@ use crate::{
         resolve_codex_model_slug, CodexBridge, CODEX_FAMILY_CONTEXT_WINDOW, CODEX_FAMILY_MODELS,
     },
     runtime::try_read_vault_secret_plaintext,
+    text_truncation::truncate_with_ellipsis,
     OperatorConfig, OperatorError,
 };
 
@@ -918,7 +919,10 @@ impl ProviderRuntime {
             }
             let payload = serde_json::from_str::<Value>(data).map_err(|error| {
                 let preview = if data.len() > 100 {
-                    format!("{}...", &data[..100])
+                    // Character-boundary cut: a malformed payload with
+                    // a multi-byte character at byte 100 used to panic
+                    // while building its own error message.
+                    truncate_with_ellipsis(data, 100)
                 } else {
                     data.to_string()
                 };

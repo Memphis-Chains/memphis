@@ -200,6 +200,54 @@ własność formatowania, test z niej czyta.
 
 ---
 
+### 1.11 „Spanikowany worker" — przycięcie na granicy znaku (commit do tej gałęzi)
+
+Drugie zgłoszenie operatora: **„spanikowany worker"**. Twardy dowód w
+`~/.memphis/logs/tui-errors.jsonl`:
+
+```
+worker panicked: end byte index 157 is not a char boundary;
+it is inside '„' (bytes 156..159 of string)     ts=2026-10-27T16:59:50Z
+```
+
+**Przyczyna:** `summarize_content` w `crates/memphis-operator/src/chat_memory.rs`
+obcinał podsumowanie **stałym offsetem bajtowym** (`&collapsed[..157]`).
+Offset bajtowy to nie offset znaku — a polskie `„` (3 bajty), `”` i `ę` są
+wielobajtowe, i każda próba cięcia w ich środku to panika.
+
+**Dlaczego to bolało akurat tak:** zapis journalu idzie w dwóch krokach —
+najpierw blok do łańcucha, potem wpis do indeksu exact. Panika w drugim
+kroku zostawiała blok **w łańcuchu i poza indeksem**: trwale
+nieprzeszukiwalny, bez śladu w `chain verify` (bo hashe były poprawne).
+Blok 87 (zapisany przez sesję równoległą o 16:59:50) był w łańcuchu, a
+`memory_search_entries` miało maksimum `block_index = 86`.
+
+**Naprawa:** nowy moduł `crates/memphis-operator/src/text_truncation.rs` —
+jedno miejsce, w którym cięcie respektuje granice znaków. Przepięte na niego
+wszystkie cztery miejsca z tym samym błędem klasy:
+
+| miejsce | offset | kiedy paliło |
+|---|---|---|
+| `chat_memory.rs` `summarize_content` | 157 | zapis journalu — **to zadziałało 16.59** |
+| `chat_guards.rs` `sanitize_json` | 300 | argumenty/wyniki narzędzi dłuższe niż 300 bajtów |
+| `provider.rs` podgląd zepsutego SSE | 100 | błędny payload providera |
+| `memphis-tui/src/sanitize.rs` `sanitize_reason` | 147 | powód degradacji w pasku statusu |
+
+**Dowód, że test pada przed zmianą:** na starym kodzie test z prawdziwą
+treścią bloku 87 daje **dokładnie** tę samą komendę co log produkcyjny —
+`end byte index 157 is not a char boundary; it is inside '„' (bytes 156..159
+of string)`. Po zmianie zielone, plus test systematyczny: wielobajtowy znak
+na **każdym** wyrównaniu 0..400 nie może panikować.
+
+**Naprawa danych:** `memphis search rebuild` (bez `--chain`! `clear()`
+kasuje całą tabelę, więc rebuild jednego łańcucha zniszczyłby indeks
+pozostałych). Odkryło to więcej niż jeden brakujący wpis: indeks exact
+**rotował** — brakowało 61 wpisów (cases 50, decisions 7, insights 3,
+journal 1). Po rebuildzie każdy łańcuch ma tyle wpisów, co bloków na dysku
+(journal 87/87, cases 125/125, decisions 49/49, insights 42/42, reflections
+36/36, patterns 33/33, collective 6/6). Blok 87 jest przeszukiwalny.
+
+
 ## 2. Stan środowiska na koniec sesji
 
 Stan sprawdzony **2026-10-27 15:40 UTC**. Merge jest zdarzeniem zewnętrznym — po
