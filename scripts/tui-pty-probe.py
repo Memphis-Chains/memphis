@@ -15,6 +15,7 @@ Modes:
   --bench    measure keystroke -> redraw latency.
 
 Usage: tui-pty-probe.py [binary] [--dump] [--bench] [--keys "..."]
+                        [--rows N] [--cols N]
 """
 import fcntl
 import os
@@ -299,6 +300,15 @@ def main() -> int:
     keys = b""
     if "--keys" in sys.argv:
         keys = sys.argv[sys.argv.index("--keys") + 1].encode()
+
+    # The pty size is the terminal the operator actually uses. A
+    # measurement at a size nobody runs at measures a layout nobody
+    # sees — the help panel in particular is sized from its content.
+    global ROWS, COLS
+    if "--rows" in sys.argv:
+        ROWS = int(sys.argv[sys.argv.index("--rows") + 1])
+    if "--cols" in sys.argv:
+        COLS = int(sys.argv[sys.argv.index("--cols") + 1])
 
     if want_bench:
         result = bench(binary)
