@@ -55,3 +55,12 @@ provider/index readiness before doctor can report Kartograf as tier 0.
 
 No checkpoint is manufactured or activated by this contract. Real signed model
 artifacts, evaluation, the zone schema and independent review remain required.
+
+The preprocessing policy is now `verified-json-content-truncate512-v2`.
+Content is truncated to the budget remaining after special tokens, then
+CLS/SEP post-processing is applied. The previous JavaScript truncation cut
+the final SEP token from long inputs, unlike Python tokenizers. The changed
+policy intentionally produces a new embedding-space ID, even for identical
+artifact hashes. Re-index vectors when changing from the previous policy;
+never mix those spaces based only on dimension. See the training README's
+offline Python/Node preflight for the measured ModernBERT compatibility check.

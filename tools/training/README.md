@@ -190,3 +190,61 @@ The Python regex set here mirrors `scripts/secret-scan.sh:PATTERN`. When
 `secret-scan.sh` is updated (new provider tokens, new false-positive
 hardening), `SECRET_PATTERNS` here MUST be updated in the same PR — the
 Q1 exit test checks both; drift is a release blocker.
+
+## Python 3.14 / CUDA 12.6 preflight
+
+`requirements.txt` remains the older training profile. On the operator's
+GTX 960 (Maxwell 5.2), use an isolated environment with the explicit
+`requirements-cu126-preflight.txt` profile. Install PyTorch from its official
+CUDA 12.6 index first; the second command preserves that exact CUDA build:
+
+```bash
+python3.14 -m venv /private/kartograf-preflight-venv
+/private/kartograf-preflight-venv/bin/python -m pip install \
+  --index-url https://download.pytorch.org/whl/cu126 'torch==2.14.0+cu126'
+/private/kartograf-preflight-venv/bin/python -m pip install \
+  --index-url https://pypi.org/simple --only-binary=:all: \
+  -r tools/training/requirements-cu126-preflight.txt
+/private/kartograf-preflight-venv/bin/python -m pip check
+```
+
+Use disk-backed `TMPDIR` if the host's `/tmp` is a small tmpfs. The profile
+pins direct dependencies; retain `pip freeze` and the install report with
+run evidence to record transitive versions. It excludes bitsandbytes because
+this preflight exercises FP16 LoRA, not NF4 quantization. See the official
+[PyTorch CUDA support matrix](https://github.com/pytorch/pytorch/blob/main/RELEASE.md#pytorch-cuda-support-matrix).
+
+Obtain only `config.json`, `tokenizer.json`, and `tokenizer_config.json`
+from one pinned ModernBERT commit. The tested public source was
+[`answerdotai/ModernBERT-base@8949b909ec900327062f0ebf497f51aef5e6f0c8`](https://huggingface.co/answerdotai/ModernBERT-base/tree/8949b909ec900327062f0ebf497f51aef5e6f0c8),
+Apache-2.0. No pretrained weights are needed for this test. Keep the original
+file hashes with the evidence. Run against a fresh output directory:
+
+```bash
+/private/kartograf-preflight-venv/bin/python tools/training/preflight-modernbert.py \
+  --tokenizer-dir /private/pinned-tokenizer --out /private/new-preflight-run
+node --import tsx tools/training/check-preflight-runtime.ts \
+  /private/new-preflight-run /private/pinned-tokenizer
+```
+
+The offline Python probe creates a seeded, tiny random ModernBERT, loads it
+through the real model builder, performs one GPU LoRA/heads optimization
+step with the real contrastive/zone loss, exports ONNX and tests several
+sequence lengths plus a padded batch. The Node probe compares Python token
+IDs, embeddings and zone probabilities against the actual runtime. It uses
+an ephemeral synthetic signing identity inside the fixture directory and
+never installs or activates an operator checkpoint. Both scripts fail on
+mismatch; rerun with a fresh output directory.
+
+Measured on 2026-10-27: Python 3.14, torch 2.14.0+cu126, Transformers
+5.21.0, PEFT 0.21.2; FP16 GPU backward and all five ONNX parity inputs
+passed. Python/Node parity passed six cases, including Unicode and a
+512-token input. This proves the small architecture/toolchain path, not
+full-size VRAM fit, convergence, retrieval quality, or Q2 release readiness.
+
+Export explicitly uses the legacy tracer with dynamic axes and a single
+ONNX file. [PyTorch's ONNX API](https://docs.pytorch.org/docs/stable/onnx.html)
+now defaults to the dynamo exporter; relying on that default changed the
+producer's dependencies and artifact behavior. Parity rejects non-finite
+outputs, zero embeddings, shape mismatches and any individual divergent row.
+Full training continues to abort on export failure, preserving trained state.
