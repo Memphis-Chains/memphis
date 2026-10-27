@@ -9,7 +9,8 @@ use ratatui::{
 
 use crate::app::{AppState, StatusBarContext};
 use crate::widgets::{
-    HelpOverlay, NotificationBanner, OutputBody, PromptLine, ScrollState, StatusBar,
+    prompt_layout, HelpOverlay, NotificationBanner, OutputBody, PromptState, PromptWidget,
+    ScrollState, StatusBar, MAX_PROMPT_ROWS,
 };
 
 const RENDERER_MODE: &str = "ratatui";
@@ -17,6 +18,8 @@ const RENDERER_MODE: &str = "ratatui";
 pub struct UiRenderer {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
     scroll_state: ScrollState,
+    /// Scroll offset + caret position of the input line.
+    prompt_state: PromptState,
     busy_frame: usize,
 }
 
@@ -27,6 +30,7 @@ impl UiRenderer {
         Ok(Self {
             terminal,
             scroll_state: ScrollState::new(),
+            prompt_state: PromptState::default(),
             busy_frame: 0,
         })
     }
@@ -34,9 +38,6 @@ impl UiRenderer {
     pub fn draw(&mut self, app: &AppState) -> io::Result<()> {
         let timestamp = Local::now().format("%H:%M:%S").to_string();
         let status_context = app.render_status_bar_context();
-        let degradation = app.degradation.as_ref();
-        let output_buffer = &app.output_buffer;
-        let input_buffer = &app.input_buffer;
         let help_visible = app.help_visible;
         let mouse_toast = app
             .mouse_capture_toast
@@ -44,17 +45,17 @@ impl UiRenderer {
             .filter(|t| t.is_visible())
             .map(|t| t.captured);
         let scroll_state = &mut self.scroll_state;
+        let prompt_state = &mut self.prompt_state;
         let busy_frame = self.busy_frame;
 
         self.terminal.draw(|frame| {
             render_ui(
                 frame,
-                output_buffer,
-                input_buffer,
+                app,
                 &status_context,
                 &timestamp,
-                degradation,
                 scroll_state,
+                prompt_state,
                 busy_frame,
                 help_visible,
                 mouse_toast,
@@ -103,30 +104,41 @@ pub fn renderer_mode() -> &'static str {
 
 fn render_ui(
     frame: &mut Frame,
-    output_buffer: &[crate::app::StyledLine],
-    input_buffer: &str,
+    app: &AppState,
     status_context: &StatusBarContext,
     timestamp: &str,
-    degradation: Option<&crate::app::DegradationState>,
     scroll_state: &mut ScrollState,
+    prompt_state: &mut PromptState,
     busy_frame: usize,
     help_visible: bool,
     mouse_toast: Option<bool>,
 ) {
+    let output_buffer = &app.output_buffer;
+    let input_buffer = &app.input_buffer;
+    let degradation = app.degradation.as_ref();
     let has_notification = degradation.is_some();
+
+    // The prompt is sized from its own content: a one-line prompt takes
+    // one row, a long or multi-line prompt takes up to MAX_PROMPT_ROWS
+    // and the body gives up the difference. Before this the prompt was
+    // hard-pinned to a single row, so anything the operator typed past
+    // the terminal width was silently truncated.
+    let frame_width = frame.area().width;
+    let prompt = prompt_layout(input_buffer, app.input_cursor, frame_width);
+    let prompt_height = prompt.rows.len().clamp(1, MAX_PROMPT_ROWS) as u16;
 
     let constraints = if has_notification {
         vec![
-            Constraint::Length(1), // notification banner
-            Constraint::Min(3),    // body
-            Constraint::Length(1), // prompt
-            Constraint::Length(1), // status bar
+            Constraint::Length(1),          // notification banner
+            Constraint::Min(3),             // body
+            Constraint::Length(prompt_height), // prompt
+            Constraint::Length(1),          // status bar
         ]
     } else {
         vec![
-            Constraint::Min(3),    // body
-            Constraint::Length(1), // prompt
-            Constraint::Length(1), // status bar
+            Constraint::Min(3),             // body
+            Constraint::Length(prompt_height), // prompt
+            Constraint::Length(1),          // status bar
         ]
     };
 
@@ -143,11 +155,23 @@ fn render_ui(
     }
 
     frame.render_stateful_widget(OutputBody::new(output_buffer), chunks[idx], scroll_state);
-    frame.render_widget(PromptLine::new(input_buffer), chunks[idx + 1]);
+    frame.render_stateful_widget(
+        PromptWidget::new(&prompt),
+        chunks[idx + 1],
+        prompt_state,
+    );
     frame.render_widget(
         StatusBar::new(status_context, timestamp, busy_frame),
         chunks[idx + 2],
     );
+
+    // Put the caret where the operator is actually typing. Ratatui
+    // shows the cursor when a position is set and hides it otherwise,
+    // so this is also what makes the caret visible at all — before this
+    // the prompt had no insertion point rendered anywhere.
+    if let Some((x, y)) = prompt_state.caret {
+        frame.set_cursor_position((x, y));
+    }
 
     // Toast: short-lived (3s) banner rendered in the top-right of the
     // body area when the operator just toggled mouse capture. Single

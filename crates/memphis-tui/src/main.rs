@@ -1,4 +1,5 @@
 mod app;
+mod clipboard;
 mod client;
 mod config;
 mod error_log;
@@ -8,6 +9,7 @@ mod widgets;
 
 use std::{
     env,
+    io::Write,
     process::ExitCode,
     sync::mpsc,
     thread,
@@ -55,6 +57,41 @@ fn setup_utf8_locale() {
             env::set_var("LC_ALL", locale);
             break;
         }
+    }
+}
+
+/// Copy the last assistant answer to the terminal's clipboard via
+/// OSC 52, and tell the operator what happened.
+///
+/// OSC 52 is the only clipboard path available to a raw-mode terminal
+/// process: the terminal emulator receives the sequence and sets the
+/// clipboard itself. Terminals that refuse OSC 52 (some do, for
+/// security) simply ignore it — hence the explicit on-screen note
+/// rather than a silent no-op.
+fn copy_last_answer(app: &mut app::AppState) {
+    let Some(answer) = app.last_assistant_answer().map(str::to_string) else {
+        app.note(
+            LineTone::Warning,
+            "nothing to copy yet — no assistant answer in this session",
+        );
+        return;
+    };
+
+    let sequence = clipboard::osc52_copy(&answer);
+    let written = std::io::stdout().write_all(&sequence).and_then(|_| std::io::stdout().flush());
+
+    match written {
+        Ok(()) => app.note(
+            LineTone::Success,
+            &format!(
+                "copied the last answer to the clipboard ({} chars, OSC 52)",
+                answer.chars().count()
+            ),
+        ),
+        Err(error) => app.note(
+            LineTone::Error,
+            &format!("clipboard copy failed: {error}"),
+        ),
     }
 }
 
@@ -297,7 +334,7 @@ fn main() -> ExitCode {
     let mut pending_refresh: Option<mpsc::Receiver<RefreshResult>> = None;
 
     if let Some(input) = args.input {
-        app.input_buffer = input;
+        app.set_input_text(input);
         app.execute_input(&mut client);
     }
 
@@ -414,6 +451,9 @@ fn main() -> ExitCode {
                     }
                     AppAction::ClearOutput => {
                         app.clear_output();
+                    }
+                    AppAction::CopyLastAnswer => {
+                        copy_last_answer(&mut app);
                     }
                     AppAction::ScrollUp => renderer.scroll_up(1),
                     AppAction::ScrollDown => renderer.scroll_down(1),
@@ -593,7 +633,7 @@ fn execute_run_command(
     timeout: Duration,
 ) -> RunCommandReport {
     app.clear_output();
-    app.input_buffer = command.trim().to_string();
+    app.set_input_text(command.trim().to_string());
     let route = classify_input_route(command).unwrap_or(CommandRoute::Unsupported);
     app.execute_input(client);
 

@@ -7,7 +7,7 @@ mod status_bar;
 pub use body::{OutputBody, ScrollState};
 pub use help::HelpOverlay;
 pub use notification::NotificationBanner;
-pub use prompt::PromptLine;
+pub use prompt::{prompt_layout, PromptState, PromptWidget, MAX_PROMPT_ROWS};
 pub use status_bar::StatusBar;
 
 use ratatui::style::{Color, Modifier, Style};
