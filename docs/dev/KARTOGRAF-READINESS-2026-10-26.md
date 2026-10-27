@@ -1,7 +1,8 @@
 # Kartograf readiness inventory — 2026-10-26
 
-No Kartograf checkpoint, training corpus or dedicated training venv is installed
-on the inspected host. The historical May run notes name
+At the initial inspection on 2026-10-26, no Kartograf checkpoint, training
+corpus or dedicated training venv was installed on the host. Subsequent
+isolated preflight environments are described below. The historical May run notes name
 `~/.memphis/kartograf/corpus/v4`, `~/.venvs/memphis-train` and an installed
 checkpoint; those paths no longer exist. No production training was started,
 existing weights were not moved, and no stand-in model was installed.
@@ -63,8 +64,23 @@ producer key-handling gap; no actual release has been trained or signed.
 A subsequent host preflight on 2026-10-27 verified small CUDA forward/backward
 operations in FP32 and FP16 on the GTX 960 using an isolated PyTorch 2.14.0
 CUDA 12.6 environment. The system's CUDA 13 build lacks Maxwell kernels. This
-establishes a working primitive GPU path, not a complete training stack or an
-evaluated model. The full recipe and actual model still need verification.
+established a working primitive GPU path. A subsequent full-stack preflight
+used Python 3.14, Transformers 5.21.0 and PEFT 0.21.2 with that CUDA build.
+A tiny random ModernBERT passed FP16 LoRA backward, the actual contrastive/zone
+loss, and the real training loop (gradient accumulation, checkpointing, scaler,
+evaluation, best-state restore/save and ONNX export). Five ONNX inputs covered
+dynamic lengths and padding. Six Python/Node cases agreed on token IDs and
+native embeddings, including Unicode and truncation at 512 tokens.
+
+This uncovered and fixed the removed ModernBERT constructor keyword, the
+changed PyTorch exporter default, and JavaScript truncation dropping SEP.
+The runtime policy is now `verified-json-content-truncate512-v2`; see the
+[embedding-space contract](KARTOGRAF-EMBEDDING-SPACE.md) and
+[reproducible preflight](../../tools/training/README.md#python-314--cuda-126-preflight).
+No pretrained weights were downloaded. The isolated environment proves the
+small architecture/toolchain path; full-size VRAM fit, a rebuilt real corpus,
+convergence and held-out release quality still require verification. Synthetic
+evaluation numbers are fixture checks and do not satisfy Q2 model gates.
 
 The next artifact decision needs a real model/tokenizer bundle, producer DID,
 pinned source revision and license, evaluation recipe, zone mapping and embedding
