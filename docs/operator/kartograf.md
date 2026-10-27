@@ -1,111 +1,55 @@
-# Kartograf — operator runbook
+# Kartograf — operator workflow
 
-Sprint K (Q1 N32) — operator surface for Kartograf checkpoint distribution.
+Use the [checkpoint selection runbook](../runbooks/KARTOGRAF-CHECKPOINT-SELECTION.md)
+for the complete current contract. The runtime and corpus inventory is in
+[Kartograf readiness](../dev/KARTOGRAF-READINESS-2026-10-26.md).
 
-## What ships today
+A bundle contains `checkpoint.json`, `model.onnx` and `tokenizer.json`. Obtain
+the expected producer DID independently before activation.
 
-- `memphis kartograf verify --file <envelope.json>` — verify a signed checkpoint envelope (operator-trusted source) without installing
-- `memphis kartograf install --file <envelope.json> --source file` — verify + stage to `~/.memphis/kartograf/checkpoints/<signer-slug>/`
-- `memphis kartograf status` — list installed checkpoints + integrity status
-- `memphis kartograf query --query "<text>"` — run inference and report top zones + embedding preview. Requires `MEMPHIS_KARTOGRAF_ENABLE=1` and an installed checkpoint.
-- `memphis_kartograf` tool — Memphis daemon can call this during agent loops (singleton-cached ONNX session: ~5 s cold load, <200 ms per warm call).
-- `kartograf-zone-router` built-in skill — composes routing decisions over Kartograf + `memphis_recall` before writing.
-- Doctor `ta13-kartograf` check — visibility on installed checkpoint count + signers.
-- Training pipeline (`tools/training/train-kartograf.py`) — produces ONNX checkpoints locally on a single GPU.
-
-## Activation
-
-The ONNX runtime is opt-in (the ~700-MB checkpoint + 80-MB onnxruntime-node binary aren't loaded otherwise). To enable:
-
-```bash
-# 1. Install a checkpoint (one-time per operator install)
-memphis kartograf install --file <envelope>.json --source file
-
-# 2. Flip the flag in ~/memphis/.env
-echo 'MEMPHIS_KARTOGRAF_ENABLE=1' >> .env
-
-# 3. Restart the daemon to pick up the new flag
-systemctl --user restart memphis
-```
-
-After restart, `memphis kartograf status` shows the active checkpoint, the `memphis_kartograf` tool appears in `memphis_self_describe`, and the daemon advertises one more tool at startup. The first `memphis_kartograf` call pays the cold-load cost; subsequent calls within the same daemon process reuse the cached session.
-
-## Roadmap (not yet)
-
-- HF hub + GitHub release transports for `--source` (today only `file` and `federation` work locally).
-- Cascade integration — wiring Kartograf as the tier-0 retriever in `memphis_recall` ranking. Today the tool exists standalone; semantic recall still uses the existing local embeddings pipeline.
-
-## Concepts
-
-A Kartograf **checkpoint** is a signed envelope plus two artifacts:
-
-- `checkpoint.json` — the signed envelope (signer DID, hashes, version, distribution_source)
-- `model.onnx` — the trained model weights
-- `tokenizer.json` — the tokenizer config
-
-The envelope's signature is verified against the producer's DID before install. The hashes inside the envelope (`onnx_sha256`, `tokenizer_sha256`) are checked against the actual artifact bytes during install — a mismatch refuses the file copy.
-
-Once installed, checkpoints live under:
-
-```
-~/.memphis/kartograf/checkpoints/
-  <signer-slug>/
-    checkpoint.json
-    model.onnx
-    tokenizer.json
-```
-
-`<signer-slug>` is the last 12 hex chars of the signer DID.
-
-## Install workflow (Q1, local file)
-
-```bash
-# 1. Producer hands you an envelope + sibling artifacts (e.g. via /tmp or USB)
-ls /tmp/kartograf-bundle/
-# checkpoint.json  model.onnx  tokenizer.json
-
-# 2. Verify the envelope signature without touching disk
-memphis kartograf verify --file /tmp/kartograf-bundle/checkpoint.json --json
-
-# 3. If verify is OK, install (verify + copy artifacts to staging dir)
-memphis kartograf install --file /tmp/kartograf-bundle/checkpoint.json --source file --json
-
-# 4. Confirm
+```sh
+memphis kartograf verify --file /private/bundle/checkpoint.json --json
+memphis kartograf install --file /private/bundle/checkpoint.json --source file --json
+memphis kartograf activate CHECKPOINT_ID --trusted-signer did:key:ed25519:EXPECTED_KEY --dry-run --json
+memphis kartograf activate CHECKPOINT_ID --trusted-signer did:key:ed25519:EXPECTED_KEY --json
 memphis kartograf status --json
-memphis doctor 2>&1 | grep ta13-kartograf
+memphis kartograf query 'a query' --json
 ```
 
-## Common errors
+`verify` checks the envelope signature. `install` verifies both artifact hashes
+and publishes a private immutable version addressed by the canonical envelope
+hash. It does not replace an earlier version or automatically select a newly
+staged model. An invalid bundle is refused before publication. Use the full
+`checkpointId` printed by install with the activation command.
 
-| Symptom | Diagnosis | Fix |
-|---|---|---|
-| `verify` returns `ok: false reason: signature mismatch` | Envelope was tampered or signed by a key the runtime doesn't trust | Get the envelope from the producer again over a trusted channel; do NOT install |
-| `install` succeeds but `model.onnx: sha256 mismatch — artifact not copied` | Bundle is misassembled (envelope hash doesn't match the binary) | Re-fetch from the producer; the envelope and binary must come together |
-| `ta13-kartograf` warns `staging dir exists but no checkpoints found` | `~/.memphis/kartograf/checkpoints/` exists (probably from prior init) but every subdir is empty | Run `memphis kartograf install` once you have a real envelope |
-| `query` returns `ok: false reason: Kartograf inference is Y2 scope` | Working as designed for Q1 | Use `verify` + `install` + `status` until inference pipeline ships |
+Activation requires a real ONNX load and a finite nonzero embedding of the
+expected dimension. A failed probe keeps the prior selection. Dry-run verifies
+identity and file integrity without running inference or writing selection.
+`install --force-active --trusted-signer DID` combines these operations; dry-run
+still creates nothing. Restart the daemon after changing selection so its cached
+session reloads. Its existing `MEMPHIS_KARTOGRAF_ENABLE=1` opt-in configuration
+remains required; activation does not edit environment configuration.
 
-## Dry-run install
+Status distinguishes the verified `selected_checkpoint` from `active_checkpoint`.
+The latter is nonnull only for an enabled runtime with that selection loaded.
+JSON query output includes the full embedding, top zone/confidence, model hash
+and selected bundle ID. CLI, tools and daemon use the same selection policy.
 
-Pass `--dry-run` to see what `install` would do without touching the filesystem:
+New bundles live under `kartograf/checkpoints/<full-envelope-hash>/` in the
+configured data root. Older 12-hex signer directories retain their historical
+fallback when no explicit pointer exists. A corrupt pointer fails closed.
+To switch back, activate the previous immutable bundle ID with its trusted DID.
+Preserve previous versions and failed private staging for operator inspection;
+avoid manually clearing the live model directory.
 
-```bash
-memphis kartograf install --file /tmp/bundle/checkpoint.json --source file --dry-run --json
-# returns mode: 'kartograf.install.dry-run' with the planned stageDir + envelopeOut paths
-```
+Training tooling exists under `tools/training/`. Smoke and stub artifacts are
+explicit test fixtures. Full-mode export failure aborts and retains trained state
+for a later export retry; it cannot silently become a signed placeholder release.
+Actual training requires the real corpus, compatible ML environment, pinned
+model/zone recipe and signing through the host's vault policy. This update does
+not create those missing resources or change model evaluation results.
 
-## Switching back / removing a checkpoint
-
-There's no `memphis kartograf uninstall` today. To remove an installed checkpoint:
-
-```bash
-rm -rf ~/.memphis/kartograf/checkpoints/<signer-slug>/
-memphis kartograf status   # confirm it's gone
-```
-
-When a producer publishes a new checkpoint signed with the same DID, the install flow clears the old `model.onnx` + `tokenizer.json` from the stage dir before staging the new ones (no mixed-state hazard).
-
-## Related
-
-- `docs/dev/KARTOGRAF-SPEC.md` — model spec + training pipeline (Y2)
-- `src/kartograf/checkpoint.ts` — verify + envelope primitives
-- `src/infra/cli/handlers/kartograf.handler.ts` — CLI handler
+GitHub/HF transport and embedding-cascade integration remain unfinished. The Q2
+`vault`-zone criterion also requires an agreed model/label schema: the frozen v1
+labels do not include a vault class. Tooling and integrity tests do not establish
+semantic quality or independent external security review.
