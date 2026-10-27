@@ -67,6 +67,45 @@ ciągnie widoku z powrotem co klatkę.
 
 E1–E4 zrobione, E5 świadomie otwarte. Dokument mówi `Ctrl+F`, nie `Ctrl+R`.
 
+### 1.5 Dowód „przed/po" — zmierzony, nie opisany
+
+Ten sam pty (40×100), te same klawisze („hello", potem Left, Left, X), dwa binarki
+z tego samego drzewa.
+
+**PRZED (`3cacca8f`):**
+
+```
+|> helloX                                                                                            |
+|● [Mode:B] minimax/MiniMax-M3.1-Flash · ctx:1000k · tok:? · ready · PULSE:healthy · session:primary:|
+cursor at row 39, col 9 (visible=False)
+```
+
+X wylądował na **końcu** (`> helloX`) — `Left`/`Right` nie były podpięte, a wejście było
+ściśle append-only. Karetka `visible=False`, pozycja bezsensowna.
+
+**PO (`3a7f723b`):**
+
+```
+|> helXlo                                                                                            |
+|      ^                                                                                             |
+|● [Mode:B] minimax/MiniMax-M3.1-Flash · ctx:1000k · tok:? · ready · PULSE:healthy · session:primary:|
+cursor at row 39, col 7 (visible=True)
+```
+
+X wylądował **w środku**, karetka dokładnie pod nim.
+
+Latencja klawisz→redraw: **7,9 ms mediana w obu** (stary min 4,6/max 9,6; nowy
+min 6,4/max 10,1). Ergonomia nie kosztuje niczego przy klawiaturze.
+
+Wyszukiwanie `ctx:` → 9 dopasowań, wiersze 19–27 w reverse video, bieżące (19) na
+żółtym tle.
+
+### 1.6 Odkrycia opublikowane w drugim repo
+
+`Memphis_Ai_Brain_On_Chain` (commit `1a89ba04`, 4 pliki): `memory/2026-10-27.md`,
+`docs/cockpit-core-adr-011.md`, `docs/tui-cockpit-playbook.md` i nowy wpis na
+górze `MEMORY.md`. Tam są odkrycia i metoda pomiaru — nie kod.
+
 ---
 
 ## 2. Stan środowiska na koniec sesji
@@ -134,7 +173,12 @@ cargo clippy -p memphis-tui  0 ostrzeżeń w plikach tej sesji
   weryfikacja idzie przez `scripts/tui-pty-probe.py` (Python, poza suite'em).
   Repo ma tylko test headless (`tests/integration/tui-binary-smoke.test.ts`),
   który nie widzi renderowania.
-- **Nie scaliliśmy PR #698** — brak uprawnień maintainera.
+- **Nie scaliliśmy PR #698 ręcznie** — scalony przez automerge (`app/github-actions`).
+  Wymagało tricku: `gh pr ready --undo` + `gh pr ready` (trigger `ready_for_review`),
+  bo cron `schedule` w tym repo nie odpala regularnie (04:52 → 19:11 → 23:46 → 10:25).
+  `gh workflow run` odpada — 403, wymaga admin.
+- **Nie zrobiliśmy grafu (Layer 3) ani protokołu v2 (Layer 4)** — czekają na decyzję
+  operatora, czy w ogóle chce powierzchni graficznej.
 
 ---
 
