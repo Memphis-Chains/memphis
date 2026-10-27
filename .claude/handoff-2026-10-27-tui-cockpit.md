@@ -142,6 +142,62 @@ czysty w dotkniętych plikach, panel pomocy renderuje się w całości przy 42×
 wszystkie sekcje i oba tipy widoczne, nic ucięte.
 
 
+### 1.8 „Stroboskop w okół liter" — zmierzony, nie zgadnięty (commit d5bbb650, PR #704)
+
+Operator po restarcie na #699: „jak pracujesz to się stroboskop w okół liter zrobił".
+Nie zgadywałem — **rozłożyłem strumień pty na klatki i policzyłem, które komórki się
+zmieniają**. Wynik: z 140 klatek podczas prawdziwej tury **99 zmieniało dokładnie
+jedną komórkę** (wskaźnik zajęcia w pasku statusu), a binarka **67 razy prosiła
+terminal o kursor**.
+
+Źródło: stary build wołał `Hide` przy wejściu, więc kursor terminala był **niewidoczny
+całą sesję**. #699 podmienił to na `set_cursor_position` — a **widoczny kursor terminala
+miga**, i tempo migania należy do terminala, nie do kokpitu. Na tym hoście to był
+twardy blok tuż przy tekście operatora.
+
+Drugi winowajca: wskaźnik zajęcia `| / - \` w **pogrubionej bieli na nasyconym
+niebieskim** pasku, zmieniający się przy każdym z dziesięciu redrawów na sekundę.
+
+**Fix:** kokpit rysuje własny punkt wstawiania (komórka z własnym stylem, podświetlająca
+znak pod spodem, nie zasłaniająca go) i **w ogóle nie prosi terminala o kursor** —
+67 żądań staje się 0. Wskaźnik to teraz **kropka Braille'a** w przygaszonym
+niebiesko-białym, idąca **z zegarem (200 ms)**, nie z częstotliwością redrawu.
+
+### 1.9 Tool use — dyskretnie znormalizowane (commit d5bbb650)
+
+Operator: „współczesne interaktywne TUI dla użytkownika, w którym informacje o tool
+use są jakoś dyskretnie poinormowane, zobacz na nasze tools".
+
+Źródło normalizacji już istniało: `execute_native_tool` zwraca `(tool_display,
+tool_payload)` — `tool_display` to ten sam krótki napis, który ląduje w DB jako
+`display_content` („semantic recall hits=5", „chain_verify: ok (1 chains, 86 blocks)").
+Surowy payload idzie do transkryptu; **krótka forma nie szła nigdzie** — bo TUI nie
+dostawało zdarzeń o narzędziach.
+
+- `ChatStreamEvent` ma wariant `Tool { name, display, failed, elapsed_ms }`; pętla czatu
+  emituje go po każdym wywołaniu.
+- Transkrypt: jedna przygaszona linia na wywołanie —
+  `▸ chain verify · ok (1 chains, 86 blocks) · 88ms`.
+- Panel boczny: `✓ chain verify   ok (1 chains, 86 blocks)   88ms`.
+- Etykieta nie powtarza się w podsumowaniu: `chain_verify: ok …` → `ok …`.
+
+**Zasada: kształt, nie ładunek.** Operator widzi, że sześć komend się wykonało i jak
+długo trwały — nie wyjście każdej z nich. Surowy payload zostaje w transkrypcie, o
+klawisz od operatora.
+
+### 1.10 Panel boczny — jak w pierwszej wersji
+
+Pierwsze TUI Memphis (marzec 2026, `src/tui/index.ts`, usunięte z drzewa) miało **dwa
+panele**: rozmowę po lewej (68%) i stałą kolumnę `Commands:` po prawej. Operator wspomniał
+o nim wprost. Panel wraca — ale z zadaniem, za które zasługuje na swoją szerokość:
+runtime sesji i **wywołania narzędzi bieżącej tury**. Poniżej 100 kolumn panel znika,
+zamiast ściskać rozmowę.
+
+Przy okazji: formatowanie paska statusu istniało **dwa razy w jednej warstwie** — w
+widgetcie i w module testów `ui.rs` (ze własną kopią spinnera). Widget ma teraz
+własność formatowania, test z niej czyta.
+
+
 ---
 
 ## 2. Stan środowiska na koniec sesji
@@ -152,12 +208,12 @@ nie tylko status PR.
 
 ```
 fork/main   == origin/main   (zsynchronizowane, 0/0 za i przed)
-HEAD        fix/tui-search-unsticks-transcript @ 3af48480
+HEAD        fix/tui-search-unsticks-transcript @ d5bbb650
 PR #698     MERGED 2026-10-26 23:47 UTC (5ae70301) — ADR-011 + Cargo.toml
 PR #699     MERGED 2026-10-27 12:07 UTC (3a7f723b) — implementacja warstwy 1
 PR #702     MERGED 2026-10-27 12:52 UTC (aafea26c) — playbook pomiarowy
-PR #704     OPEN / MERGEABLE / BLOCKED (checki w toku) — fix wyszukiwania + panel pomocy
-cargo test --workspace  wszystko zielone
+PR #704     OPEN / MERGEABLE — strobe + tool use + panel boczny + fix wyszukiwania
+cargo test --workspace  587 testów, wszystko zielone
 cargo clippy -p memphis-tui  0 ostrzeżeń w plikach tej sesji
 ```
 
