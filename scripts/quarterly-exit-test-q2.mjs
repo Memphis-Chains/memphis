@@ -32,7 +32,8 @@ const env = {
   DATABASE_URL: `file:${join(data, 'memphis.db')}`,
   RUST_CHAIN_ENABLED: 'true',
   RUST_CHAIN_BRIDGE_PATH: join(root, 'crates/memphis-napi/index.node'),
-  MEMPHIS_KARTOGRAF_ENABLE: 'true',
+  // The Kartograf runtime/session explicitly opt in on '1', not 'true'.
+  MEMPHIS_KARTOGRAF_ENABLE: '1',
   // Generated in memory for this throwaway vault; never inherits the operator pepper.
   MEMPHIS_VAULT_PEPPER: randomBytes(32).toString('hex'),
 };

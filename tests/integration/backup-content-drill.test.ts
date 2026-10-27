@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import * as crypto from 'node:crypto';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -74,6 +74,36 @@ function backupChainFixture(): { archive: string; root: string } {
 }
 
 describe('backup content drill', () => {
+  it('validates large listings instead of failing at the default child-process buffer limit', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'backup-large-listing-'));
+    roots.push(root);
+    const source = join(root, 'source');
+    const nested = join(source, ...Array.from({ length: 12 }, (_, i) => `${i}-${'x'.repeat(88)}`));
+    mkdirSync(nested, { recursive: true });
+    for (let i = 0; i < 1100; i++) writeFileSync(join(nested, `artifact-${i}.txt`), '');
+    const archive = join(root, 'large.tar.gz');
+    execFileSync('tar', ['-czf', archive, '-C', source, '.']);
+    // Exercise both real tar listing paths beyond 1 MiB, without mocking
+    // execFileSync or merely asserting that a buffer option was passed.
+    const names = execFileSync('tar', ['-tzf', archive], { maxBuffer: 8 * 1024 * 1024 });
+    expect(names.length).toBeGreaterThan(1024 * 1024);
+    writeFileSync(
+      `${archive}.sha256`,
+      `${createHash('sha256').update(readFileSync(archive)).digest('hex')}  large.tar.gz\n`,
+    );
+    const result = await drillBackup(archive);
+    expect(result.verification).toBe('extracted-chain-sqlite');
+    expect(result.credentialRecovery).toBe('not-verified');
+    symlinkSync('missing-target', join(nested, 'unsafe-link'));
+    const unsafe = join(root, 'unsafe-large.tar.gz');
+    execFileSync('tar', ['-czf', unsafe, '-C', source, '.']);
+    writeFileSync(
+      `${unsafe}.sha256`,
+      `${createHash('sha256').update(readFileSync(unsafe)).digest('hex')}  unsafe-large.tar.gz\n`,
+    );
+    await expect(drillBackup(unsafe)).rejects.toThrow('refuses links and special files');
+  }, 30_000);
+
   it('extracts and verifies actual chains and SQLite without modifying source', async () => {
     const { archive, databasePath } = fixture(false);
     const before = readFileSync(databasePath);
