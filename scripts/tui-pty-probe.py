@@ -77,6 +77,22 @@ class Screen:
                 out.append(idx)
         return out
 
+    def caret_columns(self):
+        """Columns of the application-drawn caret.
+
+        The cockpit draws its own insertion point as a cell with a cyan
+        background, because the terminal's own cursor blinks and the
+        blink belongs to the terminal, not to the cockpit. A cyan cell
+        is therefore the caret; a terminal cursor request would be the
+        old, blinking behaviour.
+        """
+        out = []
+        for y, row in enumerate(self.attrs):
+            for x, attr in enumerate(row):
+                if (attr & 0xF0) == 0x60:  # background cyan
+                    out.append((y, x))
+        return out
+
 
 def feed(screen: Screen, text: str):
     i = 0
@@ -396,6 +412,12 @@ def main() -> int:
     typed_carets = carets_in(out[typed_at:after_edit].decode("utf-8", "replace"))
     newline_carets = carets_in(out[after_edit:after_newline].decode("utf-8", "replace"))
 
+    # The application draws its own caret, so the caret is found in the
+    # rendered screen, not in a cursor-position sequence.
+    screen = Screen(ROWS, COLS)
+    feed(screen, text)
+    drawn_carets = screen.caret_columns()
+
     search_text = re.sub(
         r"\x1b\[[0-9;?]*[a-zA-Z]", "", out[after_copy:after_search].decode("utf-8", "replace")
     )
@@ -406,9 +428,9 @@ def main() -> int:
     print("=== TUI pty probe ===")
     print(f"binary           : {binary}")
     print(f"bytes captured   : {len(out)} (boot phase: {after_boot})")
-    print(f"cursor shown     : {show}  (ESC[?25h)")
+    print(f"terminal cursor  : {show} requests (ESC[?25h) — must be 0, the app draws its own caret")
     print(f"cursor hidden    : {hide}  (ESC[?25l)")
-    print(f"caret while typing   : {typed_carets[-6:]}")
+    print(f"app caret drawn      : {drawn_carets[-4:] if drawn_carets else 'none'}")
     print(f"caret after Alt+Enter : {newline_carets[-6:]}")
     print(f"search bar shows a count  : {bool(counts)} -> {counts[:6]}")
     print(f"a match is highlighted    : {bool(reversed_runs)} (SGR runs with attr 7: {len(reversed_runs)})")
@@ -418,7 +440,9 @@ def main() -> int:
     if all_rows:
         print(f"max row drawn   : {max(all_rows)} (1-based)")
         print(f"max col drawn   : {max(all_cols)} (1-based)")
-    return 0 if show > 0 else 1
+    # The contract: the cockpit must NOT ask the terminal for a cursor.
+    # A request means the terminal's blinking cursor is on screen.
+    return 0 if show == 0 and drawn_carets else 1
 
 
 if __name__ == "__main__":

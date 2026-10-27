@@ -1,3 +1,4 @@
+mod activity;
 mod body;
 mod help;
 mod notification;
@@ -5,12 +6,15 @@ mod prompt;
 mod search;
 mod status_bar;
 
+pub use activity::ActivityPanel;
 pub use body::{OutputBody, ScrollState};
 pub use help::HelpOverlay;
 pub use notification::NotificationBanner;
 pub use prompt::{prompt_layout, PromptState, PromptWidget, MAX_PROMPT_ROWS};
 pub use search::SearchBar;
 pub use status_bar::StatusBar;
+#[cfg(test)]
+pub use status_bar::status_bar_text;
 
 use ratatui::style::{Color, Modifier, Style};
 

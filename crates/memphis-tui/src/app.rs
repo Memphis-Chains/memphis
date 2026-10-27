@@ -425,6 +425,76 @@ pub struct SearchState {
     pub current: usize,
 }
 
+/// One tool call, as the cockpit shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolActivity {
+    /// The tool's full name, e.g. `memphis_chain_verify`.
+    pub name: String,
+    /// The normalized summary, e.g. `chain verify ok=86`.
+    pub display: String,
+    /// Whether the call failed.
+    pub failed: bool,
+    /// How long it took, in milliseconds.
+    pub elapsed_ms: u64,
+}
+
+impl ToolActivity {
+    /// The short label the panel shows: `memphis_chain_verify` becomes
+    /// `chain verify`, `memphis_exec` becomes `exec`.
+    ///
+    /// The `memphis_` prefix is noise in a cockpit that only ever
+    /// shows Memphis tools, and the underscores are noise in a
+    /// proportional-looking column.
+    pub fn label(&self) -> String {
+        self.name
+            .strip_prefix("memphis_")
+            .unwrap_or(self.name.as_str())
+            .replace('_', " ")
+    }
+
+    /// The summary, without the label repeated in front of it.
+    ///
+    /// The tool's own display string often starts with the tool's
+    /// name — `chain verify ok=86` for `memphis_chain_verify` — and a
+    /// panel that shows the name twice in one line wastes the width
+    /// it does not have.
+    pub fn summary(&self) -> String {
+        let display = self.display.trim();
+        let label = self.label();
+        // The tool's own display string often starts with the tool's
+        // name, written its own way: `chain_verify: ok` for the label
+        // `chain verify`. Comparing the head of the display with the
+        // label — underscores folded to spaces — removes the repeat.
+        if let Some(rest) = display.strip_prefix(&label) {
+            let rest = rest.trim_start_matches([' ', ':', '\u{00b7}', '-']);
+            if !rest.is_empty() {
+                return rest.to_string();
+            }
+        }
+        let head: String = display
+            .chars()
+            .take_while(|c| *c != ':' && *c != ' ' && *c != '(')
+            .collect();
+        if !head.is_empty() && head.replace('_', " ") == label {
+            let rest = &display[head.len()..];
+            let rest = rest.trim_start_matches([' ', ':', '\u{00b7}', '-']);
+            if !rest.is_empty() {
+                return rest.to_string();
+            }
+        }
+        display.to_string()
+    }
+
+    /// The duration, in the shortest form that is still readable.
+    pub fn duration_label(&self) -> String {
+        match self.elapsed_ms {
+            0..=999 => format!("{}ms", self.elapsed_ms),
+            1_000..=59_999 => format!("{:.1}s", self.elapsed_ms as f64 / 1000.0),
+            _ => format!("{}m", self.elapsed_ms / 60_000),
+        }
+    }
+}
+
 /// Byte offset of the character before `index`.
 fn previous_char_boundary(value: &str, index: usize) -> usize {
     if index == 0 {
@@ -557,6 +627,14 @@ enum WorkerEvent {
         chunk: String,
     },
     ChatUsage(TokenUsageSummary),
+    /// A native tool ran inside the chat loop. The payload is the
+    /// normalized form — never the raw tool output.
+    ChatTool {
+        name: String,
+        display: String,
+        failed: bool,
+        elapsed_ms: u64,
+    },
     ChatCompleted(ChatExchange),
     DegradationUpdate {
         active: bool,
@@ -619,6 +697,12 @@ pub struct AppState {
     /// without reaching for the mouse (mouse capture is off by
     /// default precisely because text selection is the dominant use).
     pub last_assistant_answer: Option<String>,
+    /// The recent tool calls of this session, newest last.
+    ///
+    /// The cockpit shows them in the side panel: one discreet line
+    /// per call, with the outcome and the duration. The raw payload
+    /// is never in this list — it lives in the transcript.
+    pub tool_activity: Vec<ToolActivity>,
     pub output_buffer: Vec<StyledLine>,
     pub history: Vec<String>,
     pub history_index: Option<usize>,
@@ -662,6 +746,7 @@ impl AppState {
             search: None,
             last_search_query: String::new(),
             last_assistant_answer: None,
+            tool_activity: Vec::new(),
             output_buffer: Vec::new(),
             history: Vec::new(),
             history_index: None,
@@ -830,6 +915,39 @@ impl AppState {
             tone,
         });
         self.append_blank();
+    }
+
+    /// Record a tool call and leave one discreet line in the transcript.
+    ///
+    /// The line is deliberately short: the operator wants to know that
+    /// the agent is working and what kind of work it is doing, not to
+    /// read the tool's output. The output is in the transcript, one
+    /// keystroke away, for when it is actually needed.
+    pub fn record_tool_activity(&mut self, activity: ToolActivity) {
+        let line = format!(
+            "\u{25b8} {} \u{00b7} {} \u{00b7} {}",
+            activity.label(),
+            activity.summary(),
+            activity.duration_label(),
+        );
+        let tone = if activity.failed {
+            LineTone::Warning
+        } else {
+            LineTone::Dim
+        };
+        self.append_line(StyledLine {
+            content: line,
+            tone,
+        });
+        self.append_blank();
+
+        self.tool_activity.push(activity);
+        // The panel shows the recent calls; older ones are history.
+        const TOOL_ACTIVITY_LIMIT: usize = 40;
+        if self.tool_activity.len() > TOOL_ACTIVITY_LIMIT {
+            let overflow = self.tool_activity.len() - TOOL_ACTIVITY_LIMIT;
+            self.tool_activity.drain(0..overflow);
+        }
     }
 
     /// The last assistant reply, if any — what Ctrl+Y copies.
@@ -1425,6 +1543,17 @@ impl AppState {
                                 chunk,
                             },
                             ChatStreamEvent::Usage(usage) => WorkerEvent::ChatUsage(usage),
+                            ChatStreamEvent::Tool {
+                                name,
+                                display,
+                                failed,
+                                elapsed_ms,
+                            } => WorkerEvent::ChatTool {
+                                name,
+                                display,
+                                failed,
+                                elapsed_ms,
+                            },
                         };
                         let _ = chunk_sender.send(worker_event);
                     },
@@ -1965,6 +2094,20 @@ impl AppState {
             }
             WorkerEvent::ChatUsage(usage) => {
                 self.live_token_usage = Some(usage);
+                false
+            }
+            WorkerEvent::ChatTool {
+                name,
+                display,
+                failed,
+                elapsed_ms,
+            } => {
+                self.record_tool_activity(ToolActivity {
+                    name,
+                    display,
+                    failed,
+                    elapsed_ms,
+                });
                 false
             }
             WorkerEvent::ChatCompleted(exchange) => {
@@ -5443,7 +5586,7 @@ mod tests {
         split_command_tokens, styled, unsupported_tui_command_notice, ActiveCommand,
         ActiveCommandKind, AppAction, AppState, CancelBehavior, DegradationState, LineTone,
         ModelCapabilitySummary, MouseCaptureToast, Screen, TelegramSendOutcome, TokenUsageSummary,
-        WorkerEvent, HELP_ENTRIES,
+        ToolActivity, WorkerEvent, HELP_ENTRIES,
     };
     use crate::client::{AppSnapshot, CliBridgeResult, ExtensionHostResult, MemphisClient};
     use crate::config::TuiConfig;
@@ -5650,6 +5793,84 @@ mod tests {
             app.handle_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL)),
             AppAction::CopyLastAnswer
         );
+    }
+
+    #[test]
+    /// The tool's own display string repeats the tool's name; the
+    /// cockpit shows the name once.
+    #[test]
+    fn a_tool_summary_does_not_repeat_the_label() {
+        let activity = ToolActivity {
+            name: "memphis_chain_verify".to_string(),
+            display: "chain_verify: ok (1 chains, 86 blocks)".to_string(),
+            failed: false,
+            elapsed_ms: 90,
+        };
+        assert_eq!(activity.label(), "chain verify");
+        assert_eq!(activity.summary(), "ok (1 chains, 86 blocks)");
+
+        let spelled_out = ToolActivity {
+            name: "memphis_chain_verify".to_string(),
+            display: "chain verify ok=86".to_string(),
+            failed: false,
+            elapsed_ms: 90,
+        };
+        assert_eq!(spelled_out.summary(), "ok=86");
+    }
+
+    /// A summary that does not start with the label is left alone.
+    #[test]
+    fn a_tool_summary_that_does_not_repeat_anything_is_kept() {
+        let activity = ToolActivity {
+            name: "memphis_health".to_string(),
+            display: "runtime health snapshot".to_string(),
+            failed: false,
+            elapsed_ms: 17,
+        };
+        assert_eq!(activity.summary(), "runtime health snapshot");
+    }
+
+    /// The transcript gets one discreet line per tool call, and the
+    /// side panel keeps the list.
+    #[test]
+    fn a_tool_call_leaves_one_line_and_one_entry() {
+        let mut app = AppState::new(config());
+        app.record_tool_activity(ToolActivity {
+            name: "memphis_exec".to_string(),
+            display: "exec ok".to_string(),
+            failed: false,
+            elapsed_ms: 420,
+        });
+        assert_eq!(app.tool_activity.len(), 1);
+        let line = app
+            .output_buffer
+            .iter()
+            .find(|line| line.content.contains("\u{25b8}"))
+            .map(|line| line.content.clone())
+            .expect("the tool call leaves a line in the transcript");
+        // The label is not repeated: the display started with it.
+        assert_eq!(line, "\u{25b8} exec \u{00b7} ok \u{00b7} 420ms");
+    }
+
+    /// A failed call has to be visible — that is the one the operator
+    /// needs to notice.
+    #[test]
+    fn a_failed_tool_call_is_marked_in_the_transcript() {
+        let mut app = AppState::new(config());
+        app.record_tool_activity(ToolActivity {
+            name: "memphis_vault_list".to_string(),
+            display: "error: locked".to_string(),
+            failed: true,
+            elapsed_ms: 900,
+        });
+        let line = app
+            .output_buffer
+            .iter()
+            .find(|line| line.content.contains("\u{25b8}"))
+            .map(|line| (line.content.clone(), line.tone))
+            .expect("the failed call leaves a line in the transcript");
+        assert!(line.0.contains("vault list"), "got: {}", line.0);
+        assert_eq!(line.1, LineTone::Warning);
     }
 
     #[test]

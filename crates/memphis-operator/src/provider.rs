@@ -171,6 +171,24 @@ pub struct TokenUsageSummary {
 pub enum ChatStreamEvent {
     Text(String),
     Usage(TokenUsageSummary),
+    /// A native tool ran inside the chat loop.
+    ///
+    /// The payload is the *normalized* form — the same short string
+    /// that is persisted as `display_content` — never the raw tool
+    /// output. A cockpit that dumps raw JSON is a cockpit nobody
+    /// reads; one line per call is enough to know what happened, and
+    /// the raw payload stays one keystroke away in the transcript.
+    Tool {
+        /// The tool's full name, e.g. `memphis_chain_verify`.
+        name: String,
+        /// The normalized summary, e.g. `chain verify ok=86`.
+        display: String,
+        /// Whether the call failed. A failure is what the operator
+        /// needs to see; a success is context.
+        failed: bool,
+        /// How long the call took, in milliseconds.
+        elapsed_ms: u64,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
