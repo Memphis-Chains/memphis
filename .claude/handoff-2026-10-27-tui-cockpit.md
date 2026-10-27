@@ -106,18 +106,65 @@ Wyszukiwanie `ctx:` → 9 dopasowań, wiersze 19–27 w reverse video, bieżące
 `docs/cockpit-core-adr-011.md`, `docs/tui-cockpit-playbook.md` i nowy wpis na
 górze `MEMORY.md`. Tam są odkrycia i metoda pomiaru — nie kod.
 
+### 1.7 Poprawka po zgłoszeniu operatora — wyszukiwanie zostawiało transcript zacięty (commit 3af48480, PR #704)
+
+Operator zrestartował TUI na nowym kodzie i zgłosił: „chyba coś popsułeś to TUI".
+Przyczyna zmierzona, nie zgadnięta: **skok do dopasowania ustawia `auto_scroll = false`
+i nic go już nigdy nie włącza.** `auto_scroll` wraca tylko przez `scroll_down` na dole
+albo `scroll_to_bottom`, a wyszukiwanie zamyka się przez `AppState::close_search`,
+którego renderer w ogóle nie widzi. **Jedno `Ctrl+F` zostawiało transcript na stałe
+odklejony od dołu** — operator patrzył na stary fragment, a odpowiedź strumieniowała
+poniżej, i TUI wyglądał na zamrożony.
+
+Odtworzone 1:1 przed fixem: po wyszukiwaniu dwa nowe wiersze, a dolny wiersz pokazywał
+`line 33` zamiast `line 41`.
+
+- Tryb, w jakim widok był przed wyszukiwaniem, jest zapamiętywany i przywracany, gdy
+  wyszukiwanie się kończy. Ręczne przewijanie w trakcie wyszukiwania ma pierwszeństwo —
+  zamknięcie wyszukiwania nie cofa przewinięcia operatora.
+- Skok zapamiętuje tryb tylko przy **pierwszym** skoku w danej wyszukiwaniu, więc
+  przeskakiwanie po dopasowaniach nie nadpisuje go stanem samego skoku.
+- Kotwica nie przeżywa wyszukiwania: ponowne `Ctrl+F` z tym samym zapytaniem skacze do
+  dopasowania, zamiast po cichu nic nie robić.
+
+Drugi defekt, w tym samym commicie: **panel pomocy** miał sztywną wysokość 22 wierszy
+dla keymapu z 22 linii plus 2 wiersze ramki — dwie ostatnie linie (tipy) były
+przycinane **przy każdym renderze**, a keymap nie wymieniał **żadnego** z nowych
+klawiszy z #699. Wysokość jest teraz liczona z keymapu, keymap zna `Ctrl+F`, `Ctrl+Y`,
+`F5`, `Alt+Enter` i klawisze kursora, a test odrzuca linię, która by się zawijała
+wewnątrz panelu.
+
+Probe dostał `--rows`/`--cols`: terminal operatora to **42×186**, a layout mierzony przy
+40×100 to layout, którego nikt nie widzi.
+
+Weryfikacja: 173 testy TUI (167 przed, 6 nowych), cały workspace Rust zielony, clippy
+czysty w dotkniętych plikach, panel pomocy renderuje się w całości przy 42×186 —
+wszystkie sekcje i oba tipy widoczne, nic ucięte.
+
+
 ---
 
 ## 2. Stan środowiska na koniec sesji
 
+Stan sprawdzony **2026-10-27 15:40 UTC**. Merge jest zdarzeniem zewnętrznym — po
+scaleniu trzeba sprawdzić **zawartość** `origin/main` (`git show origin/main:<plik>`),
+nie tylko status PR.
+
 ```
-fork/main   769bd2d6 == origin/main   (zsynchronizowane fast-forwardem)
-HEAD        docs/adr-011-cockpit-core-tauri-shell @ ed968a87
-za upstream behind=0  ahead=5
-PR #698     OPEN / MERGEABLE / CLEAN
+fork/main   == origin/main   (zsynchronizowane, 0/0 za i przed)
+HEAD        fix/tui-search-unsticks-transcript @ 3af48480
+PR #698     MERGED 2026-10-26 23:47 UTC (5ae70301) — ADR-011 + Cargo.toml
+PR #699     MERGED 2026-10-27 12:07 UTC (3a7f723b) — implementacja warstwy 1
+PR #702     MERGED 2026-10-27 12:52 UTC (aafea26c) — playbook pomiarowy
+PR #704     OPEN / MERGEABLE / BLOCKED (checki w toku) — fix wyszukiwania + panel pomocy
 cargo test --workspace  wszystko zielone
 cargo clippy -p memphis-tui  0 ostrzeżeń w plikach tej sesji
 ```
+
+**Uwaga operacyjna:** TUI operatora (PID 5149, uruchomiony 16:26:53 lokalnie) ma w
+pamięci binarkę z 13:20 — to jest kod **PRZED** #704. Po scaleniu trzeba przebudować
+(`cargo build -p memphis-tui`) i zrestartować TUI, bo inaczej poprawka nie trafi do
+procesu, który siedzi na ekranie operatora.
 
 ---
 
