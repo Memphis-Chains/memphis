@@ -11,7 +11,9 @@ import {
   installBundle,
   selectedBundle,
 } from '../../../kartograf/installed.js';
+import { signCheckpointBundle } from '../../../kartograf/producer.js';
 import { closeKartografRuntime, getKartografRuntime } from '../../../kartograf/runtime.js';
+import { requireOperatorAuth } from '../../auth/operator-gate.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
 
@@ -42,13 +44,34 @@ export const kartografCommandHandler: CommandHandler = {
   },
   async handle(context: CliContext): Promise<boolean> {
     const { subcommand } = context.args;
+    if (subcommand === 'sign') {
+      const file = (context.args.file ?? context.args.target ?? '').trim();
+      try {
+        if (!(await requireOperatorAuth())) throw new Error('Operator authentication failed');
+        if (!file) throw new Error('Unsigned checkpoint file is required');
+        const result = await signCheckpointBundle(file);
+        print({ ok: true, mode: 'kartograf.sign', ...result }, context.args.json);
+      } catch {
+        process.exitCode = 2;
+        print(
+          {
+            ok: false,
+            mode: 'kartograf.sign',
+            error:
+              'Signing refused: authenticate as operator, validate the unsigned bundle and ensure checkpoint.json does not already exist.',
+          },
+          context.args.json,
+        );
+      }
+      return true;
+    }
     if (subcommand === 'verify') return handleVerify(context);
     if (subcommand === 'install') return handleInstall(context);
     if (subcommand === 'activate') return handleActivate(context);
     if (subcommand === 'status') return handleStatus(context);
     if (subcommand === 'query') return handleQuery(context);
     throw new Error(
-      `Unknown kartograf subcommand: ${String(subcommand)}. Available: verify, install, activate, status, query.`,
+      `Unknown kartograf subcommand: ${String(subcommand)}. Available: sign, verify, install, activate, status, query.`,
     );
   },
 };

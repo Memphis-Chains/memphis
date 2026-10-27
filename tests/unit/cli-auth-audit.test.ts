@@ -80,17 +80,22 @@ describe('memphis auth audit (S5-3)', () => {
 
   it('every gated command name in the rule registry resolves to a known CLI command (Codex P2 round 1)', async () => {
     // S5-3 acceptance: GATED_OPERATIONS cannot reference phantom commands.
-    // Compare GATED_OPERATIONS commands against CLI_COMPLETION_COMMANDS
-    // *directly* — not against the matrix (which is built from the same
-    // input), since that would be tautological.
+    // Compare directly against the dispatcher, including namespaces
+    // intentionally absent from shell completion, rather than the matrix.
     const { GATED_OPERATIONS } = await import('../../src/infra/auth/operator-gate.js');
-    const { CLI_COMPLETION_COMMANDS } = await import('../../src/infra/cli/registry.js');
-    const knownCommands = new Set<string>(CLI_COMPLETION_COMMANDS);
+    const { CLI_COMMAND_REGISTRY } = await import('../../src/infra/cli/registry.js');
+    const knownCommands = new Set(CLI_COMMAND_REGISTRY.flatMap((entry) => [...entry.commands]));
     for (const rule of GATED_OPERATIONS) {
       expect(
         knownCommands.has(rule.command),
         `GATED_OPERATIONS rule references unknown command "${rule.command}" — rename or typo?`,
       ).toBe(true);
     }
+  });
+
+  it('includes authenticated checkpoint signing even though kartograf is a non-completable namespace', () => {
+    const row = buildAuthAuditMatrix().find((entry) => entry.command === 'kartograf');
+    expect(row).toMatchObject({ registered: true, enforced: true, gap: false });
+    expect(row?.rules).toEqual([expect.objectContaining({ subcommand: 'sign' })]);
   });
 });

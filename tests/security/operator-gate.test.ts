@@ -188,6 +188,11 @@ describe('isGatedOperation', () => {
     expect(isGatedOperation('vault', 'init', baseArgs)).toBe(true);
   });
 
+  it('gates checkpoint signing without gating verification', () => {
+    expect(isGatedOperation('kartograf', 'sign', baseArgs)).toBe(true);
+    expect(isGatedOperation('kartograf', 'verify', baseArgs)).toBe(false);
+  });
+
   it('gates vault list', () => {
     expect(isGatedOperation('vault', 'list', baseArgs)).toBe(true);
   });

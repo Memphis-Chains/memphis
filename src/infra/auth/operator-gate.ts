@@ -41,6 +41,11 @@ export interface GateRule {
 }
 
 export const GATED_OPERATIONS: GateRule[] = [
+  {
+    command: 'kartograf',
+    subcommand: 'sign',
+    reason: 'signs a checkpoint release using the vault-held operator identity',
+  },
   { command: 'vault', subcommand: 'init', reason: 'creates encrypted vault, sets master key' },
   {
     command: 'vault',
@@ -103,7 +108,8 @@ export function isSessionAuthorized(): boolean {
 
 export function authorizeSession(): void {
   const now = Date.now();
-  for (const [key, granted] of sessionGrants) if (now - granted >= SESSION_TTL_MS) sessionGrants.delete(key);
+  for (const [key, granted] of sessionGrants)
+    if (now - granted >= SESSION_TTL_MS) sessionGrants.delete(key);
   sessionGrants.set(operatorContextKey(), now);
 }
 
