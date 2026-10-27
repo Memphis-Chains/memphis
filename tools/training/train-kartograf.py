@@ -30,11 +30,11 @@ Usage:
         --mode smoke \\
         --corpus ~/.memphis/kartograf/corpus/v1 \\
         --out /tmp/karto-smoke \\
-        --signing-seed-file <(openssl rand 32)
+        --unsigned
 
-The `--signing-seed-file` is a 32-byte raw Ed25519 seed. For release
-runs, keep this under the operator vault; --mode stub can accept any
-32 bytes for CI purposes.
+Training produces unsigned metadata for `memphis kartograf sign`, which
+uses the vault-held identity. `--signing-seed-file` remains only for
+synthetic stub fixtures; smoke/full training never reads a signing key.
 
 Exit codes:
     0 — success, envelope written
@@ -230,6 +230,7 @@ def _run_training(
     mode: str,
     corpus_dir: Path,
     out_dir: Path,
+    base_model: str,
 ) -> dict:
     """Invoke the real kartograf_train.train.run() and return a dict
     with {onnx_bytes, tokenizer_bytes, onnx_sha, tokenizer_sha,
@@ -252,6 +253,8 @@ def _run_training(
         out_dir=out_dir,
         mode=mode,
         max_length=512 if mode == "full" else 128,
+        model_id=base_model.rsplit("@", 1)[0],
+        model_revision=base_model.rsplit("@", 1)[1],
     )
     result = run(cfg)
     print(
@@ -279,8 +282,11 @@ def main() -> int:
                         help="Corpus directory (contains train.jsonl + corpus-v1-summary.json).")
     parser.add_argument("--out", required=True, type=Path,
                         help="Output directory for the staged checkpoint bundle.")
-    parser.add_argument("--signing-seed-file", required=True, type=Path,
-                        help="File with 32 raw Ed25519 seed bytes.")
+    signing = parser.add_mutually_exclusive_group(required=True)
+    signing.add_argument("--unsigned", action="store_true",
+                         help="Write unsigned-checkpoint.json; sign later with memphis kartograf sign.")
+    signing.add_argument("--signing-seed-file", type=Path,
+                         help="Synthetic stub fixtures only: file with 32 raw Ed25519 seed bytes.")
     parser.add_argument(
         "--mode",
         default="stub",
@@ -311,6 +317,12 @@ def main() -> int:
                         default="answerdotai/ModernBERT-base@stub-rev",
                         help="Base model identifier + pinned revision.")
     args = parser.parse_args()
+    if args.mode != "stub":
+        if not args.unsigned:
+            parser.error("smoke/full requires --unsigned; release keys stay in the Memphis vault")
+        import re
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[a-f0-9]{40}", args.base_model):
+            parser.error("smoke/full requires --base-model owner/model@<40-hex-commit>")
 
     # argparse with `type=float` happily parses `nan` / `inf` / `-inf`.
     # Those round-trip through Python's json.dumps as literals that
@@ -330,7 +342,13 @@ def main() -> int:
 
     corpus_dir = args.corpus.expanduser().resolve()
     out_dir = args.out.expanduser().resolve()
-    seed_path = args.signing_seed_file.expanduser().resolve()
+    seed_path = args.signing_seed_file.expanduser().resolve() if args.signing_seed_file else None
+
+    # Never replace a previously signed or unsigned candidate, even after an
+    # interrupted run. Retain it for inspection and use a fresh output directory.
+    if any((out_dir / name).exists() or (out_dir / name).is_symlink()
+           for name in ("checkpoint.json", "unsigned-checkpoint.json", "model.onnx", "tokenizer.json")):
+        raise SystemExit("[train-kartograf] output artifacts already exist; use a fresh directory")
 
     # 1) Corpus invariants.
     summary = validate_corpus(corpus_dir)
@@ -338,15 +356,15 @@ def main() -> int:
           f"v{summary['corpus_version']}", file=sys.stderr)
 
     # 2) Seed ingestion.
-    seed = seed_path.read_bytes()
-    if len(seed) != 32:
+    seed = seed_path.read_bytes() if seed_path else None
+    if seed is not None and len(seed) != 32:
         raise SystemExit(
             f"[train-kartograf] signing seed at {seed_path} must be 32 bytes, got {len(seed)}."
         )
 
     # 3) Produce model/tokenizer artifacts — either via the real trainer
     # (smoke/full) or via the placeholder path (stub).
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     if args.mode == "stub":
         onnx_bytes = PLACEHOLDER_ONNX
         tok_bytes = PLACEHOLDER_TOKENIZER
@@ -357,7 +375,7 @@ def main() -> int:
         hardware_suffix = ""
     else:
         # Real training. Lazy-imports the ML stack from kartograf_train.
-        tr = _run_training(args.mode, corpus_dir, out_dir)
+        tr = _run_training(args.mode, corpus_dir, out_dir, args.base_model)
         onnx_bytes = tr["onnx_bytes"]
         tok_bytes = tr["tokenizer_bytes"]
         onnx_sha = tr["onnx_sha"]
@@ -401,6 +419,15 @@ def main() -> int:
         },
         "distribution_source": args.distribution_source,
     }
+
+    if args.unsigned:
+        envelope_path = out_dir / "unsigned-checkpoint.json"
+        with envelope_path.open("x", encoding="utf-8") as output:
+            json.dump(unsigned, output, indent=2)
+            output.write("\n")
+        envelope_path.chmod(0o600)
+        print(f"[ok] wrote unsigned metadata {envelope_path}; no signing key accessed", file=sys.stderr)
+        return 0
 
     # Signer derives DID from the actual seed so operator-supplied
     # metadata can't claim a different key (matches signCheckpoint

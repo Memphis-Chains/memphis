@@ -65,6 +65,8 @@ class TrainConfig:
     corpus_dir: Path
     out_dir: Path
     mode: str = "smoke"  # "smoke" | "full"
+    model_id: str = MODEL_ID
+    model_revision: str | None = None
     # Hyperparams (all spec-aligned defaults).
     # Bumped from 1 → 4 so in-batch InfoNCE negatives actually exist:
     # at B=1 every "step" has just one anchor and the contrastive task
@@ -165,7 +167,7 @@ def run(config: TrainConfig) -> TrainResult:
     print(f"[train] device={device}, mode={config.mode}")
 
     # 1) Tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    tokenizer = AutoTokenizer.from_pretrained(config.model_id, revision=config.model_revision)
     tok_bytes = _tokenizer_json_bytes(tokenizer)
     tok_sha = hashlib.sha256(tok_bytes).hexdigest()
 
@@ -197,6 +199,8 @@ def run(config: TrainConfig) -> TrainResult:
     model = build_model(
         prefer_4bit=config.prefer_4bit,
         gradient_checkpointing=config.gradient_checkpointing,
+        model_id=config.model_id,
+        revision=config.model_revision,
     ).to(device)
     loss_fn = KartografLoss(
         class_weights=class_weights,

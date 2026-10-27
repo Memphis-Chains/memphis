@@ -50,9 +50,11 @@ The host reports GTX 960, 4096 MiB VRAM. May notes describe a torch 2.3.1 /
 transformers 4.43.4 DeBERTa stack, while the current requirements request torch
 2.5+ / transformers 4.48+ and the harness checks ModernBERT support. The old venv
 is absent. Hardware/library compatibility and the exact pinned model recipe must
-be re-established before an actual training run. Existing legacy signing-file
-instructions are not authorization to read standalone secrets; producer signing
-must follow this host's vault policy before any release run.
+be re-established before an actual training run. The producer now supports unsigned artifacts followed by operator-authenticated
+`memphis kartograf sign`, using the existing vault-held identity without exporting
+the seed. Smoke/full refuse standalone seed files, and the requested pinned
+model revision now reaches both model and tokenizer loaders. This closes the
+producer key-handling gap; no actual release has been trained or signed.
 
 The next artifact decision needs a real model/tokenizer bundle, producer DID,
 pinned source revision and license, evaluation recipe, zone mapping and embedding
