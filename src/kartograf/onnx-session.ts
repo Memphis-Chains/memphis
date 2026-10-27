@@ -35,11 +35,11 @@ import { sha256Hex, verifyCheckpoint, type CheckpointEnvelope } from './checkpoi
 import {
   embeddingSpaceFor,
   assertKartografOutput,
-  KARTOGRAF_MAX_TOKENS,
   KARTOGRAF_TOKENIZER_CONFIG,
   type KartografEmbeddingSpace,
 } from './embedding-space.js';
 import type { KartografOutput, KartografSession, ZoneClassification } from './session.js';
+import { kartografTokenIds } from './tokenizer.js';
 import { KARTOGRAF_V1_ZONE_LABELS } from './zone-labels.js';
 
 export interface OnnxKartografLoadOptions {
@@ -169,15 +169,12 @@ export class OnnxKartografSession implements KartografSession {
 
   async embed(text: string): Promise<KartografOutput> {
     if (this.closed) throw new Error('OnnxKartografSession is closed');
-    // transformers.js default-returns Tensor objects with `.data`
-    // (BigInt64Array for int64 inputs) and `.dims` ([batch, seq]). The
-    // tokenizer truncates to max_length so the encoder never sees more
-    // than its 512-token context window.
-    const tokens = await this.tokenizer(text, {
-      padding: false,
-      truncation: true,
-      max_length: KARTOGRAF_MAX_TOKENS,
-    } as Parameters<typeof this.tokenizer>[1]);
+    // Preserve special tokens while truncating content to the 512-token budget.
+    const ids = kartografTokenIds(this.tokenizer, text);
+    const tokens = {
+      input_ids: { data: BigInt64Array.from(ids, BigInt), dims: [1, ids.length] },
+      attention_mask: { data: new BigInt64Array(ids.length).fill(1n), dims: [1, ids.length] },
+    };
 
     const feeds = this.encodingsToFeeds(tokens);
     const out = await this.session.run(feeds);
