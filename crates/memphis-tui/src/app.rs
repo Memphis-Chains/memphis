@@ -726,10 +726,17 @@ impl AppState {
         if self.help_visible {
             return;
         }
-        self.input_buffer.push_str(text);
-        // The caret lands after the pasted blob: the operator pasted at
-        // the insertion point and expects to keep typing there.
-        self.input_cursor = self.input_buffer.len();
+        // The search is a mode: while it is open the keyboard belongs
+        // to the query, and a paste is keyboard input.
+        if self.search.is_some() {
+            self.search_insert(text);
+            return;
+        }
+
+        // A paste is explicit operator intent, so it goes where the
+        // caret is — which is the end of the line in the common case,
+        // and the middle of it when the operator moved the caret.
+        self.input_insert(text);
         // Pastes are explicit operator intent — clear any in-progress
         // history navigation so the next ↑ goes to "after-paste" state
         // rather than overwriting the paste.
@@ -920,6 +927,15 @@ impl AppState {
             KeyEvent {
                 code: KeyCode::Esc, ..
             } => {
+                self.close_search();
+            }
+            // Ctrl+C leaves the mode instead of being swallowed — a
+            // second one still reaches the running command.
+            KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) => {
                 self.close_search();
             }
             KeyEvent {
@@ -5634,6 +5650,41 @@ mod tests {
             app.handle_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL)),
             AppAction::CopyLastAnswer
         );
+    }
+
+    #[test]
+    fn a_paste_lands_at_the_caret_not_at_the_end() {
+        let mut app = AppState::new(config());
+        app.set_input_text("abcd".to_string());
+
+        // Caret between "b" and "c".
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        app.handle_paste("X");
+
+        assert_eq!(app.input_buffer, "abXcd");
+        assert_eq!(app.input_cursor, 3);
+    }
+
+    #[test]
+    fn a_paste_goes_to_the_search_query_while_the_search_is_open() {
+        let mut app = AppState::new(config());
+        app.open_search();
+
+        app.handle_paste("pasted");
+
+        assert_eq!(app.search.as_ref().unwrap().query, "pasted");
+        assert!(app.input_buffer.is_empty(), "the paste leaked into the input");
+    }
+
+    #[test]
+    fn ctrl_c_leaves_the_search_instead_of_being_swallowed() {
+        let mut app = AppState::new(config());
+        app.open_search();
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+
+        assert!(app.search.is_none());
     }
 
     #[test]
