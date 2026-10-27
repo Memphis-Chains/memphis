@@ -37,6 +37,19 @@ const PROMPT_PREFIX_WIDTH: usize = 2;
 /// character, which draws the caret on top of the text).
 const PROMPT_CARET_RESERVE: usize = 1;
 
+/// The style of the app-drawn caret.
+///
+/// The terminal's own cursor blinks, and the blink rate is the
+/// terminal's business — on this host it was a hard block blinking
+/// next to the operator's text, which is the "strobe" the operator
+/// reported on 2026-10-27. The application draws its own caret
+/// instead: no blink, the same everywhere, and a colour the cockpit
+/// chooses.
+pub const CARET_STYLE: Style = Style::new()
+    .fg(Color::Black)
+    .bg(Color::Cyan)
+    .add_modifier(Modifier::BOLD);
+
 /// One visual row of the prompt.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PromptRow {
@@ -161,13 +174,11 @@ pub fn prompt_layout(input: &str, cursor: usize, width: u16) -> PromptLayout {
     }
 }
 
-/// View state for the prompt: how far it scrolled, and where the caret ended up.
+/// View state for the prompt: how far it scrolled.
 #[derive(Debug, Default)]
 pub struct PromptState {
     /// Index of the first visible visual row.
     pub scroll: usize,
-    /// Absolute caret position on screen, set by the last render.
-    pub caret: Option<(u16, u16)>,
 }
 
 /// Renders a pre-computed prompt layout.
@@ -185,7 +196,6 @@ impl StatefulWidget for PromptWidget<'_> {
     type State = PromptState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut PromptState) {
-        state.caret = None;
         if area.width == 0 || area.height == 0 {
             return;
         }
@@ -208,29 +218,45 @@ impl StatefulWidget for PromptWidget<'_> {
         let style = Style::default()
             .fg(Color::White)
             .add_modifier(Modifier::BOLD);
+        let caret_row = self.layout.caret_row;
+        let caret_col = self.layout.caret_col;
+
         let lines: Vec<Line> = self
             .layout
             .rows
             .iter()
+            .enumerate()
             .skip(state.scroll)
             .take(height)
-            .map(|row| {
+            .map(|(index, row)| {
                 let prefix = if row.is_first { PROMPT_PREFIX } else { PROMPT_INDENT };
-                Line::from(Span::styled(format!("{prefix}{}", row.text), style))
+                let line = format!("{prefix}{}", row.text);
+                if index != caret_row {
+                    return Line::from(Span::styled(line, style));
+                }
+                // The caret is a cell of this line, drawn by us. The
+                // character under it is highlighted, not covered: a
+                // block that hides the character would make the
+                // operator's own text unreadable exactly where they
+                // are about to type.
+                let mut chars: Vec<char> = line.chars().collect();
+                let caret = caret_col.min(chars.len());
+                if caret == chars.len() {
+                    // The insertion point is one past the last
+                    // character: the caret needs a cell of its own.
+                    chars.push(' ');
+                }
+                let before: String = chars[..caret].iter().collect();
+                let after: String = chars[caret + 1..].iter().collect();
+                Line::from(vec![
+                    Span::styled(before, style),
+                    Span::styled(chars[caret].to_string(), CARET_STYLE),
+                    Span::styled(after, style),
+                ])
             })
             .collect();
 
         Paragraph::new(lines).render(area, buf);
-
-        if self.layout.caret_row >= state.scroll
-            && self.layout.caret_row < state.scroll + height
-        {
-            let x = area.x.saturating_add(self.layout.caret_col as u16);
-            let y = area.y.saturating_add((self.layout.caret_row - state.scroll) as u16);
-            if x < area.x.saturating_add(area.width) && y < area.y.saturating_add(area.height) {
-                state.caret = Some((x, y));
-            }
-        }
     }
 }
 
@@ -334,8 +360,11 @@ mod tests {
         assert_eq!(layout.caret_col, 2 + 2);
     }
 
+    /// The caret is drawn by the application, not by the terminal: the
+    /// terminal's own cursor blinks, and a blinking block next to the
+    /// operator's text is the strobe that was reported on 2026-10-27.
     #[test]
-    fn widget_reports_the_caret_position() {
+    fn the_widget_draws_the_caret_itself() {
         let layout = layout_of("hello", 5, 40);
         let backend = TestBackend::new(40, 1);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -351,7 +380,49 @@ mod tests {
             })
             .unwrap();
 
-        assert_eq!(state.caret, Some((7, 0)));
+        let buffer = terminal.backend().buffer().clone();
+        let cell = buffer.cell((7, 0)).unwrap();
+        // The caret is one past the last character, so it has a cell
+        // of its own — a space, styled.
+        assert_eq!(cell.symbol(), " ", "the caret sits after the text");
+        assert_eq!(
+            cell.bg,
+            ratatui::style::Color::Cyan,
+            "the caret carries its own style"
+        );
+    }
+
+    /// The caret must not land on the text: it is the insertion point,
+    /// so it sits on the cell after the last character.
+    #[test]
+    fn the_caret_does_not_cover_the_text() {
+        let layout = layout_of("hello", 2, 40);
+        let backend = TestBackend::new(40, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = PromptState::default();
+
+        terminal
+            .draw(|frame| {
+                frame.render_stateful_widget(
+                    PromptWidget::new(&layout),
+                    frame.area(),
+                    &mut state,
+                );
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer().clone();
+        let row: String = (0..40)
+            .map(|x| buffer.cell((x, 0)).unwrap().symbol().to_string())
+            .collect();
+        // The text is untouched: the character under the caret is
+        // highlighted, not replaced.
+        assert_eq!(row, "> hello                                 ");
+        assert_eq!(
+            buffer.cell((4, 0)).unwrap().bg,
+            ratatui::style::Color::Cyan,
+            "the character under the caret is highlighted"
+        );
     }
 
     #[test]
@@ -374,8 +445,17 @@ mod tests {
             })
             .unwrap();
 
-        assert!(state.caret.is_some(), "caret must stay visible");
-        let (_, y) = state.caret.unwrap();
-        assert!(y < 3, "caret row {y} must be inside the 3-row viewport");
+        // The caret is drawn, so it is visible when its cell is drawn:
+        // the viewport must contain the row that holds it.
+        let buffer = terminal.backend().buffer().clone();
+        let drawn: Vec<u16> = (0..3)
+            .filter(|y| {
+                (0..8).any(|x| buffer.cell((x, *y)).unwrap().bg == ratatui::style::Color::Cyan)
+            })
+            .collect();
+        assert!(
+            !drawn.is_empty(),
+            "the caret must stay inside the 3-row viewport"
+        );
     }
 }

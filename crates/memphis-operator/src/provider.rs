@@ -16,6 +16,7 @@ use crate::{
         resolve_codex_model_slug, CodexBridge, CODEX_FAMILY_CONTEXT_WINDOW, CODEX_FAMILY_MODELS,
     },
     runtime::try_read_vault_secret_plaintext,
+    text_truncation::truncate_with_ellipsis,
     OperatorConfig, OperatorError,
 };
 
@@ -171,6 +172,24 @@ pub struct TokenUsageSummary {
 pub enum ChatStreamEvent {
     Text(String),
     Usage(TokenUsageSummary),
+    /// A native tool ran inside the chat loop.
+    ///
+    /// The payload is the *normalized* form — the same short string
+    /// that is persisted as `display_content` — never the raw tool
+    /// output. A cockpit that dumps raw JSON is a cockpit nobody
+    /// reads; one line per call is enough to know what happened, and
+    /// the raw payload stays one keystroke away in the transcript.
+    Tool {
+        /// The tool's full name, e.g. `memphis_chain_verify`.
+        name: String,
+        /// The normalized summary, e.g. `chain verify ok=86`.
+        display: String,
+        /// Whether the call failed. A failure is what the operator
+        /// needs to see; a success is context.
+        failed: bool,
+        /// How long the call took, in milliseconds.
+        elapsed_ms: u64,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -900,7 +919,10 @@ impl ProviderRuntime {
             }
             let payload = serde_json::from_str::<Value>(data).map_err(|error| {
                 let preview = if data.len() > 100 {
-                    format!("{}...", &data[..100])
+                    // Character-boundary cut: a malformed payload with
+                    // a multi-byte character at byte 100 used to panic
+                    // while building its own error message.
+                    truncate_with_ellipsis(data, 100)
                 } else {
                     data.to_string()
                 };

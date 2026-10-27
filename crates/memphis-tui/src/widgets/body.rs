@@ -33,6 +33,16 @@ pub struct ScrollState {
     /// jumps when the target changes, so a manual scroll is not fought
     /// by a search that is still open.
     pub search_anchor: Option<usize>,
+    /// The auto-scroll mode the view had before the search jumped it.
+    ///
+    /// A search takes the view off the bottom, so it has to give it
+    /// back when it ends — otherwise one search leaves the transcript
+    /// permanently unstuck and the operator watches an old position
+    /// while the answer streams in below the fold.
+    auto_scroll_before_search: Option<bool>,
+    /// The operator scrolled by hand while the search was open. Their
+    /// position wins over the mode the view had before the search.
+    manual_during_search: bool,
     viewport_height: usize,
     content_height: usize,
 }
@@ -43,12 +53,15 @@ impl ScrollState {
             offset: 0,
             auto_scroll: true,
             search_anchor: None,
+            auto_scroll_before_search: None,
+            manual_during_search: false,
             viewport_height: 0,
             content_height: 0,
         }
     }
 
     pub fn scroll_up(&mut self, lines: usize) {
+        self.note_manual_scroll();
         self.auto_scroll = false;
         self.offset = self.offset.saturating_sub(lines);
     }
@@ -56,6 +69,9 @@ impl ScrollState {
     pub fn scroll_down(&mut self, lines: usize) {
         self.offset = self.offset.saturating_add(lines).min(self.max_offset());
         self.auto_scroll = self.offset >= self.max_offset();
+        if !self.auto_scroll {
+            self.note_manual_scroll();
+        }
     }
 
     pub fn page_up(&mut self) {
@@ -79,6 +95,7 @@ impl ScrollState {
     }
 
     pub fn scroll_to_top(&mut self) {
+        self.note_manual_scroll();
         self.auto_scroll = false;
         self.offset = 0;
     }
@@ -86,6 +103,15 @@ impl ScrollState {
     pub fn scroll_to_bottom(&mut self) {
         self.auto_scroll = true;
         self.offset = self.max_offset();
+    }
+
+    /// Remember that the operator moved the view by hand. While a
+    /// search is open this outranks the mode the view had before the
+    /// search: closing a search is not an undo of their scroll.
+    fn note_manual_scroll(&mut self) {
+        if self.search_anchor.is_some() {
+            self.manual_during_search = true;
+        }
     }
 
     fn sync_viewport(&mut self, content_height: usize, viewport_height: usize) {
@@ -224,20 +250,44 @@ impl StatefulWidget for OutputBody<'_> {
         let current_match = self
             .search
             .and_then(|search| search.matches.get(search.current).copied());
-        if let Some(target) = current_match {
-            if state.search_anchor != Some(target) {
-                state.search_anchor = Some(target);
-                if let Some(row) = wrapped_lines
-                    .iter()
-                    .position(|(source_index, _)| *source_index == target)
-                {
-                    let height = area.height as usize;
-                    let max_offset = state.max_offset();
-                    // Put the match a third of the way down, so the
-                    // operator can see what came before it.
-                    state.offset = row.saturating_sub(height / 3).min(max_offset);
-                    state.auto_scroll = false;
+        match current_match {
+            Some(target) => {
+                if state.search_anchor != Some(target) {
+                    state.search_anchor = Some(target);
+                    state.manual_during_search = false;
+                    if let Some(row) = wrapped_lines
+                        .iter()
+                        .position(|(source_index, _)| *source_index == target)
+                    {
+                        let height = area.height as usize;
+                        let max_offset = state.max_offset();
+                        // Remember what the view was doing before the
+                        // jump — but only on the first jump of this
+                        // search, so stepping through the matches does
+                        // not overwrite the mode with the jump's own.
+                        if state.auto_scroll_before_search.is_none() {
+                            state.auto_scroll_before_search = Some(state.auto_scroll);
+                        }
+                        // Put the match a third of the way down, so the
+                        // operator can see what came before it.
+                        state.offset = row.saturating_sub(height / 3).min(max_offset);
+                        state.auto_scroll = false;
+                    }
                 }
+            }
+            None => {
+                // No search, or a search without a match: the view goes
+                // back to the mode it had before the search took it.
+                // A manual scroll made while the search was open wins.
+                if let Some(previous) = state.auto_scroll_before_search.take() {
+                    if !state.manual_during_search {
+                        state.auto_scroll = previous;
+                    }
+                }
+                state.manual_during_search = false;
+                // The anchor must not outlive the search, or reopening
+                // it with the same query would not jump to the match.
+                state.search_anchor = None;
             }
         }
 
@@ -443,6 +493,126 @@ mod tests {
         assert!(
             content.contains("line 0"),
             "the search must not drag the view back; top row was: {content}"
+        );
+    }
+
+    /// Reproduces the incident of 2026-10-27: the operator searched the
+    /// scrollback, the view jumped to the match, and from then on the
+    /// transcript stopped following new output. The search turned
+    /// auto-scroll off and nothing turned it back on when the search
+    /// closed — so the TUI looked frozen while the answer was still
+    /// streaming in below the fold.
+    #[test]
+    fn a_closed_search_leaves_the_transcript_following_the_bottom() {
+        let backend = TestBackend::new(40, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut lines: Vec<StyledLine> = (0..40).map(|i| plain_line(&format!("line {i}"))).collect();
+        let search = crate::app::SearchState {
+            query: "line 30".to_string(),
+            matches: vec![30],
+            current: 0,
+        };
+        let mut scroll = ScrollState::new();
+
+        // The operator searches: the view jumps to the match.
+        terminal
+            .draw(|frame| {
+                frame.render_stateful_widget(
+                    OutputBody::with_search(&lines, Some(&search)),
+                    frame.area(),
+                    &mut scroll,
+                );
+            })
+            .unwrap();
+
+        // The operator closes the search again.
+        terminal
+            .draw(|frame| {
+                frame.render_stateful_widget(
+                    OutputBody::with_search(&lines, None),
+                    frame.area(),
+                    &mut scroll,
+                );
+            })
+            .unwrap();
+
+        // New output arrives.
+        lines.push(plain_line("line 40"));
+        lines.push(plain_line("line 41"));
+        terminal
+            .draw(|frame| {
+                frame.render_stateful_widget(
+                    OutputBody::with_search(&lines, None),
+                    frame.area(),
+                    &mut scroll,
+                );
+            })
+            .unwrap();
+
+        let content = body_row(&terminal, 4);
+        assert!(
+            content.contains("line 41"),
+            "the transcript must follow the bottom again after a search; bottom row was: {content}"
+        );
+    }
+
+    /// The anchor that stops an open search from dragging the view back
+    /// on every frame must not outlive the search: reopening it with
+    /// the same query has to jump to the match again.
+    #[test]
+    fn reopening_a_search_jumps_to_the_match_again() {
+        let backend = TestBackend::new(40, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let lines: Vec<StyledLine> = (0..40).map(|i| plain_line(&format!("line {i}"))).collect();
+        let search = crate::app::SearchState {
+            query: "line 30".to_string(),
+            matches: vec![30],
+            current: 0,
+        };
+        let mut scroll = ScrollState::new();
+
+        for _ in 0..2 {
+            terminal
+                .draw(|frame| {
+                    frame.render_stateful_widget(
+                        OutputBody::with_search(&lines, Some(&search)),
+                        frame.area(),
+                        &mut scroll,
+                    );
+                })
+                .unwrap();
+            terminal
+                .draw(|frame| {
+                    frame.render_stateful_widget(
+                        OutputBody::with_search(&lines, None),
+                        frame.area(),
+                        &mut scroll,
+                    );
+                })
+                .unwrap();
+        }
+
+        // The operator scrolled away while the search was closed.
+        scroll.scroll_to_top();
+
+        // The second search has to move the view to the match again.
+        terminal
+            .draw(|frame| {
+                frame.render_stateful_widget(
+                    OutputBody::with_search(&lines, Some(&search)),
+                    frame.area(),
+                    &mut scroll,
+                );
+            })
+            .unwrap();
+
+        let viewport: String = (0..5)
+            .map(|row| row_content(&terminal, row))
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(
+            viewport.contains("line 30"),
+            "reopening the search must jump to the match; viewport was: {viewport}"
         );
     }
 

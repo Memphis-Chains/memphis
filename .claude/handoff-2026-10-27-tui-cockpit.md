@@ -106,18 +106,169 @@ Wyszukiwanie `ctx:` → 9 dopasowań, wiersze 19–27 w reverse video, bieżące
 `docs/cockpit-core-adr-011.md`, `docs/tui-cockpit-playbook.md` i nowy wpis na
 górze `MEMORY.md`. Tam są odkrycia i metoda pomiaru — nie kod.
 
+### 1.7 Poprawka po zgłoszeniu operatora — wyszukiwanie zostawiało transcript zacięty (commit 3af48480, PR #704)
+
+Operator zrestartował TUI na nowym kodzie i zgłosił: „chyba coś popsułeś to TUI".
+Przyczyna zmierzona, nie zgadnięta: **skok do dopasowania ustawia `auto_scroll = false`
+i nic go już nigdy nie włącza.** `auto_scroll` wraca tylko przez `scroll_down` na dole
+albo `scroll_to_bottom`, a wyszukiwanie zamyka się przez `AppState::close_search`,
+którego renderer w ogóle nie widzi. **Jedno `Ctrl+F` zostawiało transcript na stałe
+odklejony od dołu** — operator patrzył na stary fragment, a odpowiedź strumieniowała
+poniżej, i TUI wyglądał na zamrożony.
+
+Odtworzone 1:1 przed fixem: po wyszukiwaniu dwa nowe wiersze, a dolny wiersz pokazywał
+`line 33` zamiast `line 41`.
+
+- Tryb, w jakim widok był przed wyszukiwaniem, jest zapamiętywany i przywracany, gdy
+  wyszukiwanie się kończy. Ręczne przewijanie w trakcie wyszukiwania ma pierwszeństwo —
+  zamknięcie wyszukiwania nie cofa przewinięcia operatora.
+- Skok zapamiętuje tryb tylko przy **pierwszym** skoku w danej wyszukiwaniu, więc
+  przeskakiwanie po dopasowaniach nie nadpisuje go stanem samego skoku.
+- Kotwica nie przeżywa wyszukiwania: ponowne `Ctrl+F` z tym samym zapytaniem skacze do
+  dopasowania, zamiast po cichu nic nie robić.
+
+Drugi defekt, w tym samym commicie: **panel pomocy** miał sztywną wysokość 22 wierszy
+dla keymapu z 22 linii plus 2 wiersze ramki — dwie ostatnie linie (tipy) były
+przycinane **przy każdym renderze**, a keymap nie wymieniał **żadnego** z nowych
+klawiszy z #699. Wysokość jest teraz liczona z keymapu, keymap zna `Ctrl+F`, `Ctrl+Y`,
+`F5`, `Alt+Enter` i klawisze kursora, a test odrzuca linię, która by się zawijała
+wewnątrz panelu.
+
+Probe dostał `--rows`/`--cols`: terminal operatora to **42×186**, a layout mierzony przy
+40×100 to layout, którego nikt nie widzi.
+
+Weryfikacja: 173 testy TUI (167 przed, 6 nowych), cały workspace Rust zielony, clippy
+czysty w dotkniętych plikach, panel pomocy renderuje się w całości przy 42×186 —
+wszystkie sekcje i oba tipy widoczne, nic ucięte.
+
+
+### 1.8 „Stroboskop w okół liter" — zmierzony, nie zgadnięty (commit d5bbb650, PR #704)
+
+Operator po restarcie na #699: „jak pracujesz to się stroboskop w okół liter zrobił".
+Nie zgadywałem — **rozłożyłem strumień pty na klatki i policzyłem, które komórki się
+zmieniają**. Wynik: z 140 klatek podczas prawdziwej tury **99 zmieniało dokładnie
+jedną komórkę** (wskaźnik zajęcia w pasku statusu), a binarka **67 razy prosiła
+terminal o kursor**.
+
+Źródło: stary build wołał `Hide` przy wejściu, więc kursor terminala był **niewidoczny
+całą sesję**. #699 podmienił to na `set_cursor_position` — a **widoczny kursor terminala
+miga**, i tempo migania należy do terminala, nie do kokpitu. Na tym hoście to był
+twardy blok tuż przy tekście operatora.
+
+Drugi winowajca: wskaźnik zajęcia `| / - \` w **pogrubionej bieli na nasyconym
+niebieskim** pasku, zmieniający się przy każdym z dziesięciu redrawów na sekundę.
+
+**Fix:** kokpit rysuje własny punkt wstawiania (komórka z własnym stylem, podświetlająca
+znak pod spodem, nie zasłaniająca go) i **w ogóle nie prosi terminala o kursor** —
+67 żądań staje się 0. Wskaźnik to teraz **kropka Braille'a** w przygaszonym
+niebiesko-białym, idąca **z zegarem (200 ms)**, nie z częstotliwością redrawu.
+
+### 1.9 Tool use — dyskretnie znormalizowane (commit d5bbb650)
+
+Operator: „współczesne interaktywne TUI dla użytkownika, w którym informacje o tool
+use są jakoś dyskretnie poinormowane, zobacz na nasze tools".
+
+Źródło normalizacji już istniało: `execute_native_tool` zwraca `(tool_display,
+tool_payload)` — `tool_display` to ten sam krótki napis, który ląduje w DB jako
+`display_content` („semantic recall hits=5", „chain_verify: ok (1 chains, 86 blocks)").
+Surowy payload idzie do transkryptu; **krótka forma nie szła nigdzie** — bo TUI nie
+dostawało zdarzeń o narzędziach.
+
+- `ChatStreamEvent` ma wariant `Tool { name, display, failed, elapsed_ms }`; pętla czatu
+  emituje go po każdym wywołaniu.
+- Transkrypt: jedna przygaszona linia na wywołanie —
+  `▸ chain verify · ok (1 chains, 86 blocks) · 88ms`.
+- Panel boczny: `✓ chain verify   ok (1 chains, 86 blocks)   88ms`.
+- Etykieta nie powtarza się w podsumowaniu: `chain_verify: ok …` → `ok …`.
+
+**Zasada: kształt, nie ładunek.** Operator widzi, że sześć komend się wykonało i jak
+długo trwały — nie wyjście każdej z nich. Surowy payload zostaje w transkrypcie, o
+klawisz od operatora.
+
+### 1.10 Panel boczny — jak w pierwszej wersji
+
+Pierwsze TUI Memphis (marzec 2026, `src/tui/index.ts`, usunięte z drzewa) miało **dwa
+panele**: rozmowę po lewej (68%) i stałą kolumnę `Commands:` po prawej. Operator wspomniał
+o nim wprost. Panel wraca — ale z zadaniem, za które zasługuje na swoją szerokość:
+runtime sesji i **wywołania narzędzi bieżącej tury**. Poniżej 100 kolumn panel znika,
+zamiast ściskać rozmowę.
+
+Przy okazji: formatowanie paska statusu istniało **dwa razy w jednej warstwie** — w
+widgetcie i w module testów `ui.rs` (ze własną kopią spinnera). Widget ma teraz
+własność formatowania, test z niej czyta.
+
+
 ---
+
+### 1.11 „Spanikowany worker" — przycięcie na granicy znaku (commit do tej gałęzi)
+
+Drugie zgłoszenie operatora: **„spanikowany worker"**. Twardy dowód w
+`~/.memphis/logs/tui-errors.jsonl`:
+
+```
+worker panicked: end byte index 157 is not a char boundary;
+it is inside '„' (bytes 156..159 of string)     ts=2026-10-27T16:59:50Z
+```
+
+**Przyczyna:** `summarize_content` w `crates/memphis-operator/src/chat_memory.rs`
+obcinał podsumowanie **stałym offsetem bajtowym** (`&collapsed[..157]`).
+Offset bajtowy to nie offset znaku — a polskie `„` (3 bajty), `”` i `ę` są
+wielobajtowe, i każda próba cięcia w ich środku to panika.
+
+**Dlaczego to bolało akurat tak:** zapis journalu idzie w dwóch krokach —
+najpierw blok do łańcucha, potem wpis do indeksu exact. Panika w drugim
+kroku zostawiała blok **w łańcuchu i poza indeksem**: trwale
+nieprzeszukiwalny, bez śladu w `chain verify` (bo hashe były poprawne).
+Blok 87 (zapisany przez sesję równoległą o 16:59:50) był w łańcuchu, a
+`memory_search_entries` miało maksimum `block_index = 86`.
+
+**Naprawa:** nowy moduł `crates/memphis-operator/src/text_truncation.rs` —
+jedno miejsce, w którym cięcie respektuje granice znaków. Przepięte na niego
+wszystkie cztery miejsca z tym samym błędem klasy:
+
+| miejsce | offset | kiedy paliło |
+|---|---|---|
+| `chat_memory.rs` `summarize_content` | 157 | zapis journalu — **to zadziałało 16.59** |
+| `chat_guards.rs` `sanitize_json` | 300 | argumenty/wyniki narzędzi dłuższe niż 300 bajtów |
+| `provider.rs` podgląd zepsutego SSE | 100 | błędny payload providera |
+| `memphis-tui/src/sanitize.rs` `sanitize_reason` | 147 | powód degradacji w pasku statusu |
+
+**Dowód, że test pada przed zmianą:** na starym kodzie test z prawdziwą
+treścią bloku 87 daje **dokładnie** tę samą komendę co log produkcyjny —
+`end byte index 157 is not a char boundary; it is inside '„' (bytes 156..159
+of string)`. Po zmianie zielone, plus test systematyczny: wielobajtowy znak
+na **każdym** wyrównaniu 0..400 nie może panikować.
+
+**Naprawa danych:** `memphis search rebuild` (bez `--chain`! `clear()`
+kasuje całą tabelę, więc rebuild jednego łańcucha zniszczyłby indeks
+pozostałych). Odkryło to więcej niż jeden brakujący wpis: indeks exact
+**rotował** — brakowało 61 wpisów (cases 50, decisions 7, insights 3,
+journal 1). Po rebuildzie każdy łańcuch ma tyle wpisów, co bloków na dysku
+(journal 87/87, cases 125/125, decisions 49/49, insights 42/42, reflections
+36/36, patterns 33/33, collective 6/6). Blok 87 jest przeszukiwalny.
+
 
 ## 2. Stan środowiska na koniec sesji
 
+Stan sprawdzony **2026-10-27 15:40 UTC**. Merge jest zdarzeniem zewnętrznym — po
+scaleniu trzeba sprawdzić **zawartość** `origin/main` (`git show origin/main:<plik>`),
+nie tylko status PR.
+
 ```
-fork/main   769bd2d6 == origin/main   (zsynchronizowane fast-forwardem)
-HEAD        docs/adr-011-cockpit-core-tauri-shell @ ed968a87
-za upstream behind=0  ahead=5
-PR #698     OPEN / MERGEABLE / CLEAN
-cargo test --workspace  wszystko zielone
+fork/main   == origin/main   (zsynchronizowane, 0/0 za i przed)
+HEAD        fix/tui-search-unsticks-transcript @ d5bbb650
+PR #698     MERGED 2026-10-26 23:47 UTC (5ae70301) — ADR-011 + Cargo.toml
+PR #699     MERGED 2026-10-27 12:07 UTC (3a7f723b) — implementacja warstwy 1
+PR #702     MERGED 2026-10-27 12:52 UTC (aafea26c) — playbook pomiarowy
+PR #704     OPEN / MERGEABLE — strobe + tool use + panel boczny + fix wyszukiwania
+cargo test --workspace  587 testów, wszystko zielone
 cargo clippy -p memphis-tui  0 ostrzeżeń w plikach tej sesji
 ```
+
+**Uwaga operacyjna:** TUI operatora (PID 5149, uruchomiony 16:26:53 lokalnie) ma w
+pamięci binarkę z 13:20 — to jest kod **PRZED** #704. Po scaleniu trzeba przebudować
+(`cargo build -p memphis-tui`) i zrestartować TUI, bo inaczej poprawka nie trafi do
+procesu, który siedzi na ekranie operatora.
 
 ---
 
