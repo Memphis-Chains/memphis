@@ -22,7 +22,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from peft import LoraConfig, TaskType, get_peft_model
-from transformers import AutoModel
+from transformers import AutoConfig, AutoModel
 
 
 import os
@@ -143,10 +143,15 @@ def build_model(
 
     4-bit loading is attempted only on CUDA devices with compute
     capability >= 7.5 (Turing+). Older cards (Maxwell/Pascal) fall
-    back to BF16 — the base (~300 MB) fits in 4 GB VRAM alongside
-    activations + LoRA + optimizer state for the GTX 960 profile. The
-    returned model reports the actual path via `.loaded_precision`.
+    back to FP16. Full-size memory fit still requires a measured run.
+    The returned model reports the actual path via `.loaded_precision`.
     """
+    # Configure the architecture before loading weights. Transformers 5 removed
+    # ModernBERT's constructor-level reference_compile keyword; keeping it on
+    # the config also disables reference compilation on the supported 4.x path.
+    config = AutoConfig.from_pretrained(model_id, revision=revision)
+    if config.model_type == "modernbert":
+        config.reference_compile = False
     base = None
     loaded_precision: str | None = None
     if prefer_4bit:
@@ -169,14 +174,12 @@ def build_model(
                     bnb_4bit_quant_type="nf4",
                 )
                 _kw = dict(
+                    config=config,
                     revision=revision,
                     quantization_config=bnb_cfg,
                     torch_dtype=torch.bfloat16,
                     attn_implementation=_pick_attn_impl(),
                 )
-                if "ModernBERT" in model_id:
-                    # ModernBERT-only kwarg; DeBERTa rejects it.
-                    _kw["reference_compile"] = False
                 base = AutoModel.from_pretrained(model_id, **_kw)
                 loaded_precision = "4bit-nf4-bf16"
             except Exception as exc:
@@ -204,9 +207,7 @@ def build_model(
         else:
             dtype = torch.float32
             loaded_precision = "fp32"
-        _kw = dict(torch_dtype=dtype, attn_implementation=_pick_attn_impl(), revision=revision)
-        if "ModernBERT" in model_id:
-            _kw["reference_compile"] = False
+        _kw = dict(config=config, torch_dtype=dtype, attn_implementation=_pick_attn_impl(), revision=revision)
         base = AutoModel.from_pretrained(model_id, **_kw)
 
     if gradient_checkpointing:

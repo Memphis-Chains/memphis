@@ -3,7 +3,7 @@ import type { KartografOutput, KartografSession } from './session.js';
 import { KARTOGRAF_V1_ZONE_LABELS } from './zone-labels.js';
 
 /** Bump the policy if tokenization/preprocessing or output transforms change. */
-export const KARTOGRAF_TOKENIZER_POLICY = 'verified-json-no-padding-truncate512-v1';
+export const KARTOGRAF_TOKENIZER_POLICY = 'verified-json-content-truncate512-v2';
 export const KARTOGRAF_MAX_TOKENS = 512;
 export const KARTOGRAF_TOKENIZER_CONFIG = Object.freeze({
   model_max_length: KARTOGRAF_MAX_TOKENS,
