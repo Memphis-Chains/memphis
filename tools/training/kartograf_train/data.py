@@ -17,15 +17,9 @@ from pathlib import Path
 import torch
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 
-# Mirror of the zone taxonomy. Kept in sync with
-# tools/training/kartograf-corpus.py::ZONES and
-# src/memory/chain-catalog.ts::CHAIN_CATALOG by the corpus builder
-# asserting the alignment at build time; here we only need the order.
-ZONES = [
-    "journal", "decisions", "reflections", "cases", "patterns",
-    "system", "collective", "proactive", "insights", "soul",
-    "reserved_1", "reserved_2",
-]
+from .corpus_contract import ZONE_LABELS, validate_corpus
+
+ZONES = list(ZONE_LABELS)
 ZONE_TO_IDX = {z: i for i, z in enumerate(ZONES)}
 
 
@@ -66,12 +60,14 @@ class CorpusBundle:
 def load_corpus(
     corpus_dir: Path,
     drop_ambiguous: bool = True,
+    require_eval: bool = False,
 ) -> CorpusBundle:
     """Load train.jsonl (dedupe by sha256) + pairs.jsonl.
 
     Returns a CorpusBundle; see its docstring for the anchor vs full
     sample distinction.
     """
+    validate_corpus(corpus_dir, require_pairs=True, require_eval=require_eval)
     train_path = corpus_dir / "train.jsonl"
     pairs_path = corpus_dir / "pairs.jsonl"
     if not train_path.exists():

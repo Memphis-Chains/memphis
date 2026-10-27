@@ -3,8 +3,7 @@
 Public entry point: `run(config) -> TrainResult`. Called by
 tools/training/train-kartograf.py after corpus validation and before
 envelope signing. This module does NOT sign the envelope itself —
-that stays in the invoking script to keep signing logic adjacent to
-the operator's signing seed.
+release signing is performed separately with the operator vault identity.
 
 Smoke mode:
   - 50 optimizer steps
@@ -166,18 +165,17 @@ def run(config: TrainConfig) -> TrainResult:
     device = torch.device(config.device)
     print(f"[train] device={device}, mode={config.mode}")
 
-    # 1) Tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(config.model_id, revision=config.model_revision)
-    tok_bytes = _tokenizer_json_bytes(tokenizer)
-    tok_sha = hashlib.sha256(tok_bytes).hexdigest()
-
-    # 2) Corpus + pairs
-    bundle = load_corpus(config.corpus_dir, drop_ambiguous=True)
+    # Validate actual corpus files before any model/tokenizer download.
+    bundle = load_corpus(config.corpus_dir, drop_ambiguous=True,
+                         require_eval=config.mode == "full" and config.run_epoch_eval)
     if len(bundle.anchor_samples) == 0:
         raise RuntimeError(
             "no usable training samples after ambiguous/pair filter; "
             "check corpus-v1-summary.json and pairs.jsonl"
         )
+    tokenizer = AutoTokenizer.from_pretrained(config.model_id, revision=config.model_revision)
+    tok_bytes = _tokenizer_json_bytes(tokenizer)
+    tok_sha = hashlib.sha256(tok_bytes).hexdigest()
     dataset = KartografDataset(bundle)
     class_weights = compute_class_weights(bundle.anchor_samples).to(device)
     if config.run_epoch_eval and config.mode != "smoke":
