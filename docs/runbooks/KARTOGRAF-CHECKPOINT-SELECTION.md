@@ -50,3 +50,26 @@ These checks establish artifact integrity and structural inference, not training
 quality. Semantic zone accuracy and retrieval quality still need evaluation on
 real data. No model is manufactured by this installer, and this feature does not
 make the Q2 model or independent-audit criteria pass.
+
+## Producing a signed candidate
+
+The Python trainer's `--unsigned` path writes `unsigned-checkpoint.json`
+beside the model and tokenizer in a fresh directory. Smoke/full require
+`--base-model owner/model@<40-hex-commit>` and load both model and tokenizer
+from that pinned revision. Full export failure aborts; fixture artifacts
+are not release candidates. Python never needs the operator identity key.
+
+Review provenance and measured evaluation before invoking:
+
+```sh
+memphis kartograf sign --file /private/candidate/unsigned-checkpoint.json --json
+```
+
+This separate command requires operator authentication and bounded vault
+use of the existing `did_seed` identity. It checks the exact v1 schema,
+pinned source, complete model/tokenizer hashes, and known fixture markers
+before accessing the vault. It publishes `checkpoint.json` atomically with
+mode 0600 and refuses replacement, including symlink destinations. No
+signing seed is exported. Signing does not install, activate, start training,
+or certify the model's semantic quality. Keep the candidate directory under
+operator control while signing and installation run.
