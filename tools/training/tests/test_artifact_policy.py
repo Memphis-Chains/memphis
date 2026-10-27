@@ -5,10 +5,18 @@ from pathlib import Path
 from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from kartograf_train.artifact_policy import PLACEHOLDER_ONNX, export_training_artifact
+from kartograf_train.artifact_policy import PLACEHOLDER_ONNX, assert_export_metrics, export_training_artifact
 
 
 class ArtifactPolicyTests(unittest.TestCase):
+    def test_parity_refuses_nonfinite_metrics_and_individual_bad_rows(self):
+        for cosines, gap in [([float('nan')], 0), ([1], float('nan')),
+                             ([1], float('inf')), ([float('inf')], 0), ([], 0),
+                             ([1.0, 0.998], 0), ([1], 0.011)]:
+            with self.subTest(cosines=cosines, gap=gap), self.assertRaises(ValueError):
+                assert_export_metrics(cosines, gap)
+        assert_export_metrics([0.999, 1.0], 0.01)
+
     def test_full_export_failure_aborts_and_does_not_echo_the_underlying_error(self):
         exporter = Mock(side_effect=ValueError("synthetic-private-sentinel"))
         with self.assertRaisesRegex(RuntimeError, "no deployable checkpoint") as failure:

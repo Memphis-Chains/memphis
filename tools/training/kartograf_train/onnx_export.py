@@ -19,21 +19,21 @@ Pre-export steps:
 
 Post-export parity test (required before shipping):
 
-  - Run torch forward on 8 random eval samples.
+  - Run torch forward on multiple lengths, Unicode and padded batch inputs.
   - Run onnxruntime forward on the same inputs.
   - Assert cosine similarity on `embedding` >= 0.999 and max absolute
     difference on `zone_logits` <= 1e-2. Failures raise
-    OnnxExportParityError and the trainer falls back to placeholder
-    ONNX (operator can retry with onnx-export-kartograf.py standalone).
+    OnnxExportError; full training retains state and produces no checkpoint.
 """
 from __future__ import annotations
 
-import io
 import tempfile
 from pathlib import Path
 
 import numpy as np
 import torch
+
+from .artifact_policy import assert_export_metrics
 
 
 class OnnxExportError(RuntimeError):
@@ -111,8 +111,7 @@ def export_model_to_onnx(
     """Merge LoRA + export the whole thing to ONNX. Returns raw bytes
     suitable for hashing + inclusion in the envelope.
 
-    Raises OnnxExportError if the parity test fails — the caller
-    (train.run) is expected to catch and fall back to placeholder."""
+    Raises OnnxExportError if parity fails. Full training must abort export."""
     model.eval()
 
     # 0) Strip training-time wrappers (gradient_checkpointing, dynamo
@@ -171,6 +170,10 @@ def export_model_to_onnx(
                     "zone_logits":    {0: "batch"},
                 },
                 opset_version=opset,
+                # Keep the validated dynamic_axes / single-file contract on
+                # newer PyTorch, where dynamo=True became the default.
+                dynamo=False,
+                external_data=False,
                 do_constant_folding=True,
             )
         onnx_bytes = tmp_path.read_bytes()
@@ -188,54 +191,44 @@ def export_model_to_onnx(
     sess = ort.InferenceSession(
         onnx_bytes, providers=["CPUExecutionProvider"],
     )
-    with torch.no_grad():
-        torch_emb, torch_logits = wrapper(dummy_ids, dummy_mask)
-    ort_outs = sess.run(
-        None,
-        {
-            "input_ids": dummy_ids.cpu().numpy(),
-            "attention_mask": dummy_mask.cpu().numpy(),
-        },
-    )
-    ort_emb = ort_outs[0]
-    ort_logits = ort_outs[1]
-
-    # Cosine similarity on embeddings — should be ~1.0 since both are
-    # L2-normalized and computed on the same weights. We compute
-    # cosine *explicitly* (divide by norms) instead of relying on the
-    # L2-norm precondition: if a future export wrapper changes the
-    # embedding magnitude (e.g. INT8 path or a v2 architecture that
-    # folds normalization differently), a raw dot product would still
-    # round-trip near 1.0 for cosine-aligned-but-magnitude-mismatched
-    # outputs and silently let a bad checkpoint pass parity. See #273.
-    torch_emb_np = torch_emb.detach().cpu().numpy().astype(np.float64)
-    ort_emb_np = ort_emb.astype(np.float64)
-    torch_norms = np.linalg.norm(
-        torch_emb_np, axis=-1, keepdims=True,
-    ).clip(min=1e-12)
-    ort_norms = np.linalg.norm(
-        ort_emb_np, axis=-1, keepdims=True,
-    ).clip(min=1e-12)
-    cos = float((
-        (torch_emb_np / torch_norms) * (ort_emb_np / ort_norms)
-    ).sum(axis=-1).mean())
-    # zone_logits max absolute gap — tolerance 1e-2 is generous; usually
-    # matches to 1e-4.
-    logit_abs_diff = float(np.abs(
-        torch_logits.detach().cpu().numpy() - ort_logits
-    ).max())
-
-    print(
-        f"[onnx] export parity: embedding_cos={cos:.6f} "
-        f"logit_max_abs_diff={logit_abs_diff:.6f}",
-    )
-    if cos < 0.999:
-        raise OnnxExportError(
-            f"ONNX/torch embedding divergence: cos={cos:.6f} < 0.999"
-        )
-    if logit_abs_diff > 1e-2:
-        raise OnnxExportError(
-            f"ONNX/torch logit divergence: max|Δ|={logit_abs_diff:.6f} > 1e-2"
-        )
+    # Test dynamic axes and masking, not only the input used for tracing.
+    samples = [
+        [""],
+        ["Kartograf."],
+        ["Zażółć gęślą jaźń — 日本語 👩🏽‍💻"],
+        ["memory " * max_length],
+        ["short", "a longer memory with multiple tokens"],
+    ]
+    for texts in samples:
+        encoded = tokenizer(texts, padding=True, truncation=True,
+                            max_length=max_length, return_tensors="pt")
+        ids = encoded["input_ids"].to(device)
+        mask = encoded["attention_mask"].to(device)
+        with torch.no_grad():
+            expected = wrapper(ids, mask)
+        actual = sess.run(["embedding", "zone_logits"], {
+            "input_ids": ids.cpu().numpy(),
+            "attention_mask": mask.cpu().numpy(),
+        })
+        expected = [value.detach().cpu().numpy().astype(np.float64) for value in expected]
+        actual = [value.astype(np.float64) for value in actual]
+        for reference, exported in zip(expected, actual):
+            if (reference.shape != exported.shape or reference.ndim != 2
+                    or not np.isfinite(reference).all() or not np.isfinite(exported).all()):
+                raise OnnxExportError("ONNX/torch parity: invalid output shape or non-finite values")
+        torch_emb, torch_logits = expected
+        ort_emb, ort_logits = actual
+        torch_norms = np.linalg.norm(torch_emb, axis=-1, keepdims=True)
+        ort_norms = np.linalg.norm(ort_emb, axis=-1, keepdims=True)
+        if np.any(torch_norms <= 1e-12) or np.any(ort_norms <= 1e-12):
+            raise OnnxExportError("ONNX/torch parity: zero embedding")
+        cosines = ((torch_emb / torch_norms) * (ort_emb / ort_norms)).sum(axis=-1)
+        gap = float(np.abs(torch_logits - ort_logits).max())
+        try:
+            assert_export_metrics(cosines.tolist(), gap)
+        except ValueError as exc:
+            raise OnnxExportError(str(exc)) from None
+        print(f"[onnx] parity batch={ids.shape[0]} seq={ids.shape[1]} "
+              f"min_cos={cosines.min():.6f} logit_max_gap={gap:.6f}")
 
     return onnx_bytes

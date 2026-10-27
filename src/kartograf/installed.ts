@@ -4,6 +4,7 @@ import { chmod, copyFile, mkdir, mkdtemp, open, readdir, rename } from 'node:fs/
 import { dirname, join, resolve } from 'node:path';
 
 import { canonicalize, verifyCheckpoint, type CheckpointEnvelope } from './checkpoint.js';
+import { assertKartografOutput, assertSessionSpace, embeddingSpaceFor } from './embedding-space.js';
 import { createKartografSession } from './session.js';
 import { getDataDir } from '../config/paths.js';
 import { writePrivateAtomicFile } from '../infra/config/private-atomic-file.js';
@@ -54,6 +55,7 @@ export async function inspectInstalledBundle(envelopePath: string): Promise<Inst
   }
   const verified = verifyCheckpoint(envelope);
   if (!verified.valid) throw new Error('Checkpoint envelope signature or schema invalid');
+  embeddingSpaceFor(envelope);
   const directory = dirname(envelopePath);
   for (const [name, expected, limit] of [
     ['model.onnx', envelope.onnx_sha256, MAX_MODEL_BYTES],
@@ -194,6 +196,7 @@ export async function activateBundle(
   if (bundle.envelope.signer_did !== trustedSigner)
     throw new Error('Checkpoint signer is not trusted');
   if (dryRun) return bundle;
+  const embeddingSpace = embeddingSpaceFor(bundle.envelope);
   const session = await createKartografSession(
     { checkpointPath: bundle.envelopePath, headsConfig: bundle.envelope.heads_config },
     { ...env, MEMPHIS_KARTOGRAF_ENABLE: '1' },
@@ -204,18 +207,9 @@ export async function activateBundle(
       session.checkpointId !== bundle.envelope.onnx_sha256
     )
       throw new Error('Checkpoint activation refused: real ONNX session required');
+    assertSessionSpace(session, embeddingSpace);
     const probe = await session.embed('Kartograf activation integrity check');
-    if (
-      probe.checkpointId !== bundle.envelope.onnx_sha256 ||
-      !probe.zones.length ||
-      !probe.zones.every(
-        (zone) => Number.isFinite(zone.score) && zone.score >= 0 && zone.score <= 1,
-      ) ||
-      probe.embedding.length !== bundle.envelope.heads_config.embedding_dim ||
-      !probe.embedding.every(Number.isFinite) ||
-      !probe.embedding.some((value) => value !== 0)
-    )
-      throw new Error('Checkpoint activation refused: invalid inference output');
+    assertKartografOutput(probe, embeddingSpace);
   } finally {
     await session.close();
   }

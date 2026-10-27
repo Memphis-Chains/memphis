@@ -23,6 +23,7 @@
  */
 
 import type { HeadsConfig } from './checkpoint.js';
+import type { KartografEmbeddingSpace } from './embedding-space.js';
 
 // ── Output shapes ───────────────────────────────────────────────────────────
 
@@ -41,6 +42,8 @@ export interface ZoneClassification {
 }
 
 export interface KartografOutput {
+  /** Required for real inference; omitted by the deliberately unbound stub. */
+  embeddingSpaceId?: string;
   embedding: EmbeddingVector;
   zones: ZoneClassification[];
   /** Active checkpoint id (sha256 of the ONNX model blob, hex). */
@@ -66,6 +69,8 @@ export interface KartografSessionConfig {
 }
 
 export interface KartografSession {
+  /** Absent for stubs; consumers must require the verified space for real use. */
+  readonly embeddingSpace?: KartografEmbeddingSpace;
   /** Fingerprint of the loaded checkpoint (sha256 hex of ONNX blob). */
   readonly checkpointId: string;
 

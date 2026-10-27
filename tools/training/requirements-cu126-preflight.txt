@@ -1,0 +1,11 @@
+# Python 3.14 / Linux x86_64 / Maxwell FP16 preflight, 2026-10-27.
+# Install torch from the official cu126 index FIRST; see README.
+# bitsandbytes is deliberately absent: this profile uses no NF4 kernels.
+torch==2.14.0+cu126
+transformers==5.21.0
+peft==0.21.2
+safetensors==0.8.0
+numpy==2.5.4
+onnx==1.23.2
+onnxruntime==1.31.1
+cryptography==50.0.2

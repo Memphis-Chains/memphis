@@ -21,49 +21,26 @@
  *   - Session caches `model.onnx` in memory (~700 MB for full-v4
  *     DeBERTa-base). `close()` releases the native handle. Reload
  *     requires a fresh `OnnxKartografSession.load()`.
- *   - Tokenizer is loaded eagerly. transformers.js requires
- *     `tokenizer.json` + at minimum a stub `tokenizer_config.json` in
- *     the checkpoint dir. The loader auto-stamps a minimal config if
- *     none is present (matches DeBERTa-v3 defaults).
+ *   - Tokenizer is constructed from verified JSON bytes and a fixed
+ *     preprocessing policy. Unsigned sidecars are not read and loading
+ *     never changes the installed bundle.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { AutoTokenizer, env as TxEnv } from '@huggingface/transformers';
+import { PreTrainedTokenizer } from '@huggingface/transformers';
 import { InferenceSession, Tensor } from 'onnxruntime-node';
 
 import { sha256Hex, verifyCheckpoint, type CheckpointEnvelope } from './checkpoint.js';
+import {
+  embeddingSpaceFor,
+  assertKartografOutput,
+  KARTOGRAF_TOKENIZER_CONFIG,
+  type KartografEmbeddingSpace,
+} from './embedding-space.js';
 import type { KartografOutput, KartografSession, ZoneClassification } from './session.js';
+import { kartografTokenIds } from './tokenizer.js';
 import { KARTOGRAF_V1_ZONE_LABELS } from './zone-labels.js';
-
-// Force transformers.js into local-only mode — Memphis runs offline-by-
-// default and remote model downloads at runtime would violate that.
-// (TxEnv mutates a shared singleton; safe because this is the only
-// consumer wired into the daemon.)
-TxEnv.allowLocalModels = true;
-TxEnv.allowRemoteModels = false;
-TxEnv.cacheDir = ''; // discourage cache lookups outside checkpoint dir
-
-/**
- * Minimum tokenizer_config.json shape transformers.js needs to load a
- * raw tokenizer.json without trying to fetch sibling configs from HF.
- * DeBERTa-v3 specials match microsoft/deberta-v3-base; max length matches
- * the corpus build (chunks ≤ 512 tokens per spec line 137).
- */
-const FALLBACK_TOKENIZER_CONFIG = {
-  tokenizer_class: 'DebertaV2Tokenizer',
-  model_max_length: 512,
-  do_lower_case: false,
-  bos_token: '[CLS]',
-  eos_token: '[SEP]',
-  unk_token: '[UNK]',
-  sep_token: '[SEP]',
-  pad_token: '[PAD]',
-  cls_token: '[CLS]',
-  mask_token: '[MASK]',
-};
-
-const FALLBACK_TOKENIZER_CONFIG_NAME = 'tokenizer_config.json';
 
 export interface OnnxKartografLoadOptions {
   /** Top-K zones to return per inference (default: all zones above 0). */
@@ -72,12 +49,13 @@ export interface OnnxKartografLoadOptions {
 
 export class OnnxKartografSession implements KartografSession {
   readonly checkpointId: string;
+  readonly embeddingSpace: KartografEmbeddingSpace;
   readonly headsConfig: CheckpointEnvelope['heads_config'];
   readonly signerDid: string;
   readonly basemodel: string;
 
   private readonly session: InferenceSession;
-  private readonly tokenizer: Awaited<ReturnType<typeof AutoTokenizer.from_pretrained>>;
+  private readonly tokenizer: PreTrainedTokenizer;
   private readonly zoneLabels: readonly string[];
   private readonly topKZones: number | null;
   private closed = false;
@@ -85,11 +63,12 @@ export class OnnxKartografSession implements KartografSession {
   private constructor(args: {
     envelope: CheckpointEnvelope;
     session: InferenceSession;
-    tokenizer: Awaited<ReturnType<typeof AutoTokenizer.from_pretrained>>;
+    tokenizer: PreTrainedTokenizer;
     zoneLabels: readonly string[];
     topKZones: number | null;
   }) {
     this.headsConfig = args.envelope.heads_config;
+    this.embeddingSpace = embeddingSpaceFor(args.envelope);
     this.signerDid = args.envelope.signer_did;
     this.basemodel = args.envelope.base_model;
     this.checkpointId = args.envelope.onnx_sha256;
@@ -143,7 +122,8 @@ export class OnnxKartografSession implements KartografSession {
       throw new Error(`kartograf: tokenizer.json missing beside ${envelopePath}`);
     }
 
-    if (sha256Hex(readFileSync(tokenizerPath)) !== envelope.tokenizer_sha256) {
+    const tokenizerBytes = readFileSync(tokenizerPath);
+    if (sha256Hex(tokenizerBytes) !== envelope.tokenizer_sha256) {
       throw new Error('kartograf: tokenizer.json sha mismatch; re-install the checkpoint');
     }
 
@@ -155,14 +135,17 @@ export class OnnxKartografSession implements KartografSession {
       );
     }
 
-    // transformers.js wants a sibling tokenizer_config.json to set
-    // special-token boundaries. Auto-stamp a minimal one (matches the
-    // DeBERTa-v3 base config) so operators don't need to copy it
-    // manually. The actual tokenizer.json carries the SP unigram vocab.
-    const tokConfigPath = join(dir, FALLBACK_TOKENIZER_CONFIG_NAME);
-    if (!existsSync(tokConfigPath)) {
-      writeFileSync(tokConfigPath, JSON.stringify(FALLBACK_TOKENIZER_CONFIG, null, 2));
+    // Construct only from the hash-verified byte snapshot and the explicit
+    // runtime policy. No unsigned sidecars, remote fetches or bundle writes.
+    let tokenizer: PreTrainedTokenizer;
+    try {
+      tokenizer = new PreTrainedTokenizer(JSON.parse(tokenizerBytes.toString('utf8')), {
+        ...KARTOGRAF_TOKENIZER_CONFIG,
+      });
+    } catch {
+      throw new Error('kartograf: verified tokenizer could not be initialized');
     }
+    embeddingSpaceFor(envelope);
 
     const session = await InferenceSession.create(onnxBytes, {
       executionProviders: ['cpu'],
@@ -171,8 +154,6 @@ export class OnnxKartografSession implements KartografSession {
     });
 
     try {
-      const tokenizer = await AutoTokenizer.from_pretrained(dir);
-
       return new OnnxKartografSession({
         envelope,
         session,
@@ -188,15 +169,12 @@ export class OnnxKartografSession implements KartografSession {
 
   async embed(text: string): Promise<KartografOutput> {
     if (this.closed) throw new Error('OnnxKartografSession is closed');
-    // transformers.js default-returns Tensor objects with `.data`
-    // (BigInt64Array for int64 inputs) and `.dims` ([batch, seq]). The
-    // tokenizer truncates to max_length so the encoder never sees more
-    // than its 512-token context window.
-    const tokens = await this.tokenizer(text, {
-      padding: false,
-      truncation: true,
-      max_length: 512,
-    } as Parameters<typeof this.tokenizer>[1]);
+    // Preserve special tokens while truncating content to the 512-token budget.
+    const ids = kartografTokenIds(this.tokenizer, text);
+    const tokens = {
+      input_ids: { data: BigInt64Array.from(ids, BigInt), dims: [1, ids.length] },
+      attention_mask: { data: new BigInt64Array(ids.length).fill(1n), dims: [1, ids.length] },
+    };
 
     const feeds = this.encodingsToFeeds(tokens);
     const out = await this.session.run(feeds);
@@ -249,18 +227,29 @@ export class OnnxKartografSession implements KartografSession {
           `Producer must export with output_names=['embedding', 'zone_logits'].`,
       );
     }
-    const embedFlat = embTensor.data as Float32Array;
-    const logitsFlat = zoneTensor.data as Float32Array;
-
-    // Output shape is [1, dim] (batch=1). Slice to a copy so the caller
-    // can hold onto the buffer past the next embed() call (which reuses
-    // ORT's internal pools).
-    const embedding = new Float32Array(this.headsConfig.embedding_dim);
-    embedding.set(embedFlat.subarray(0, this.headsConfig.embedding_dim));
-
-    const zones = this.softmaxToZones(logitsFlat.subarray(0, this.zoneLabels.length));
-
-    return { embedding, zones, checkpointId: this.checkpointId };
+    const tensorData = (tensor: typeof embTensor, size: number): Float32Array => {
+      if (
+        tensor.type !== 'float32' ||
+        tensor.dims.length !== 2 ||
+        tensor.dims[0] !== 1 ||
+        tensor.dims[1] !== size ||
+        !(tensor.data instanceof Float32Array) ||
+        tensor.data.length !== size ||
+        !tensor.data.every(Number.isFinite)
+      )
+        throw new Error('kartograf: invalid ONNX output shape, dtype or values');
+      return tensor.data;
+    };
+    const embedding = new Float32Array(tensorData(embTensor, this.headsConfig.embedding_dim));
+    const zones = this.softmaxToZones(tensorData(zoneTensor, this.zoneLabels.length));
+    const result = {
+      embedding,
+      zones,
+      checkpointId: this.checkpointId,
+      embeddingSpaceId: this.embeddingSpace.id,
+    };
+    assertKartografOutput(result, this.embeddingSpace);
+    return result;
   }
 
   private softmaxToZones(logits: Float32Array | number[]): ZoneClassification[] {
