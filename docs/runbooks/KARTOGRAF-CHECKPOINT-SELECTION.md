@@ -39,6 +39,11 @@ legacy directories are retained. Keep a previous immutable bundle to switch back
 by explicitly activating its ID; do not edit or remove a live model directory.
 
 The runtime feature remains opt-in through its existing configuration flag.
+Real sessions and query results now expose an explicit
+[embedding space identity](../dev/KARTOGRAF-EMBEDDING-SPACE.md). Loading uses only
+the signed tokenizer JSON and the fixed runtime policy; unsigned tokenizer
+sidecars are ignored and the installed directory is not changed. Checkpoints
+that relied on sidecar overrides require evaluation under the new policy.
 Activation probes inference but does not rewrite `.env` or turn on that flag.
 Restart the daemon after changing selection so its cached session reloads.
 `selected_checkpoint` describes the verified selection; `active_checkpoint` is

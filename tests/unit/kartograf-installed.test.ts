@@ -16,6 +16,8 @@ import { beforeEach, expect, it, vi } from 'vitest';
 vi.mock('../../src/kartograf/session.js', () => ({ createKartografSession: vi.fn() }));
 
 import { sha256Hex, signCheckpoint } from '../../src/kartograf/checkpoint.js';
+import type { CheckpointEnvelope } from '../../src/kartograf/checkpoint.js';
+import { embeddingSpaceFor } from '../../src/kartograf/embedding-space.js';
 import {
   activateBundle,
   installBundle,
@@ -65,12 +67,16 @@ beforeEach(() => {
 });
 const install = (dryRun = false) => installBundle(join(source, 'checkpoint.json'), env, dryRun);
 const pointer = () => join(env.MEMPHIS_DATA_DIR!, 'kartograf', 'active.json');
-function validEngine(modelHash: string) {
+function validEngine(envelope: CheckpointEnvelope) {
+  const modelHash = envelope.onnx_sha256;
+  const embeddingSpace = embeddingSpaceFor(envelope);
   return {
     checkpointId: modelHash,
+    embeddingSpace,
     headsConfig: { embedding_dim: 2, zone_classes: 12, multitask_alpha: 0.7 },
     embed: vi.fn(async () => ({
       checkpointId: modelHash,
+      embeddingSpaceId: embeddingSpace.id,
       embedding: new Float32Array([0.3, 0.4]),
       zones: [{ zone: 'patterns', score: 0.9 }],
     })),
@@ -97,7 +103,7 @@ it('requires a trusted signer and a successful real-session probe before atomic 
     activateBundle(bundle.id, 'did:key:ed25519:' + '00'.repeat(32), env),
   ).rejects.toThrow('not trusted');
   expect(createKartografSession).not.toHaveBeenCalled();
-  const engine = validEngine(bundle.envelope.onnx_sha256);
+  const engine = validEngine(bundle.envelope);
   vi.mocked(createKartografSession).mockResolvedValue(engine);
   await activateBundle(bundle.id, did, env, true);
   expect(createKartografSession).not.toHaveBeenCalled();
@@ -111,7 +117,7 @@ it('requires a trusted signer and a successful real-session probe before atomic 
 
 it('refuses stub sessions, zero embeddings and corrupt artifacts without replacing the active selection', async () => {
   const bundle = await install();
-  const engine = validEngine(bundle.envelope.onnx_sha256);
+  const engine = validEngine(bundle.envelope);
   vi.mocked(createKartografSession).mockResolvedValue(engine);
   await activateBundle(bundle.id, did, env);
   const before = readFileSync(pointer());
@@ -123,6 +129,7 @@ it('refuses stub sessions, zero embeddings and corrupt artifacts without replaci
   expect(readFileSync(pointer())).toEqual(before);
   engine.embed.mockResolvedValue({
     checkpointId: bundle.envelope.onnx_sha256,
+    embeddingSpaceId: embeddingSpaceFor(bundle.envelope).id,
     embedding: new Float32Array([0, 0]),
     zones: [{ zone: 'patterns', score: 0.9 }],
   });
@@ -137,7 +144,7 @@ it('refuses stub sessions, zero embeddings and corrupt artifacts without replaci
 
 it('fails closed for corrupted selected artifacts or a dangling selection symlink', async () => {
   const bundle = await install();
-  vi.mocked(createKartografSession).mockResolvedValue(validEngine(bundle.envelope.onnx_sha256));
+  vi.mocked(createKartografSession).mockResolvedValue(validEngine(bundle.envelope));
   await activateBundle(bundle.id, did, env);
   writeFileSync(join(bundle.envelopePath, '..', 'tokenizer.json'), 'changed');
   await expect(selectedBundle(env)).rejects.toThrow('failed integrity');
@@ -150,11 +157,12 @@ it('fails closed for corrupted selected artifacts or a dangling selection symlin
 it('keeps activation writes in the captured runtime if the caller mutates its environment during inference', async () => {
   const bundle = await install();
   const originalPointer = pointer();
-  const engine = validEngine(bundle.envelope.onnx_sha256);
+  const engine = validEngine(bundle.envelope);
   engine.embed.mockImplementation(async () => {
     env.MEMPHIS_DATA_DIR = join(root, 'different-runtime');
     return {
       checkpointId: bundle.envelope.onnx_sha256,
+      embeddingSpaceId: embeddingSpaceFor(bundle.envelope).id,
       embedding: new Float32Array([0.3, 0.4]),
       zones: [{ zone: 'patterns', score: 0.9 }],
     };

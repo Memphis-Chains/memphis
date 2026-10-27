@@ -14,6 +14,11 @@
  * should reach for `getKartografRuntime()`.
  */
 
+import {
+  assertSessionSpace,
+  embeddingSpaceFor,
+  type KartografEmbeddingSpace,
+} from './embedding-space.js';
 import { selectedBundle } from './installed.js';
 import { createKartografSession, type KartografSession } from './session.js';
 
@@ -21,10 +26,28 @@ export type KartografRuntimeStatus =
   | { kind: 'disabled'; reason: string }
   | { kind: 'no-checkpoint'; reason: string }
   | { kind: 'load-failed'; reason: string; checkpointPath: string }
-  | { kind: 'ready'; session: KartografSession; envelopePath: string };
+  | {
+      kind: 'ready';
+      session: KartografSession;
+      envelopePath: string;
+      embeddingSpace: KartografEmbeddingSpace;
+    };
 
 let cached: KartografRuntimeStatus | null = null;
 let loading: Promise<KartografRuntimeStatus> | null = null;
+
+/** Read-only metadata: never initializes tokenizers, native graphs or weights. */
+export function getKartografRuntimeSnapshot(): {
+  state: KartografRuntimeStatus['kind'] | 'not-loaded' | 'loading';
+  embeddingSpace: KartografEmbeddingSpace | null;
+  checkpointId: string | null;
+} {
+  return {
+    state: cached?.kind ?? (loading ? 'loading' : 'not-loaded'),
+    embeddingSpace: cached?.kind === 'ready' ? cached.embeddingSpace : null,
+    checkpointId: cached?.kind === 'ready' ? cached.session.checkpointId : null,
+  };
+}
 
 /**
  * Get (or lazily create) the singleton Kartograf runtime. Returns a
@@ -67,6 +90,7 @@ export async function getKartografRuntime(
       return status;
     }
     try {
+      const embeddingSpace = embeddingSpaceFor(found.envelope);
       const session = await createKartografSession(
         {
           checkpointPath: found.envelopePath,
@@ -78,6 +102,7 @@ export async function getKartografRuntime(
       // load failure (e.g. ABI mismatch). Detect that and surface as
       // load-failed so callers don't think they have a real session.
       if (session.checkpointId.startsWith('stub:')) {
+        await session.close().catch(() => undefined);
         const status: KartografRuntimeStatus = {
           kind: 'load-failed',
           reason:
@@ -87,10 +112,17 @@ export async function getKartografRuntime(
         cached = status;
         return status;
       }
+      try {
+        assertSessionSpace(session, embeddingSpace);
+      } catch (error) {
+        await session.close().catch(() => undefined);
+        throw error;
+      }
       const status: KartografRuntimeStatus = {
         kind: 'ready',
         session,
         envelopePath: found.envelopePath,
+        embeddingSpace,
       };
       cached = status;
       return status;

@@ -11,6 +11,11 @@
  * would propagate as misrouted writes, exactly what the spec calls out
  * as "P0 routing failure" in docs/dev/KARTOGRAF-SPEC.md.
  */
+import {
+  assertKartografOutput,
+  assertSessionSpace,
+  type KartografEmbeddingSpace,
+} from '../../kartograf/embedding-space.js';
 import { getKartografRuntime } from '../../kartograf/runtime.js';
 import type { ZoneClassification } from '../../kartograf/session.js';
 
@@ -25,6 +30,7 @@ export type MemphisKartografOutput =
       query: string;
       checkpointId: string;
       embeddingDim: number;
+      embeddingSpace: KartografEmbeddingSpace;
       embeddingPreview: number[];
       zones: ZoneClassification[];
       elapsedMs: number;
@@ -33,7 +39,7 @@ export type MemphisKartografOutput =
       ok: false;
       error: string;
       hint?: string;
-      stateKind: 'disabled' | 'no-checkpoint' | 'load-failed';
+      stateKind: 'disabled' | 'no-checkpoint' | 'load-failed' | 'inference-failed';
     };
 
 export async function runMemphisKartograf(
@@ -68,16 +74,31 @@ export async function runMemphisKartograf(
   const topK = input.top_k_zones;
 
   const t0 = Date.now();
-  const result = await session.embed(query);
+  let result;
+  try {
+    assertSessionSpace(session, runtime.embeddingSpace);
+    result = await session.embed(query);
+    assertKartografOutput(result, runtime.embeddingSpace);
+  } catch {
+    return {
+      ok: false,
+      stateKind: 'inference-failed',
+      error: 'Checkpoint inference failed validation',
+    };
+  }
   const elapsedMs = Date.now() - t0;
 
-  const zones = typeof topK === 'number' && topK > 0 ? result.zones.slice(0, topK) : result.zones;
+  const zones =
+    typeof topK === 'number' && topK > 0
+      ? result.zones.slice(0, Math.max(1, Math.trunc(topK)))
+      : result.zones;
 
   return {
     ok: true,
     query,
     checkpointId: result.checkpointId,
     embeddingDim: result.embedding.length,
+    embeddingSpace: runtime.embeddingSpace,
     // Surface only the first 8 dims to keep tool output token-cheap.
     // Consumers needing the full vector should call the underlying
     // KartografSession directly (intentionally not exposed as a tool —

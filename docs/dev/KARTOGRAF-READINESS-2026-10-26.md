@@ -37,6 +37,10 @@ explicit trusted-signer activation with an actual inference probe. Status,
 queries and the daemon resolve the same selection. Tokenizer hashes are checked
 at load as well as install. See [selection runbook](../runbooks/KARTOGRAF-CHECKPOINT-SELECTION.md).
 Remote GitHub/HF transports and embedding-cascade integration remain unimplemented.
+The [embedding space contract](KARTOGRAF-EMBEDDING-SPACE.md) now binds inference
+to verified artifacts and an explicit tokenizer policy, with exact output shape
+validation. This prepares a native index boundary; it does not supply that
+integration or claim model readiness.
 
 The Q2 gate demands `topZone == "vault"`, but the frozen v1 labels are journal,
 decisions, reflections, cases, patterns, system, collective, proactive, insights,
@@ -55,6 +59,12 @@ be re-established before an actual training run. The producer now supports unsig
 the seed. Smoke/full refuse standalone seed files, and the requested pinned
 model revision now reaches both model and tokenizer loaders. This closes the
 producer key-handling gap; no actual release has been trained or signed.
+
+A subsequent host preflight on 2026-10-27 verified small CUDA forward/backward
+operations in FP32 and FP16 on the GTX 960 using an isolated PyTorch 2.14.0
+CUDA 12.6 environment. The system's CUDA 13 build lacks Maxwell kernels. This
+establishes a working primitive GPU path, not a complete training stack or an
+evaluated model. The full recipe and actual model still need verification.
 
 The next artifact decision needs a real model/tokenizer bundle, producer DID,
 pinned source revision and license, evaluation recipe, zone mapping and embedding
