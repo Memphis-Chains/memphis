@@ -78,9 +78,11 @@ describe('backup content drill', () => {
     const root = mkdtempSync(join(tmpdir(), 'backup-large-listing-'));
     roots.push(root);
     const source = join(root, 'source');
-    const nested = join(source, ...Array.from({ length: 12 }, (_, i) => `${i}-${'x'.repeat(88)}`));
+    // macOS has a shorter path limit than Linux. Grow the listing by
+    // file count while keeping every source/extracted path well below it.
+    const nested = join(source, ...Array.from({ length: 6 }, (_, i) => `${i}-${'x'.repeat(88)}`));
     mkdirSync(nested, { recursive: true });
-    for (let i = 0; i < 1100; i++) writeFileSync(join(nested, `artifact-${i}.txt`), '');
+    for (let i = 0; i < 2200; i++) writeFileSync(join(nested, `artifact-${i}.txt`), '');
     const archive = join(root, 'large.tar.gz');
     execFileSync('tar', ['-czf', archive, '-C', source, '.']);
     // Exercise both real tar listing paths beyond 1 MiB, without mocking
