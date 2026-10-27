@@ -220,9 +220,22 @@ These land in the core, so the GUI inherits them for free.
 | --- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ---- |
 | E1  | Render the caret; keep it in view by horizontally scrolling the input                              | `widgets/prompt.rs`, `ui.rs` (`Frame::set_cursor_position`) | ~60  |
 | E2  | Multi-row prompt: Alt+Enter inserts a newline, Enter submits; area grows to ≤8 rows and scrolls    | `app.rs` handle_key + layout                                | ~120 |
-| E3  | `Ctrl+R` — fuzzy search over the scrollback buffer; matches highlighted, Enter jumps               | `app.rs` + `widgets/body.rs`                                | ~120 |
+| E3  | `Ctrl+F` — search over the scrollback; matches highlighted, Enter steps to the next one            | `app.rs` + `widgets/body.rs` + `widgets/search.rs`          | ~250 |
 | E4  | `Ctrl+Y` — copy the last assistant answer to the clipboard via OSC 52                              | `app.rs` + `main.rs`                                        | ~40  |
 | E5  | `/sessions` gains an interactive picker (provider, model, session id) instead of a printed summary | `app.rs`                                                    | ~100 |
+
+**Status (2026-10-27): E1, E2, E3 and E4 are implemented and merged** — see the
+commits `feat(tui): a real caret, an editable multi-line prompt, and
+copy-to-clipboard` and `feat(tui): Ctrl+F searches the scrollback`. E5 is
+deliberately still open: the search (E3) covers most of what the picker
+was for, and a picker is a bigger change to `/sessions` semantics than
+the rest of this table.
+
+One binding differs from the table above: the search is `Ctrl+F`, not
+`Ctrl+R`. `Ctrl+R` already meant "refresh" in the TUI, and the main
+loop's comment had promised "F5 / Ctrl-R" for refresh while only ever
+wiring up the Ctrl half — F5 now refreshes too, which frees `Ctrl+F` for
+the search.
 
 E4 matters more than it looks: mouse capture is **off** by default because copying is the
 dominant use case (see the comment on `mouse_capture_enabled`), which means the operator
@@ -289,7 +302,7 @@ mergeable and independently useful.
 
 | #   | Step                                                                 | Effort    | Value if stopped here                                               | Risk                                                             |
 | --- | -------------------------------------------------------------------- | --------- | ------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| 1   | **E1–E5 ergonomics** in the existing TUI (no refactor)               | ~1 day    | High — fixes the caret, multi-line prompts, scrollback search, copy | Low: additive, no architecture touched                           |
+| 1   | **E1–E5 ergonomics** in the existing TUI (no refactor)               | ~2 days   | High — fixes the caret, multi-line prompts, scrollback search, copy | Low: additive, no architecture touched                           |
 | 2   | **Layer 1 extraction** into `memphis-cockpit`                        | ~1 day    | Medium — no user-visible change, but unblocks everything else       | Medium: 8 300 LOC moves; mitigated by an identical test baseline |
 | 3   | **Tauri shell** (`apps/memphis-gui`, vanilla TS frontend)            | ~3–5 days | High — the window, the tables, the rich rendering                   | Medium: new build path, must be pinned by CI                     |
 | 4   | **Protocol v2** (`chat.turn`, per-capability concurrency, streaming) | ~2 days   | Medium — unifies GUI/Telegram/CLI on one engine                     | Medium: touches the TS host and its consumers                    |

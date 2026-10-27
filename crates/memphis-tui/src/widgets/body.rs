@@ -1,24 +1,27 @@
 use ratatui::{
     buffer::Buffer,
     layout::{Margin, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     symbols::scrollbar,
     text::{Line, Span},
     widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget, Widget},
 };
 
-use crate::app::{LineTone, StyledLine};
+use crate::app::{LineTone, SearchState, StyledLine};
 use crate::sanitize::sanitize_for_tui;
 
 use super::tone_to_style;
 
 pub struct OutputBody<'a> {
     lines: &'a [StyledLine],
+    /// The active scrollback search, if any — its matches are
+    /// highlighted and the current one is scrolled into view.
+    search: Option<&'a SearchState>,
 }
 
 impl<'a> OutputBody<'a> {
-    pub fn new(lines: &'a [StyledLine]) -> Self {
-        Self { lines }
+    pub fn with_search(lines: &'a [StyledLine], search: Option<&'a SearchState>) -> Self {
+        Self { lines, search }
     }
 }
 
@@ -26,6 +29,10 @@ impl<'a> OutputBody<'a> {
 pub struct ScrollState {
     pub offset: usize,
     pub auto_scroll: bool,
+    /// Transcript line the search last scrolled to. The body only
+    /// jumps when the target changes, so a manual scroll is not fought
+    /// by a search that is still open.
+    pub search_anchor: Option<usize>,
     viewport_height: usize,
     content_height: usize,
 }
@@ -35,6 +42,7 @@ impl ScrollState {
         Self {
             offset: 0,
             auto_scroll: true,
+            search_anchor: None,
             viewport_height: 0,
             content_height: 0,
         }
@@ -143,10 +151,13 @@ fn wrap_single_line(value: &str, width: usize) -> Vec<String> {
     wrapped
 }
 
-fn wrap_styled_lines(lines: &[StyledLine], width: usize) -> Vec<StyledLine> {
+/// Wrap the transcript, remembering which source line each visual row
+/// came from. The search needs that mapping to highlight a match and to
+/// scroll to it.
+fn wrap_styled_lines(lines: &[StyledLine], width: usize) -> Vec<(usize, StyledLine)> {
     let mut wrapped = Vec::new();
 
-    for line in lines {
+    for (source_index, line) in lines.iter().enumerate() {
         let safe_content = sanitize_for_tui(&line.content);
         let raw_lines = if safe_content.is_empty() {
             vec![String::new()]
@@ -159,19 +170,25 @@ fn wrap_styled_lines(lines: &[StyledLine], width: usize) -> Vec<StyledLine> {
 
         for raw_line in raw_lines {
             for segment in wrap_single_line(raw_line.as_str(), width) {
-                wrapped.push(StyledLine {
-                    content: segment,
-                    tone: line.tone,
-                });
+                wrapped.push((
+                    source_index,
+                    StyledLine {
+                        content: segment,
+                        tone: line.tone,
+                    },
+                ));
             }
         }
     }
 
     if wrapped.is_empty() {
-        wrapped.push(StyledLine {
-            content: String::new(),
-            tone: LineTone::Plain,
-        });
+        wrapped.push((
+            0,
+            StyledLine {
+                content: String::new(),
+                tone: LineTone::Plain,
+            },
+        ));
     }
 
     wrapped
@@ -201,13 +218,48 @@ impl StatefulWidget for OutputBody<'_> {
         let wrapped_lines = wrap_styled_lines(self.lines, body_width as usize);
         state.sync_viewport(wrapped_lines.len(), area.height as usize);
 
+        // Jump to the match the search is pointing at. The anchor makes
+        // this a one-shot move: once the operator scrolls away, the
+        // search does not drag the view back on every frame.
+        let current_match = self
+            .search
+            .and_then(|search| search.matches.get(search.current).copied());
+        if let Some(target) = current_match {
+            if state.search_anchor != Some(target) {
+                state.search_anchor = Some(target);
+                if let Some(row) = wrapped_lines
+                    .iter()
+                    .position(|(source_index, _)| *source_index == target)
+                {
+                    let height = area.height as usize;
+                    let max_offset = state.max_offset();
+                    // Put the match a third of the way down, so the
+                    // operator can see what came before it.
+                    state.offset = row.saturating_sub(height / 3).min(max_offset);
+                    state.auto_scroll = false;
+                }
+            }
+        }
+
         let start = state.offset.min(state.max_offset());
         let end = (start + area.height as usize).min(wrapped_lines.len());
         let visible = &wrapped_lines[start..end];
 
         let paragraph_lines = visible
             .iter()
-            .map(|line| Line::from(Span::styled(line.content.clone(), tone_to_style(line.tone))))
+            .map(|(source_index, line)| {
+                let mut style = tone_to_style(line.tone);
+                if let Some(search) = self.search {
+                    // `matches` is sorted, so a binary search is enough.
+                    if search.matches.binary_search(source_index).is_ok() {
+                        style = style.patch(Style::default().add_modifier(Modifier::REVERSED));
+                        if current_match == Some(*source_index) {
+                            style = style.patch(Style::default().bg(Color::Yellow).fg(Color::Black));
+                        }
+                    }
+                }
+                Line::from(Span::styled(line.content.clone(), style))
+            })
             .collect::<Vec<_>>();
 
         let body_area = Rect {
@@ -270,6 +322,130 @@ mod tests {
             .collect::<String>()
     }
 
+    fn plain_line(content: &str) -> StyledLine {
+        StyledLine {
+            content: content.to_string(),
+            tone: LineTone::Plain,
+        }
+    }
+
+    fn row_modifier(terminal: &Terminal<TestBackend>, row: u16) -> ratatui::style::Modifier {
+        let buffer = terminal.backend().buffer().clone();
+        buffer
+            .cell((0, row))
+            .map(|cell| cell.modifier)
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn a_matching_line_is_highlighted() {
+        let backend = TestBackend::new(40, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let lines = vec![plain_line("nothing here"), plain_line("the needle")];
+        let search = crate::app::SearchState {
+            query: "needle".to_string(),
+            matches: vec![1],
+            current: 0,
+        };
+        let mut scroll = ScrollState::new();
+
+        terminal
+            .draw(|frame| {
+                frame.render_stateful_widget(
+                    OutputBody::with_search(&lines, Some(&search)),
+                    frame.area(),
+                    &mut scroll,
+                );
+            })
+            .unwrap();
+
+        assert!(
+            !row_modifier(&terminal, 0).contains(ratatui::style::Modifier::REVERSED),
+            "a non-matching line must not be highlighted"
+        );
+        assert!(
+            row_modifier(&terminal, 1).contains(ratatui::style::Modifier::REVERSED),
+            "the matching line must be highlighted"
+        );
+    }
+
+    #[test]
+    fn the_body_scrolls_to_the_current_match() {
+        let backend = TestBackend::new(40, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let lines: Vec<StyledLine> = (0..40).map(|i| plain_line(&format!("line {i}"))).collect();
+        let search = crate::app::SearchState {
+            query: "line 30".to_string(),
+            matches: vec![30],
+            current: 0,
+        };
+        let mut scroll = ScrollState::new();
+
+        terminal
+            .draw(|frame| {
+                frame.render_stateful_widget(
+                    OutputBody::with_search(&lines, Some(&search)),
+                    frame.area(),
+                    &mut scroll,
+                );
+            })
+            .unwrap();
+
+        // The match lands a third of the way down the viewport, so the
+        // operator can see what came before it — it is in view, not
+        // necessarily on the first row.
+        let viewport: String = (0..5)
+            .map(|row| row_content(&terminal, row))
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(
+            viewport.contains("line 30"),
+            "the match must be scrolled into view; viewport was: {viewport}"
+        );
+    }
+
+    #[test]
+    fn a_manual_scroll_is_not_fought_by_an_open_search() {
+        let backend = TestBackend::new(40, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let lines: Vec<StyledLine> = (0..40).map(|i| plain_line(&format!("line {i}"))).collect();
+        let search = crate::app::SearchState {
+            query: "line 30".to_string(),
+            matches: vec![30],
+            current: 0,
+        };
+        let mut scroll = ScrollState::new();
+
+        terminal
+            .draw(|frame| {
+                frame.render_stateful_widget(
+                    OutputBody::with_search(&lines, Some(&search)),
+                    frame.area(),
+                    &mut scroll,
+                );
+            })
+            .unwrap();
+
+        // The operator scrolls away from the match.
+        scroll.scroll_to_top();
+
+        terminal
+            .draw(|frame| {
+                frame.render_stateful_widget(
+                    OutputBody::with_search(&lines, Some(&search)),
+                    frame.area(),
+                    &mut scroll,
+                );
+            })
+            .unwrap();
+
+        let content = row_content(&terminal, 0);
+        assert!(
+            content.contains("line 0"),
+            "the search must not drag the view back; top row was: {content}"
+        );
+    }
+
     #[test]
     fn output_body_renders_lines() {
         let backend = TestBackend::new(40, 5);
@@ -289,7 +465,7 @@ mod tests {
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                frame.render_stateful_widget(OutputBody::new(&lines), area, &mut scroll);
+                frame.render_stateful_widget(OutputBody::with_search(&lines, None), area, &mut scroll);
             })
             .unwrap();
 
@@ -320,7 +496,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         terminal
             .draw(|frame| {
-                frame.render_stateful_widget(OutputBody::new(&lines), frame.area(), &mut scroll);
+                frame.render_stateful_widget(OutputBody::with_search(&lines, None), frame.area(), &mut scroll);
             })
             .unwrap();
 
@@ -340,7 +516,7 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                frame.render_stateful_widget(OutputBody::new(&lines), frame.area(), &mut scroll);
+                frame.render_stateful_widget(OutputBody::with_search(&lines, None), frame.area(), &mut scroll);
             })
             .unwrap();
 
@@ -361,7 +537,7 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                frame.render_stateful_widget(OutputBody::new(&lines), frame.area(), &mut scroll);
+                frame.render_stateful_widget(OutputBody::with_search(&lines, None), frame.area(), &mut scroll);
             })
             .unwrap();
 
@@ -387,7 +563,7 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                frame.render_stateful_widget(OutputBody::new(&lines), frame.area(), &mut scroll);
+                frame.render_stateful_widget(OutputBody::with_search(&lines, None), frame.area(), &mut scroll);
             })
             .unwrap();
 
@@ -399,7 +575,7 @@ mod tests {
         scroll.scroll_up(2);
         terminal
             .draw(|frame| {
-                frame.render_stateful_widget(OutputBody::new(&lines), frame.area(), &mut scroll);
+                frame.render_stateful_widget(OutputBody::with_search(&lines, None), frame.area(), &mut scroll);
             })
             .unwrap();
 
@@ -410,7 +586,7 @@ mod tests {
         scroll.scroll_to_bottom();
         terminal
             .draw(|frame| {
-                frame.render_stateful_widget(OutputBody::new(&lines), frame.area(), &mut scroll);
+                frame.render_stateful_widget(OutputBody::with_search(&lines, None), frame.area(), &mut scroll);
             })
             .unwrap();
 
@@ -430,7 +606,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         terminal
             .draw(|frame| {
-                frame.render_stateful_widget(OutputBody::new(&short), frame.area(), &mut scroll);
+                frame.render_stateful_widget(OutputBody::with_search(&short, None), frame.area(), &mut scroll);
             })
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
@@ -452,7 +628,7 @@ mod tests {
         let mut terminal2 = Terminal::new(backend2).unwrap();
         terminal2
             .draw(|frame| {
-                frame.render_stateful_widget(OutputBody::new(&long), frame.area(), &mut scroll2);
+                frame.render_stateful_widget(OutputBody::with_search(&long, None), frame.area(), &mut scroll2);
             })
             .unwrap();
         let buffer2 = terminal2.backend().buffer().clone();
