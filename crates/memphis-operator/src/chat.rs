@@ -2748,6 +2748,58 @@ mod tests {
         }
     }
 
+    /// The incident of 2026-10-27, reproduced through the real tool.
+    ///
+    /// The cockpit asked for lines 3640..400 of a file and the chat
+    /// worker died with `attempt to subtract with overflow`: the two
+    /// bounds were clamped independently and then subtracted. On a
+    /// debug build that underflow is a panic, and the panic crossed
+    /// the worker -- the whole turn died, and the operation stayed
+    /// `started` in the journal forever.
+    ///
+    /// The tool must refuse an inverted range with a message that says
+    /// which bound is wrong. It must not panic.
+    #[test]
+    fn native_code_read_refuses_an_inverted_line_range_without_panicking() {
+        let root = temp_runtime_root("native-code-read-inverted-range");
+        let runtime = runtime_for(root.as_path());
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
+        let target = std::path::Path::new(&home)
+            .join("memphis")
+            .join(".code-read-range-probe.md");
+        let _ = std::fs::remove_file(&target);
+        // The probe must be long enough that `startLine` is INSIDE the
+        // file -- that is the shape of the incident, where the file had
+        // 8048 lines and only `endLine` was wrong. With a short file the
+        // refusal would name `startLine` instead, which is a different
+        // check entirely.
+        std::fs::write(
+            &target,
+            (1..=5000).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n"),
+        )
+        .expect("write probe file");
+
+        let call = ChatToolCall {
+            id: "read-call".to_string(),
+            name: "memphis_code_read".to_string(),
+            arguments: json!({
+                "path": target.to_string_lossy(),
+                "startLine": 3640,
+                "endLine": 400,
+            }),
+        };
+
+        let result = execute_native_tool(&runtime, &call, 2);
+        let _ = std::fs::remove_file(&target);
+
+        let error = result.expect_err("an inverted range must be refused, not panicked on");
+        let message = error.to_string();
+        assert!(
+            message.contains("endLine 400") && message.contains("out of range"),
+            "the message must name the bound that is wrong, got: {message}"
+        );
+    }
+
     /// The guard above must not block ordinary source files, or the tool
     /// stops being usable and the block becomes invisible to everyone.
     #[test]
