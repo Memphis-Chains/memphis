@@ -3,12 +3,12 @@ import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { AutoTokenizer } from '@huggingface/transformers';
+import { PreTrainedTokenizer } from '@huggingface/transformers';
 import { InferenceSession } from 'onnxruntime-node';
 import { beforeEach, expect, it, vi } from 'vitest';
 
 vi.mock('@huggingface/transformers', () => ({
-  AutoTokenizer: { from_pretrained: vi.fn() },
+  PreTrainedTokenizer: vi.fn(),
   env: {},
 }));
 vi.mock('onnxruntime-node', () => ({ InferenceSession: { create: vi.fn() }, Tensor: vi.fn() }));
@@ -51,7 +51,7 @@ it('refuses a changed tokenizer before native inference or local tokenizer confi
   expect(existsSync(join(directory, 'tokenizer_config.json'))).toBe(false);
 });
 
-it('releases an allocated native session when tokenizer initialization fails', async () => {
+it('refuses tokenizer initialization failure before allocating a native session', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'memphis-tokenizer-release-'));
   const model = Buffer.from('synthetic graph bytes'),
     tokenizer = Buffer.from('{"synthetic":true}');
@@ -78,11 +78,12 @@ it('releases an allocated native session when tokenizer initialization fails', a
   writeFileSync(join(directory, 'tokenizer.json'), tokenizer);
   const release = vi.fn(async () => {});
   vi.mocked(InferenceSession.create).mockResolvedValue({ release } as never);
-  vi.mocked(AutoTokenizer.from_pretrained).mockRejectedValue(
-    new Error('synthetic tokenizer failure'),
-  );
+  vi.mocked(PreTrainedTokenizer).mockImplementation(function () {
+    throw new Error('synthetic tokenizer failure');
+  });
   await expect(OnnxKartografSession.load(join(directory, 'checkpoint.json'))).rejects.toThrow(
-    'synthetic tokenizer failure',
+    'verified tokenizer could not be initialized',
   );
-  expect(release).toHaveBeenCalledOnce();
+  expect(release).not.toHaveBeenCalled();
+  expect(InferenceSession.create).not.toHaveBeenCalled();
 });

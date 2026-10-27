@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { DEFAULT_TENSOR_SURFACE_POLICY, memoryEmbeddingMeta } from './types.js';
+import { getKartografRuntimeSnapshot } from '../../kartograf/runtime.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 
 export interface TensorStatus {
@@ -27,7 +28,10 @@ export interface TensorStatus {
   };
   kartograf: {
     enabled: boolean;
-    mode: 'onnx' | 'stub';
+    mode: 'onnx' | 'stub' | 'not-loaded';
+    runtimeState: ReturnType<typeof getKartografRuntimeSnapshot>['state'];
+    embeddingSpace: ReturnType<typeof getKartografRuntimeSnapshot>['embeddingSpace'];
+    configuredCheckpointId?: string;
     dim: number;
     dtype: 'f32';
     zoneClasses: number;
@@ -71,6 +75,7 @@ export function getTensorStatus(rawEnv: NodeJS.ProcessEnv = process.env): Tensor
   const kartografEnabled = rawEnv.MEMPHIS_KARTOGRAF_ENABLE === '1';
   const kartografDim = parseNumber(rawEnv.MEMPHIS_KARTOGRAF_EMBED_DIM, 256);
   const zoneClasses = parseNumber(rawEnv.MEMPHIS_KARTOGRAF_ZONE_CLASSES, 12);
+  const kartograf = getKartografRuntimeSnapshot();
 
   return {
     ok: true,
@@ -100,11 +105,14 @@ export function getTensorStatus(rawEnv: NodeJS.ProcessEnv = process.env): Tensor
     },
     kartograf: {
       enabled: kartografEnabled,
-      mode: kartografEnabled ? 'onnx' : 'stub',
-      dim: kartografDim,
+      mode: kartograf.state === 'ready' ? 'onnx' : kartografEnabled ? 'not-loaded' : 'stub',
+      runtimeState: kartograf.state,
+      embeddingSpace: kartograf.embeddingSpace,
+      dim: kartograf.embeddingSpace?.dimension ?? kartografDim,
       dtype: 'f32',
       zoneClasses,
-      checkpointId: rawEnv.MEMPHIS_KARTOGRAF_CHECKPOINT_ID,
+      checkpointId: kartograf.checkpointId ?? undefined,
+      configuredCheckpointId: rawEnv.MEMPHIS_KARTOGRAF_CHECKPOINT_ID,
     },
   };
 }
