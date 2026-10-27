@@ -37,6 +37,8 @@ it('uses the real verified tokenizer without reading or rewriting unsigned sidec
     expect(output.embeddingSpaceId).toBe(session.embeddingSpace.id);
     await session.embed('hello '.repeat(600));
     expect((run.mock.calls[1][0] as Record<string, Tensor>).input_ids.dims).toEqual([1, 512]);
+    const longIds = Array.from((run.mock.calls[1][0] as Record<string, Tensor>).input_ids.data);
+    expect(longIds).toEqual([1n, ...Array<bigint>(510).fill(4n), 2n]);
     expect(readFileSync(sidecar, 'utf8')).toBe(untrusted);
     expect(existsSync(join(fixture.root, 'config.json'))).toBe(false);
   } finally {
