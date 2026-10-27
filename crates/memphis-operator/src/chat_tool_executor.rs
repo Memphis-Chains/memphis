@@ -28,6 +28,7 @@ use crate::chat_memory::{
     run_soul_write, search_result_to_json, validate_chain_name, value_string_array, value_usize,
 };
 use crate::chat_tool_catalog::tool_tier;
+use crate::code_read_range::resolve_code_read_range;
 use memphis_case_index::CaseIndex;
 use memphis_core::case_entry::{CaseEntry, CaseQuery};
 
@@ -281,16 +282,19 @@ pub(crate) fn execute_native_tool(
             let lines: Vec<&str> = content.lines().collect();
             let total_lines = lines.len();
 
-            let start = start_line.unwrap_or(1).saturating_sub(1);
-            let end = end_line.unwrap_or(total_lines).min(total_lines);
-            let limit = limit.unwrap_or(2000).min(2000);
+            // The range is validated in one place, `code_read_range`,
+            // and the same words are used by the TypeScript twin
+            // (`src/mcp/tools/code-read.ts`). Before this, the two
+            // bounds were clamped independently and then subtracted:
+            // `end - start` on an inverted window (startLine 3640,
+            // endLine 400) underflowed a `usize` and panicked the
+            // chat worker on 2026-10-27.
+            let range = resolve_code_read_range(total_lines, start_line, end_line, limit)
+                .map_err(OperatorError::Message)?;
 
-            let slice: Vec<&str> = lines
-                .get(start..end.min(start + limit))
-                .unwrap_or(&[])
-                .to_vec();
+            let slice: Vec<&str> = lines.get(range.start..range.slice_end()).unwrap_or(&[]).to_vec();
             let result_content = slice.join("\n");
-            let truncated = end - start > limit || total_lines > limit;
+            let truncated = range.is_truncated(total_lines);
 
             let json = serde_json::json!({
                 "path": path_str,
