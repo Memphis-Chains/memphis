@@ -101,7 +101,7 @@ export function createMemoryRuntimeTools(deps: MemoryRuntimeToolDeps): RuntimeTo
     buildTool({
       name: 'memphis_classify',
       description:
-        'Typed decision over a state via the local BASAL-1.0 service — returns a calibrated probability per option plus `auto` (confidence cleared the threshold). Categories come from `criteria`, so no retraining. SLOW: 70-140s per call on a host without a supported GPU. Returns a structured error with a start command when the service is down.',
+        'Advisory typed decision via local BASAL with validated probabilities. auto only reports caller-threshold eligibility; it grants no action permissions or error-rate guarantee. Classes are supplied per request. Revalidate calibration for each model/backend. Historical CPU calls took 70-140 seconds; unavailable services return a structured error.',
       inputSchema: {
         type: 'object',
         properties: {
