@@ -2,11 +2,26 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { getTensorStatus } from '../../src/infra/tensors/status.js';
+import { _resetKartografRuntimeForTests } from '../../src/kartograf/runtime.js';
 
 describe('tensor status', () => {
+  beforeEach(() => _resetKartografRuntimeForTests());
+
+  it('does not treat opt-in or an environment checkpoint ID as proof of a loaded model', () => {
+    const out = getTensorStatus({
+      RUST_CHAIN_ENABLED: 'false',
+      MEMPHIS_KARTOGRAF_ENABLE: '1',
+      MEMPHIS_KARTOGRAF_CHECKPOINT_ID: 'unverified-config-value',
+    });
+    expect(out.kartograf.mode).toBe('not-loaded');
+    expect(out.kartograf.runtimeState).toBe('not-loaded');
+    expect(out.kartograf.checkpointId).toBeUndefined();
+    expect(out.kartograf.embeddingSpace).toBeNull();
+    expect(out.kartograf.configuredCheckpointId).toBe('unverified-config-value');
+  });
   it('reports memory embeddings and Kartograf as separate tensor surfaces', () => {
     const out = getTensorStatus({
       RUST_CHAIN_ENABLED: 'false',

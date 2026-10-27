@@ -6,6 +6,11 @@ import { MEMPHIS_KARTOGRAF_ENABLE } from '../../../config/env-registry.js';
 import { getDataDir } from '../../../config/paths.js';
 import { verifyCheckpoint, type CheckpointEnvelope } from '../../../kartograf/checkpoint.js';
 import {
+  assertKartografOutput,
+  assertSessionSpace,
+  embeddingSpaceFor,
+} from '../../../kartograf/embedding-space.js';
+import {
   activateBundle,
   inspectInstalledBundle,
   installBundle,
@@ -369,6 +374,11 @@ async function handleStatus(context: CliContext): Promise<boolean> {
           ? selected.id
           : null,
       runtime: runtime.kind,
+      selected_embedding_space: selected ? embeddingSpaceFor(selected.envelope) : null,
+      active_embedding_space:
+        runtime.kind === 'ready' && selected?.envelopePath === runtime.envelopePath
+          ? runtime.embeddingSpace
+          : null,
       selectionError,
     },
     context.args.json,
@@ -480,8 +490,11 @@ async function handleQuery(context: CliContext): Promise<boolean> {
   }
 
   try {
+    const embeddingSpace = embeddingSpaceFor(read.envelope);
+    assertSessionSpace(session, embeddingSpace);
     const t0 = Date.now();
     const result = await session.embed(query);
+    assertKartografOutput(result, embeddingSpace);
     const elapsedMs = Date.now() - t0;
     print(
       {
@@ -489,6 +502,7 @@ async function handleQuery(context: CliContext): Promise<boolean> {
         mode: 'kartograf.query',
         checkpointId: result.checkpointId,
         selectedCheckpointId: usable.id,
+        embeddingSpace,
         signerDid: usable.envelope.signer_did,
         query,
         // Don't dump the full 256-d vector by default — surface the
@@ -508,6 +522,13 @@ async function handleQuery(context: CliContext): Promise<boolean> {
         zones: result.zones,
         elapsedMs,
       },
+      context.args.json,
+    );
+    return true;
+  } catch {
+    process.exitCode = 2;
+    print(
+      { ok: false, mode: 'kartograf.query', error: 'Checkpoint inference failed validation' },
       context.args.json,
     );
     return true;
