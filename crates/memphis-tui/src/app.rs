@@ -79,6 +79,8 @@ pub enum AppAction {
     ScrollBottom,
     ToggleHelp,
     ToggleMouseCapture,
+    CopyLastAnswer,
+    ToggleSearch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -408,6 +410,45 @@ const HELP_ENTRIES: &[HelpEntry] = &[
     },
 ];
 
+/// The scrollback search (ADR-011, E3).
+///
+/// The transcript is a flat list of styled lines with no way to find
+/// anything in it — and the live database holds sessions of 1 447
+/// messages, so the longest sessions were the least navigable.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SearchState {
+    /// What the operator has typed so far.
+    pub query: String,
+    /// Indices into the transcript buffer of the lines that match.
+    pub matches: Vec<usize>,
+    /// Which of those matches the operator is currently on.
+    pub current: usize,
+}
+
+/// Byte offset of the character before `index`.
+fn previous_char_boundary(value: &str, index: usize) -> usize {
+    if index == 0 {
+        return 0;
+    }
+    let mut cursor = index - 1;
+    while cursor > 0 && !value.is_char_boundary(cursor) {
+        cursor -= 1;
+    }
+    cursor
+}
+
+/// Byte offset of the character after `index`.
+fn next_char_boundary(value: &str, index: usize) -> usize {
+    if index >= value.len() {
+        return value.len();
+    }
+    let mut cursor = index + 1;
+    while cursor < value.len() && !value.is_char_boundary(cursor) {
+        cursor += 1;
+    }
+    cursor
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StyledLine {
     pub content: String,
@@ -565,6 +606,19 @@ pub struct AppState {
     pub config: TuiConfig,
     pub snapshot: AppSnapshot,
     pub input_buffer: String,
+    /// Byte offset of the insertion point inside `input_buffer`.
+    /// Always on a char boundary — the input line can be edited in the
+    /// middle, not just appended to.
+    pub input_cursor: usize,
+    /// Active scrollback search, if the operator has one open.
+    pub search: Option<SearchState>,
+    /// The query from the last search, kept so reopening refines the
+    /// previous search instead of starting from nothing.
+    pub last_search_query: String,
+    /// The last assistant reply, kept so the operator can copy it
+    /// without reaching for the mouse (mouse capture is off by
+    /// default precisely because text selection is the dominant use).
+    pub last_assistant_answer: Option<String>,
     pub output_buffer: Vec<StyledLine>,
     pub history: Vec<String>,
     pub history_index: Option<usize>,
@@ -604,6 +658,10 @@ impl AppState {
             config,
             snapshot: AppSnapshot::default(),
             input_buffer: String::new(),
+            input_cursor: 0,
+            search: None,
+            last_search_query: String::new(),
+            last_assistant_answer: None,
             output_buffer: Vec::new(),
             history: Vec::new(),
             history_index: None,
@@ -668,11 +726,245 @@ impl AppState {
         if self.help_visible {
             return;
         }
-        self.input_buffer.push_str(text);
+        // The search is a mode: while it is open the keyboard belongs
+        // to the query, and a paste is keyboard input.
+        if self.search.is_some() {
+            self.search_insert(text);
+            return;
+        }
+
+        // A paste is explicit operator intent, so it goes where the
+        // caret is — which is the end of the line in the common case,
+        // and the middle of it when the operator moved the caret.
+        self.input_insert(text);
         // Pastes are explicit operator intent — clear any in-progress
         // history navigation so the next ↑ goes to "after-paste" state
         // rather than overwriting the paste.
         self.history_index = None;
+    }
+
+    /// Open (or reopen) the scrollback search.
+    ///
+    /// Reopening keeps the previous query, so the operator can refine
+    /// a search instead of retyping it.
+    pub fn open_search(&mut self) {
+        let query = self
+            .search
+            .as_ref()
+            .map(|search| search.query.clone())
+            .unwrap_or_else(|| self.last_search_query.clone());
+        self.search = Some(SearchState {
+            query,
+            matches: Vec::new(),
+            current: 0,
+        });
+        self.recompute_search_matches();
+    }
+
+    /// Close the search. The scroll position stays where the operator
+    /// left it — closing a search is not an undo.
+    pub fn close_search(&mut self) {
+        if let Some(search) = self.search.take() {
+            self.last_search_query = search.query;
+        }
+    }
+
+    /// Recompute the match list for the current query.
+    fn recompute_search_matches(&mut self) {
+        let Some(mut search) = self.search.take() else {
+            return;
+        };
+        let needle = search.query.trim().to_lowercase();
+        search.matches = if needle.is_empty() {
+            Vec::new()
+        } else {
+            self.output_buffer
+                .iter()
+                .enumerate()
+                .filter(|(_, line)| line.content.to_lowercase().contains(&needle))
+                .map(|(index, _)| index)
+                .collect()
+        };
+        if search.current >= search.matches.len() {
+            search.current = 0;
+        }
+        self.search = Some(search);
+    }
+
+    /// Type into the search query.
+    pub fn search_insert(&mut self, text: &str) {
+        if let Some(search) = self.search.as_mut() {
+            search.query.push_str(text);
+        }
+        self.recompute_search_matches();
+    }
+
+    /// Delete the last character of the search query.
+    pub fn search_backspace(&mut self) {
+        if let Some(search) = self.search.as_mut() {
+            search.query.pop();
+        }
+        self.recompute_search_matches();
+    }
+
+    /// Move to the next match, wrapping around.
+    pub fn search_next_match(&mut self) {
+        let Some(mut search) = self.search.take() else {
+            return;
+        };
+        if !search.matches.is_empty() {
+            search.current = (search.current + 1) % search.matches.len();
+        }
+        self.search = Some(search);
+    }
+
+    /// Append a single styled note to the transcript.
+    ///
+    /// The shells (Ratatui now, a GUI later) need to tell the operator
+    /// what just happened — "copied to the clipboard", "nothing to
+    /// copy". This is the one public door for that, so the transcript
+    /// formatting stays in one place.
+    pub fn note(&mut self, tone: LineTone, text: &str) {
+        self.append_line(StyledLine {
+            content: text.to_string(),
+            tone,
+        });
+        self.append_blank();
+    }
+
+    /// The last assistant reply, if any — what Ctrl+Y copies.
+    pub fn last_assistant_answer(&self) -> Option<&str> {
+        self.last_assistant_answer.as_deref()
+    }
+
+    /// Replace the input line and park the caret at its end.
+    ///
+    /// Every mutation of `input_buffer` goes through here (or through
+    /// `input_insert` / `input_backspace` / `input_delete`), because the
+    /// caret is a byte offset into that buffer — a stale offset is a
+    /// panic waiting to happen on the next slice.
+    pub fn set_input_text(&mut self, text: String) {
+        self.input_buffer = text;
+        self.input_cursor = self.input_buffer.len();
+    }
+
+    /// Clamp the caret to a valid char boundary inside the buffer.
+    fn normalize_input_cursor(&mut self) {
+        if self.input_cursor > self.input_buffer.len() {
+            self.input_cursor = self.input_buffer.len();
+        }
+        while self.input_cursor > 0 && !self.input_buffer.is_char_boundary(self.input_cursor) {
+            self.input_cursor -= 1;
+        }
+    }
+
+    /// Insert text at the caret.
+    pub fn input_insert(&mut self, text: &str) {
+        self.normalize_input_cursor();
+        self.input_buffer.insert_str(self.input_cursor, text);
+        self.input_cursor += text.len();
+    }
+
+    /// Delete the character before the caret.
+    pub fn input_backspace(&mut self) {
+        self.normalize_input_cursor();
+        if self.input_cursor == 0 {
+            return;
+        }
+        let previous = previous_char_boundary(&self.input_buffer, self.input_cursor);
+        self.input_buffer.replace_range(previous..self.input_cursor, "");
+        self.input_cursor = previous;
+    }
+
+    /// Delete the character at the caret.
+    pub fn input_delete(&mut self) {
+        self.normalize_input_cursor();
+        if self.input_cursor >= self.input_buffer.len() {
+            return;
+        }
+        let next = next_char_boundary(&self.input_buffer, self.input_cursor);
+        self.input_buffer.replace_range(self.input_cursor..next, "");
+    }
+
+    /// Move the caret one character left.
+    pub fn input_move_left(&mut self) {
+        self.normalize_input_cursor();
+        if self.input_cursor == 0 {
+            return;
+        }
+        self.input_cursor = previous_char_boundary(&self.input_buffer, self.input_cursor);
+    }
+
+    /// Move the caret one character right.
+    pub fn input_move_right(&mut self) {
+        self.normalize_input_cursor();
+        if self.input_cursor >= self.input_buffer.len() {
+            return;
+        }
+        self.input_cursor = next_char_boundary(&self.input_buffer, self.input_cursor);
+    }
+
+    /// Move the caret to the start of the current line.
+    pub fn input_line_start(&mut self) {
+        self.normalize_input_cursor();
+        let head = &self.input_buffer[..self.input_cursor];
+        self.input_cursor = head.rfind('\n').map(|index| index + 1).unwrap_or(0);
+    }
+
+    /// Move the caret to the end of the current line.
+    pub fn input_line_end(&mut self) {
+        self.normalize_input_cursor();
+        let tail = &self.input_buffer[self.input_cursor..];
+        self.input_cursor = match tail.find('\n') {
+            Some(offset) => self.input_cursor + offset,
+            None => self.input_buffer.len(),
+        };
+    }
+
+    /// Handle a key while the scrollback search is open.
+    fn handle_search_key(&mut self, key: KeyEvent) -> AppAction {
+        match key {
+            KeyEvent {
+                code: KeyCode::Esc, ..
+            } => {
+                self.close_search();
+            }
+            // Ctrl+C leaves the mode instead of being swallowed — a
+            // second one still reaches the running command.
+            KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) => {
+                self.close_search();
+            }
+            KeyEvent {
+                code: KeyCode::Enter, ..
+            } => {
+                self.search_next_match();
+            }
+            KeyEvent {
+                code: KeyCode::Char('f'),
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) => {
+                self.search_next_match();
+            }
+            KeyEvent {
+                code: KeyCode::Backspace, ..
+            } => {
+                self.search_backspace();
+            }
+            KeyEvent {
+                code: KeyCode::Char(ch),
+                modifiers,
+                ..
+            } if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT => {
+                self.search_insert(&ch.to_string());
+            }
+            _ => {}
+        }
+        AppAction::None
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> AppAction {
@@ -692,6 +984,13 @@ impl AppState {
                 _ => {}
             }
             return AppAction::None;
+        }
+
+        // While a search is open the keystrokes belong to the query,
+        // not to the chat input. Same rule as the help overlay: the
+        // operator's eyes are on the search box.
+        if self.search.is_some() {
+            return self.handle_search_key(key);
         }
 
         match key {
@@ -742,14 +1041,92 @@ impl AppState {
                 code: KeyCode::F(2),
                 ..
             } => AppAction::ToggleMouseCapture,
+            // F5 forces a refresh, same as Ctrl+R. The main loop's
+            // comment already promised "F5 / Ctrl-R"; only the Ctrl
+            // half was ever wired up.
+            KeyEvent {
+                code: KeyCode::F(5),
+                ..
+            } => AppAction::Refresh,
+            // Ctrl+F searches the scrollback. Ctrl+R was the obvious
+            // candidate but it already means "refresh" here, and the
+            // main loop's comment promised F5 for that — so F5 does
+            // refresh now and Ctrl+F is free for the search.
+            KeyEvent {
+                code: KeyCode::Char('f'),
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) => AppAction::ToggleSearch,
+            // Ctrl+Y copies the last assistant answer to the
+            // clipboard (OSC 52). Mouse capture is off by default
+            // because text selection is the dominant use — so this is
+            // the keyboard path to the same thing.
+            KeyEvent {
+                code: KeyCode::Char('y'),
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) => AppAction::CopyLastAnswer,
+            // Alt+Enter inserts a newline instead of submitting, so a
+            // multi-line message can be written by hand. Enter still
+            // submits, so the common case is unchanged.
+            KeyEvent {
+                code: KeyCode::Enter,
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::ALT) => {
+                self.input_insert("\n");
+                AppAction::None
+            }
             KeyEvent {
                 code: KeyCode::Enter,
                 ..
             } => AppAction::SubmitInput,
+            // Cursor movement inside the input line. Left/Right were
+            // unbound before — the input was append-only, so the
+            // operator could not go back and fix a typo.
+            KeyEvent {
+                code: KeyCode::Left,
+                ..
+            } => {
+                self.input_move_left();
+                AppAction::None
+            }
+            KeyEvent {
+                code: KeyCode::Right,
+                ..
+            } => {
+                self.input_move_right();
+                AppAction::None
+            }
+            // Ctrl+A / Ctrl+E — start and end of the current line
+            // (readline convention).
+            KeyEvent {
+                code: KeyCode::Char('a'),
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) => {
+                self.input_line_start();
+                AppAction::None
+            }
+            KeyEvent {
+                code: KeyCode::Char('e'),
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) => {
+                self.input_line_end();
+                AppAction::None
+            }
+            KeyEvent {
+                code: KeyCode::Delete,
+                ..
+            } => {
+                self.input_delete();
+                AppAction::None
+            }
             KeyEvent {
                 code: KeyCode::Esc, ..
             } => {
-                self.input_buffer.clear();
+                self.set_input_text(String::new());
                 self.history_index = None;
                 AppAction::None
             }
@@ -757,7 +1134,7 @@ impl AppState {
                 code: KeyCode::Backspace,
                 ..
             } => {
-                self.input_buffer.pop();
+                self.input_backspace();
                 AppAction::None
             }
             KeyEvent {
@@ -810,7 +1187,7 @@ impl AppState {
                 modifiers,
                 ..
             } if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT => {
-                self.input_buffer.push(ch);
+                self.input_insert(&ch.to_string());
                 AppAction::None
             }
             _ => AppAction::None,
@@ -991,7 +1368,7 @@ impl AppState {
         }
 
         let raw = self.input_buffer.trim().to_string();
-        self.input_buffer.clear();
+        self.set_input_text(String::new());
         self.history_index = None;
 
         if raw.is_empty() {
@@ -1598,6 +1975,12 @@ impl AppState {
                 // signal instead of firing on every chunk boundary.
                 self.stream_trailing_newlines.clear();
                 self.chat_session_id = exchange.session_id;
+                // Keep the full reply for Ctrl+Y. The transcript only
+                // shows the rendered lines; the copy path wants the
+                // untouched text.
+                if !exchange.reply.trim().is_empty() {
+                    self.last_assistant_answer = Some(exchange.reply.clone());
+                }
                 // Max presets carry reasoning effort. Keep them across turns
                 // even though the transport reports the canonical model.
                 let selected_model = self.selected_model_name();
@@ -3801,7 +4184,7 @@ impl AppState {
             None => self.history.len().saturating_sub(1),
         };
         self.history_index = Some(next_index);
-        self.input_buffer = self.history[next_index].clone();
+        self.set_input_text(self.history[next_index].clone());
     }
 
     fn history_next(&mut self) {
@@ -3811,13 +4194,13 @@ impl AppState {
 
         if index + 1 >= self.history.len() {
             self.history_index = None;
-            self.input_buffer.clear();
+            self.set_input_text(String::new());
             return;
         }
 
         let next_index = index + 1;
         self.history_index = Some(next_index);
-        self.input_buffer = self.history[next_index].clone();
+        self.set_input_text(self.history[next_index].clone());
     }
 
     fn append_stream_chunk(&mut self, tone: LineTone, chunk: &str) {
@@ -5057,10 +5440,10 @@ fn json_string_list(value: Option<&Value>) -> Vec<String> {
 mod tests {
     use super::{
         classify_input_route, extension_host_command_for_tokens, legacy_cli_fallback_notice,
-        split_command_tokens, unsupported_tui_command_notice, ActiveCommand, ActiveCommandKind,
-        AppAction, AppState, CancelBehavior, DegradationState, LineTone, ModelCapabilitySummary,
-        MouseCaptureToast, Screen, TelegramSendOutcome, TokenUsageSummary, WorkerEvent,
-        HELP_ENTRIES,
+        split_command_tokens, styled, unsupported_tui_command_notice, ActiveCommand,
+        ActiveCommandKind, AppAction, AppState, CancelBehavior, DegradationState, LineTone,
+        ModelCapabilitySummary, MouseCaptureToast, Screen, TelegramSendOutcome, TokenUsageSummary,
+        WorkerEvent, HELP_ENTRIES,
     };
     use crate::client::{AppSnapshot, CliBridgeResult, ExtensionHostResult, MemphisClient};
     use crate::config::TuiConfig;
@@ -5142,9 +5525,328 @@ mod tests {
     }
 
     #[test]
+    fn typing_inserts_at_the_caret_not_just_at_the_end() {
+        let mut app = AppState::new(config());
+        app.set_input_text("abcd".to_string());
+
+        // Walk the caret back two characters and type there.
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('X'), KeyModifiers::NONE));
+
+        assert_eq!(app.input_buffer, "abXcd");
+        assert_eq!(app.input_cursor, 3);
+    }
+
+    #[test]
+    fn backspace_deletes_before_the_caret() {
+        let mut app = AppState::new(config());
+        app.set_input_text("abcd".to_string());
+        // The caret starts after "d"; one Left puts it between "c" and
+        // "d", so Backspace removes "c".
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+
+        assert_eq!(app.input_buffer, "abd");
+        assert_eq!(app.input_cursor, 2);
+    }
+
+    #[test]
+    fn backspace_removes_a_whole_multibyte_character() {
+        let mut app = AppState::new(config());
+        // "ą" is two bytes — a byte-wise backspace would leave half of
+        // it behind and panic on the next slice.
+        app.set_input_text("aą".to_string());
+
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+
+        assert_eq!(app.input_buffer, "a");
+        assert_eq!(app.input_cursor, 1);
+    }
+
+    #[test]
+    fn delete_removes_at_the_caret() {
+        let mut app = AppState::new(config());
+        app.set_input_text("abcd".to_string());
+
+        // Two Lefts put the caret between "b" and "c"; Delete removes
+        // "c" — the character *at* the caret, not before it.
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE));
+
+        assert_eq!(app.input_buffer, "abd");
+        assert_eq!(app.input_cursor, 2);
+    }
+
+    #[test]
+    fn ctrl_a_and_ctrl_e_jump_to_the_line_boundaries() {
+        let mut app = AppState::new(config());
+        app.set_input_text("one\ntwo".to_string());
+        // The caret starts at the end of "two".
+
+        // Boundaries of the second line.
+        app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+        assert_eq!(app.input_cursor, 4);
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL));
+        assert_eq!(app.input_cursor, 7);
+
+        // Walk back onto the first line: three Lefts land on the
+        // newline, one more lands at the end of "one".
+        for _ in 0..4 {
+            app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        }
+        assert_eq!(app.input_cursor, 3);
+
+        // Boundaries of the first line.
+        app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+        assert_eq!(app.input_cursor, 0);
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL));
+        assert_eq!(app.input_cursor, 3);
+    }
+
+    #[test]
+    fn alt_enter_inserts_a_newline_instead_of_submitting() {
+        let mut app = AppState::new(config());
+        app.set_input_text("first".to_string());
+
+        let action = app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT));
+
+        assert_eq!(action, AppAction::None);
+        assert_eq!(app.input_buffer, "first\n");
+    }
+
+    #[test]
+    fn plain_enter_still_submits() {
+        let mut app = AppState::new(config());
+        app.set_input_text("hello".to_string());
+
+        let action = app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        assert_eq!(action, AppAction::SubmitInput);
+    }
+
+    #[test]
+    fn f5_and_ctrl_r_both_request_a_refresh() {
+        let mut app = AppState::new(config());
+
+        assert_eq!(
+            app.handle_key(KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)),
+            AppAction::Refresh
+        );
+        assert_eq!(
+            app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)),
+            AppAction::Refresh
+        );
+    }
+
+    #[test]
+    fn ctrl_y_asks_to_copy_the_last_answer() {
+        let mut app = AppState::new(config());
+
+        assert_eq!(
+            app.handle_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL)),
+            AppAction::CopyLastAnswer
+        );
+    }
+
+    #[test]
+    fn a_paste_lands_at_the_caret_not_at_the_end() {
+        let mut app = AppState::new(config());
+        app.set_input_text("abcd".to_string());
+
+        // Caret between "b" and "c".
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        app.handle_paste("X");
+
+        assert_eq!(app.input_buffer, "abXcd");
+        assert_eq!(app.input_cursor, 3);
+    }
+
+    #[test]
+    fn a_paste_goes_to_the_search_query_while_the_search_is_open() {
+        let mut app = AppState::new(config());
+        app.open_search();
+
+        app.handle_paste("pasted");
+
+        assert_eq!(app.search.as_ref().unwrap().query, "pasted");
+        assert!(app.input_buffer.is_empty(), "the paste leaked into the input");
+    }
+
+    #[test]
+    fn ctrl_c_leaves_the_search_instead_of_being_swallowed() {
+        let mut app = AppState::new(config());
+        app.open_search();
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+
+        assert!(app.search.is_none());
+    }
+
+    #[test]
+    fn paste_leaves_the_caret_after_the_pasted_blob() {
+        let mut app = AppState::new(config());
+        app.set_input_text("prefix ".to_string());
+
+        app.handle_paste("pasted");
+
+        assert_eq!(app.input_buffer, "prefix pasted");
+        assert_eq!(app.input_cursor, app.input_buffer.len());
+    }
+
+    #[test]
+    fn history_navigation_parks_the_caret_at_the_end() {
+        let mut app = AppState::new(config());
+        app.history = vec!["first".to_string()];
+
+        app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+
+        assert_eq!(app.input_buffer, "first");
+        assert_eq!(app.input_cursor, 5);
+    }
+
+    #[test]
+    fn ctrl_f_asks_for_the_scrollback_search() {
+        let mut app = AppState::new(config());
+
+        let action = app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL));
+
+        // Opening is the shell's job — the action is the contract.
+        assert_eq!(action, AppAction::ToggleSearch);
+    }
+
+    #[test]
+    fn opening_the_search_puts_it_in_the_state() {
+        let mut app = AppState::new(config());
+
+        app.open_search();
+
+        assert!(app.search.is_some());
+    }
+
+    #[test]
+    fn search_query_finds_matching_transcript_lines() {
+        let mut app = AppState::new(config());
+        app.append_line(styled("the first line", LineTone::Plain));
+        app.append_line(styled("something else", LineTone::Plain));
+        app.append_line(styled("the second match", LineTone::Plain));
+
+        app.open_search();
+        for ch in "second".chars() {
+            app.search_insert(&ch.to_string());
+        }
+
+        let search = app.search.as_ref().unwrap();
+        assert_eq!(search.query, "second");
+        assert_eq!(search.matches, vec![2]);
+        assert_eq!(search.current, 0);
+    }
+
+    #[test]
+    fn search_is_case_insensitive() {
+        let mut app = AppState::new(config());
+        app.append_line(styled("Rust and Rust again", LineTone::Plain));
+
+        app.open_search();
+        app.search_insert("rust");
+
+        assert_eq!(app.search.as_ref().unwrap().matches, vec![0]);
+    }
+
+    #[test]
+    fn search_matches_every_occurrence_in_order() {
+        let mut app = AppState::new(config());
+        app.append_line(styled("alpha", LineTone::Plain));
+        app.append_line(styled("beta", LineTone::Plain));
+        app.append_line(styled("alpha again", LineTone::Plain));
+
+        app.open_search();
+        app.search_insert("alpha");
+
+        assert_eq!(app.search.as_ref().unwrap().matches, vec![0, 2]);
+    }
+
+    #[test]
+    fn search_next_match_wraps_around() {
+        let mut app = AppState::new(config());
+        app.append_line(styled("hit one", LineTone::Plain));
+        app.append_line(styled("hit two", LineTone::Plain));
+
+        app.open_search();
+        app.search_insert("hit");
+        assert_eq!(app.search.as_ref().unwrap().current, 0);
+
+        app.search_next_match();
+        assert_eq!(app.search.as_ref().unwrap().current, 1);
+
+        app.search_next_match();
+        assert_eq!(app.search.as_ref().unwrap().current, 0);
+    }
+
+    #[test]
+    fn search_keystrokes_do_not_reach_the_chat_input() {
+        let mut app = AppState::new(config());
+        app.open_search();
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE));
+
+        assert_eq!(app.search.as_ref().unwrap().query, "ab");
+        assert!(app.input_buffer.is_empty(), "the query leaked into the input");
+    }
+
+    #[test]
+    fn search_backspace_edits_the_query() {
+        let mut app = AppState::new(config());
+        app.open_search();
+        app.search_insert("ab");
+
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+
+        assert_eq!(app.search.as_ref().unwrap().query, "a");
+    }
+
+    #[test]
+    fn escape_closes_the_search() {
+        let mut app = AppState::new(config());
+        app.open_search();
+        app.search_insert("x");
+
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+        assert!(app.search.is_none());
+    }
+
+    #[test]
+    fn reopening_the_search_keeps_the_previous_query() {
+        let mut app = AppState::new(config());
+        app.open_search();
+        app.search_insert("keep");
+
+        app.close_search();
+        app.open_search();
+
+        assert_eq!(app.search.as_ref().unwrap().query, "keep");
+    }
+
+    #[test]
+    fn an_empty_query_matches_nothing() {
+        let mut app = AppState::new(config());
+        app.append_line(styled("anything", LineTone::Plain));
+
+        app.open_search();
+
+        assert!(app.search.as_ref().unwrap().matches.is_empty());
+    }
+
+    #[test]
     fn enter_submits_input() {
         let mut app = AppState::new(config());
-        app.input_buffer = "hello".to_string();
+        app.set_input_text("hello".to_string());
 
         let action = app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
@@ -5202,7 +5904,7 @@ mod tests {
         // Operator may be mid-message and want to copy log output.
         // F2 should always work (function keys never type into input).
         let mut app = AppState::new(config());
-        app.input_buffer = "co tam, kolego?".to_string();
+        app.set_input_text("co tam, kolego?".to_string());
         assert_eq!(
             app.handle_key(KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE)),
             AppAction::ToggleMouseCapture
@@ -5230,7 +5932,7 @@ mod tests {
         // Operator typed "Co my się gapimy: " and then pasted a log
         // dump. The paste should append, not replace.
         let mut app = AppState::new(config());
-        app.input_buffer = "Co my się gapimy: ".to_string();
+        app.set_input_text("Co my się gapimy: ".to_string());
         app.handle_paste("ERROR\nSTACK\n");
         assert_eq!(app.input_buffer, "Co my się gapimy: ERROR\nSTACK\n");
     }
