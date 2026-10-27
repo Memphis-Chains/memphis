@@ -78,7 +78,7 @@ The runtime policy is now `verified-json-content-truncate512-v2`; see the
 [embedding-space contract](KARTOGRAF-EMBEDDING-SPACE.md) and
 [reproducible preflight](../../tools/training/README.md#python-314--cuda-126-preflight).
 No pretrained weights were downloaded. The isolated environment proves the
-small architecture/toolchain path; full-size VRAM fit, a rebuilt real corpus,
+small architecture/toolchain path; full-size VRAM fit, a curated multi-zone corpus,
 convergence and held-out release quality still require verification. Synthetic
 evaluation numbers are fixture checks and do not satisfy Q2 model gates.
 
@@ -87,3 +87,29 @@ pinned source revision and license, evaluation recipe, zone mapping and embeddin
 index/cascade contract. Independent external security review remains a separate
 unmet requirement. Tooling tests and structural activation are not proof of model
 quality or Q2 completion.
+
+## Repository corpus baseline — 2026-10-27
+
+A private, repository-only baseline now exists in the operator evidence archive.
+It was built from clean tracked sources at
+`e095e10630c1990f407b72e8bd38a63b56d00e6f`; operator chains and configuration
+were explicitly excluded. It contains 1,560 unique samples, split 1,249/311,
+and 1,038 training / 249 evaluation pairs with uniform four hard negatives.
+The independent byte audit found zero exact-content split overlap and zero
+output secret-pattern matches, and retained content/license provenance hashes.
+The scanner conservatively excluded 110 source/example files with pattern hits;
+those hits are not a count of live credentials.
+
+The builder and loader now share the frozen v1 label ordering. Runtime chains
+`messages` and `autonom_archive` do not rename reserved classifier slots.
+Corrupt hashes, changed license provenance, mislabeled/overlapping splits and
+malformed or cross-split pairs fail validation before model/tokenizer loading.
+See the [reproducible corpus workflow](../../tools/training/README.md#audited-v1-corpus-candidates).
+
+This is a weakly labeled baseline: 1,526 samples are `system`, 30
+`reflections`, 4 `decisions`, and the other v1 zones have no examples.
+There are 1,040 unambiguous training samples and 251 unambiguous evaluation
+samples before pair filtering. Broader coverage, annotation review and
+near-duplicate/lineage separation remain necessary for release-quality evaluation.
+No release model has been trained or activated from this corpus. The Q2 `vault`
+criterion and independent external review remain unmet.
