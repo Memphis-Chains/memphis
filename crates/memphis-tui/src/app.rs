@@ -80,6 +80,7 @@ pub enum AppAction {
     ToggleHelp,
     ToggleMouseCapture,
     CopyLastAnswer,
+    ToggleSearch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -409,6 +410,21 @@ const HELP_ENTRIES: &[HelpEntry] = &[
     },
 ];
 
+/// The scrollback search (ADR-011, E3).
+///
+/// The transcript is a flat list of styled lines with no way to find
+/// anything in it — and the live database holds sessions of 1 447
+/// messages, so the longest sessions were the least navigable.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SearchState {
+    /// What the operator has typed so far.
+    pub query: String,
+    /// Indices into the transcript buffer of the lines that match.
+    pub matches: Vec<usize>,
+    /// Which of those matches the operator is currently on.
+    pub current: usize,
+}
+
 /// Byte offset of the character before `index`.
 fn previous_char_boundary(value: &str, index: usize) -> usize {
     if index == 0 {
@@ -594,6 +610,11 @@ pub struct AppState {
     /// Always on a char boundary — the input line can be edited in the
     /// middle, not just appended to.
     pub input_cursor: usize,
+    /// Active scrollback search, if the operator has one open.
+    pub search: Option<SearchState>,
+    /// The query from the last search, kept so reopening refines the
+    /// previous search instead of starting from nothing.
+    pub last_search_query: String,
     /// The last assistant reply, kept so the operator can copy it
     /// without reaching for the mouse (mouse capture is off by
     /// default precisely because text selection is the dominant use).
@@ -638,6 +659,8 @@ impl AppState {
             snapshot: AppSnapshot::default(),
             input_buffer: String::new(),
             input_cursor: 0,
+            search: None,
+            last_search_query: String::new(),
             last_assistant_answer: None,
             output_buffer: Vec::new(),
             history: Vec::new(),
@@ -711,6 +734,81 @@ impl AppState {
         // history navigation so the next ↑ goes to "after-paste" state
         // rather than overwriting the paste.
         self.history_index = None;
+    }
+
+    /// Open (or reopen) the scrollback search.
+    ///
+    /// Reopening keeps the previous query, so the operator can refine
+    /// a search instead of retyping it.
+    pub fn open_search(&mut self) {
+        let query = self
+            .search
+            .as_ref()
+            .map(|search| search.query.clone())
+            .unwrap_or_else(|| self.last_search_query.clone());
+        self.search = Some(SearchState {
+            query,
+            matches: Vec::new(),
+            current: 0,
+        });
+        self.recompute_search_matches();
+    }
+
+    /// Close the search. The scroll position stays where the operator
+    /// left it — closing a search is not an undo.
+    pub fn close_search(&mut self) {
+        if let Some(search) = self.search.take() {
+            self.last_search_query = search.query;
+        }
+    }
+
+    /// Recompute the match list for the current query.
+    fn recompute_search_matches(&mut self) {
+        let Some(mut search) = self.search.take() else {
+            return;
+        };
+        let needle = search.query.trim().to_lowercase();
+        search.matches = if needle.is_empty() {
+            Vec::new()
+        } else {
+            self.output_buffer
+                .iter()
+                .enumerate()
+                .filter(|(_, line)| line.content.to_lowercase().contains(&needle))
+                .map(|(index, _)| index)
+                .collect()
+        };
+        if search.current >= search.matches.len() {
+            search.current = 0;
+        }
+        self.search = Some(search);
+    }
+
+    /// Type into the search query.
+    pub fn search_insert(&mut self, text: &str) {
+        if let Some(search) = self.search.as_mut() {
+            search.query.push_str(text);
+        }
+        self.recompute_search_matches();
+    }
+
+    /// Delete the last character of the search query.
+    pub fn search_backspace(&mut self) {
+        if let Some(search) = self.search.as_mut() {
+            search.query.pop();
+        }
+        self.recompute_search_matches();
+    }
+
+    /// Move to the next match, wrapping around.
+    pub fn search_next_match(&mut self) {
+        let Some(mut search) = self.search.take() else {
+            return;
+        };
+        if !search.matches.is_empty() {
+            search.current = (search.current + 1) % search.matches.len();
+        }
+        self.search = Some(search);
     }
 
     /// Append a single styled note to the transcript.
@@ -816,6 +914,43 @@ impl AppState {
         };
     }
 
+    /// Handle a key while the scrollback search is open.
+    fn handle_search_key(&mut self, key: KeyEvent) -> AppAction {
+        match key {
+            KeyEvent {
+                code: KeyCode::Esc, ..
+            } => {
+                self.close_search();
+            }
+            KeyEvent {
+                code: KeyCode::Enter, ..
+            } => {
+                self.search_next_match();
+            }
+            KeyEvent {
+                code: KeyCode::Char('f'),
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) => {
+                self.search_next_match();
+            }
+            KeyEvent {
+                code: KeyCode::Backspace, ..
+            } => {
+                self.search_backspace();
+            }
+            KeyEvent {
+                code: KeyCode::Char(ch),
+                modifiers,
+                ..
+            } if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT => {
+                self.search_insert(&ch.to_string());
+            }
+            _ => {}
+        }
+        AppAction::None
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> AppAction {
         // When the help overlay is up, every key either closes it or
         // is a no-op — we DO NOT let key events leak through to chat
@@ -833,6 +968,13 @@ impl AppState {
                 _ => {}
             }
             return AppAction::None;
+        }
+
+        // While a search is open the keystrokes belong to the query,
+        // not to the chat input. Same rule as the help overlay: the
+        // operator's eyes are on the search box.
+        if self.search.is_some() {
+            return self.handle_search_key(key);
         }
 
         match key {
@@ -890,6 +1032,15 @@ impl AppState {
                 code: KeyCode::F(5),
                 ..
             } => AppAction::Refresh,
+            // Ctrl+F searches the scrollback. Ctrl+R was the obvious
+            // candidate but it already means "refresh" here, and the
+            // main loop's comment promised F5 for that — so F5 does
+            // refresh now and Ctrl+F is free for the search.
+            KeyEvent {
+                code: KeyCode::Char('f'),
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) => AppAction::ToggleSearch,
             // Ctrl+Y copies the last assistant answer to the
             // clipboard (OSC 52). Mouse capture is off by default
             // because text selection is the dominant use — so this is
@@ -5273,10 +5424,10 @@ fn json_string_list(value: Option<&Value>) -> Vec<String> {
 mod tests {
     use super::{
         classify_input_route, extension_host_command_for_tokens, legacy_cli_fallback_notice,
-        split_command_tokens, unsupported_tui_command_notice, ActiveCommand, ActiveCommandKind,
-        AppAction, AppState, CancelBehavior, DegradationState, LineTone, ModelCapabilitySummary,
-        MouseCaptureToast, Screen, TelegramSendOutcome, TokenUsageSummary, WorkerEvent,
-        HELP_ENTRIES,
+        split_command_tokens, styled, unsupported_tui_command_notice, ActiveCommand,
+        ActiveCommandKind, AppAction, AppState, CancelBehavior, DegradationState, LineTone,
+        ModelCapabilitySummary, MouseCaptureToast, Screen, TelegramSendOutcome, TokenUsageSummary,
+        WorkerEvent, HELP_ENTRIES,
     };
     use crate::client::{AppSnapshot, CliBridgeResult, ExtensionHostResult, MemphisClient};
     use crate::config::TuiConfig;
@@ -5505,6 +5656,140 @@ mod tests {
 
         assert_eq!(app.input_buffer, "first");
         assert_eq!(app.input_cursor, 5);
+    }
+
+    #[test]
+    fn ctrl_f_asks_for_the_scrollback_search() {
+        let mut app = AppState::new(config());
+
+        let action = app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL));
+
+        // Opening is the shell's job — the action is the contract.
+        assert_eq!(action, AppAction::ToggleSearch);
+    }
+
+    #[test]
+    fn opening_the_search_puts_it_in_the_state() {
+        let mut app = AppState::new(config());
+
+        app.open_search();
+
+        assert!(app.search.is_some());
+    }
+
+    #[test]
+    fn search_query_finds_matching_transcript_lines() {
+        let mut app = AppState::new(config());
+        app.append_line(styled("the first line", LineTone::Plain));
+        app.append_line(styled("something else", LineTone::Plain));
+        app.append_line(styled("the second match", LineTone::Plain));
+
+        app.open_search();
+        for ch in "second".chars() {
+            app.search_insert(&ch.to_string());
+        }
+
+        let search = app.search.as_ref().unwrap();
+        assert_eq!(search.query, "second");
+        assert_eq!(search.matches, vec![2]);
+        assert_eq!(search.current, 0);
+    }
+
+    #[test]
+    fn search_is_case_insensitive() {
+        let mut app = AppState::new(config());
+        app.append_line(styled("Rust and Rust again", LineTone::Plain));
+
+        app.open_search();
+        app.search_insert("rust");
+
+        assert_eq!(app.search.as_ref().unwrap().matches, vec![0]);
+    }
+
+    #[test]
+    fn search_matches_every_occurrence_in_order() {
+        let mut app = AppState::new(config());
+        app.append_line(styled("alpha", LineTone::Plain));
+        app.append_line(styled("beta", LineTone::Plain));
+        app.append_line(styled("alpha again", LineTone::Plain));
+
+        app.open_search();
+        app.search_insert("alpha");
+
+        assert_eq!(app.search.as_ref().unwrap().matches, vec![0, 2]);
+    }
+
+    #[test]
+    fn search_next_match_wraps_around() {
+        let mut app = AppState::new(config());
+        app.append_line(styled("hit one", LineTone::Plain));
+        app.append_line(styled("hit two", LineTone::Plain));
+
+        app.open_search();
+        app.search_insert("hit");
+        assert_eq!(app.search.as_ref().unwrap().current, 0);
+
+        app.search_next_match();
+        assert_eq!(app.search.as_ref().unwrap().current, 1);
+
+        app.search_next_match();
+        assert_eq!(app.search.as_ref().unwrap().current, 0);
+    }
+
+    #[test]
+    fn search_keystrokes_do_not_reach_the_chat_input() {
+        let mut app = AppState::new(config());
+        app.open_search();
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE));
+
+        assert_eq!(app.search.as_ref().unwrap().query, "ab");
+        assert!(app.input_buffer.is_empty(), "the query leaked into the input");
+    }
+
+    #[test]
+    fn search_backspace_edits_the_query() {
+        let mut app = AppState::new(config());
+        app.open_search();
+        app.search_insert("ab");
+
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+
+        assert_eq!(app.search.as_ref().unwrap().query, "a");
+    }
+
+    #[test]
+    fn escape_closes_the_search() {
+        let mut app = AppState::new(config());
+        app.open_search();
+        app.search_insert("x");
+
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+        assert!(app.search.is_none());
+    }
+
+    #[test]
+    fn reopening_the_search_keeps_the_previous_query() {
+        let mut app = AppState::new(config());
+        app.open_search();
+        app.search_insert("keep");
+
+        app.close_search();
+        app.open_search();
+
+        assert_eq!(app.search.as_ref().unwrap().query, "keep");
+    }
+
+    #[test]
+    fn an_empty_query_matches_nothing() {
+        let mut app = AppState::new(config());
+        app.append_line(styled("anything", LineTone::Plain));
+
+        app.open_search();
+
+        assert!(app.search.as_ref().unwrap().matches.is_empty());
     }
 
     #[test]

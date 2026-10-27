@@ -455,6 +455,15 @@ fn main() -> ExitCode {
                     AppAction::CopyLastAnswer => {
                         copy_last_answer(&mut app);
                     }
+                    AppAction::ToggleSearch => {
+                        if app.search.is_some() {
+                            // Already open: Ctrl+F advances to the next
+                            // match instead of reopening.
+                            app.search_next_match();
+                        } else {
+                            app.open_search();
+                        }
+                    }
                     AppAction::ScrollUp => renderer.scroll_up(1),
                     AppAction::ScrollDown => renderer.scroll_down(1),
                     AppAction::PageUp => renderer.page_up(),

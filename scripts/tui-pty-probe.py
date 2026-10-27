@@ -97,6 +97,14 @@ def main() -> int:
     pump(master, out, 1.5)
     after_copy = len(out)
 
+    # Ctrl+F: the scrollback search. The transcript carries the provider
+    # status list, so "anthropic" is guaranteed to be in there.
+    os.write(master, b"\x06")
+    pump(master, out, 1.0)
+    os.write(master, b"anthropic")
+    pump(master, out, 1.5)
+    after_search = len(out)
+
     try:
         proc.terminate()
         proc.wait(timeout=5)
@@ -173,10 +181,27 @@ def main() -> int:
         print(f"max row drawn   : {max(all_rows)} (1-based)")
         print(f"max col drawn   : {max(all_cols)} (1-based)")
 
+    # The search bar renders as one span: "/<query>  <n>/<total>".
+    search_text = re.sub(
+        r"\x1b\[[0-9;?]*[a-zA-Z]", "", out[after_copy:after_search].decode("utf-8", "replace")
+    )
+    # A diff renderer writes only the cells that changed, so the query
+    # never appears as one contiguous string in the byte stream. The
+    # match counter does, because each keystroke rewrites the whole
+    # counter cell — and its value narrows as the query narrows.
+    counts = re.findall(r"\d+/\d+", search_text)
+    print(f"search bar shows a count  : {bool(counts)} -> {counts[:6]}")
+    # Reverse video is how a match is highlighted. Crossterm may combine
+    # the attribute with others in one SGR run, so look for the "7"
+    # attribute inside any SGR sequence rather than for a bare ESC[7m.
+    sgr = re.findall(rb"\x1b\[([0-9;]*)m", out[after_copy:after_search])
+    reversed_runs = [run for run in sgr if b"7" in run.split(b";")]
+    print(f"a match is highlighted    : {bool(reversed_runs)} (SGR runs with attr 7: {len(reversed_runs)})")
+
     print("--- last 300 visible chars ---")
     print(body[-300:])
 
-    ok = show > 0 and len(typed_carets) > 0
+    ok = show > 0 and len(typed_carets) > 0 and "/anthropic" in search_text
     return 0 if ok else 1
 
 

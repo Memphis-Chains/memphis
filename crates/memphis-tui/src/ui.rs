@@ -10,7 +10,7 @@ use ratatui::{
 use crate::app::{AppState, StatusBarContext};
 use crate::widgets::{
     prompt_layout, HelpOverlay, NotificationBanner, OutputBody, PromptState, PromptWidget,
-    ScrollState, StatusBar, MAX_PROMPT_ROWS,
+    ScrollState, SearchBar, StatusBar, MAX_PROMPT_ROWS,
 };
 
 const RENDERER_MODE: &str = "ratatui";
@@ -117,6 +117,7 @@ fn render_ui(
     let input_buffer = &app.input_buffer;
     let degradation = app.degradation.as_ref();
     let has_notification = degradation.is_some();
+    let search = app.search.as_ref();
 
     // The prompt is sized from its own content: a one-line prompt takes
     // one row, a long or multi-line prompt takes up to MAX_PROMPT_ROWS
@@ -125,22 +126,31 @@ fn render_ui(
     // the terminal width was silently truncated.
     let frame_width = frame.area().width;
     let prompt = prompt_layout(input_buffer, app.input_cursor, frame_width);
-    let prompt_height = prompt.rows.len().clamp(1, MAX_PROMPT_ROWS) as u16;
 
-    let constraints = if has_notification {
-        vec![
-            Constraint::Length(1),          // notification banner
-            Constraint::Min(3),             // body
-            Constraint::Length(prompt_height), // prompt
-            Constraint::Length(1),          // status bar
-        ]
-    } else {
-        vec![
-            Constraint::Min(3),             // body
-            Constraint::Length(prompt_height), // prompt
-            Constraint::Length(1),          // status bar
-        ]
-    };
+    // The prompt may take several rows, but it must not squeeze the
+    // body out of existence on a short terminal: the body keeps its
+    // three-row minimum, and the prompt takes what is left.
+    let reserved_rows = 1 // status bar
+        + usize::from(has_notification)
+        + usize::from(search.is_some())
+        + 3; // body minimum
+    let max_prompt_rows = (frame.area().height as usize)
+        .saturating_sub(reserved_rows)
+        .clamp(1, MAX_PROMPT_ROWS);
+    let prompt_height = prompt.rows.len().clamp(1, max_prompt_rows) as u16;
+
+    // The search bar takes a row of its own, above the prompt, so the
+    // query never competes with what the operator is typing.
+    let mut constraints = Vec::new();
+    if has_notification {
+        constraints.push(Constraint::Length(1)); // notification banner
+    }
+    constraints.push(Constraint::Min(3)); // body
+    if search.is_some() {
+        constraints.push(Constraint::Length(1)); // search bar
+    }
+    constraints.push(Constraint::Length(prompt_height)); // prompt
+    constraints.push(Constraint::Length(1)); // status bar
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -154,15 +164,22 @@ fn render_ui(
         idx += 1;
     }
 
-    frame.render_stateful_widget(OutputBody::new(output_buffer), chunks[idx], scroll_state);
     frame.render_stateful_widget(
-        PromptWidget::new(&prompt),
-        chunks[idx + 1],
-        prompt_state,
+        OutputBody::with_search(output_buffer, search),
+        chunks[idx],
+        scroll_state,
     );
+
+    let mut next = idx + 1;
+    if let Some(search) = search {
+        frame.render_widget(SearchBar::new(search), chunks[next]);
+        next += 1;
+    }
+
+    frame.render_stateful_widget(PromptWidget::new(&prompt), chunks[next], prompt_state);
     frame.render_widget(
         StatusBar::new(status_context, timestamp, busy_frame),
-        chunks[idx + 2],
+        chunks[next + 1],
     );
 
     // Put the caret where the operator is actually typing. Ratatui

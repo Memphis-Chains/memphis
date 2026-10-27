@@ -2,12 +2,14 @@ mod body;
 mod help;
 mod notification;
 mod prompt;
+mod search;
 mod status_bar;
 
 pub use body::{OutputBody, ScrollState};
 pub use help::HelpOverlay;
 pub use notification::NotificationBanner;
 pub use prompt::{prompt_layout, PromptState, PromptWidget, MAX_PROMPT_ROWS};
+pub use search::SearchBar;
 pub use status_bar::StatusBar;
 
 use ratatui::style::{Color, Modifier, Style};
