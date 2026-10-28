@@ -12,6 +12,7 @@ mod chat_streaming;
 mod chat_tool_catalog;
 mod chat_tool_executor;
 mod code_read_range;
+mod ssrf_guard;
 mod config;
 mod context;
 mod openai_codex;

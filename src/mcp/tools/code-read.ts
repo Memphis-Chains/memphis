@@ -195,6 +195,7 @@ export function runMemphisCodeRead(input: MemphisCodeReadInput): MemphisCodeRead
         path: resolvedPath,
         content: '',
         lineCount: 0,
+        totalLines,
         truncated: false,
         error: `startLine ${input.startLine} is out of range (file has ${totalLines} lines)`,
       };
@@ -208,6 +209,7 @@ export function runMemphisCodeRead(input: MemphisCodeReadInput): MemphisCodeRead
         path: resolvedPath,
         content: '',
         lineCount: 0,
+        totalLines,
         truncated: false,
         error: `endLine ${input.endLine} is out of range (file has ${totalLines} lines)`,
       };

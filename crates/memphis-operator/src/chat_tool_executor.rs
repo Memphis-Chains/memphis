@@ -36,6 +36,7 @@ use crate::code_read::{
     split_lines as split_code_read_lines, CODE_READ_MAX_CONTENT_CHARS,
 };
 use crate::code_read_range::resolve_code_read_range;
+use crate::ssrf_guard::{assert_url_safe, resolve_redirect};
 use memphis_case_index::CaseIndex;
 use memphis_core::case_entry::{CaseEntry, CaseQuery};
 
@@ -53,6 +54,45 @@ use crate::OperatorRuntime;
 /// 2026-10-26, the day the operator moved to the Rust TUI — the native
 /// surface executes tools itself, so every native call was invisible to
 /// the SLO evaluator.
+
+/// The hard ceiling on a fetched body, in bytes.
+///
+/// Also the default. The ceiling cannot be raised: the tool schema
+/// advertises it, and a cap above it would break that promise.
+const WEB_FETCH_MAX_BYTES: usize = 32_000;
+
+/// How many redirects a fetch may follow, each one checked.
+const WEB_FETCH_MAX_REDIRECTS: usize = 5;
+
+/// The fetch timeout, in milliseconds.
+///
+/// The TypeScript surface reads `MEMPHIS_WEB_FETCH_TIMEOUT_MS` (default
+/// one minute). The native arm had a hardcoded ten seconds, so the
+/// same URL was answered on one surface and timed out on the other.
+fn web_fetch_timeout_ms() -> u64 {
+    std::env::var("MEMPHIS_WEB_FETCH_TIMEOUT_MS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .map(|value| value.clamp(1_000, 600_000))
+        .unwrap_or(60_000)
+}
+
+/// Cut a body to a number of bytes without splitting a character.
+///
+/// The cut moves back to the start of the character it would have
+/// split, so the result is always valid UTF-8.
+pub(crate) fn cut_on_char_boundary(body: &[u8], max_bytes: usize) -> String {
+    if body.len() <= max_bytes {
+        return String::from_utf8_lossy(body).into_owned();
+    }
+    let mut end = max_bytes;
+    // A continuation byte (0b10xxxxxx) means the character starts
+    // earlier, so the cut moves back until it lands on a boundary.
+    while end > 0 && (body[end] & 0xC0) == 0x80 {
+        end -= 1;
+    }
+    String::from_utf8_lossy(&body[..end]).into_owned()
+}
 pub(crate) fn execute_native_tool(
     runtime: &OperatorRuntime,
     call: &ChatToolCall,
@@ -381,7 +421,25 @@ fn execute_native_tool_inner(
                     base_path
                 )));
             }
-            let max_results = value_usize(call.arguments.get("maxResults")).unwrap_or(50);
+            // The registry names the result cap `limit`; the native arm
+            // called it `maxResults`, so a caller that learned the
+            // registry's shape silently got the default instead of the
+            // cap it asked for. The old name still works.
+            let max_results = value_usize(call.arguments.get("limit"))
+                .or_else(|| value_usize(call.arguments.get("maxResults")))
+                .unwrap_or(50)
+                .min(200);
+            // `context` and `ignoreCase` are in the registry too, and
+            // the native arm ignored them: a caller asking for two
+            // lines of context got one, and a caller asking for a
+            // case-insensitive search got a case-sensitive one.
+            let context =
+                value_usize(call.arguments.get("context")).map(|value| value.to_string());
+            let ignore_case = call
+                .arguments
+                .get("ignoreCase")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             let glob_filter = call
                 .arguments
                 .get("glob")
@@ -389,6 +447,13 @@ fn execute_native_tool_inner(
                 .unwrap_or("");
 
             let mut args = vec!["grep", "-rn", "--max-count=1"];
+            if ignore_case {
+                args.push("-i");
+            }
+            if let Some(context) = context.as_deref() {
+                args.push("-C");
+                args.push(context);
+            }
             if !glob_filter.is_empty() {
                 args.push("--include");
                 args.push(glob_filter);
@@ -443,6 +508,10 @@ fn execute_native_tool_inner(
                 )));
             }
 
+            // The registry names the cap `limit`; the native arm had a
+            // hardcoded 200 and ignored the argument entirely.
+            let limit = value_usize(call.arguments.get("limit")).unwrap_or(100).min(500);
+
             let output = std::process::Command::new("find")
                 .arg(&base_path)
                 .arg("-name")
@@ -453,7 +522,7 @@ fn execute_native_tool_inner(
                 .map_err(|e| OperatorError::Message(format!("glob/find failed: {}", e)))?;
 
             let stdout = String::from_utf8_lossy(&output.stdout);
-            let files: Vec<&str> = stdout.lines().take(200).collect();
+            let files: Vec<&str> = stdout.lines().take(limit).collect();
             let json = serde_json::json!({
                 "pattern": pattern,
                 "files": files,
@@ -470,13 +539,35 @@ fn execute_native_tool_inner(
             ))
         }
         "memphis_git" => {
-            let command = call
-                .arguments
-                .get("command")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    OperatorError::Message("memphis_git requires command".to_string())
-                })?;
+            // The registry names the subcommand and its arguments
+            // separately; the native arm took one whitespace-separated
+            // string under the name `command`, so a caller that learned
+            // the registry's shape was refused outright. The old shape
+            // still works.
+            let (subcommand, git_args): (String, Vec<String>) =
+                match call.arguments.get("subcommand").and_then(Value::as_str) {
+                    Some(subcommand) => (
+                        subcommand.to_string(),
+                        value_string_array(call.arguments.get("args")),
+                    ),
+                    None => {
+                        let command = call
+                            .arguments
+                            .get("command")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| {
+                                OperatorError::Message(
+                                    "memphis_git requires subcommand".to_string(),
+                                )
+                            })?;
+                        let mut parts = command.split_whitespace();
+                        let subcommand = parts.next().unwrap_or("").to_string();
+                        (
+                            subcommand,
+                            parts.map(|part| part.to_string()).collect(),
+                        )
+                    }
+                };
             let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
             let memphis_dir = std::path::Path::new(&home).join("memphis");
 
@@ -495,7 +586,7 @@ fn execute_native_tool_inner(
                 "ls-files",
                 "remote",
             ];
-            let subcmd = command.split_whitespace().next().unwrap_or("");
+            let subcmd = subcommand.split_whitespace().next().unwrap_or("");
             if !read_only.contains(&subcmd) {
                 return Err(OperatorError::Message(format!(
                     "memphis_git: '{}' is not a read-only git subcommand",
@@ -506,7 +597,8 @@ fn execute_native_tool_inner(
             let output = std::process::Command::new("git")
                 .arg("-C")
                 .arg(&memphis_dir)
-                .args(command.split_whitespace())
+                .arg(&subcommand)
+                .args(&git_args)
                 .output()
                 .map_err(|e| OperatorError::Message(format!("git failed: {}", e)))?;
 
@@ -514,7 +606,7 @@ fn execute_native_tool_inner(
             let stderr = String::from_utf8_lossy(&output.stderr);
             let truncated = stdout.len() > 32000;
             let json = serde_json::json!({
-                "command": format!("git {}", command),
+                "command": format!("git {}", subcommand),
                 "stdout": &stdout[..stdout.len().min(32000)],
                 "stderr": &stderr[..stderr.len().min(8000)],
                 "exitCode": output.status.code().unwrap_or(1),
@@ -538,29 +630,72 @@ fn execute_native_tool_inner(
                 .ok_or_else(|| {
                     OperatorError::Message("memphis_web_fetch requires url".to_string())
                 })?;
+            // The same number the TypeScript arm uses, and the same
+            // ceiling the tool schema advertises.
             let max_bytes = call
                 .arguments
                 .get("maxBytes")
                 .and_then(Value::as_u64)
-                .unwrap_or(32000) as usize;
+                .unwrap_or(WEB_FETCH_MAX_BYTES as u64)
+                .min(WEB_FETCH_MAX_BYTES as u64) as usize;
 
-            let response = ureq::get(url)
-                .timeout(std::time::Duration::from_secs(10))
-                .call()
-                .map_err(|e| OperatorError::Message(format!("web_fetch failed: {}", e)))?;
+            // The gateway surface has refused private and internal
+            // targets since ADR-007. The native arm called `ureq`
+            // directly, with no guard at all, so the same request was
+            // refused on one surface and allowed on the other -- on the
+            // one the operator drives. Redirects are followed by hand,
+            // every hop checked, because a public URL may redirect into
+            // the private network.
+            let timeout = std::time::Duration::from_millis(web_fetch_timeout_ms());
+            let mut current = url.to_string();
+            let mut raw: Vec<u8> = Vec::new();
+            let mut hops = 0usize;
+            loop {
+                assert_url_safe(&current).map_err(OperatorError::Message)?;
+                let agent = ureq::AgentBuilder::new()
+                    .timeout(timeout)
+                    .redirects(0)
+                    .build();
+                let response = agent
+                    .get(&current)
+                    .call()
+                    .map_err(|e| OperatorError::Message(format!("web_fetch failed: {}", e)))?;
+                if (300..400).contains(&response.status()) {
+                    if hops >= WEB_FETCH_MAX_REDIRECTS {
+                        return Err(OperatorError::Message(
+                            "web_fetch failed: too many redirects".to_string(),
+                        ));
+                    }
+                    let location = response.header("location").ok_or_else(|| {
+                        OperatorError::Message(
+                            "web_fetch failed: redirect without a location".to_string(),
+                        )
+                    })?;
+                    current =
+                        resolve_redirect(&current, location).map_err(OperatorError::Message)?;
+                    hops += 1;
+                    continue;
+                }
+                // The body is read as bytes and cut on a character
+                // boundary. Reading it straight into a String failed the
+            // whole fetch when the cut landed in the middle of a
+            // multi-byte character -- so a page with Polish text failed
+            // depending on where the byte boundary happened to fall.
+                response
+                    .into_reader()
+                    .take(max_bytes as u64)
+                    .read_to_end(&mut raw)
+                    .map_err(|e| OperatorError::Message(format!("web_fetch read failed: {}", e)))?;
+                break;
+            }
+            let mut body = cut_on_char_boundary(&raw, max_bytes);
 
-            let mut body = String::new();
-            response
-                .into_reader()
-                .take(max_bytes as u64)
-                .read_to_string(&mut body)
-                .map_err(|e| OperatorError::Message(format!("web_fetch read failed: {}", e)))?;
-
+            let truncated = raw.len() >= max_bytes;
             let json = serde_json::json!({
                 "url": url,
                 "content": body,
-                "bytes": body.len(),
-                "truncated": body.len() >= max_bytes
+                "bytes": raw.len(),
+                "truncated": truncated
             });
             Ok((
                 format!("fetched {} bytes", body.len()),

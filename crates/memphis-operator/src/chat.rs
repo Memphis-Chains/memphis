@@ -22,7 +22,7 @@ use crate::chat_session::{
 };
 use crate::chat_streaming::{ensure_chat_not_cancelled, StreamingOutputGuard};
 use crate::chat_tool_catalog::{max_tool_tier_from_env, native_tool_definitions, tool_tier};
-use crate::chat_tool_executor::execute_native_tool;
+use crate::chat_tool_executor::{cut_on_char_boundary, execute_native_tool};
 use crate::{
     provider::{
         configured_provider_statuses, resolve_provider, ChatMessage, ChatRequestOptions,
@@ -2814,6 +2814,147 @@ mod tests {
         assert!(assert_path_not_secret_material("/home/memphis/memphis/crates/x.rs").is_ok());
         assert!(assert_path_not_secret_material("/home/memphis/memphis/environment.rs").is_ok());
     }
+    /// The cut must not split a multi-byte character.
+    ///
+    /// The native arm read the body with
+    /// `take(max_bytes).read_to_string()`, which failed the whole
+    /// fetch when the cut landed inside a character: a page with
+    /// Polish text failed depending on where the byte boundary
+    /// happened to fall.
+    #[test]
+    fn the_body_is_cut_on_a_character_boundary() {
+        // "a" + "ó" (two bytes) + "bc" -- five bytes in all.
+        let body = "aóbc".as_bytes();
+        assert_eq!(body.len(), 5);
+        assert_eq!(cut_on_char_boundary(body, 1), "a");
+        assert_eq!(cut_on_char_boundary(body, 2), "a");
+        assert_eq!(cut_on_char_boundary(body, 3), "aó");
+        assert_eq!(cut_on_char_boundary(body, 5), "aóbc");
+    }
+
+    /// The registry and the native arm must accept the same call.
+    ///
+    /// The registry names git's subcommand and its arguments separately
+    /// (`subcommand` + `args`), while the native arm took one
+    /// whitespace-separated string under the name `command`. A caller
+    /// that learned the registry's shape was refused outright with
+    /// "memphis_git requires command" -- on the authoritative surface,
+    /// where the model is talking.
+    #[test]
+    fn native_git_accepts_the_registry_shape() {
+        let root = temp_runtime_root("native-git-registry-shape");
+        let runtime = runtime_for(root.as_path());
+
+        let call = ChatToolCall {
+            id: "git-call".to_string(),
+            name: "memphis_git".to_string(),
+            arguments: json!({ "subcommand": "status", "args": ["--short"] }),
+        };
+
+        let result = execute_native_tool(&runtime, &call, 2);
+        assert!(
+            result.is_ok(),
+            "the registry's shape must work: {:?}",
+            result.err()
+        );
+    }
+
+    /// The shape the native arm used to advertise keeps working, so a
+    /// caller that learned the old one is not broken by the alignment.
+    #[test]
+    fn native_git_still_accepts_the_legacy_command_string() {
+        let root = temp_runtime_root("native-git-legacy-shape");
+        let runtime = runtime_for(root.as_path());
+
+        let call = ChatToolCall {
+            id: "git-call".to_string(),
+            name: "memphis_git".to_string(),
+            arguments: json!({ "command": "status --short" }),
+        };
+
+        let result = execute_native_tool(&runtime, &call, 2);
+        assert!(
+            result.is_ok(),
+            "the legacy shape must work: {:?}",
+            result.err()
+        );
+    }
+
+    /// `memphis_grep` caps its results with `limit` in the registry. The
+    /// native arm called the cap `maxResults`, ignored `context` and
+    /// `ignoreCase` altogether, and had no cap the registry agreed on.
+    #[test]
+    fn native_grep_honours_the_registry_parameters() {
+        let root = temp_runtime_root("native-grep-registry-shape");
+        let runtime = runtime_for(root.as_path());
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
+
+        let call = ChatToolCall {
+            id: "grep-call".to_string(),
+            name: "memphis_grep".to_string(),
+            arguments: json!({
+                "pattern": "pub fn",
+                "path": format!("{home}/memphis/crates/memphis-operator/src/code_read.rs"),
+                "limit": 1,
+                "context": 0,
+                "ignoreCase": true,
+            }),
+        };
+
+        let (_summary, payload) = execute_native_tool(&runtime, &call, 2)
+            .expect("the registry's shape must work");
+        assert!(
+            payload.contains("\"count\":1"),
+            "the cap the registry advertises must be the cap the arm applies: {payload}"
+        );
+    }
+
+    /// The native web fetch had no SSRF guard at all.
+    ///
+    /// The gateway surface has refused private and internal targets
+    /// since ADR-007, so the same URL was refused there and allowed
+    /// here -- on the authoritative surface, where the model is
+    /// talking. A cloud metadata endpoint was one request away.
+    #[test]
+    fn native_web_fetch_refuses_a_private_target() {
+        let root = temp_runtime_root("native-web-fetch-ssrf");
+        let runtime = runtime_for(root.as_path());
+
+        let call = ChatToolCall {
+            id: "fetch-call".to_string(),
+            name: "memphis_web_fetch".to_string(),
+            arguments: json!({ "url": "http://169.254.169.254/latest/meta-data/" }),
+        };
+
+        let error = execute_native_tool(&runtime, &call, 2)
+            .expect_err("a private target must be refused");
+        let message = error.to_string();
+        assert!(
+            message.contains("private/internal IP literal"),
+            "the refusal must name the reason: {message}"
+        );
+    }
+
+    /// The same guard, one layer down: the host itself.
+    #[test]
+    fn native_web_fetch_refuses_localhost() {
+        let root = temp_runtime_root("native-web-fetch-localhost");
+        let runtime = runtime_for(root.as_path());
+
+        let call = ChatToolCall {
+            id: "fetch-call".to_string(),
+            name: "memphis_web_fetch".to_string(),
+            arguments: json!({ "url": "http://localhost:8080/health" }),
+        };
+
+        let error = execute_native_tool(&runtime, &call, 2)
+            .expect_err("localhost must be refused");
+        assert!(
+            error.to_string().contains("URL blocked: localhost"),
+            "the refusal must name the reason: {error}"
+        );
+    }
+
     /// The two layers assign tiers independently, and they disagreed.
     ///
     /// `memphis_code_read` is tier 2 in src/gateway/tool-registry/
