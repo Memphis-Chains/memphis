@@ -43,7 +43,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       })
       .strict(),
     helpText:
-      "Pick between described options and get a calibrated confidence. `criteria` maps keys to descriptions so results are readable (`{'cards': 'Reklamacje kart'}`). Check `auto` before acting unattended; `auto: false` means escalate. `orders: 1` halves the latency but is sensitive to the order the options are listed in.",
+      "Pick between described options and get a calibrated confidence. `criteria` maps keys to descriptions so results are readable (`{'cards': 'Reklamacje kart'}`). auto is advisory eligibility and never authorizes an action. Score objects require ordinal keys 0..n-1; arrays preserve level order. `orders: 1` halves the latency but is sensitive to the order the options are listed in.",
     cliFlags: [
       {
         name: '--state',
@@ -70,7 +70,8 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       },
       {
         name: '--threshold',
-        description: 'Confidence at or above which the caller may act unattended (default 0.93).',
+        description:
+          'Advisory confidence policy from 0 to 1; explicit value overrides service discovery, fallback 0.93.',
         takesValue: true,
       },
     ],

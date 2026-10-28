@@ -92,3 +92,31 @@ Promotion requires useful latency and held-out accuracy within the host's memory
 budget, visible uncertainty, a reversible configuration switch, and the existing
 operator authorization boundary. The long-term success criterion is dependable
 behaviour and preserved memory across model changes.
+
+## Native parity contract — 2026-10-28
+
+The parity change applies the Node probability/type/defer validation
+to the native Rust client, adds a 64 KiB pre-decode body cap, sanitizes backend
+errors and renders the validated auto flag directly in the TUI summary.
+Both adapters resolve a service-specific advisory default per request (explicit
+caller policy wins, fallback 0.93). Discovery is bounded to five seconds within
+the overall request deadline, with no permanent process cache. A reported
+model mismatch discards the health threshold; separate HTTP requests cannot
+prove atomic model identity during a concurrent swap, so this remains advisory.
+
+A shared public fixture checks choice, Boolean, ordinal and uncertainty cases.
+The existing Rust sorted-object representation differs from JavaScript insertion
+order. Score objects therefore require explicit ordinal keys 0..n-1 on both
+surfaces; the Node array form maps descriptions to those positions. Named score
+objects without explicit ranks are rejected rather than silently reordered.
+Shared cases reject both insertion orders of ambiguous named keys. Workspace
+serialization and its persisted-data contract remain untouched. Protected Rust edits require the
+canonical manifest's conscious operator authorization and mcode workflow.
+
+The shared synthetic fixture yields the same accept/reject and advisory-auto
+verdicts in Node and Rust. Local verification passed 196 native unit tests plus
+one canonical-hash integration test; the live model probe and a doc example
+remain ignored. The native executor regression checks that high-confidence
+deferral is still displayed as auto=false. A local HTTP regression verifies
+that the deadline remains active after response headers arrive. No real model
+classification or Pico activation is part of these tests.
