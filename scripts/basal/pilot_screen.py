@@ -53,13 +53,17 @@ def evaluate(case, response, elapsed_ms, calibration):
             if type(value) not in (int, float) or not math.isfinite(value) or abs(value - expected) > 1e-4:
                 raise ValueError('Score disagrees with expected ordinal value')
     policies = {}
+    service_allows_eligibility = not answer.get('deferred', False) and answer.get('calibration') not in (
+        'unvalidated', 'text',
+    )
     for target in ('0.01', '0.05'):
         entry = calibration.get('thresholds', {}).get(target, {}).get('per_type', {}).get(kind, {})
         threshold = entry.get('confidence')
         if threshold is not None and (type(threshold) not in (int, float) or not math.isfinite(threshold)
                                       or not 0 <= threshold <= 1):
             raise ValueError('Invalid per-type calibration threshold')
-        policies[target] = {'threshold': threshold, 'eligible': threshold is not None and confidence >= threshold}
+        policies[target] = {'threshold': threshold,
+                            'eligible': service_allows_eligibility and threshold is not None and confidence >= threshold}
     return {'id': case['id'], 'group': case['group'], 'type': kind,
             'gold': case['gold'], 'prediction': prediction, 'correct': prediction == case['gold'],
             'critical': case.get('critical', False), 'confidence': confidence,
@@ -131,6 +135,12 @@ def main():
     model = metadata['v1/models']['models'][0]
     if model.get('prompt_format') != 2 or model.get('orders') != 1 or model.get('mode') != 'gguf':
         raise ValueError('Selected server must report GGUF, prompt format 2 and one option order')
+    fitted = calibration.get('fitted_on')
+    fitted_layout = (fitted.get('layout') if isinstance(fitted, dict) else None) or calibration.get('layout', 'canonical')
+    if model.get('layout', 'canonical') != fitted_layout or model.get('calibration_warning'):
+        raise ValueError('Server layout or calibration provenance differs from the supplied calibration')
+    if model.get('temperature_per_prim') != calibration.get('temperature_per_prim'):
+        raise ValueError('Server temperatures differ from the supplied calibration')
     (args.output / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
     results, failure = [], None
     try:
