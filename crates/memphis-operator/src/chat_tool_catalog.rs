@@ -254,7 +254,7 @@ pub(crate) fn native_tool_definitions() -> Vec<ChatToolDefinition> {
         },
         ChatToolDefinition {
             name: "memphis_classify".to_string(),
-            description: "Typed decisions via the local BASAL-1.0 service. Reads a state (message, document, case file) and answers one typed question about it — choice, yes/no, or score — returning a calibrated probability per option and never generated text. The point is `auto`: true when confidence clears the threshold (default 0.93, the model's own calibration for ~1% error), false when a human should look. SLOW: 70-140s per call on this host, so never call it in a loop. Returns a structured error with the start command when the service is down.".to_string(),
+            description: "Advisory typed decision via the local BASAL service. Validates class probabilities and reports confidence, model, calibration and deferral. auto reports caller-threshold eligibility and honors deferral; it grants no action permissions or domain error-rate guarantee. Defaults use a bounded service threshold read with fallback0.93; explicit caller policy wins. Historical CPU calls took70-140seconds. Requires a separately running service.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -267,8 +267,8 @@ pub(crate) fn native_tool_definitions() -> Vec<ChatToolDefinition> {
                         "minProperties": 2,
                         "maxProperties": 10
                     },
-                    "type": { "type": "string", "enum": ["choice", "noul", "score"], "description": "choice (default), noul (yes/no) or score (ordinal 0..n-1)" },
-                    "threshold": { "type": "number", "description": "Confidence at or above which the caller may act unattended (default 0.93)" },
+                    "type": { "type": "string", "enum": ["choice", "noul", "score"], "description": "choice (default), noul (yes/no), or score; score objects require ordinal keys 0..n-1" },
+                    "threshold": { "type": "number", "description": "Advisory confidence threshold from 0 to 1. Explicit policy overrides the service default; never grants action permissions." },
                     "orders": { "type": "number", "description": "1 = one forward pass, faster but order-sensitive; 2 = averaged over both option orders, invariant to ordering" }
                 },
                 "required": ["state", "question", "criteria"]

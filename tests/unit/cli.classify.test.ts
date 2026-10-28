@@ -98,6 +98,7 @@ describe('CLI classify argument contract', () => {
   it('treats a bare option list as keys without descriptions', async () => {
     let captured: { questions?: { k?: { criteria?: Record<string, string> } } } = {};
     globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
+      if (init?.method !== 'POST') return new Response('{}');
       captured = JSON.parse(String(init?.body ?? '{}')) as typeof captured;
       return new Response(
         JSON.stringify({
@@ -145,6 +146,7 @@ describe('CLI classify argument contract', () => {
       orders?: number;
     } = {};
     globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
+      if (init?.method !== 'POST') return new Response('{}');
       captured = JSON.parse(String(init?.body ?? '{}')) as typeof captured;
       return new Response(
         JSON.stringify({

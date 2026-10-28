@@ -1,101 +1,106 @@
-//! Client for the local BASAL-1.0 typed-decision service.
-//!
-//! `memphis_classify` asks BASAL one typed question about one piece of
-//! state and returns calibrated probabilities per option. The service is
-//! optional and slow (70-140s per call on the operator's host), so the
-//! client is isolated here: its endpoint, timeout, threshold discovery
-//! and reply parsing are one concern, separate from tool dispatch.
-//!
-//! Split out of `chat.rs` unchanged.
+//! Advisory typed decisions from a separately running local Basal service.
+//! Confidence is not permission or a Memphis-domain error-rate guarantee.
 
-use serde_json::{json, Value};
+use std::io::Read;
+use std::time::{Duration, Instant};
 
 use crate::OperatorError;
+use serde_json::{json, Value};
 
-/// Default endpoint of the local BASAL typed-decision service.
 pub(crate) const BASAL_DEFAULT_URL: &str = "http://127.0.0.1:8000/v1/systemone";
-/// Endpoint that reports the loaded model's own calibration points.
-const BASAL_HEALTH_URL: &str = "http://127.0.0.1:8000/health";
-/// Fallback confidence when the service cannot be asked for its own
-/// threshold. 0.93 is the ~1%-error point of basal-1.0, which is where
-/// this constant came from; it is a floor for an unreachable service,
-/// NOT a claim about whichever model happens to be loaded — see
-/// `basal_threshold_from_service`.
-const BASAL_DEFAULT_THRESHOLD: f64 = 0.93;
-/// Ceiling for one call. The model needs 70-140s on this host; the bound
-/// exists so a wedged service cannot hold a tool call open forever.
 pub(crate) const BASAL_TIMEOUT_SECS: u64 = 300;
+const DEFAULT_THRESHOLD: f64 = 0.93;
+const MAX_BYTES: u64 = 64 * 1024;
+const TOLERANCE: f64 = 1e-4;
 
-/// Pull the 1%-error confidence out of a BASAL `/health` body.
-///
-/// Split out of `basal_threshold_from_service` so the shape of the reply —
-/// not just the fact that a service answered — is covered by tests that
-/// need no daemon. The band check lives here too: a service that reports
-/// 0.2 or 1.5 is not a calibration point, it is a broken reply, and both
-/// callers must treat it as "no threshold" rather than propagating it.
+fn failure(message: &str) -> OperatorError {
+    OperatorError::Message(format!("memphis_classify: {message}"))
+}
+
 pub(crate) fn parse_basal_threshold(body: &Value) -> Option<f64> {
     body.get("thresholds")?
         .get("0.01")?
         .get("confidence")?
         .as_f64()
-        .filter(|value| (0.5..1.0).contains(value))
+        .filter(|value| value.is_finite() && (0.5..1.0).contains(value))
 }
 
-/// The calibration point the loaded model actually ships, cached after the
-/// first successful read.
-///
-/// The threshold is not a property of BASAL, it is a property of the
-/// weights: basal-1.0-1.5B calibrates at 0.930/0.742 and basal-1.5-mini at
-/// 0.955/0.763 (both measured, `/health` of the same service). A hardcoded
-/// 0.93 therefore means "1% error" on one release and "less than 1%" on the
-/// next — and after the model was switched, the 1.5-mini run that scored
-/// 0.9957 and 0.9706 was called AUTO at 0.93 while the model's own 1%-error
-/// point says 0.955, so `auto` claimed more confidence than the calibration
-/// supports.
-///
-/// Cached because `classify_input` runs on every operator message: a /health
-/// probe per message would double the local HTTP traffic for a number that
-/// changes only when the model is swapped. `OnceLock` gives a lock-free
-/// read on the hot path. The cache is per-process and never invalidated —
-/// a restarted TUI re-reads, which is exactly when a model swap happens
-/// (the service is restarted by systemd, the TUI generally is not).
-pub(crate) fn basal_threshold_from_service() -> f64 {
-    static CACHE: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
-    *CACHE.get_or_init(|| {
-        // Same env override as the decision call, so pointing
-        // MEMPHIS_BASAL_URL at another service moves the threshold read
-        // with it. Deriving from the systemone URL keeps the two in step
-        // instead of leaving a hardcoded localhost behind.
-        let base = std::env::var("MEMPHIS_BASAL_URL")
-            .ok()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| BASAL_DEFAULT_URL.to_string());
-        let health = match base.split("/v1/").next() {
-            Some(prefix) if !prefix.is_empty() => format!("{prefix}/health"),
-            _ => BASAL_HEALTH_URL.to_string(),
-        };
-        let parsed = ureq::get(&health)
-            .timeout(std::time::Duration::from_secs(5))
-            .call()
-            .ok()
-            .and_then(|response| response.into_json::<Value>().ok())
-            .and_then(|body| parse_basal_threshold(&body));
-        match parsed {
-            Some(value) => value,
-            None => {
-                // Unreachable service, older reply without `thresholds`, or a
-                // value outside the plausible band. The caller's own
-                // `threshold` argument still wins; this is only the default.
-                BASAL_DEFAULT_THRESHOLD
+/// ureq 2.12's request deadline remains active in its response reader.
+/// Bound bytes before attempting UTF-8/JSON decoding; never quote the body.
+pub(crate) fn read_basal_json(response: ureq::Response) -> Result<Value, OperatorError> {
+    let mut bytes = Vec::new();
+    response
+        .into_reader()
+        .take(MAX_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| match error.kind() {
+            std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock => {
+                failure("BASAL response timed out")
+            }
+            _ => failure("cannot read BASAL response"),
+        })?;
+    if bytes.len() as u64 > MAX_BYTES {
+        return Err(failure("BASAL response exceeds 64 KiB"));
+    }
+    serde_json::from_slice(&bytes).map_err(|_| failure("BASAL response is not valid JSON"))
+}
+
+/// A producer threshold is an advisory default, not a domain certificate.
+/// Resolve on each decision, with the same endpoint and remaining deadline.
+/// There is no process-global cache that survives model/endpoint changes.
+pub(crate) fn basal_threshold_from_service(
+    endpoint: &str,
+    expected_model: Option<&str>,
+    deadline: Instant,
+) -> Result<f64, OperatorError> {
+    let remaining = deadline
+        .checked_duration_since(Instant::now())
+        .ok_or_else(|| failure("BASAL request timed out"))?;
+    let health = match endpoint.split_once("/v1/") {
+        Some((prefix, _)) => format!("{prefix}/health"),
+        None => {
+            // Endpoints without the conventional /v1/ suffix use origin /health.
+            let scheme = endpoint.find("://").map(|i| i + 3).unwrap_or(0);
+            let end = endpoint[scheme..]
+                .find('/')
+                .map(|i| scheme + i)
+                .unwrap_or(endpoint.len());
+            format!("{}/health", &endpoint[..end])
+        }
+    };
+    let body = ureq::get(&health)
+        .timeout(remaining.min(Duration::from_secs(5)))
+        .call()
+        .ok()
+        .and_then(|response| read_basal_json(response).ok());
+    if Instant::now() >= deadline {
+        return Err(failure("BASAL request timed out"));
+    }
+    let threshold = body.as_ref().and_then(|body| {
+        if let (Some(expected), Some(reported)) =
+            (expected_model, body.get("model").and_then(Value::as_str))
+        {
+            if expected != reported {
+                return None;
             }
         }
-    })
+        parse_basal_threshold(body)
+    });
+    Ok(threshold.unwrap_or(DEFAULT_THRESHOLD))
 }
 
-/// Parse a BASAL reply into the tool's output shape. Split out from the
-/// HTTP call so the decision semantics — `auto` above all — can be tested
-/// against a recorded reply instead of a 3.2 GB model.
+fn truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(value) => *value,
+        Value::Number(value) => value.as_f64().is_some_and(|value| value != 0.0),
+        Value::String(value) => !value.is_empty(),
+        _ => true,
+    }
+}
+
+/// Pure response validation: callers supply the request keys and resolved policy.
+/// Missing calibration is reported as unreported; auto is advisory eligibility.
 pub(crate) fn classify_reply_to_json(
     body: &Value,
     question_type: &str,
@@ -103,47 +108,301 @@ pub(crate) fn classify_reply_to_json(
     state: &str,
     threshold: Option<f64>,
     orders: u64,
+    keys: &[String],
 ) -> Result<Value, OperatorError> {
-    if let Some(error) = body.get("error").and_then(Value::as_str) {
-        return Err(OperatorError::Message(match error {
-            "loading" => {
-                "memphis_classify: the BASAL model is still loading; retry in a few seconds"
-                    .to_string()
-            }
-            other => format!("memphis_classify: BASAL returned an error: {other}"),
-        }));
+    let threshold = threshold.unwrap_or(DEFAULT_THRESHOLD);
+    if !threshold.is_finite() || !(0.0..=1.0).contains(&threshold) {
+        return Err(failure("invalid caller threshold"));
     }
+    if !matches!(question_type, "choice" | "noul" | "score")
+        || !matches!(orders, 1 | 2)
+        || !(2..=10).contains(&keys.len())
+        || keys.iter().collect::<std::collections::BTreeSet<_>>().len() != keys.len()
+    {
+        return Err(failure("invalid classification policy"));
+    }
+    if let Some(error) = body.get("error").filter(|error| truthy(error)) {
+        return Err(if error.as_str() == Some("loading") {
+            failure("the BASAL model is still loading; retry in a few seconds")
+        } else {
+            failure("BASAL reported an inference error")
+        });
+    }
+    let invalid =
+        || failure("BASAL returned an invalid typed decision or probability distribution");
     let answer = body
         .get("answers")
+        .and_then(Value::as_object)
         .and_then(|answers| answers.get("k"))
-        .ok_or_else(|| {
-            OperatorError::Message(
-                "memphis_classify: BASAL reply carried no answer for the question".to_string(),
-            )
-        })?;
+        .and_then(Value::as_object)
+        .ok_or_else(|| failure("BASAL reply carried no answer for the question"))?;
+    if answer.get("type").and_then(Value::as_str) != Some(question_type) {
+        return Err(invalid());
+    }
+    let probabilities = answer
+        .get("probabilities")
+        .and_then(Value::as_object)
+        .ok_or_else(invalid)?;
+    let same_keys = |expected: &[String]| {
+        probabilities.len() == expected.len()
+            && expected.iter().all(|key| probabilities.contains_key(key))
+    };
+    let boolean_keys = vec!["true".to_string(), "false".to_string()];
+    let ordinal_keys: Vec<String> = (0..keys.len()).map(|i| i.to_string()).collect();
+    if question_type == "score" && keys != ordinal_keys.as_slice() {
+        return Err(invalid());
+    }
+    if !same_keys(keys)
+        && !(question_type == "noul" && same_keys(&boolean_keys))
+        && !(question_type == "score" && same_keys(&ordinal_keys))
+    {
+        return Err(invalid());
+    }
+    let values: Vec<f64> = probabilities
+        .values()
+        .map(|value| {
+            value
+                .as_f64()
+                .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(invalid)?;
+    let maximum = values.iter().copied().fold(0.0, f64::max);
+    if (values.iter().sum::<f64>() - 1.0).abs() > TOLERANCE {
+        return Err(invalid());
+    }
     let confidence = answer
         .get("confidence")
         .and_then(Value::as_f64)
-        .unwrap_or(0.0);
-    let effective_threshold = threshold.unwrap_or_else(basal_threshold_from_service);
-    let latency_ms = body
+        .filter(|value| {
+            value.is_finite() && (0.0..=1.0).contains(value) && (value - maximum).abs() <= TOLERANCE
+        })
+        .ok_or_else(invalid)?;
+    let winner = |key: &str| {
+        probabilities
+            .get(key)
+            .and_then(Value::as_f64)
+            .is_some_and(|probability| (probability - confidence).abs() <= TOLERANCE)
+    };
+    match question_type {
+        "choice" => {
+            let choice = answer
+                .get("choice")
+                .and_then(Value::as_str)
+                .ok_or_else(invalid)?;
+            if !keys.iter().any(|key| key == choice) || !winner(choice) {
+                return Err(invalid());
+            }
+        }
+        "noul" => match answer.get("noul") {
+            Some(Value::String(key)) if winner(key) => (),
+            Some(value) => {
+                let value = value
+                    .as_f64()
+                    .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
+                    .ok_or_else(invalid)?;
+                if same_keys(&boolean_keys) {
+                    let yes = probabilities
+                        .get("true")
+                        .and_then(Value::as_f64)
+                        .ok_or_else(invalid)?;
+                    if (value - yes).abs() > TOLERANCE {
+                        return Err(invalid());
+                    }
+                } else if value.fract() != 0.0 || !winner(&keys[value as usize]) {
+                    return Err(invalid());
+                }
+            }
+            None => return Err(invalid()),
+        },
+        "score" => {
+            let score_keys = if same_keys(keys) { keys } else { &ordinal_keys };
+            let expected: f64 = score_keys
+                .iter()
+                .enumerate()
+                .map(|(i, key)| {
+                    i as f64
+                        * probabilities
+                            .get(key)
+                            .and_then(Value::as_f64)
+                            .unwrap_or(0.0)
+                })
+                .sum();
+            let score = answer
+                .get("score")
+                .and_then(Value::as_f64)
+                .filter(|score| score.is_finite())
+                .ok_or_else(invalid)?;
+            if (score - expected).abs() > TOLERANCE {
+                return Err(invalid());
+            }
+        }
+        _ => return Err(invalid()),
+    }
+    let deferred = match answer.get("deferred") {
+        None => false,
+        Some(Value::Bool(value)) => *value,
+        _ => return Err(invalid()),
+    };
+    let calibration = match answer.get("calibration") {
+        None => "unreported",
+        Some(Value::String(value)) if matches!(value.as_str(), "validated" | "unvalidated") => {
+            value
+        }
+        _ => return Err(invalid()),
+    };
+    let latency = body
         .get("usage")
         .and_then(|usage| usage.get("latency_ms"))
-        .and_then(Value::as_i64)
-        .unwrap_or(-1);
+        .filter(|value| {
+            value
+                .as_f64()
+                .is_some_and(|value| value.is_finite() && value >= 0.0)
+        })
+        .cloned()
+        .unwrap_or(json!(-1));
     Ok(json!({
-        "ok": true,
-        "state": state,
-        "question": question,
-        "type": question_type,
+        "ok": true, "state": state, "question": question, "type": question_type,
         "choice": answer.get("choice").and_then(Value::as_str),
-        "noul": answer.get("noul").and_then(Value::as_str),
+        "noul": answer.get("noul").filter(|value| value.is_string() || value.is_number()),
         "score": answer.get("score").and_then(Value::as_f64),
-        "probabilities": answer.get("probabilities").cloned().unwrap_or_else(|| json!({})),
-        "confidence": confidence,
-        "threshold": effective_threshold,
-        "auto": confidence >= effective_threshold,
-        "orders": orders,
-        "latencyMs": latency_ms,
+        "probabilities": probabilities, "confidence": confidence, "threshold": threshold,
+        "auto": confidence >= threshold && !deferred && calibration != "unvalidated",
+        "model": body.get("model").and_then(Value::as_str), "deferred": deferred,
+        "calibration": calibration, "orders": orders, "latencyMs": latency,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn shared_decision_contract() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/basal-native-parity.json"
+        ))
+        .unwrap();
+        for case in fixture.as_array().unwrap() {
+            let keys: Vec<String> = case["keys"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|key| key.as_str().unwrap().to_string())
+                .collect();
+            let result = classify_reply_to_json(
+                &case["reply"],
+                case["type"].as_str().unwrap(),
+                "synthetic",
+                "public fixture",
+                Some(case["threshold"].as_f64().unwrap()),
+                2,
+                &keys,
+            );
+            assert_eq!(
+                result.is_ok(),
+                case["ok"].as_bool().unwrap(),
+                "case {}",
+                case["name"]
+            );
+            if let Ok(result) = result {
+                assert_eq!(result["auto"], case["auto"], "case {}", case["name"]);
+            } else {
+                assert!(!result.unwrap_err().to_string().contains("private-sentinel"));
+            }
+        }
+    }
+    fn response(body: &str) -> ureq::Response {
+        ureq::Response::new(200, "OK", body).unwrap()
+    }
+    #[test]
+    fn rejects_oversized_and_malformed_bodies_without_echo() {
+        assert!(read_basal_json(response(&"x".repeat(65537))).is_err());
+        let error = read_basal_json(response("private-sentinel"))
+            .unwrap_err()
+            .to_string();
+        assert!(!error.contains("private-sentinel"));
+    }
+    #[test]
+    fn response_body_remains_subject_to_the_request_deadline() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/fixture", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut buffer = [0u8; 4096];
+            stream.read(&mut buffer).unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n")
+                .unwrap();
+            stream.flush().unwrap();
+            std::thread::sleep(Duration::from_secs(1));
+        });
+        let response = ureq::get(&url)
+            .timeout(Duration::from_millis(200))
+            .call()
+            .unwrap();
+        let error = read_basal_json(response).unwrap_err().to_string();
+        server.join().unwrap();
+        assert!(error.contains("timed out"), "{error}");
+    }
+    #[test]
+    fn model_identity_and_endpoint_are_not_process_cached() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/v1/systemone", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for confidence in [0.9546, 0.97, 0.99] {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut request = [0u8; 4096];
+                let n = stream.read(&mut request).unwrap();
+                assert!(String::from_utf8_lossy(&request[..n]).starts_with("GET /health "));
+                let body =
+                    json!({"model":"synthetic", "thresholds":{"0.01":{"confidence":confidence}}})
+                        .to_string();
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .unwrap();
+            }
+        });
+        assert_eq!(
+            basal_threshold_from_service(
+                &endpoint,
+                Some("synthetic"),
+                Instant::now() + Duration::from_secs(5)
+            )
+            .unwrap(),
+            0.9546
+        );
+        assert_eq!(
+            basal_threshold_from_service(
+                &endpoint,
+                Some("synthetic"),
+                Instant::now() + Duration::from_secs(5)
+            )
+            .unwrap(),
+            0.97
+        );
+        assert_eq!(
+            basal_threshold_from_service(
+                &endpoint,
+                Some("other"),
+                Instant::now() + Duration::from_secs(5)
+            )
+            .unwrap(),
+            0.93
+        );
+        server.join().unwrap();
+    }
 }

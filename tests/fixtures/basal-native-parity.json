@@ -1,0 +1,426 @@
+[
+  {
+    "name": "valid choice",
+    "type": "choice",
+    "keys": ["a", "b"],
+    "threshold": 0.93,
+    "reply": {
+      "model": "synthetic",
+      "answers": {
+        "k": {
+          "type": "choice",
+          "choice": "a",
+          "probabilities": {
+            "a": 0.97,
+            "b": 0.03
+          },
+          "confidence": 0.97
+        }
+      }
+    },
+    "ok": true,
+    "auto": true
+  },
+  {
+    "name": "below caller policy",
+    "type": "choice",
+    "keys": ["a", "b"],
+    "threshold": 0.93,
+    "reply": {
+      "model": "synthetic",
+      "answers": {
+        "k": {
+          "type": "choice",
+          "choice": "a",
+          "probabilities": {
+            "a": 0.8,
+            "b": 0.2
+          },
+          "confidence": 0.8
+        }
+      }
+    },
+    "ok": true,
+    "auto": false
+  },
+  {
+    "name": "explicit lenient policy",
+    "type": "choice",
+    "keys": ["a", "b"],
+    "threshold": 0.5,
+    "reply": {
+      "model": "synthetic",
+      "answers": {
+        "k": {
+          "type": "choice",
+          "choice": "a",
+          "probabilities": {
+            "a": 0.8,
+            "b": 0.2
+          },
+          "confidence": 0.8
+        }
+      }
+    },
+    "ok": true,
+    "auto": true
+  },
+  {
+    "name": "deferred high confidence",
+    "type": "choice",
+    "keys": ["a", "b"],
+    "threshold": 0.93,
+    "reply": {
+      "model": "synthetic",
+      "answers": {
+        "k": {
+          "type": "choice",
+          "choice": "a",
+          "probabilities": {
+            "a": 0.97,
+            "b": 0.03
+          },
+          "confidence": 0.97,
+          "deferred": true
+        }
+      }
+    },
+    "ok": true,
+    "auto": false
+  },
+  {
+    "name": "unvalidated calibration",
+    "type": "choice",
+    "keys": ["a", "b"],
+    "threshold": 0.93,
+    "reply": {
+      "model": "synthetic",
+      "answers": {
+        "k": {
+          "type": "choice",
+          "choice": "a",
+          "probabilities": {
+            "a": 0.97,
+            "b": 0.03
+          },
+          "confidence": 0.97,
+          "calibration": "unvalidated"
+        }
+      }
+    },
+    "ok": true,
+    "auto": false
+  },
+  {
+    "name": "missing distribution",
+    "type": "choice",
+    "keys": ["a", "b"],
+    "threshold": 0.93,
+    "reply": {
+      "model": "synthetic",
+      "answers": {
+        "k": {
+          "type": "choice",
+          "choice": "a",
+          "probabilities": null,
+          "confidence": 0.97
+        }
+      }
+    },
+    "ok": false,
+    "auto": null
+  },
+  {
+    "name": "outside class",
+    "type": "choice",
+    "keys": ["a", "b"],
+    "threshold": 0.93,
+    "reply": {
+      "model": "synthetic",
+      "answers": {
+        "k": {
+          "type": "choice",
+          "choice": "outside",
+          "probabilities": {
+            "a": 0.97,
+            "b": 0.03
+          },
+          "confidence": 0.97
+        }
+      }
+    },
+    "ok": false,
+    "auto": null
+  },
+  {
+    "name": "wrong winner",
+    "type": "choice",
+    "keys": ["a", "b"],
+    "threshold": 0.93,
+    "reply": {
+      "model": "synthetic",
+      "answers": {
+        "k": {
+          "type": "choice",
+          "choice": "b",
+          "probabilities": {
+            "a": 0.97,
+            "b": 0.03
+          },
+          "confidence": 0.97
+        }
+      }
+    },
+    "ok": false,
+    "auto": null
+  },
+  {
+    "name": "wrong confidence",
+    "type": "choice",
+    "keys": ["a", "b"],
+    "threshold": 0.93,
+    "reply": {
+      "model": "synthetic",
+      "answers": {
+        "k": {
+          "type": "choice",
+          "choice": "a",
+          "probabilities": {
+            "a": 0.97,
+            "b": 0.03
+          },
+          "confidence": 0.99
+        }
+      }
+    },
+    "ok": false,
+    "auto": null
+  },
+  {
+    "name": "non-normalized",
+    "type": "choice",
+    "keys": ["a", "b"],
+    "threshold": 0.93,
+    "reply": {
+      "model": "synthetic",
+      "answers": {
+        "k": {
+          "type": "choice",
+          "choice": "a",
+          "probabilities": {
+            "a": 0.97,
+            "b": 0.5
+          },
+          "confidence": 0.97
+        }
+      }
+    },
+    "ok": false,
+    "auto": null
+  },
+  {
+    "name": "invalid flag",
+    "type": "choice",
+    "keys": ["a", "b"],
+    "threshold": 0.93,
+    "reply": {
+      "model": "synthetic",
+      "answers": {
+        "k": {
+          "type": "choice",
+          "choice": "a",
+          "probabilities": {
+            "a": 0.97,
+            "b": 0.03
+          },
+          "confidence": 0.97,
+          "deferred": "false"
+        }
+      }
+    },
+    "ok": false,
+    "auto": null
+  },
+  {
+    "name": "unknown calibration",
+    "type": "choice",
+    "keys": ["a", "b"],
+    "threshold": 0.93,
+    "reply": {
+      "model": "synthetic",
+      "answers": {
+        "k": {
+          "type": "choice",
+          "choice": "a",
+          "probabilities": {
+            "a": 0.97,
+            "b": 0.03
+          },
+          "confidence": 0.97,
+          "calibration": "magic"
+        }
+      }
+    },
+    "ok": false,
+    "auto": null
+  },
+  {
+    "name": "private backend error",
+    "type": "choice",
+    "keys": ["a", "b"],
+    "threshold": 0.93,
+    "reply": {
+      "error": "private-sentinel"
+    },
+    "ok": false,
+    "auto": null
+  },
+  {
+    "name": "invalid policy",
+    "type": "choice",
+    "keys": ["a", "b"],
+    "threshold": 1.1,
+    "reply": {
+      "model": "synthetic",
+      "answers": {
+        "k": {
+          "type": "choice",
+          "choice": "a",
+          "probabilities": {
+            "a": 0.97,
+            "b": 0.03
+          },
+          "confidence": 0.97
+        }
+      }
+    },
+    "ok": false,
+    "auto": null
+  },
+  {
+    "name": "boolean canonical",
+    "type": "noul",
+    "keys": ["a", "b"],
+    "threshold": 0.93,
+    "reply": {
+      "answers": {
+        "k": {
+          "type": "noul",
+          "noul": 0.97,
+          "probabilities": {
+            "true": 0.97,
+            "false": 0.03
+          },
+          "confidence": 0.97
+        }
+      }
+    },
+    "ok": true,
+    "auto": true
+  },
+  {
+    "name": "legacy boolean contradiction",
+    "type": "noul",
+    "keys": ["a", "b"],
+    "threshold": 0.93,
+    "reply": {
+      "answers": {
+        "k": {
+          "type": "noul",
+          "noul": "b",
+          "probabilities": {
+            "a": 0.97,
+            "b": 0.03
+          },
+          "confidence": 0.97
+        }
+      }
+    },
+    "ok": false,
+    "auto": null
+  },
+  {
+    "name": "ordinal canonical",
+    "type": "score",
+    "keys": ["0", "1"],
+    "threshold": 0.93,
+    "reply": {
+      "answers": {
+        "k": {
+          "type": "score",
+          "score": 0.25,
+          "probabilities": {
+            "0": 0.75,
+            "1": 0.25
+          },
+          "confidence": 0.75
+        }
+      }
+    },
+    "ok": true,
+    "auto": false
+  },
+  {
+    "name": "ordinal contradiction",
+    "type": "score",
+    "keys": ["0", "1"],
+    "threshold": 0.93,
+    "reply": {
+      "answers": {
+        "k": {
+          "type": "score",
+          "score": 0.9,
+          "probabilities": {
+            "0": 0.75,
+            "1": 0.25
+          },
+          "confidence": 0.75
+        }
+      }
+    },
+    "ok": false,
+    "auto": null
+  },
+  {
+    "name": "ambiguous ordinal insertion order",
+    "type": "score",
+    "keys": ["low", "high"],
+    "threshold": 0.93,
+    "reply": {
+      "answers": {
+        "k": {
+          "type": "score",
+          "score": 0.25,
+          "probabilities": {
+            "0": 0.75,
+            "1": 0.25
+          },
+          "confidence": 0.75
+        }
+      }
+    },
+    "ok": false,
+    "auto": null
+  },
+  {
+    "name": "ambiguous ordinal reverse order",
+    "type": "score",
+    "keys": ["high", "low"],
+    "threshold": 0.93,
+    "reply": {
+      "answers": {
+        "k": {
+          "type": "score",
+          "score": 0.25,
+          "probabilities": {
+            "0": 0.75,
+            "1": 0.25
+          },
+          "confidence": 0.75
+        }
+      }
+    },
+    "ok": false,
+    "auto": null
+  }
+]

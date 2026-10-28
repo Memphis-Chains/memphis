@@ -17,7 +17,8 @@ use chrono::Utc;
 use serde_json::{json, Value};
 
 use crate::chat_basal::{
-    basal_threshold_from_service, classify_reply_to_json, BASAL_DEFAULT_URL, BASAL_TIMEOUT_SECS,
+    basal_threshold_from_service, classify_reply_to_json, read_basal_json, BASAL_DEFAULT_URL,
+    BASAL_TIMEOUT_SECS,
 };
 use crate::chat_guards::{
     assert_path_not_secret_material, build_wrapped_segment, emit_runtime_security_event,
@@ -843,31 +844,54 @@ pub(crate) fn execute_native_tool(
                 )));
             }
 
-            let question_type = call
-                .arguments
-                .get("type")
-                .and_then(Value::as_str)
-                .unwrap_or("choice")
-                .to_string();
-            if !matches!(question_type.as_str(), "choice" | "noul" | "score") {
-                return Err(OperatorError::Message(format!(
-                    "memphis_classify type must be choice, noul or score; got {question_type}"
-                )));
-            }
-            let threshold = call
-                .arguments
-                .get("threshold")
-                .and_then(Value::as_f64)
-                .map(|value| value.clamp(0.0, 1.0));
-            let orders = match value_usize(call.arguments.get("orders")) {
-                Some(1) => 1u64,
-                Some(other) if other >= 2 => 2u64,
-                Some(other) => {
-                    return Err(OperatorError::Message(format!(
-                        "memphis_classify orders must be 1 or 2; got {other}"
-                    )))
+            let question_type = match call.arguments.get("type") {
+                None => "choice",
+                Some(Value::String(value))
+                    if matches!(value.as_str(), "choice" | "noul" | "score") =>
+                {
+                    value
                 }
-                None => 2u64,
+                _ => {
+                    return Err(OperatorError::Message(
+                        "memphis_classify type must be choice, noul or score".to_string(),
+                    ))
+                }
+            }
+            .to_string();
+            if question_type == "score"
+                && options
+                    .iter()
+                    .enumerate()
+                    .any(|(i, (key, _))| key != &i.to_string())
+            {
+                return Err(OperatorError::Message(
+                    "memphis_classify score object keys must be ordered positions 0..n-1"
+                        .to_string(),
+                ));
+            }
+            let threshold = match call.arguments.get("threshold") {
+                None => None,
+                Some(value) => Some(
+                    value
+                        .as_f64()
+                        .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
+                        .ok_or_else(|| {
+                            OperatorError::Message(
+                                "memphis_classify threshold must be a finite number from 0 to 1"
+                                    .to_string(),
+                            )
+                        })?,
+                ),
+            };
+            let orders = match call.arguments.get("orders") {
+                None => 2,
+                Some(value) if value.as_f64() == Some(1.0) => 1,
+                Some(value) if value.as_f64() == Some(2.0) => 2,
+                _ => {
+                    return Err(OperatorError::Message(
+                        "memphis_classify orders must be 1 or 2".to_string(),
+                    ))
+                }
             };
 
             let url = std::env::var("MEMPHIS_BASAL_URL")
@@ -894,36 +918,39 @@ pub(crate) fn execute_native_tool(
                 "questions": { "k": question_spec },
             });
 
-            // The model needs minutes on this host; the ceiling is here so a
-            // wedged service cannot hold a tool call open forever.
+            let deadline =
+                std::time::Instant::now() + std::time::Duration::from_secs(BASAL_TIMEOUT_SECS);
             let response = ureq::post(&url)
                 .timeout(std::time::Duration::from_secs(BASAL_TIMEOUT_SECS))
                 .send_json(&payload)
-                .map_err(|error| {
-                    OperatorError::Message(format!(
-                        "memphis_classify: BASAL did not answer at {url}: {error}. \
-                         Start it with: systemctl --user start memphis-basal-td"
-                    ))
+                .map_err(|error| match error {
+                    ureq::Error::Status(status, _) => OperatorError::Message(format!("memphis_classify: BASAL service returned HTTP {status}")),
+                    _ => OperatorError::Message("memphis_classify: BASAL request failed; start it with: systemctl --user start memphis-basal-td".to_string()),
                 })?;
-
-            let body: Value = response.into_json().map_err(|error| {
-                OperatorError::Message(format!(
-                    "memphis_classify: BASAL reply is not JSON: {error}"
-                ))
-            })?;
+            let body = read_basal_json(response)?;
+            let effective_threshold = match threshold {
+                Some(value) => value,
+                None => basal_threshold_from_service(
+                    &url,
+                    body.get("model").and_then(Value::as_str),
+                    deadline,
+                )?,
+            };
+            let expected_keys: Vec<String> = options.iter().map(|(key, _)| key.clone()).collect();
             let json = classify_reply_to_json(
                 &body,
                 &question_type,
                 &question,
                 &state,
-                threshold,
+                Some(effective_threshold),
                 orders,
+                &expected_keys,
             )?;
             let confidence = json
                 .get("confidence")
                 .and_then(Value::as_f64)
                 .unwrap_or(0.0);
-            let effective_threshold = threshold.unwrap_or_else(basal_threshold_from_service);
+            let auto = json.get("auto").and_then(Value::as_bool).unwrap_or(false);
             let latency_ms = json.get("latencyMs").and_then(Value::as_i64).unwrap_or(-1);
             let choice = json
                 .get("choice")
@@ -933,9 +960,7 @@ pub(crate) fn execute_native_tool(
             Ok((
                 format!(
                     "classify {choice} confidence={:.3} auto={} latencyMs={}",
-                    confidence,
-                    confidence >= effective_threshold,
-                    latency_ms
+                    confidence, auto, latency_ms
                 ),
                 build_wrapped_segment(
                     "tool_output",
