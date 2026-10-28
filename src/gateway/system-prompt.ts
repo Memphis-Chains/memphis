@@ -1760,16 +1760,32 @@ export function buildRecalledMemoryFragment(
   results: Array<{ content: string; score: number }>,
 ): string {
   if (results.length === 0) return '';
+  let remaining = 12_000;
+  let omittedItems = 0;
   const entries = results
     .filter((r) => r.score >= 0.4)
     .slice(0, 5)
-    .map(
-      (r, i) =>
-        `  [${i + 1}] (score=${r.score.toFixed(2)}) ${escapePromptFragmentText(r.content.slice(0, 300))}`,
-    )
+    .map((r, i) => {
+      if (remaining <= 0) {
+        omittedItems += 1;
+        return '';
+      }
+      const shown = r.content.slice(0, Math.min(4000, remaining));
+      remaining -= shown.length;
+      const omitted =
+        shown.length < r.content.length
+          ? ` [truncated memory: ${shown.length}/${r.content.length} characters; missing details require the full source]`
+          : '';
+      return `  [${i + 1}] (score=${r.score.toFixed(2)}) ${escapePromptFragmentText(shown)}${omitted}`;
+    })
+    .filter(Boolean)
     .join('\n');
   if (!entries) return '';
-  return `<recalled_memory>\n${entries}\n</recalled_memory>`;
+  const omitted =
+    omittedItems > 0
+      ? `\n  [${omittedItems} recalled items omitted: context budget exhausted; retrieve full sources for missing details]`
+      : '';
+  return `<recalled_memory>\n${entries}${omitted}\n</recalled_memory>`;
 }
 
 /** Injected when automatic chain-first cognition adds bounded turn context */
