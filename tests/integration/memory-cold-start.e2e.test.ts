@@ -38,6 +38,7 @@ function runtime() {
     run(input: Record<string, unknown>): WorkerOutput {
       const env: Record<string, string> = {
         HOME: root,
+        TMPDIR: tmpdir(),
         USER: 'cold-start-fixture',
         PATH: '/usr/local/bin:/usr/bin:/bin',
         LANG: 'C.UTF-8',
