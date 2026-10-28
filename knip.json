@@ -1,6 +1,7 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "entry": [
+    "tests/fixtures/memory-cold-start-worker.mjs",
     "tools/training/check-preflight-runtime.ts",
     "scripts/quarterly-exit-test-q2.mjs",
     "scripts/quarterly-mv2-fixture.mjs",

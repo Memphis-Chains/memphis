@@ -25,8 +25,9 @@ use crate::chat_guards::{
     scan_code_change_content, sha256_hex,
 };
 use crate::chat_memory::{
-    append_case_entry, append_generic_block, read_chain_blocks, run_native_journal, run_soul_read,
-    run_soul_write, search_result_to_json, validate_chain_name, value_string_array, value_usize,
+    append_case_entry, append_generic_block, read_chain_blocks, recall_result_with_sources,
+    run_native_journal, run_soul_read, run_soul_write, search_result_to_json, validate_chain_name,
+    value_string_array, value_usize,
 };
 use crate::chat_tool_catalog::tool_tier;
 use memphis_case_index::CaseIndex;
@@ -86,7 +87,7 @@ pub(crate) fn execute_native_tool(
                 })?;
             let limit = value_usize(call.arguments.get("limit")).unwrap_or(5);
             let result = runtime.search_semantic(query, limit)?;
-            let json = serde_json::to_string(&search_result_to_json(&result))
+            let json = serde_json::to_string(&recall_result_with_sources(runtime, &result)?)
                 .map_err(|error| OperatorError::Json(error.to_string()))?;
             Ok((
                 format!("semantic recall hits={}", result.count),

@@ -38,6 +38,8 @@ type SearchResult = {
     tags: string[];
     chain?: string;
     sourceKey?: string;
+    sourceHash?: string;
+    contentSource?: 'chain' | 'preview';
   }>;
 };
 type ExactSearchResult = ExactSearchOutput;
@@ -203,10 +205,7 @@ export function registerMemoryRoutes(
       // request-scoped turnId is propagated yet (turn binding on the
       // HTTP chat path is the scope of N9/exporter, not N8). Consent
       // defaults via deps.store to 'exportable' for service surface.
-      const result = await deps.store(
-        { content, tags, chain, source: 'http-api' },
-        process.env,
-      );
+      const result = await deps.store({ content, tags, chain, source: 'http-api' }, process.env);
       deps.audit(
         {
           action: 'journal.append',
@@ -280,6 +279,8 @@ export function registerMemoryRoutes(
           tags: hit.tags,
           chain: hit.chain,
           sourceKey: hit.sourceKey,
+          ...(hit.sourceHash ? { sourceHash: hit.sourceHash } : {}),
+          ...(hit.contentSource ? { contentSource: hit.contentSource } : {}),
         })),
         limit,
         userId,
