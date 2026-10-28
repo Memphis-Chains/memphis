@@ -1,5 +1,11 @@
 # Basal Pico and Memphis — 2026-10-27
 
+This document records the pre-pilot snapshot. The subsequent
+[measured isolated Pico pilot, 2026-10-28](BASAL-PICO-PILOT-2026-10-28.md)
+downloaded and verified the candidate and measured it on 50 synthetic cases.
+Its result supersedes the snapshot's statements about downloads and unmeasured
+Pico latency. No production model switch was made.
+
 The operator wants a dependable long-term companion: continuity of memory,
 respect for private data and permissions, clear evidence, corrections and
 honest uncertainty. Evaluate changes against those behaviours, rather than
