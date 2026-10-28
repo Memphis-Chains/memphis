@@ -81,7 +81,13 @@ pub fn resolve_code_read_range(
         Some(0) => {
             return Err("limit must be at least 1".to_string());
         }
-        Some(value) => value.min(CODE_READ_MAX_LINES),
+        Some(value) if value > CODE_READ_MAX_LINES => {
+            // The schema advertises 2000 as the maximum, so a larger
+            // limit is refused rather than quietly capped: the caller
+            // asked for something the tool cannot deliver.
+            return Err(format!("limit must be at most {CODE_READ_MAX_LINES}"));
+        }
+        Some(value) => value,
     };
 
     Ok(CodeReadRange { start, end, limit })
@@ -100,10 +106,16 @@ impl CodeReadRange {
         self.end.min(self.start.saturating_add(self.limit))
     }
 
-    /// Whether the file was cut short, either by the limit or by the
-    /// range itself.
-    pub fn is_truncated(&self, total_lines: usize) -> bool {
-        self.span() > self.limit || total_lines > self.limit
+    /// Whether the caller got less than the window they asked for.
+    ///
+    /// The window is what the caller named: an explicit `end_line`, or
+    /// the whole file when there is none. A file with five thousand
+    /// lines read at `start_line: 1, end_line: 10` is not truncated --
+    /// the ten lines asked for were delivered. Both arms used to say
+    /// it was, which told the model to re-read a file it had already
+    /// been given.
+    pub fn is_truncated(&self) -> bool {
+        self.slice_end() < self.end
     }
 }
 
@@ -193,10 +205,15 @@ mod tests {
         assert!(error.contains("limit"), "got: {error}");
     }
 
+    /// The schema advertises 2000 as the maximum. A larger limit is
+    /// refused rather than capped, because the caller asked for
+    /// something the tool cannot deliver -- and the TypeScript arm
+    /// refused it too.
     #[test]
-    fn the_limit_is_capped() {
-        let range = resolve_code_read_range(10, None, None, Some(9999)).expect("must resolve");
-        assert_eq!(range.limit, CODE_READ_MAX_LINES);
+    fn a_limit_above_the_cap_is_refused() {
+        let error = resolve_code_read_range(10, None, None, Some(9999))
+            .expect_err("a limit above the cap must be refused");
+        assert_eq!(error, "limit must be at most 2000");
     }
 
     /// The limit must cut the window, not the window cut the limit.
@@ -206,6 +223,15 @@ mod tests {
         // Lines 1..=1000 inclusive: 1000 lines, not 999.
         assert_eq!(range.span(), 1000);
         assert_eq!(range.slice_end(), 10);
-        assert!(range.is_truncated(1000));
+        assert!(range.is_truncated());
+    }
+
+    /// An explicit range inside a long file was delivered whole, so it
+    /// is not truncated.
+    #[test]
+    fn an_explicit_range_inside_a_long_file_is_not_truncated() {
+        let range =
+            resolve_code_read_range(5000, Some(1), Some(10), None).expect("must resolve");
+        assert!(!range.is_truncated());
     }
 }

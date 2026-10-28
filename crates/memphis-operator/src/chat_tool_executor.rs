@@ -30,6 +30,11 @@ use crate::chat_memory::{
     value_string_array, value_usize,
 };
 use crate::chat_tool_catalog::tool_tier;
+use crate::code_read::{
+    assert_contained as assert_code_read_path_contained,
+    assert_not_blocked as assert_code_read_path_not_blocked, resolve_path as resolve_code_read_path,
+    split_lines as split_code_read_lines, CODE_READ_MAX_CONTENT_CHARS,
+};
 use crate::code_read_range::resolve_code_read_range;
 use memphis_case_index::CaseIndex;
 use memphis_core::case_entry::{CaseEntry, CaseQuery};
@@ -289,31 +294,24 @@ fn execute_native_tool_inner(
                 .and_then(Value::as_u64)
                 .map(|v| v as usize);
 
-            // Security: restrict to ~/memphis/
+            // Security: the same rules the TypeScript arm applies.
+            // Checking only that the path sat under ~/memphis/ was not
+            // enough: a symlink inside the workspace could read any
+            // file on the host.
             let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-            let memphis_dir = Path::new(&home).join("memphis");
-            let resolved_path = path_str.replace("~/", &home);
-            let resolved = Path::new(&resolved_path);
-            if !resolved.starts_with(&memphis_dir) {
-                return Err(OperatorError::Message(format!(
-                    "Path '{}' is outside the allowed ~/memphis/ directory",
-                    path_str
-                )));
+            let home_path = Path::new(&home);
+            let resolved = resolve_code_read_path(path_str, home_path);
+            if let Err(reason) = assert_code_read_path_not_blocked(&resolved) {
+                return Err(OperatorError::Message(reason));
             }
-
-            // Being under ~/memphis/ is not the same as safe to read: the
-            // operator's own .env and vault state live in that directory.
-            // The TypeScript surface has refused these since code_read
-            // landed (ALWAYS_BLOCKED_READ_PATTERNS); without this the native
-            // tool was a way around the boundary it was supposed to enforce.
-            if let Err(reason) = assert_path_not_secret_material(&resolved_path) {
+            if let Err(reason) = assert_code_read_path_contained(&resolved, home_path) {
                 return Err(OperatorError::Message(reason));
             }
 
-            let content = fs::read_to_string(resolved)
+            let content = fs::read_to_string(&resolved)
                 .map_err(|e| OperatorError::Message(format!("Failed to read file: {}", e)))?;
 
-            let lines: Vec<&str> = content.lines().collect();
+            let lines: Vec<&str> = split_code_read_lines(&content);
             let total_lines = lines.len();
 
             // The range is validated in one place, `code_read_range`,
@@ -327,8 +325,20 @@ fn execute_native_tool_inner(
                 .map_err(OperatorError::Message)?;
 
             let slice: Vec<&str> = lines.get(range.start..range.slice_end()).unwrap_or(&[]).to_vec();
-            let result_content = slice.join("\n");
-            let truncated = range.is_truncated(total_lines);
+            let mut result_content = slice.join("\n");
+            let mut truncated = range.is_truncated();
+            // The same marker the TypeScript arm appends, and the same
+            // content cap: the model reads one shape on both surfaces.
+            if truncated {
+                result_content.push_str("\n... (truncated)");
+            } else if result_content.chars().count() > CODE_READ_MAX_CONTENT_CHARS {
+                result_content = result_content
+                    .chars()
+                    .take(CODE_READ_MAX_CONTENT_CHARS)
+                    .collect::<String>()
+                    + "\n... (truncated)";
+                truncated = true;
+            }
 
             let json = serde_json::json!({
                 "path": path_str,
