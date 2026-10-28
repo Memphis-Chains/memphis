@@ -121,6 +121,9 @@ python3 scripts/basal/pilot_screen.py \
 
 It refuses an existing output directory, non-local endpoints, incompatible
 server metadata, malformed distributions and inconsistent typed readouts.
+Server layout, reported per-type temperatures and calibration warnings are
+checked against the supplied calibration. Explicit service deferral or
+unvalidated/media calibration prevents eligibility regardless of confidence.
 It saves the exact case/calibration hashes, model metadata, responses and
 per-type eligibility counts. `--limit` is only a smoke subset and its actual
 count appears in the report. Request timeout defaults to 120 seconds.
