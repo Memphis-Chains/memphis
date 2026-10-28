@@ -40,7 +40,7 @@ export interface MemphisClassifyInput {
   /**
    * Options, keyed. `{ "cards": "Reklamacje kart" }` gives you a key to
    * read in the result plus the description the model reasons over. A bare
-   * array is also accepted and the options double as keys.
+   * array is also accepted; score arrays receive ordinal keys 0..n-1.
    */
   criteria: Record<string, string> | string[];
   /** choice = pick one option, noul = yes/no, score = ordinal 0..n-1. */
@@ -154,6 +154,40 @@ async function readServicePayload(response: Response): Promise<ServiceResponse> 
   }
 }
 
+/** Model-specific advisory policy, resolved per call, with no process-global cache. */
+async function discoverThreshold(
+  endpoint: string,
+  model: string | null,
+  signal: AbortSignal,
+): Promise<number> {
+  try {
+    const index = endpoint.indexOf('/v1/');
+    const healthUrl =
+      index >= 0 ? endpoint.slice(0, index) + '/health' : new URL('/health', endpoint).toString();
+    const response = await fetch(healthUrl, {
+      signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      return DEFAULT_THRESHOLD;
+    }
+    const body: unknown = await readServicePayload(response);
+    if (
+      !isRecord(body) ||
+      (model !== null && typeof body.model === 'string' && model !== body.model)
+    )
+      return DEFAULT_THRESHOLD;
+    if (!isRecord(body.thresholds) || !isRecord(body.thresholds['0.01'])) return DEFAULT_THRESHOLD;
+    const value = body.thresholds['0.01'].confidence;
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0.5 && value < 1
+      ? value
+      : DEFAULT_THRESHOLD;
+  } catch {
+    if (signal.aborted) throw new DOMException('aborted', 'AbortError');
+    return DEFAULT_THRESHOLD;
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -253,7 +287,11 @@ export async function runMemphisClassify(
     };
   }
 
-  const options = normalizeCriteria(input.criteria);
+  const options = normalizeCriteria(input.criteria).map((option, index) =>
+    input.type === 'score' && Array.isArray(input.criteria)
+      ? { key: String(index), description: option.description }
+      : option,
+  );
   if (options.length < 2) {
     return {
       ok: false,
@@ -272,6 +310,7 @@ export async function runMemphisClassify(
 
   if (
     new Set(options.map((option) => option.key)).size !== options.length ||
+    (input.type === 'score' && options.some((option, index) => option.key !== String(index))) ||
     (input.type !== undefined && !['choice', 'noul', 'score'].includes(input.type)) ||
     (input.orders !== undefined && input.orders !== 1 && input.orders !== 2) ||
     (input.threshold !== undefined &&
@@ -280,12 +319,12 @@ export async function runMemphisClassify(
     return {
       ok: false,
       stateKind: 'bad-request',
-      error: 'Invalid classification options, type, orders or threshold',
+      error: 'Invalid classification policy; score object keys must be ordered positions 0..n-1',
     };
   }
 
   const type = input.type ?? 'choice';
-  const threshold =
+  let threshold =
     typeof input.threshold === 'number' && Number.isFinite(input.threshold)
       ? input.threshold
       : DEFAULT_THRESHOLD;
@@ -315,8 +354,16 @@ export async function runMemphisClassify(
       body: JSON.stringify(body),
       signal: controller.signal,
     });
-    if (response.ok) payload = await readServicePayload(response);
-    else await response.body?.cancel();
+    if (response.ok) {
+      payload = await readServicePayload(response);
+      if (input.threshold === undefined && isRecord(payload)) {
+        threshold = await discoverThreshold(
+          url,
+          typeof payload.model === 'string' ? payload.model : null,
+          controller.signal,
+        );
+      }
+    } else await response.body?.cancel();
   } catch (err) {
     const aborted =
       controller.signal.aborted || (err instanceof Error && err.name === 'AbortError');

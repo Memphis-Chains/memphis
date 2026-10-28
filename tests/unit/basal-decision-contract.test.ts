@@ -113,13 +113,17 @@ it('checks the ordinal expected score instead of trusting an unrelated number', 
     },
   };
   reply(payload);
-  expect(await runMemphisClassify({ ...input, type: 'score' }, {})).toMatchObject({
+  expect(
+    await runMemphisClassify({ ...input, type: 'score', criteria: ['Low', 'High'] }, {}),
+  ).toMatchObject({
     ok: true,
     score: 0.25,
   });
   payload.answers.k.score = 0.9;
   reply(payload);
-  expect(await runMemphisClassify({ ...input, type: 'score' }, {})).toMatchObject({ ok: false });
+  expect(
+    await runMemphisClassify({ ...input, type: 'score', criteria: ['Low', 'High'] }, {}),
+  ).toMatchObject({ ok: false });
 });
 
 it('rejects invalid caller policy before making a request', async () => {

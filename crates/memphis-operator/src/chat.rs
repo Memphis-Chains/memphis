@@ -322,7 +322,9 @@ impl OperatorRuntime {
         let user_content = if unsettled.is_empty() {
             wrapped_user.clone()
         } else {
-            format!("{wrapped_user}\n\n<unsettled_operations>\n{unsettled}\n</unsettled_operations>")
+            format!(
+                "{wrapped_user}\n\n<unsettled_operations>\n{unsettled}\n</unsettled_operations>"
+            )
         };
 
         let mut pending = vec![MessageToPersist {
@@ -761,9 +763,7 @@ mod tests {
     use memphis_core::case_entry::{CaseEntry, CaseQuery};
     use serde_json::Value;
 
-    use crate::chat_basal::{
-        basal_threshold_from_service, classify_reply_to_json, parse_basal_threshold,
-    };
+    use crate::chat_basal::{classify_reply_to_json, parse_basal_threshold};
     use crate::chat_guards::{
         assert_path_not_secret_material, load_json_file, scan_code_change_content,
         scan_memory_content, secret_exfiltration_patterns,
@@ -1962,7 +1962,7 @@ mod tests {
         unsafe { std::env::remove_var("MEMPHIS_BASAL_URL") };
     }
 
-    /// A reply recorded from the live service, shaped like the real one.
+    /// Synthetic, normalized fixture with the service response shape.
     fn recorded_basal_reply(choice: &str, confidence: f64) -> Value {
         json!({
             "model": "basal-1.0-1.5B",
@@ -1981,18 +1981,16 @@ mod tests {
         // 0.981 is what the live service actually returned for a clear
         // billing message; 0.670 is what it returned for an ambiguous one.
         let confident = classify_reply_to_json(
-            &recorded_basal_reply("ksiegowosc", 0.981),
+            &recorded_basal_reply("a", 0.981),
             "choice",
             "Ktora klasa sprawy?",
             "faktura ma blad",
             None,
             1,
+            &["a".to_string(), "b".to_string()],
         )
         .expect("parse confident reply");
-        assert_eq!(
-            confident.get("choice").and_then(Value::as_str),
-            Some("ksiegowosc")
-        );
+        assert_eq!(confident.get("choice").and_then(Value::as_str), Some("a"));
         assert_eq!(confident.get("auto").and_then(Value::as_bool), Some(true));
         // The reported threshold is whatever the loaded model calibrates
         // at, not a constant: basal-1.0-1.5B says 0.930, basal-1.5-mini
@@ -2004,19 +2002,20 @@ mod tests {
             .get("threshold")
             .and_then(Value::as_f64)
             .expect("threshold is reported");
-        assert_eq!(threshold, basal_threshold_from_service());
+        assert_eq!(threshold, 0.93);
         assert!(
             0.981 >= threshold,
             "the recorded confident reply must clear the threshold, got {threshold}"
         );
 
         let ambiguous = classify_reply_to_json(
-            &recorded_basal_reply("cards", 0.670),
+            &recorded_basal_reply("a", 0.670),
             "choice",
             "Ktora klasa sprawy?",
             "mam pytanie",
             None,
             1,
+            &["a".to_string(), "b".to_string()],
         )
         .expect("parse ambiguous reply");
         assert_eq!(ambiguous.get("auto").and_then(Value::as_bool), Some(false));
@@ -2026,11 +2025,27 @@ mod tests {
     fn classify_honors_a_caller_supplied_threshold() {
         // The same 0.670 reply: escalate at the default, act at 0.5. This is
         // the whole point of the confidence being calibrated.
-        let body = recorded_basal_reply("cards", 0.670);
-        let strict =
-            classify_reply_to_json(&body, "choice", "q", "s", None, 1).expect("parse at default");
-        let lenient =
-            classify_reply_to_json(&body, "choice", "q", "s", Some(0.5), 1).expect("parse at 0.5");
+        let body = recorded_basal_reply("a", 0.670);
+        let strict = classify_reply_to_json(
+            &body,
+            "choice",
+            "q",
+            "s",
+            None,
+            1,
+            &["a".to_string(), "b".to_string()],
+        )
+        .expect("parse at default");
+        let lenient = classify_reply_to_json(
+            &body,
+            "choice",
+            "q",
+            "s",
+            Some(0.5),
+            1,
+            &["a".to_string(), "b".to_string()],
+        )
+        .expect("parse at 0.5");
         assert_eq!(strict.get("auto").and_then(Value::as_bool), Some(false));
         assert_eq!(lenient.get("auto").and_then(Value::as_bool), Some(true));
         assert_eq!(lenient.get("threshold").and_then(Value::as_f64), Some(0.5));
@@ -2046,13 +2061,90 @@ mod tests {
             "s",
             None,
             1,
+            &["a".to_string(), "b".to_string()],
         )
         .expect_err("loading must be an error");
         assert!(error.to_string().contains("still loading"), "{error}");
 
-        let missing = classify_reply_to_json(&json!({ "ok": true }), "choice", "q", "s", None, 1)
-            .expect_err("a reply with no answer must be an error");
+        let missing = classify_reply_to_json(
+            &json!({ "ok": true }),
+            "choice",
+            "q",
+            "s",
+            None,
+            1,
+            &["a".to_string(), "b".to_string()],
+        )
+        .expect_err("a reply with no answer must be an error");
         assert!(missing.to_string().contains("no answer"), "{missing}");
+    }
+
+    #[test]
+    fn classify_summary_honors_service_deferral() {
+        use std::io::{BufRead, Read, Write};
+        use std::net::TcpListener;
+        let _guard = basal_env_guard();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let endpoint = format!("http://{}/v1/systemone", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error)
+                        if error.kind() == std::io::ErrorKind::WouldBlock
+                            && std::time::Instant::now() < deadline =>
+                    {
+                        std::thread::sleep(std::time::Duration::from_millis(5))
+                    }
+                    Err(error) => panic!("synthetic endpoint: {error}"),
+                }
+            };
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                .unwrap();
+            let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            let mut length = 0;
+            loop {
+                line.clear();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" || line.is_empty() {
+                    break;
+                }
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = value.trim().parse::<usize>().unwrap();
+                }
+            }
+            reader.read_exact(&mut vec![0; length]).unwrap();
+            let body = json!({"model":"synthetic","answers":{"k":{"type":"choice","choice":"a","probabilities":{"a":0.99,"b":0.01},"confidence":0.99,"deferred":true}}}).to_string();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+        });
+        let previous = std::env::var("MEMPHIS_BASAL_URL").ok();
+        unsafe { std::env::set_var("MEMPHIS_BASAL_URL", endpoint) };
+        let root = temp_runtime_root("classify-deferred-summary");
+        let runtime = runtime_for(root.as_path());
+        let result = execute_native_tool(
+            &runtime,
+            &classify_call(
+                json!({"state":"public fixture","question":"synthetic","criteria":{"a":"Alpha","b":"Beta"},"threshold":0.93}),
+            ),
+            2,
+        );
+        match previous {
+            Some(value) => unsafe { std::env::set_var("MEMPHIS_BASAL_URL", value) },
+            None => unsafe { std::env::remove_var("MEMPHIS_BASAL_URL") },
+        }
+        server.join().unwrap();
+        let (display, _) = result.unwrap();
+        assert!(display.contains("auto=false"), "{display}");
     }
 
     /// Live probe against the running BASAL service. `#[ignore]`d because it
@@ -2405,12 +2497,13 @@ mod tests {
         // A caller that passes `threshold` means it; the service value is
         // only a default, never an override.
         let json = classify_reply_to_json(
-            &json!({"answers": {"k": {"confidence": 0.9, "choice": "a"}}, "usage": {}}),
+            &recorded_basal_reply("a", 0.9),
             "choice",
             "q",
             "s",
             Some(0.5),
             2,
+            &["a".to_string(), "b".to_string()],
         )
         .expect("reply parses");
         assert_eq!(json["threshold"], json!(0.5));
@@ -2422,16 +2515,17 @@ mod tests {
         // With no explicit threshold the decision must use the service's
         // own calibration, not 0.93.
         let json = classify_reply_to_json(
-            &json!({"answers": {"k": {"confidence": 0.95, "choice": "a"}}, "usage": {}}),
+            &recorded_basal_reply("a", 0.95),
             "choice",
             "q",
             "s",
             None,
             2,
+            &["a".to_string(), "b".to_string()],
         )
         .expect("reply parses");
         let threshold = json["threshold"].as_f64().expect("threshold is a number");
-        assert_eq!(threshold, basal_threshold_from_service());
+        assert_eq!(threshold, 0.93);
         assert_eq!(
             json["auto"],
             json!(0.95 >= threshold),
@@ -2446,19 +2540,18 @@ mod tests {
         // a hardcoded `true` disagrees here. Read against the value the
         // service reports rather than a literal, so the test keeps meaning
         // something when the model is swapped again.
-        let threshold = basal_threshold_from_service();
+        let threshold = 0.93;
         let below = threshold - 0.01;
         let json = classify_reply_to_json(
             &json!({
-                "answers": {"k": {"confidence": below, "choice": "a"}},
+                "answers": {"k": {"type":"choice", "confidence": below, "choice": "a", "probabilities":{"a":below,"b":1.0-below}}},
                 "usage": {}
             }),
             "choice",
             "q",
             "s",
             None,
-            2,
-        )
+            2, &["a".to_string(), "b".to_string()])
         .expect("reply parses");
         assert_eq!(json["auto"], json!(false), "{below} is under {threshold}");
     }
