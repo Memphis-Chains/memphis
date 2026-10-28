@@ -1219,6 +1219,76 @@ pub(crate) fn search_result_to_json(result: &MemoryQueryResult) -> Value {
     }
 }
 
+/// The vector preview is a UI summary, not the durable memory supplied to chat.
+pub(crate) fn recall_result_with_sources(
+    runtime: &OperatorRuntime,
+    result: &MemoryQueryResult,
+) -> Result<Value, OperatorError> {
+    let mut payload = search_result_to_json(result);
+    if result.mode != SearchMode::Semantic {
+        return Ok(payload);
+    }
+    let mut chains: BTreeMap<String, Vec<GenericChainBlock>> = BTreeMap::new();
+    let mut emitted = HashSet::new();
+    let mut rows = Vec::new();
+    for hit in &result.semantic_hits {
+        let base = hit
+            .id
+            .rsplit_once("#c")
+            .filter(|(_, suffix)| {
+                !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+            })
+            .map(|(base, _)| base)
+            .unwrap_or(hit.id.as_str());
+        let chain = hit
+            .tags
+            .iter()
+            .find_map(|tag| tag.strip_prefix("chain:"))
+            .map(memphis_paths::normalize_chain_name)
+            .filter(|chain| validate_chain_name(chain).is_ok());
+        let mut source = None;
+        if let Some(chain) = chain {
+            if !chains.contains_key(chain) {
+                let blocks =
+                    read_chain_blocks(&runtime.config.data_dir.join("chains").join(chain))?;
+                chains.insert(chain.to_string(), blocks);
+            }
+            source = chains.get(chain).and_then(|blocks| {
+                blocks.iter().find(|block| {
+                    block.data.get("memory_id").and_then(Value::as_str) == Some(base)
+                        || format!("{chain}-{}", block.index) == base
+                })
+            });
+        }
+        let content = source
+            .and_then(|block| block.data.get("content").and_then(Value::as_str))
+            .unwrap_or(hit.preview.as_str());
+        if scan_memory_content(content).is_err() {
+            continue;
+        }
+        let key = source
+            .map(|block| format!("{}:{}", block.chain, block.index))
+            .unwrap_or_else(|| format!("{}:{base}", chain.unwrap_or_default()));
+        if !emitted.insert(key.clone()) {
+            continue;
+        }
+        let mut row = json!({
+            "id": base, "score": hit.score, "tags": hit.tags,
+            "preview": truncate_with_ellipsis(content, 160),
+            "content": content,
+            "contentSource": if source.is_some() { "chain" } else { "preview" },
+        });
+        if let Some(block) = source {
+            row["sourceKey"] = json!(key);
+            row["sourceHash"] = json!(block.hash);
+        }
+        rows.push(row);
+    }
+    payload["count"] = json!(rows.len());
+    payload["results"] = json!(rows);
+    Ok(payload)
+}
+
 #[cfg(test)]
 mod tests {
     use super::summarize_content;

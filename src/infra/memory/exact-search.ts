@@ -22,6 +22,45 @@ type RawChainBlock = {
   data: Record<string, unknown>;
 };
 
+export type RecallSourceReference = { memoryId: string; chain?: string };
+
+/** Resolve vector hits to durable content without using their shortened previews.
+ * Read each requested chain once. IDs are compared as data, never used as paths.
+ */
+export function resolveRecallSources(
+  references: RecallSourceReference[],
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): Map<string, ExactSearchIndexEntryInput> {
+  const wanted = new Set(references.map((ref) => `${ref.chain ?? ''}:${ref.memoryId}`));
+  const chains = new Set(
+    references
+      .map((ref) => normalizeChainName(ref.chain))
+      .filter((chain): chain is string => Boolean(chain && SEARCHABLE_CHAINS.has(chain))),
+  );
+  const resolved = new Map<string, ExactSearchIndexEntryInput>();
+  for (const chain of chains) {
+    for (const block of readChainBlocks(chain, rawEnv)) {
+      const defaultId = `${chain}-${block.index}`;
+      const memoryId =
+        typeof block.data.memory_id === 'string' && block.data.memory_id.trim()
+          ? block.data.memory_id.trim()
+          : defaultId;
+      const keys = [`${chain}:${memoryId}`, `${chain}:${defaultId}`].filter((key) =>
+        wanted.has(key),
+      );
+      if (keys.length === 0) continue;
+      const entry = deriveExactSearchEntry({
+        chain,
+        index: block.index,
+        hash: block.hash,
+        data: block.data,
+      });
+      if (entry) for (const key of keys) resolved.set(key, entry);
+    }
+  }
+  return resolved;
+}
+
 export type ExactSearchOutput = {
   query: string;
   count: number;

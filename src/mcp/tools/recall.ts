@@ -1,6 +1,10 @@
 import { inspectPromptFragment } from '../../gateway/prompt-boundary.js';
 import { baseMemoryIdFromChunkId } from '../../infra/memory/embed-reindex.js';
-import { searchChainsDirectly, searchExactMemory } from '../../infra/memory/exact-search.js';
+import {
+  resolveRecallSources,
+  searchChainsDirectly,
+  searchExactMemory,
+} from '../../infra/memory/exact-search.js';
 import { embedSearch, type EmbedSearchHit } from '../../infra/storage/rust-embed-adapter.js';
 import type { ExactSearchHit } from '../../infra/storage/sqlite/repositories/memory-search-repository.js';
 
@@ -23,6 +27,8 @@ export type MemphisRecallOutput = {
     tags: string[];
     chain?: string;
     sourceKey?: string;
+    sourceHash?: string;
+    contentSource?: 'chain' | 'preview';
   }>;
 };
 
@@ -30,6 +36,7 @@ export type RecallDeps = {
   search?: typeof embedSearch;
   exactSearch?: typeof searchExactMemory;
   chainSearch?: typeof searchChainsDirectly;
+  resolveSources?: typeof resolveRecallSources;
   rawEnv?: NodeJS.ProcessEnv;
 };
 
@@ -57,7 +64,11 @@ function semanticSearchTags(tags: string[] | undefined, chain?: string): string[
   return merged.length > 0 ? Array.from(new Set(merged)) : undefined;
 }
 
-function mapSemanticHits(hits: EmbedSearchHit[]): MemphisRecallOutput['results'] {
+function mapSemanticHits(
+  hits: EmbedSearchHit[],
+  resolveSources: typeof resolveRecallSources,
+  rawEnv?: NodeJS.ProcessEnv,
+): MemphisRecallOutput['results'] {
   // Dedup chunks back to their source block (Codex review #585 — when
   // a long insight is split into N overlapping chunks via
   // `chunkForEmbed`, each chunk lands in the index with id `<base>#cN`
@@ -81,17 +92,25 @@ function mapSemanticHits(hits: EmbedSearchHit[]): MemphisRecallOutput['results']
   // determined by its original rank, not by Map iteration order).
   const emitted = new Set<string>();
   const results: MemphisRecallOutput['results'] = [];
+  const sources = resolveSources(
+    Array.from(bestByBase, ([memoryId, hit]) => ({ memoryId, chain: getChainTag(hit.tags) })),
+    rawEnv,
+  );
   for (const hit of hits) {
     const base = baseMemoryIdFromChunkId(hit.id);
     if (emitted.has(base)) continue;
     const best = bestByBase.get(base) ?? hit;
     emitted.add(base);
+    const chain = getChainTag(best.tags);
+    const source = sources.get(`${chain ?? ''}:${base}`);
     results.push({
-      content: best.text_preview,
+      content: source?.content ?? best.text_preview,
       score: best.score,
-      tags: best.tags ?? [],
-      chain: getChainTag(best.tags),
-      sourceKey: base,
+      tags: source ? [...source.tags, `chain:${source.chain}`] : (best.tags ?? []),
+      chain: source?.chain ?? chain,
+      sourceKey: source?.sourceKey ?? base,
+      ...(source ? { sourceHash: source.blockHash } : {}),
+      contentSource: source ? 'chain' : 'preview',
     });
   }
   return results;
@@ -172,7 +191,11 @@ export function runMemphisRecall(
       rawEnv,
       semanticSearchTags(tags, input.chain),
     );
-    const semanticHits = mapSemanticHits(out.hits)
+    const semanticHits = mapSemanticHits(
+      out.hits,
+      deps.resolveSources ?? resolveRecallSources,
+      rawEnv,
+    )
       .filter((hit) => !input.chain || hit.chain === input.chain)
       .slice(0, limit);
     const safeSemanticHits = filterUnsafeRecallHits(semanticHits, warnings);
@@ -209,11 +232,7 @@ export function runMemphisRecall(
     );
     const chainHits = mapExactHits(out.hits).slice(0, limit);
     const safeChainHits = filterUnsafeRecallHits(chainHits, warnings);
-    return finalizeRecall(
-      safeChainHits.length > 0 ? 'chain' : 'none',
-      safeChainHits,
-      warnings,
-    );
+    return finalizeRecall(safeChainHits.length > 0 ? 'chain' : 'none', safeChainHits, warnings);
   } catch (error) {
     warnings.push(error instanceof Error ? error.message : String(error));
   }
