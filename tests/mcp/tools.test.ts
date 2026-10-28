@@ -48,7 +48,14 @@ describe('mcp tools', () => {
       degraded: false,
       warning: undefined,
       results: [
-        { content: 'memory', score: 0.9, tags: ['test'], chain: undefined, sourceKey: '1' },
+        {
+          content: 'memory',
+          score: 0.9,
+          tags: ['test'],
+          chain: undefined,
+          sourceKey: '1',
+          contentSource: 'preview',
+        },
       ],
     });
   });
@@ -86,6 +93,7 @@ describe('mcp tools', () => {
         tags: ['test', 'chain:journal'],
         chain: 'journal',
         sourceKey: 'journal-1',
+        contentSource: 'preview',
       },
     ]);
   });
@@ -199,7 +207,11 @@ describe('mcp tools', () => {
 
     const out = runMemphisRecall(
       { query: 'my place', limit: 3 },
-      { search: search as never, exactSearch: exactSearch as never, chainSearch: chainSearch as never },
+      {
+        search: search as never,
+        exactSearch: exactSearch as never,
+        chainSearch: chainSearch as never,
+      },
     );
 
     expect(out.mode).toBe('none');
