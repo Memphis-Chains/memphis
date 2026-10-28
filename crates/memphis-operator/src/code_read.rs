@@ -13,8 +13,13 @@ use std::path::{Component, Path, PathBuf};
 /// The hard cap on the size of the returned content, in characters.
 pub const CODE_READ_MAX_CONTENT_CHARS: usize = 500_000;
 
-/// The label of a path segment that is never readable, if it is one.
-fn blocked_segment(segment: &str) -> Option<&'static str> {
+/// The label of a path segment that is never readable or writable, if
+/// it is one.
+///
+/// The list lives here so the read path and the write path cannot
+/// drift apart: the write path used to carry its own copy, whose
+/// `node_modules/` pattern never matched a path segment.
+pub(crate) fn blocked_segment(segment: &str) -> Option<&'static str> {
     match segment {
         ".env" => Some(".env"),
         "vault-state.json" => Some("vault-state.json"),
@@ -58,6 +63,13 @@ pub fn resolve_path(input: &str, home: &Path) -> PathBuf {
     out
 }
 
+/// The refusal message for a blocked path. The same words in both arms.
+pub(crate) fn blocked_path_message(path: &str, label: &str) -> String {
+    format!(
+        "Path '{path}' is blocked because it matches {label} and may contain secrets or generated state"
+    )
+}
+
 /// Refuse a path that names secret material or generated state.
 pub fn assert_not_blocked(resolved: &Path) -> Result<(), String> {
     for segment in resolved.to_string_lossy().split('/') {
@@ -65,10 +77,7 @@ pub fn assert_not_blocked(resolved: &Path) -> Result<(), String> {
             continue;
         }
         if let Some(label) = blocked_segment(segment) {
-            return Err(format!(
-                "Path '{}' is blocked because it matches {label} and may contain secrets or generated state",
-                resolved.to_string_lossy()
-            ));
+            return Err(blocked_path_message(&resolved.to_string_lossy(), label));
         }
     }
     Ok(())

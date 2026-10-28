@@ -312,25 +312,17 @@ pub(crate) fn secret_exfiltration_patterns(
 /// skipping, so the refusal is legible in the TUI.
 
 pub(crate) fn assert_path_not_secret_material(resolved: &str) -> Result<(), String> {
-    const BLOCKED: &[(&str, fn(&str) -> bool)] = &[
-        (".env", |p: &str| p == ".env" || p.starts_with(".env.")),
-        ("vault-state.json", |p: &str| p == "vault-state.json"),
-        ("vault-entries.json", |p: &str| p == "vault-entries.json"),
-        (".git/", |p: &str| p == ".git" || p.starts_with(".git/")),
-        ("node_modules/", |p: &str| p.starts_with("node_modules/")),
-    ];
-
-    // Match on any path segment, so `src/.env` is refused like `.env`.
+    // The list of blocked segments lives in `code_read`, because that
+    // is where the `memphis_code_read` contract keeps it. This
+    // function used to carry a second copy, whose `node_modules/`
+    // pattern never matched a path segment -- so the write path
+    // allowed what the read path refused.
     for segment in resolved.split('/') {
         if segment.is_empty() || segment == "." {
             continue;
         }
-        for (label, matches) in BLOCKED {
-            if matches(segment) {
-                return Err(format!(
-                    "Path '{resolved}' is blocked because it matches {label} and may contain secrets or generated state"
-                ));
-            }
+        if let Some(label) = crate::code_read::blocked_segment(segment) {
+            return Err(crate::code_read::blocked_path_message(resolved, label));
         }
     }
     Ok(())

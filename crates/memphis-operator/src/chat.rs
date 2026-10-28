@@ -2955,6 +2955,21 @@ mod tests {
         );
     }
 
+    /// The write path must refuse what the read path refuses.
+    ///
+    /// `assert_path_not_secret_material` carried its own copy of the
+    /// blocked-segment list, and that copy's `node_modules/` pattern
+    /// never matched a path segment -- so the write path allowed what
+    /// the read path refused.
+    #[test]
+    fn the_write_path_refuses_the_same_segments() {
+        assert!(assert_path_not_secret_material("/home/memphis/memphis/node_modules/pkg/i.js")
+            .is_err());
+        assert!(assert_path_not_secret_material("/home/memphis/memphis/.env").is_err());
+        assert!(assert_path_not_secret_material("/home/memphis/memphis/src/.env").is_err());
+        assert!(assert_path_not_secret_material("/home/memphis/memphis/src/index.ts").is_ok());
+    }
+
     /// The two layers assign tiers independently, and they disagreed.
     ///
     /// `memphis_code_read` is tier 2 in src/gateway/tool-registry/
