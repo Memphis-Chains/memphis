@@ -68,7 +68,22 @@ export type CompactionPressure = {
   recentMessages: number;
 };
 
+export type BasalPromptClassification = {
+  status: 'classified' | 'unavailable';
+  contentHash: string;
+  inputBytes: number;
+  classifiedBytes: number;
+  truncated: boolean;
+  latencyMs: number;
+  uncertain: boolean;
+  intent?: 'clarify' | 'conversation' | 'correction' | 'execute' | 'recall' | 'remember';
+  confidence?: number;
+  threshold?: number;
+  failureReason?: string;
+};
+
 export type RuntimeTelemetry = {
+  basalPromptClassification?: BasalPromptClassification;
   usage?: TokenUsage;
   contextWindowTokens?: number;
   /**

@@ -12,9 +12,10 @@ import {
   readAskSession,
   selectContextTurns,
 } from '../../../core/ask-session-store.js';
-import type { RequestedProviderName } from '../../../core/types.js';
+import type { RequestedProviderName, RuntimeTelemetry } from '../../../core/types.js';
 
 type AskGenerateResult = {
+  telemetry?: RuntimeTelemetry;
   id: string;
   providerUsed: string;
   modelUsed?: string;
@@ -63,6 +64,7 @@ function toAskGenerateResult(result: Awaited<ReturnType<typeof runChatTurn>>): A
     output: result.output,
     timingMs: result.timingMs,
     usage: { outputTokens: estimateTokens(result.output) },
+    ...(result.telemetry ? { telemetry: result.telemetry } : {}),
   };
 }
 
@@ -135,7 +137,10 @@ export async function runAskSessionTurn(params: {
   );
   if (deterministicRecall) {
     appendAskSessionExchange(params.session, params.rawInput, deterministicRecall.output);
-    const refreshedStats = askSessionStats(readAskSession(params.session, process.env), process.env);
+    const refreshedStats = askSessionStats(
+      readAskSession(params.session, process.env),
+      process.env,
+    );
     if (params.json) {
       print({ ...deterministicRecall, session: params.session, context: refreshedStats }, true);
       return { exit: false };

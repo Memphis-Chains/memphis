@@ -1,6 +1,7 @@
+mod chain_write_lock;
 mod chat;
 mod chat_basal;
-mod chain_write_lock;
+mod chat_basal_prompt;
 mod chat_context_guard;
 mod chat_guards;
 mod chat_memory;
@@ -19,6 +20,7 @@ mod text_truncation;
 mod think_stripper;
 
 pub use chat::{ChatExchange, ChatSessionView, ChatTranscriptEntry, JournalWriteResult};
+pub use chat_basal_prompt::BasalPromptClassification;
 pub use config::OperatorConfig;
 pub use provider::{
     ChatMessage, ChatRequestOptions, ChatStreamEvent, ChatToolCall, ChatToolDefinition,
