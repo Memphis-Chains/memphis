@@ -2883,18 +2883,36 @@ mod tests {
     /// `memphis_grep` caps its results with `limit` in the registry. The
     /// native arm called the cap `maxResults`, ignored `context` and
     /// `ignoreCase` altogether, and had no cap the registry agreed on.
+    ///
+    /// The probe is written by the test itself, under ~/memphis: the
+    /// native arm only searches there, and in CI HOME is a fresh
+    /// temporary directory with no checkout in it. Pointing the test at
+    /// a file of the repository passed on the operator's machine and
+    /// found nothing in CI -- where it counted zero hits instead of
+    /// one, because the case-insensitive pattern matched nothing.
     #[test]
     fn native_grep_honours_the_registry_parameters() {
         let root = temp_runtime_root("native-grep-registry-shape");
         let runtime = runtime_for(root.as_path());
         let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
+        let probe_dir = std::path::Path::new(&home)
+            .join("memphis")
+            .join(".memphis-grep-probe");
+        std::fs::create_dir_all(&probe_dir).expect("probe dir");
+        // Two files, one hit each: `limit` must cut the result to one
+        // line, and `ignoreCase` must make "PUB FN" match "pub fn".
+        // Without the case-insensitive flag there would be no hit at
+        // all, and without the cap there would be two.
+        for name in ["alpha.rs", "beta.rs"] {
+            std::fs::write(probe_dir.join(name), "pub fn sample() {}\n").expect("write probe");
+        }
 
         let call = ChatToolCall {
             id: "grep-call".to_string(),
             name: "memphis_grep".to_string(),
             arguments: json!({
-                "pattern": "pub fn",
-                "path": format!("{home}/memphis/crates/memphis-operator/src/code_read.rs"),
+                "pattern": "PUB FN",
+                "path": probe_dir.to_string_lossy(),
                 "limit": 1,
                 "context": 0,
                 "ignoreCase": true,
@@ -2903,9 +2921,14 @@ mod tests {
 
         let (_summary, payload) = execute_native_tool(&runtime, &call, 2)
             .expect("the registry's shape must work");
+        let _ = std::fs::remove_dir_all(&probe_dir);
         assert!(
             payload.contains("\"count\":1"),
             "the cap the registry advertises must be the cap the arm applies: {payload}"
+        );
+        assert!(
+            payload.contains("sample"),
+            "a case-insensitive search must find the lowercase hit: {payload}"
         );
     }
 
@@ -3017,6 +3040,10 @@ mod tests {
         let outside =
             std::env::temp_dir().join(format!("memphis-write-escape-{}", std::process::id()));
         let link = workspace.join(".memphis-write-escape-link");
+        // Same reason as the range probe above: ~/memphis does not exist
+        // in a fresh CI HOME, and a symlink cannot be created in a
+        // directory that is not there.
+        std::fs::create_dir_all(&workspace).expect("workspace dir");
         let _ = std::fs::remove_file(&outside);
         let _ = std::fs::remove_file(&link);
         std::os::unix::fs::symlink(&outside, &link).expect("create the symlink");
