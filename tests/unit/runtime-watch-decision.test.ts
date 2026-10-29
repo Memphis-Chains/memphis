@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { runtimeWatchFailures } from '../../src/infra/runtime/scheduler-builtins.js';
+import {
+  describeHealthFailure,
+  runtimeWatchFailures,
+} from '../../src/infra/runtime/scheduler-builtins.js';
 
 describe('runtime watch decision', () => {
   // The alert used to fire on the 7-day SLO, so ONE failed turn in a week
@@ -67,5 +70,61 @@ describe('runtime watch decision', () => {
       failingSlos: ['provider_error_rate'],
     });
     expect(failures).toEqual([]);
+  });
+
+  // Measured 2026-10-29: the watch alerted `health=unhealthy` and the
+  // message named nothing but the status. An alert that does not say
+  // what broke is not a diagnosis.
+  it('names the unhealthy part in the alert message', () => {
+    const failures = runtimeWatchFailures({
+      healthStatus: 'unhealthy',
+      healthDetail: 'repair=degraded-repairable: exact-search derived state needs repair',
+      recent: { turn: null, provider: null, tool: null },
+      failingSlos: [],
+    });
+    expect(failures).toEqual([
+      'health=unhealthy (repair=degraded-repairable: exact-search derived state needs repair)',
+    ]);
+  });
+
+  it('keeps the bare status when there is no detail to give', () => {
+    const failures = runtimeWatchFailures({
+      healthStatus: 'unhealthy',
+      recent: { turn: null, provider: null, tool: null },
+      failingSlos: [],
+    });
+    expect(failures).toEqual(['health=unhealthy']);
+  });
+});
+
+describe('describeHealthFailure', () => {
+  it('names the repair state and its first reason', () => {
+    const detail = describeHealthFailure({
+      runtime: {
+        repair: {
+          status: 'degraded-repairable',
+          reasons: ['exact-search derived state needs repair'],
+        },
+      },
+    });
+    expect(detail).toBe('repair=degraded-repairable: exact-search derived state needs repair');
+  });
+
+  it('falls back to a failing check when the repair state is healthy', () => {
+    const detail = describeHealthFailure({
+      runtime: { repair: { status: 'healthy', reasons: [] } },
+      checks: {
+        database: { status: 'fail', message: 'database file is not writable' },
+      },
+    });
+    expect(detail).toBe('check=database=fail: database file is not writable');
+  });
+
+  it('returns nothing for a healthy payload', () => {
+    const detail = describeHealthFailure({
+      runtime: { repair: { status: 'healthy', reasons: [] } },
+      checks: { database: { status: 'ok' } },
+    });
+    expect(detail).toBeUndefined();
   });
 });
