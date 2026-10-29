@@ -18,8 +18,8 @@ use sha2::{Digest, Sha256};
 
 use crate::chat::PromptRiskClassification;
 use crate::chat_memory::append_generic_block;
-use crate::OperatorError;
 use crate::text_truncation::truncate_with_ellipsis;
+use crate::OperatorError;
 use crate::OperatorRuntime;
 
 pub(crate) fn build_wrapped_segment(
@@ -145,18 +145,20 @@ pub(crate) fn emit_runtime_security_event(
     status: &str,
     details: Value,
 ) -> Result<(), OperatorError> {
-    append_generic_block(
-        &runtime.config.data_dir,
-        "system",
-        json!({
-            "type": "security_event",
-            "action": action,
-            "status": status,
-            "details": sanitize_json(details),
-            "timestamp": Utc::now().to_rfc3339(),
-        }),
-    )
-    .map(|_| ())
+    // The canonical reader and first-run health check require all three
+    // BlockData fields. Preserve structured audit fields for existing readers;
+    // bind the same sanitized event into content so canonical hashes cover it.
+    let mut data = json!({
+        "type": "system_event",
+        "kind": "security_event",
+        "action": action,
+        "status": status,
+        "details": sanitize_json(details),
+        "timestamp": Utc::now().to_rfc3339(),
+    });
+    data["content"] = Value::String(data.to_string());
+    data["tags"] = json!(["security", action]);
+    append_generic_block(&runtime.config.data_dir, "system", data).map(|_| ())
 }
 
 pub(crate) fn sanitize_json(value: Value) -> Value {
@@ -397,6 +399,96 @@ pub(crate) fn write_json_file(path: &Path, value: &Value) -> Result<(), Operator
 mod tests {
     use super::sanitize_json;
     use serde_json::Value;
+
+    fn audit_runtime() -> crate::OperatorRuntime {
+        let root = std::env::temp_dir().join(format!(
+            "memphis-audit-contract-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let config = crate::config::OperatorConfig::from_iter([
+            ("HOME".to_string(), root.to_string_lossy().into_owned()),
+            (
+                "MEMPHIS_DATA_DIR".to_string(),
+                root.to_string_lossy().into_owned(),
+            ),
+            ("DEFAULT_PROVIDER".to_string(), "local-fallback".to_string()),
+        ]);
+        crate::OperatorRuntime { config }
+    }
+
+    #[test]
+    fn native_security_events_satisfy_the_canonical_block_contract() {
+        let runtime = audit_runtime();
+        for action in [
+            "basal.prompt.classified",
+            "prompt.input.flagged",
+            "prompt.output.redacted",
+        ] {
+            super::emit_runtime_security_event(
+                &runtime,
+                action,
+                "allowed",
+                serde_json::json!({"fixture": true}),
+            )
+            .unwrap();
+        }
+        let blocks =
+            crate::chat_memory::read_chain_blocks(&runtime.config.data_dir.join("chains/system"))
+                .unwrap();
+        assert_eq!(blocks.len(), 3);
+        for block in blocks {
+            let core: memphis_core::block::Block = serde_json::from_value(serde_json::json!({
+                "index": block.index, "timestamp": block.timestamp, "chain": block.chain,
+                "data": block.data, "prev_hash": block.prev_hash, "hash": block.hash,
+            }))
+            .expect("native audit must deserialize as canonical BlockData");
+            assert!(matches!(
+                core.data.block_type,
+                memphis_core::block::BlockType::SystemEvent
+            ));
+            assert_eq!(core.data.tags[0], "security");
+            let content: Value = serde_json::from_str(&core.data.content).unwrap();
+            assert_eq!(content["kind"], "security_event");
+            assert_eq!(content["details"]["fixture"], true);
+        }
+    }
+
+    #[test]
+    fn basal_audit_keeps_classification_metadata_in_hash_covered_content() {
+        let runtime = audit_runtime();
+        let classification: crate::chat_basal_prompt::BasalPromptClassification =
+            serde_json::from_value(serde_json::json!({
+                "status": "classified", "contentHash": "0".repeat(64), "inputBytes": 7,
+                "classifiedBytes": 7, "truncated": false, "latencyMs": 1, "uncertain": false,
+                "intent": "conversation", "confidence": 0.97, "threshold": 0.95,
+            }))
+            .unwrap();
+        crate::chat_basal_prompt::audit_basal_prompt_classification(&runtime, &classification)
+            .unwrap();
+        let blocks =
+            crate::chat_memory::read_chain_blocks(&runtime.config.data_dir.join("chains/system"))
+                .unwrap();
+        let data = &blocks[0].data;
+        assert_eq!(data["type"], "system_event");
+        assert_eq!(data["action"], "basal.prompt.classified");
+        assert!(data["content"].is_string());
+        assert!(data["tags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(Value::is_string));
+        let content: Value = serde_json::from_str(data["content"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            content["details"]["contentHash"],
+            classification.content_hash
+        );
+        assert_eq!(content["details"]["intent"], "conversation");
+        assert_eq!(content["details"]["confidence"], 0.97);
+    }
 
     /// A tool result in Polish is longer than 300 bytes and carries
     /// multi-byte characters. The cut has to land on a character
