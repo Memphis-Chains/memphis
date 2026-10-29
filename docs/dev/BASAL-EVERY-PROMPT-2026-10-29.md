@@ -11,6 +11,10 @@ the user again. Control commands that do not enter a dialogue turn and explicit
 `provider-only` diagnostics keep their separate paths; they are not user turns
 through the canonical chat runtime.
 
+The local-fallback ask-session shortcut for “What did I just say?” also
+classifies once before printing its source-based answer and exposes the same
+metadata. Session control commands such as `/context` do not classify.
+
 ## Intent and use
 
 The same fixed question and alphabetically ordered criteria are used by Node
@@ -74,7 +78,7 @@ arbitrary backend error body or credentials. Native audit events use the
 canonical chain writer.
 
 Local verification passed 220 native unit tests plus the canonical-hash
-integration test. Node checks covered classification, the existing turn runtime,
+integration test and 120 distinct Node tests. Node checks covered classification, the existing turn runtime,
 probability/native contracts, config controls and CLI paths. Shared fixtures
 check the exact question, options, guidance and shortening contract.
 

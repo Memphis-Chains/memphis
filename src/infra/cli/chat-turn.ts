@@ -71,7 +71,7 @@ export async function runChatTurn(state: ChatState, input: string): Promise<Chat
       model: result.model,
       timingMs: result.timingMs,
       output: result.output,
-      ...(result.telemetry.basalPromptClassification ? { telemetry: result.telemetry } : {}),
+      ...(result.telemetry?.basalPromptClassification ? { telemetry: result.telemetry } : {}),
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

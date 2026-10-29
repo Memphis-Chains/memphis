@@ -1,8 +1,11 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { afterEach, expect, it, vi } from 'vitest';
 
+import { appendAskSessionTurn } from '../../src/core/ask-session-store.js';
 import {
   BASAL_PROMPT_CRITERIA,
   BASAL_PROMPT_GUIDANCE,
@@ -17,6 +20,7 @@ import {
   shortenBasalPrompt,
 } from '../../src/gateway/basal-prompt-classification.js';
 import { runTurnRuntime } from '../../src/gateway/turn-runtime.js';
+import { runAskSessionTurn } from '../../src/infra/cli/utils/ask-session.js';
 import { generateResponseSchema } from '../../src/infra/http/contracts.js';
 
 const enabled = { MEMPHIS_BASAL_PROMPT_ENABLED: 'true' };
@@ -53,7 +57,51 @@ function mockService(payload: unknown = answer()) {
 }
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
   vi.useRealTimers();
+});
+
+it('classifies the local ask-session recall shortcut once before printing its answer', async () => {
+  const fetch = mockService(answer('recall'));
+  vi.stubEnv('MEMPHIS_BASAL_PROMPT_ENABLED', 'true');
+  vi.stubEnv('MEMPHIS_BASAL_URL', 'http://127.0.0.1:8000/v1/systemone');
+  vi.stubEnv('ASK_SESSIONS_DIR', mkdtempSync(join(tmpdir(), 'basal-session-shortcut-')));
+  appendAskSessionTurn('fixture', {
+    role: 'user',
+    content: 'Synthetic previous message',
+    timestamp: 't1',
+    tokens: 5,
+  });
+  let result: { telemetry?: { basalPromptClassification?: unknown }; output?: string } | undefined;
+  const stdout = vi.spyOn(console, 'log').mockImplementation((value) => {
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith('/v1/systemone'))).toHaveLength(1);
+    result = JSON.parse(String(value));
+  });
+  await runAskSessionTurn({
+    session: 'fixture',
+    rawInput: 'What did I just say?',
+    json: true,
+    tui: false,
+    runtime: { provider: { name: 'local-fallback' } } as never,
+  });
+  expect(stdout).toHaveBeenCalledTimes(1);
+  expect(result?.output).toContain('Synthetic previous message');
+  expect(result?.telemetry?.basalPromptClassification).toMatchObject({
+    status: 'classified',
+    intent: 'recall',
+  });
+
+  fetch.mockClear();
+  stdout.mockImplementation(() => undefined);
+  await runAskSessionTurn({
+    session: 'fixture',
+    rawInput: '/context',
+    json: true,
+    tui: false,
+    runtime: { provider: { name: 'local-fallback' } } as never,
+  });
+  expect(fetch).not.toHaveBeenCalled();
 });
 
 it('preserves actual classification metadata through the public HTTP result contract', async () => {

@@ -13,6 +13,10 @@ import {
   selectContextTurns,
 } from '../../../core/ask-session-store.js';
 import type { RequestedProviderName, RuntimeTelemetry } from '../../../core/types.js';
+import { classifyPromptIntent } from '../../../gateway/basal-prompt-classification.js';
+import { createPinoLogger } from '../../logging/pino.js';
+
+const log = createPinoLogger();
 
 type AskGenerateResult = {
   telemetry?: RuntimeTelemetry;
@@ -136,6 +140,16 @@ export async function runAskSessionTurn(params: {
     params.runtime.provider.name,
   );
   if (deterministicRecall) {
+    // This local recall shortcut answers a user turn without entering runChatTurn.
+    const basalPromptClassification = await classifyPromptIntent(params.rawInput, process.env);
+    if (basalPromptClassification) {
+      deterministicRecall.telemetry = { basalPromptClassification };
+      deterministicRecall.timingMs += basalPromptClassification.latencyMs;
+      log.info(
+        { event: 'basal.prompt.classified', surface: 'cli.chat', ...basalPromptClassification },
+        'Basal prompt classification',
+      );
+    }
     appendAskSessionExchange(params.session, params.rawInput, deterministicRecall.output);
     const refreshedStats = askSessionStats(
       readAskSession(params.session, process.env),
