@@ -30,6 +30,10 @@ This file is the source of truth. `scripts/install-basal.sh` copies it
 into the install root; it did not live in the repo before, so a clean
 host could never complete the install it advertised.
 """
+import asyncio
+from collections import OrderedDict
+from copy import deepcopy
+import hashlib
 import json, os, sys, time, threading
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
 import torch
@@ -58,6 +62,15 @@ CTX = int(os.environ.get("BASAL_CTX", "2048"))
 
 app = FastAPI()
 _state = {}
+
+# Exact requests only: no approximate reuse across different states, option
+# orders, languages or models. Results stay in this process and expire.
+CACHE_ENTRIES = max(0, int(os.environ.get("BASAL_CACHE_ENTRIES", "32")))
+CACHE_TTL = max(0.0, float(os.environ.get("BASAL_CACHE_TTL_SECONDS", "300")))
+_cache = OrderedDict()
+_cache_lock = threading.Lock()
+_inference_lock = threading.Lock()
+_pending_slots = threading.BoundedSemaphore(4)
 
 CAL = {}
 _temps = {}
@@ -231,19 +244,126 @@ def health():
     return {"ok": True, "ready": ready, "model": _model_label(),
             "backend": "gguf" if isinstance(eng, GgufBackend) else ("torch" if ready else "none"),
             "device": "cpu", "dtype": DTYPE, "temperatures": _temps,
-            "thresholds": CAL.get("thresholds", {})}
+            "thresholds": CAL.get("thresholds", {}),
+            "inference_active": _state.get("inference_active", False),
+            "cache": {"enabled": CACHE_ENTRIES > 0 and CACHE_TTL > 0,
+                      "capacity": CACHE_ENTRIES, "ttl_seconds": CACHE_TTL}}
+
+
+def _validate_request(body):
+    if not isinstance(body, dict) or not isinstance(body.get("state"), str):
+        raise HTTPException(status_code=400, detail="state must be a string")
+    orders = body.get("orders", 2)
+    if type(orders) is not int or orders not in (1, 2):
+        raise HTTPException(status_code=400, detail="orders must be 1 or 2")
+    lang = body.get("lang")
+    if lang is not None and not isinstance(lang, str):
+        raise HTTPException(status_code=400, detail="lang must be a string")
+    questions = body.get("questions")
+    if not isinstance(questions, dict) or not questions or len(questions) > 64:
+        raise HTTPException(status_code=400, detail="questions must contain 1 to 64 questions")
+    normalized = {}
+    for name, question in questions.items():
+        if not isinstance(question, dict):
+            raise HTTPException(status_code=400, detail="question must be an object")
+        typ = question.get("type", "choice")
+        instructions = question.get("instructions", "")
+        criteria = question.get("criteria")
+        if typ not in ("choice", "noul", "score") or not isinstance(instructions, str):
+            raise HTTPException(status_code=400, detail="invalid question type or instructions")
+        if isinstance(criteria, dict):
+            keys, options = list(criteria), list(criteria.values())
+        elif isinstance(criteria, list):
+            keys, options = criteria, criteria
+        else:
+            raise HTTPException(status_code=400, detail="criteria must be an object or list")
+        if not 2 <= len(options) <= MAX_OPTIONS or (typ == "noul" and len(options) != 2):
+            raise HTTPException(status_code=400, detail=f"criteria require 2 to {MAX_OPTIONS} options; noul requires 2")
+        if (any(not isinstance(value, str) or not value.strip() for value in keys + options)
+                or len(set(keys)) != len(keys)):
+            raise HTTPException(status_code=400, detail="criteria need unique nonempty string keys and descriptions")
+        normalized[name] = {"type": typ, "instructions": instructions, "criteria": criteria}
+    return {"state": body["state"], "orders": orders, "lang": lang, "questions": normalized}
+
+
+def _cache_key(eng, body):
+    # Preserve mapping order: option ordering changes the rendered prompt.
+    payload = json.dumps(body, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    return id(eng), hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _cached_result(key, started):
+    if not CACHE_ENTRIES or not CACHE_TTL:
+        return None
+    with _cache_lock:
+        entry = _cache.get(key)
+        if entry is None:
+            return None
+        expires, result = entry
+        if time.monotonic() >= expires:
+            del _cache[key]
+            return None
+        _cache.move_to_end(key)
+        result = deepcopy(result)
+    result["usage"].update(cache_hit=True, inference_ms=0,
+                           latency_ms=int((time.monotonic() - started) * 1000))
+    return result
+
+
+def _infer_request(eng, body, key, started):
+    # llama.cpp contexts are mutable. Keep one inference at a time while
+    # leaving the HTTP event loop free for health and already cached results.
+    with _inference_lock:
+        cached = _cached_result(key, started)
+        if cached is not None:
+            return cached
+        _state["inference_active"] = True
+        try:
+            result = _infer_questions(eng, body)
+        finally:
+            _state["inference_active"] = False
+        result["usage"]["latency_ms"] = int((time.monotonic() - started) * 1000)
+        if CACHE_ENTRIES and CACHE_TTL:
+            with _cache_lock:
+                _cache[key] = time.monotonic() + CACHE_TTL, deepcopy(result)
+                _cache.move_to_end(key)
+                while len(_cache) > CACHE_ENTRIES:
+                    _cache.popitem(last=False)
+        return result
 
 
 @app.post("/v1/systemone")
 async def systemone(req: Request):
-    body = await req.json()
+    try:
+        body = _validate_request(await req.json())
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="invalid JSON request") from None
     if "eng" not in _state:
         return {"ok": False, "error": "loading"}
     eng = _state["eng"]
+    started = time.monotonic()
+    key = _cache_key(eng, body)
+    cached = _cached_result(key, started)
+    if cached is not None:
+        return cached
+    if not _pending_slots.acquire(blocking=False):
+        raise HTTPException(status_code=503, detail="inference queue is full", headers={"Retry-After": "1"})
+    task = asyncio.create_task(asyncio.to_thread(_infer_request, eng, body, key, started))
+    # Client cancellation must not release a queue slot while its model call
+    # is still running. Shield the task and release only on real completion.
+    def completed(future):
+        _pending_slots.release()
+        if not future.cancelled():
+            future.exception()
+    task.add_done_callback(completed)
+    return await asyncio.shield(task)
+
+
+def _infer_questions(eng, body):
     state = body.get("state", "")
     questions = body.get("questions", {})
     lang = body.get("lang")
-    t0 = time.time()
+    t0 = time.monotonic()
     answers = {}
     for name, q in questions.items():
         typ = q.get("type", "choice")
@@ -286,7 +406,8 @@ async def systemone(req: Request):
             answers[name] = {"type": "choice", "choice": keys[best],
                              "probabilities": pm, "confidence": probs[best]}
         elif typ == "noul":
-            answers[name] = {"type": "noul", "noul": keys[int(round(probs[0] * (len(keys) - 1)))],
+            best = max(range(len(keys)), key=lambda i: probs[i])
+            answers[name] = {"type": "noul", "noul": keys[best],
                              "probabilities": pm, "confidence": max(probs)}
         else:  # score: expected level 0..k-1
             exp = sum(i * probs[i] for i in range(len(keys)))
@@ -295,7 +416,8 @@ async def systemone(req: Request):
     return {"model": _model_label(), "answers": answers,
             "usage": {"questions": len(questions), "output_tokens": 0,
                       "backend": "gguf" if isinstance(eng, GgufBackend) else "torch",
-                      "latency_ms": int((time.time() - t0) * 1000), "device": "cpu"}}
+                      "latency_ms": int((time.monotonic() - t0) * 1000), "device": "cpu",
+                      "inference_ms": int((time.monotonic() - t0) * 1000), "cache_hit": False}}
 
 
 if __name__ == "__main__":
