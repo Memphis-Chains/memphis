@@ -127,12 +127,96 @@ describe('evaluateSlos', () => {
       },
     ]);
 
-    const report = evaluateSlos({ now: fixedNow, windowDays: 7 });
+    // maxAgeMs: 0 disables the recency bound so this test keeps proving
+    // the WINDOW filter only — the recency filter has its own test.
+    const report = evaluateSlos({ now: fixedNow, windowDays: 7, maxAgeMs: 0 });
     const p99 = report.slos.find((s) => s.name === 'p99_turn_latency_ms');
     expect(p99?.samples).toBe(1);
     expect(p99?.value).toBe(500);
     expect(p99?.status).toBe('unavailable');
     expect(p99?.reason).toContain('insufficient samples');
+  });
+
+  it('evaluates only spans inside the recency bound', () => {
+    const spans: SpanLine[] = [];
+    // 20 fresh turns (1h old) with a healthy latency
+    for (let i = 0; i < 20; i++) {
+      spans.push({
+        ts: '2026-04-29T11:00:00Z',
+        name: 'turn.dispatch',
+        attrs: { 'turn.timing_ms': 500 },
+        durationMs: 500,
+        status: 'ok',
+      });
+    }
+    // 20 stale turns (26h old) with a latency far above the threshold
+    for (let i = 0; i < 20; i++) {
+      spans.push({
+        ts: '2026-04-28T09:00:00Z',
+        name: 'turn.dispatch',
+        attrs: { 'turn.timing_ms': 99000 },
+        durationMs: 99000,
+        status: 'ok',
+      });
+    }
+    writeSpans(telemetryDir, '2026-04-28', spans.slice(20));
+    writeSpans(telemetryDir, '2026-04-29', spans.slice(0, 20));
+
+    const report = evaluateSlos({ now: fixedNow, windowDays: 7 });
+    const p99 = report.slos.find((s) => s.name === 'p99_turn_latency_ms');
+    expect(p99?.samples).toBe(20);
+    expect(p99?.value).toBe(500);
+    expect(p99?.status).toBe('pass');
+    expect(report.sampleWindowStart).toBe('2026-04-28T12:00:00.000Z');
+    expect(report.maxAgeMs).toBe(24 * 60 * 60 * 1000);
+    expect(report.evaluatedSamples).toBe(20);
+    expect(report.totalSamples).toBe(40);
+  });
+
+  it('reports a class that went dark instead of failing on its last sample', () => {
+    // tool.call telemetry stopped three days before the report window end.
+    writeSpans(telemetryDir, '2026-04-26', [
+      {
+        ts: '2026-04-26T09:00:00Z',
+        name: 'tool.call',
+        durationMs: 100,
+        status: 'error',
+      },
+    ]);
+
+    const report = evaluateSlos({ now: fixedNow, windowDays: 7 });
+    const tool = report.slos.find((s) => s.name === 'tool_error_rate');
+    expect(tool?.status).toBe('unavailable');
+    expect(tool?.samples).toBe(0);
+    expect(tool?.reason).toContain('no tool.call spans');
+    expect(tool?.reason).toContain('last tool.call span');
+    expect(tool?.lastSampleAt).toBe('2026-04-26T09:00:00Z');
+    expect(tool?.ageMs).toBeGreaterThan(3 * 24 * 3600 * 1000);
+  });
+
+  it('restores window-average semantics when the recency bound is disabled', () => {
+    const spans: SpanLine[] = [];
+    for (let i = 0; i < 20; i++) {
+      spans.push({
+        ts: '2026-04-28T09:00:00Z',
+        name: 'turn.dispatch',
+        attrs: { 'turn.timing_ms': 99000 },
+        durationMs: 99000,
+        status: 'ok',
+      });
+    }
+    writeSpans(telemetryDir, '2026-04-28', spans);
+
+    const report = evaluateSlos({
+      now: fixedNow,
+      windowDays: 7,
+      rawEnv: { ...process.env, MEMPHIS_SLO_MAX_AGE_MS: '0' },
+    });
+    const p99 = report.slos.find((s) => s.name === 'p99_turn_latency_ms');
+    expect(report.maxAgeMs).toBe(0);
+    expect(p99?.samples).toBe(20);
+    expect(p99?.value).toBe(99000);
+    expect(p99?.status).toBe('fail');
   });
 
   it('reports failingSlos via the wrapped tool', () => {
@@ -237,7 +321,8 @@ describe('evaluateSlos', () => {
     expect(provider?.samples).toBe(2);
     expect(provider?.value).toBe(0);
     expect(provider?.status).toBe('unavailable');
-    expect(provider?.reason).toBe('insufficient samples (2 < 10)');
+    expect(provider?.reason).toContain('insufficient samples (2 < 10)');
+    expect(provider?.reason).toContain('within the last 24h');
   });
 
   // The runtime watch needs to know whether the LAST attempt failed, not

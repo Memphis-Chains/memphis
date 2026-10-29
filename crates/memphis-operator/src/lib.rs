@@ -16,6 +16,7 @@ mod context;
 mod openai_codex;
 mod provider;
 mod runtime;
+mod telemetry;
 mod text_truncation;
 mod think_stripper;
 

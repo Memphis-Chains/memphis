@@ -37,7 +37,39 @@ use crate::provider::ChatToolCall;
 use crate::OperatorError;
 use crate::OperatorRuntime;
 
+/// Execute one native tool call and record it in the local span sink.
+///
+/// The telemetry wrapper lives HERE, next to the dispatcher, for the same
+/// reason the TypeScript agent loop wraps `toolExecutor.execute(...)`:
+/// the span has to describe the whole tool call, and the only place that
+/// knows the outcome and the duration is the function that ran the tool.
+/// Measured on this host (2026-10-29): `tool.call` spans stopped on
+/// 2026-10-26, the day the operator moved to the Rust TUI — the native
+/// surface executes tools itself, so every native call was invisible to
+/// the SLO evaluator.
 pub(crate) fn execute_native_tool(
+    runtime: &OperatorRuntime,
+    call: &ChatToolCall,
+    max_tier: u8,
+) -> Result<(String, String), OperatorError> {
+    let started = std::time::Instant::now();
+    let result = execute_native_tool_inner(runtime, call, max_tier);
+    crate::telemetry::record_tool_call(
+        runtime.config(),
+        call.name.as_str(),
+        call.id.as_str(),
+        started.elapsed().as_millis() as u64,
+        result.is_err(),
+        result
+            .as_ref()
+            .err()
+            .map(|error| error.to_string())
+            .as_deref(),
+    );
+    result
+}
+
+fn execute_native_tool_inner(
     runtime: &OperatorRuntime,
     call: &ChatToolCall,
     max_tier: u8,
@@ -1420,5 +1452,87 @@ pub(crate) fn execute_native_tool(
         other => Err(OperatorError::Message(format!(
             "unsupported native rust chat tool: {other}"
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::telemetry::spans_file_path;
+    use chrono::Utc;
+    use serde_json::Value;
+    use std::fs::read_to_string;
+
+    fn runtime_for(root: &std::path::Path) -> OperatorRuntime {
+        let config = crate::config::OperatorConfig::from_iter([
+            ("HOME", "/tmp"),
+            ("MEMPHIS_DATA_DIR", root.to_string_lossy().as_ref()),
+        ]);
+        OperatorRuntime { config }
+    }
+
+    fn temp_root(name: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "memphis-native-tool-telemetry-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create temp root");
+        root
+    }
+
+    #[test]
+    fn a_native_tool_call_writes_a_tool_call_span() {
+        let root = temp_root("ok");
+        let runtime = runtime_for(&root);
+        let call = ChatToolCall {
+            id: "call-native-1".to_string(),
+            name: "memphis_journal".to_string(),
+            arguments: json!({ "content": "native telemetry probe" }),
+        };
+
+        // The call may fail for reasons unrelated to telemetry (no chain
+        // dir in this fixture) — the span must exist either way.
+        let _ = execute_native_tool(&runtime, &call, 2);
+
+        let path = spans_file_path(runtime.config(), Utc::now());
+        assert!(
+            path.exists(),
+            "native tool call must write a span at {}",
+            path.display()
+        );
+        let content = read_to_string(&path).unwrap();
+        let parsed: Value = serde_json::from_str(content.trim()).expect("span line must be JSON");
+        assert_eq!(parsed["name"], "tool.call");
+        assert_eq!(parsed["attrs"]["tool.name"], "memphis_journal");
+        assert_eq!(parsed["attrs"]["tool.id"], "call-native-1");
+        assert!(parsed["status"].is_string());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_refused_tool_call_is_recorded_as_an_error() {
+        let root = temp_root("err");
+        let runtime = runtime_for(&root);
+        let call = ChatToolCall {
+            id: "call-native-2".to_string(),
+            name: "memphis_journal".to_string(),
+            arguments: json!({}),
+        };
+
+        let result = execute_native_tool(&runtime, &call, 2);
+        assert!(result.is_err(), "missing content must be refused");
+
+        let path = spans_file_path(runtime.config(), Utc::now());
+        let content = read_to_string(&path).unwrap();
+        let parsed: Value = serde_json::from_str(content.trim()).unwrap();
+        assert_eq!(parsed["name"], "tool.call");
+        assert_eq!(parsed["status"], "error");
+        assert_eq!(parsed["attrs"]["tool.output.shape"], "error");
+        assert!(parsed["errorMessage"].is_string());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
