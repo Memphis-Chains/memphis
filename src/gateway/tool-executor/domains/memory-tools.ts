@@ -101,7 +101,7 @@ export function createMemoryRuntimeTools(deps: MemoryRuntimeToolDeps): RuntimeTo
     buildTool({
       name: 'memphis_classify',
       description:
-        'Typed decision over a state via the local BASAL-1.0 service — returns a calibrated probability per option plus `auto` (confidence cleared the threshold). Categories come from `criteria`, so no retraining. SLOW: 70-140s per call on a host without a supported GPU. Returns a structured error with a start command when the service is down.',
+        'Advisory typed decision via local BASAL with validated probabilities. auto only reports caller-threshold eligibility; it grants no action permissions or error-rate guarantee. Classes are supplied per request. Revalidate calibration for each model/backend. Historical CPU calls took 70-140 seconds; unavailable services return a structured error.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -109,14 +109,18 @@ export function createMemoryRuntimeTools(deps: MemoryRuntimeToolDeps): RuntimeTo
           question: { type: 'string', description: 'What to decide about it, in plain language' },
           criteria: {
             description:
-              'Options as {key: description} pairs, or an array of 2-10 labels. The model reads the descriptions.',
+              'Options as {key: description} pairs, or an array of 2-10 labels. Score object keys must be ordinal positions 0..n-1; score arrays preserve level order.',
             oneOf: [
               { type: 'object', additionalProperties: { type: 'string' } },
               { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 10 },
             ],
           },
           type: { type: 'string', enum: ['choice', 'noul', 'score'] },
-          threshold: { type: 'number', description: 'Auto-action at or above this (default 0.93)' },
+          threshold: {
+            type: 'number',
+            description:
+              'Advisory threshold from 0 to 1; explicit policy overrides service discovery, fallback 0.93',
+          },
           orders: {
             type: 'number',
             enum: [1, 2],

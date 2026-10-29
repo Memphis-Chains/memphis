@@ -365,7 +365,8 @@ async function handleClassifyCommand(context: CliContext): Promise<boolean> {
     threshold: thresholdRaw ? Number(thresholdRaw) : undefined,
   };
 
-  print({ ok: true, mode: 'classify', input, result: await runMemphisClassify(input) }, json);
+  const result = await runMemphisClassify(input);
+  print({ ok: result.ok, mode: 'classify', input, result }, json);
   return true;
 }
 

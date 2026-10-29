@@ -1,17 +1,15 @@
 /**
- * memphis_classify — typed decisions via the local BASAL-1.0 service.
+ * memphis_classify — advisory typed decisions via a local BASAL service.
  *
  * BASAL reads a *state* (a message, a document, a case file) and answers a
  * typed question about it — `choice`, yes/no (`noul`) or `score` — by
- * returning a calibrated probability per allowed option in a single forward
- * pass, without generating text. Categories are described in the request,
+ * returning a probability per allowed option, without generating free text. Categories are described in the request,
  * so one model serves many taxonomies without retraining.
  *
- * The confidence is the point. Unlike an LLM, which produces a string you
- * have to parse and trust, this returns a probability you can threshold:
- * `auto: true` means the decision cleared the bar, `auto: false` means a
- * human should look. Thresholds come from the model's own
- * CALIBRATION.json and are surfaced by `GET /health` on the service.
+ * Validate the complete probability distribution before applying a caller
+ * policy threshold. `auto` is advisory eligibility, never permission to run
+ * a tool or a claim about the error rate on the operator's own data. Model,
+ * backend and domain changes require separate calibration and evaluation.
  *
  * SERVICE
  * `~/.local/share/basal/basal_cpu.py` (port 8000, POST /v1/systemone).
@@ -20,12 +18,9 @@
  * Python/torch stack, not a node dependency.
  *
  * LATENCY
- * Measured on the operator's host (GTX 960, compute_cap 5.2, no
- * supported CUDA kernel): ~70 s at orders=1, ~140 s at orders=2. Same
- * model on an H100 is 12.5/25 ms. Two orders give a result that is
- * invariant to option ordering, at double the cost; one order is fine
- * for interactive probes where the caller can retry. `latency_ms` in the
- * response tells the caller which it was.
+ * Historical measurements of the installed 1.5B CPU service on this host
+ * were about 70 s at orders=1 and 140 s at orders=2. These are not Pico
+ * measurements. Reported `latency_ms` describes the individual service call.
  *
  * Not a hot-path tool: it is tier 2 and read-only against an external
  * service, but a call blocks for minutes on this host.
@@ -45,12 +40,12 @@ export interface MemphisClassifyInput {
   /**
    * Options, keyed. `{ "cards": "Reklamacje kart" }` gives you a key to
    * read in the result plus the description the model reasons over. A bare
-   * array is also accepted and the options double as keys.
+   * array is also accepted; score arrays receive ordinal keys 0..n-1.
    */
   criteria: Record<string, string> | string[];
   /** choice = pick one option, noul = yes/no, score = ordinal 0..n-1. */
   type?: ClassifyQuestionType;
-  /** Confidence at or above which the caller may act unattended. */
+  /** Advisory confidence threshold; does not grant action permissions. */
   threshold?: number;
   /** 1 = one forward pass (fast, order-sensitive). 2 = averaged over both
    *  option orders (invariant, double the cost). */
@@ -68,9 +63,12 @@ type ServiceAnswer = {
   score?: number;
   probabilities: Record<string, number>;
   confidence: number;
+  deferred?: boolean;
+  calibration?: 'validated' | 'unvalidated';
 };
 
 type ServiceResponse = {
+  model?: string;
   answers?: Record<string, ServiceAnswer>;
   usage?: { latency_ms?: number; questions?: number };
   error?: string;
@@ -91,8 +89,11 @@ export type MemphisClassifyOutput =
       probabilities: Record<string, number>;
       confidence: number;
       threshold: number;
-      /** True when confidence >= threshold: safe to act on unattended. */
+      /** Valid response cleared caller policy and was not deferred. Advisory only. */
       auto: boolean;
+      model: string | null;
+      deferred: boolean;
+      calibration: 'validated' | 'unvalidated' | 'unreported';
       orders: number;
       latencyMs: number;
     }
@@ -122,9 +123,155 @@ function normalizeCriteria(criteria: MemphisClassifyInput['criteria']): Criteria
   return [];
 }
 
+const PROBABILITY_TOLERANCE = 1e-4;
+const MAX_SERVICE_RESPONSE_BYTES = 64 * 1024;
+
+async function readServicePayload(response: Response): Promise<ServiceResponse> {
+  if (!response.body) return {};
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_SERVICE_RESPONSE_BYTES) {
+      await reader.cancel();
+      return {};
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as ServiceResponse;
+  } catch {
+    return {};
+  }
+}
+
+/** Model-specific advisory policy, resolved per call, with no process-global cache. */
+async function discoverThreshold(
+  endpoint: string,
+  model: string | null,
+  signal: AbortSignal,
+  localOnly = false,
+): Promise<number> {
+  try {
+    const index = endpoint.indexOf('/v1/');
+    const healthUrl =
+      index >= 0 ? endpoint.slice(0, index) + '/health' : new URL('/health', endpoint).toString();
+    const response = await fetch(healthUrl, {
+      signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
+      ...(localOnly ? { redirect: 'error' as const } : {}),
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      return DEFAULT_THRESHOLD;
+    }
+    const body: unknown = await readServicePayload(response);
+    if (
+      !isRecord(body) ||
+      (model !== null && typeof body.model === 'string' && model !== body.model)
+    )
+      return DEFAULT_THRESHOLD;
+    if (!isRecord(body.thresholds) || !isRecord(body.thresholds['0.01'])) return DEFAULT_THRESHOLD;
+    const value = body.thresholds['0.01'].confidence;
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0.5 && value < 1
+      ? value
+      : DEFAULT_THRESHOLD;
+  } catch {
+    if (signal.aborted) throw new DOMException('aborted', 'AbortError');
+    return DEFAULT_THRESHOLD;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function validAnswer(
+  value: unknown,
+  type: ClassifyQuestionType,
+  keys: string[],
+): value is ServiceAnswer {
+  if (!isRecord(value) || value.type !== type || !isRecord(value.probabilities)) return false;
+  const probabilities = value.probabilities;
+  const actualKeys = Object.keys(probabilities);
+  const sameKeys = (expected: string[]) =>
+    actualKeys.length === expected.length &&
+    expected.every((key) => Object.hasOwn(probabilities, key));
+  // Newer servers use canonical Boolean/ordinal keys; legacy servers retain criteria keys.
+  if (
+    !sameKeys(keys) &&
+    !(type === 'noul' && sameKeys(['true', 'false'])) &&
+    !(type === 'score' && sameKeys(keys.map((_, i) => String(i))))
+  )
+    return false;
+  const values = Object.values(probabilities);
+  if (!values.every((p) => typeof p === 'number' && Number.isFinite(p) && p >= 0 && p <= 1))
+    return false;
+  const numbers = values as number[];
+  if (Math.abs(numbers.reduce((sum, p) => sum + p, 0) - 1) > PROBABILITY_TOLERANCE) return false;
+  const confidence = value.confidence;
+  if (
+    typeof confidence !== 'number' ||
+    !Number.isFinite(confidence) ||
+    confidence < 0 ||
+    confidence > 1 ||
+    Math.abs(confidence - Math.max(...numbers)) > PROBABILITY_TOLERANCE
+  )
+    return false;
+  if (value.deferred !== undefined && typeof value.deferred !== 'boolean') return false;
+  if (
+    value.calibration !== undefined &&
+    value.calibration !== 'validated' &&
+    value.calibration !== 'unvalidated'
+  )
+    return false;
+  if (type === 'choice')
+    return (
+      typeof value.choice === 'string' &&
+      keys.includes(value.choice) &&
+      Math.abs(Number(probabilities[value.choice]) - confidence) <= PROBABILITY_TOLERANCE
+    );
+  if (type === 'noul') {
+    if (typeof value.noul === 'string')
+      return (
+        actualKeys.includes(value.noul) &&
+        Math.abs(Number(probabilities[value.noul]) - confidence) <= PROBABILITY_TOLERANCE
+      );
+    if (
+      typeof value.noul !== 'number' ||
+      !Number.isFinite(value.noul) ||
+      value.noul < 0 ||
+      value.noul > 1
+    )
+      return false;
+    if (sameKeys(['true', 'false']))
+      return Math.abs(value.noul - Number(probabilities.true)) <= PROBABILITY_TOLERANCE;
+    return (
+      Number.isInteger(value.noul) &&
+      Math.abs(Number(probabilities[keys[value.noul]]) - confidence) <= PROBABILITY_TOLERANCE
+    );
+  }
+  const scoreKeys = sameKeys(keys) ? keys : keys.map((_, i) => String(i));
+  const expectedScore = scoreKeys.reduce((sum, key, i) => sum + i * Number(probabilities[key]), 0);
+  return (
+    typeof value.score === 'number' &&
+    Number.isFinite(value.score) &&
+    Math.abs(value.score - expectedScore) <= PROBABILITY_TOLERANCE
+  );
+}
+
 export async function runMemphisClassify(
   input: MemphisClassifyInput,
   rawEnv: NodeJS.ProcessEnv = process.env,
+  requestPolicy: { timeoutMs?: number; localOnly?: boolean } = {},
 ): Promise<MemphisClassifyOutput> {
   const state = input.state?.toString().trim();
   if (!state) {
@@ -143,7 +290,11 @@ export async function runMemphisClassify(
     };
   }
 
-  const options = normalizeCriteria(input.criteria);
+  const options = normalizeCriteria(input.criteria).map((option, index) =>
+    input.type === 'score' && Array.isArray(input.criteria)
+      ? { key: String(index), description: option.description }
+      : option,
+  );
   if (options.length < 2) {
     return {
       ok: false,
@@ -160,13 +311,52 @@ export async function runMemphisClassify(
     };
   }
 
+  if (
+    new Set(options.map((option) => option.key)).size !== options.length ||
+    (input.type === 'score' && options.some((option, index) => option.key !== String(index))) ||
+    (input.type !== undefined && !['choice', 'noul', 'score'].includes(input.type)) ||
+    (input.orders !== undefined && input.orders !== 1 && input.orders !== 2) ||
+    (input.threshold !== undefined &&
+      (!Number.isFinite(input.threshold) || input.threshold < 0 || input.threshold > 1))
+  ) {
+    return {
+      ok: false,
+      stateKind: 'bad-request',
+      error: 'Invalid classification policy; score object keys must be ordered positions 0..n-1',
+    };
+  }
+
   const type = input.type ?? 'choice';
-  const threshold =
+  let threshold =
     typeof input.threshold === 'number' && Number.isFinite(input.threshold)
-      ? Math.min(Math.max(input.threshold, 0), 1)
+      ? input.threshold
       : DEFAULT_THRESHOLD;
   const orders = input.orders === 1 ? 1 : 2;
   const url = resolveUrl(rawEnv);
+  const timeoutMs = requestPolicy.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > REQUEST_TIMEOUT_MS) {
+    return { ok: false, stateKind: 'bad-request', error: 'Invalid classification deadline' };
+  }
+  if (requestPolicy.localOnly) {
+    try {
+      const endpoint = new URL(url);
+      if (
+        !['http:', 'https:'].includes(endpoint.protocol) ||
+        !['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname) ||
+        endpoint.username ||
+        endpoint.password ||
+        endpoint.search ||
+        endpoint.hash
+      )
+        throw new Error('nonlocal');
+    } catch {
+      return {
+        ok: false,
+        stateKind: 'bad-request',
+        error: 'Automatic classification requires a loopback endpoint',
+      };
+    }
+  }
 
   const body = {
     state,
@@ -181,21 +371,35 @@ export async function runMemphisClassify(
   };
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
+  let payload: ServiceResponse = {};
   try {
     response = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
       signal: controller.signal,
+      ...(requestPolicy.localOnly ? { redirect: 'error' as const } : {}),
     });
+    if (response.ok) {
+      payload = await readServicePayload(response);
+      if (input.threshold === undefined && isRecord(payload)) {
+        threshold = await discoverThreshold(
+          url,
+          typeof payload.model === 'string' ? payload.model : null,
+          controller.signal,
+          requestPolicy.localOnly,
+        );
+      }
+    } else await response.body?.cancel();
   } catch (err) {
-    const aborted = err instanceof Error && err.name === 'AbortError';
+    const aborted =
+      controller.signal.aborted || (err instanceof Error && err.name === 'AbortError');
     return {
       ok: false,
       error: aborted
-        ? `BASAL did not answer within ${REQUEST_TIMEOUT_MS / 1000}s`
+        ? `BASAL did not answer within ${timeoutMs / 1000}s`
         : `Cannot reach the BASAL service at ${url}`,
       stateKind: aborted ? 'timeout' : 'unreachable',
       hint: `Start it with: cd ~/.local/share/basal && setsid ./venv/bin/python ./basal_cpu.py & — then GET ${url.replace('/v1/systemone', '/health')} to confirm readiness.`,
@@ -205,38 +409,43 @@ export async function runMemphisClassify(
   }
 
   if (!response.ok) {
-    const text = await response.text().catch(() => '');
     return {
       ok: false,
       error: `BASAL service returned HTTP ${response.status}`,
       stateKind: 'service-error',
-      hint: text.slice(0, 400) || undefined,
     };
   }
 
-  const payload = (await response.json().catch(() => ({}))) as ServiceResponse;
-  if (payload.error) {
+  if (!isRecord(payload) || payload.error) {
     return {
       ok: false,
-      error: payload.error,
+      error: 'BASAL service reported an inference error',
       stateKind: 'service-error',
       hint:
-        payload.error === 'loading'
+        isRecord(payload) && payload.error === 'loading'
           ? 'The model is still loading; retry in a few seconds.'
           : undefined,
     };
   }
 
-  const answer = payload.answers?.k;
-  if (!answer || !answer.probabilities) {
+  const answer = isRecord(payload.answers) ? payload.answers.k : undefined;
+  if (
+    !validAnswer(
+      answer,
+      type,
+      options.map((option) => option.key),
+    )
+  ) {
     return {
       ok: false,
-      error: 'BASAL response did not contain an answer for the question',
+      error: 'BASAL returned an invalid typed decision or probability distribution',
       stateKind: 'service-error',
     };
   }
 
   const confidence = answer.confidence;
+  const deferred = answer.deferred === true;
+  const calibration = answer.calibration ?? 'unreported';
 
   return {
     ok: true,
@@ -249,8 +458,16 @@ export async function runMemphisClassify(
     probabilities: answer.probabilities,
     confidence,
     threshold,
-    auto: confidence >= threshold,
+    auto: confidence >= threshold && !deferred && calibration !== 'unvalidated',
+    model: typeof payload.model === 'string' ? payload.model : null,
+    deferred,
+    calibration,
     orders,
-    latencyMs: payload.usage?.latency_ms ?? -1,
+    latencyMs:
+      typeof payload.usage?.latency_ms === 'number' &&
+      Number.isFinite(payload.usage.latency_ms) &&
+      payload.usage.latency_ms >= 0
+        ? payload.usage.latency_ms
+        : -1,
   };
 }

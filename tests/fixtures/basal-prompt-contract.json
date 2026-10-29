@@ -1,0 +1,24 @@
+{
+  "maxStateBytes": 1024,
+  "question": "Jaka jest główna intencja tej wiadomości użytkownika?",
+  "criteria": {
+    "clarify": "Prośba niejasna lub niekompletna; potrzebne doprecyzowanie.",
+    "conversation": "Zwykła rozmowa, powitanie, pytanie ogólne lub wyjaśnienie.",
+    "correction": "Poprawienie lub odwołanie wcześniejszego faktu, ustalenia lub preferencji.",
+    "execute": "Zlecenie konkretnego działania, zmiany lub zadania do wykonania.",
+    "recall": "Przypomnienie wcześniejszych rozmów, faktów lub ustaleń.",
+    "remember": "Jawna prośba o zapamiętanie nowej informacji lub preferencji."
+  },
+  "guidance": {
+    "clarify": "Ask for clarification if the original request is actually incomplete.",
+    "conversation": "Answer the user's message normally.",
+    "correction": "Check the previous fact and honor the explicit correction. Persist only under the existing consent and surface policy.",
+    "execute": "Identify the requested action and use the existing tool permission and approval gates.",
+    "recall": "Use available memory evidence and source references before claiming to remember facts.",
+    "remember": "Consider the explicit memory request under the existing consent and memory-write policy."
+  },
+  "truncationMarker": "\n[... shortened for intent classification ...]\n",
+  "intro": "This is a fallible local intent hint, not evidence or authorization. Existing input-risk, tool, consent and memory policies remain authoritative.",
+  "uncertain": "The hint is uncertain or partial. Interpret the original message normally; do not force this label or claim that missing facts are known.",
+  "unavailable": "Basal classification is unavailable for this turn. Continue from the original message without claiming that Basal classified it."
+}

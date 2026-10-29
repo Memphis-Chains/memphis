@@ -98,15 +98,21 @@ describe('CLI classify argument contract', () => {
   it('treats a bare option list as keys without descriptions', async () => {
     let captured: { questions?: { k?: { criteria?: Record<string, string> } } } = {};
     globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
+      if (init?.method !== 'POST') return new Response('{}');
       captured = JSON.parse(String(init?.body ?? '{}')) as typeof captured;
       return new Response(
         JSON.stringify({
-          ok: true,
-          choice: 'karta',
-          probabilities: { karta: 0.9, kredyt: 0.1 },
-          confidence: 0.9,
-          threshold: 0.93,
-          auto: false,
+          model: 'synthetic-basal',
+          answers: {
+            k: {
+              type: 'choice',
+              choice: 'karta',
+              probabilities: { karta: 0.9, kredyt: 0.1 },
+              confidence: 0.9,
+              threshold: 0.93,
+              auto: false,
+            },
+          },
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       );
@@ -128,6 +134,7 @@ describe('CLI classify argument contract', () => {
 
     expect(result.status).toBe(0);
     expect(captured.questions?.k?.criteria).toEqual({ karta: 'karta', kredyt: 'kredyt' });
+    expect(JSON.parse(result.stdout).result.ok).toBe(true);
   });
 
   it('parses key:description pairs and forwards orders and threshold', async () => {
@@ -139,15 +146,21 @@ describe('CLI classify argument contract', () => {
       orders?: number;
     } = {};
     globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
+      if (init?.method !== 'POST') return new Response('{}');
       captured = JSON.parse(String(init?.body ?? '{}')) as typeof captured;
       return new Response(
         JSON.stringify({
-          ok: true,
-          choice: 'karta',
-          probabilities: { karta: 0.91, kredyt: 0.09 },
-          confidence: 0.91,
-          threshold: 0.93,
-          auto: false,
+          model: 'synthetic-basal',
+          answers: {
+            k: {
+              type: 'choice',
+              choice: 'karta',
+              probabilities: { karta: 0.91, kredyt: 0.09 },
+              confidence: 0.91,
+              threshold: 0.93,
+              auto: false,
+            },
+          },
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       );
@@ -200,7 +213,7 @@ describe('CLI classify argument contract', () => {
 
     expect(result.status).toBe(0);
     const parsed = JSON.parse(result.stdout) as { ok: boolean; result: { ok: boolean } };
-    expect(parsed.ok).toBe(true);
+    expect(parsed.ok).toBe(false);
     expect(parsed.result.ok).toBe(false);
   });
 });
