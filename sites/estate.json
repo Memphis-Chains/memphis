@@ -37,7 +37,8 @@
     "memphis-v5/panel",
     "memphis-v5/docs",
     "memphis-v5/data",
-    "memphis-v5/.memphis-snapshots"
+    "memphis-v5/.memphis-snapshots",
+    "memphis-v5/client-status"
   ],
   "checks": {
     "textArtifactGlobs": [
