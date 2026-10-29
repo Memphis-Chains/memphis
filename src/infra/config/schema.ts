@@ -165,6 +165,8 @@ export const envSchema = z.object({
       message: 'MEMPHIS_VAULT_PEPPER must be at least 12 characters',
     }),
   MEMPHIS_CHANNEL_GATEWAY_ENABLED: boolFromString.default(false),
+  MEMPHIS_BASAL_PROMPT_ENABLED: boolFromString.default(false),
+  MEMPHIS_BASAL_PROMPT_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300_000).default(60_000),
   MEMPHIS_TELEGRAM_BOT_TOKEN: z.string().optional(),
   MEMPHIS_AUTONOMY_MODE: z.enum(['full', 'quiet', 'balanced', 'paranoid']).optional(),
   // Local operator override: make Telegram tier 2 carry the same effective

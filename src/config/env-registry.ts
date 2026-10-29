@@ -180,6 +180,23 @@ function defineEnumAccessor<T extends string>(options: {
 
 // ── Accessors ────────────────────────────────────────────────────────────────
 
+export const MEMPHIS_BASAL_PROMPT_ENABLED = defineEnumAccessor({
+  name: 'MEMPHIS_BASAL_PROMPT_ENABLED',
+  envKey: 'MEMPHIS_BASAL_PROMPT_ENABLED',
+  description: 'Classify each user chat prompt with the local Basal service',
+  values: ['false', 'true', '0', '1'] as const,
+  defaultValue: 'false',
+});
+
+export const MEMPHIS_BASAL_PROMPT_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_BASAL_PROMPT_TIMEOUT_MS',
+  envKey: 'MEMPHIS_BASAL_PROMPT_TIMEOUT_MS',
+  description: 'Total deadline for automatic Basal prompt classification',
+  defaultValue: 60_000,
+  min: 1000,
+  max: 300_000,
+});
+
 export const LOG_LEVEL = defineEnumAccessor({
   name: 'LOG_LEVEL',
   envKey: 'LOG_LEVEL',
@@ -716,6 +733,8 @@ export const MEMPHIS_VISION_TIMEOUT_MS = defineNumberAccessor({
  * contract.
  */
 export const ENV_REGISTRY: readonly EnvAccessor<unknown>[] = [
+  MEMPHIS_BASAL_PROMPT_ENABLED,
+  MEMPHIS_BASAL_PROMPT_TIMEOUT_MS,
   LOG_LEVEL,
   NODE_ENV,
   MEMPHIS_AGENT_NAME,

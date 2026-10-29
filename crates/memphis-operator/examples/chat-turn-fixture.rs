@@ -14,17 +14,11 @@ fn main() {
         .unwrap_or_else(|| "Odpowiedz jednym slowem: gotowe".to_string());
     let mut streamed = String::new();
     let exchange = runtime
-        .chat_stream(
-            Some(&session),
-            &prompt,
-            Some("minimax"),
-            None,
-            |event| {
-                if let ChatStreamEvent::Text(chunk) = event {
-                    streamed.push_str(&chunk);
-                }
-            },
-        )
+        .chat_stream(Some(&session), &prompt, Some("minimax"), None, |event| {
+            if let ChatStreamEvent::Text(chunk) = event {
+                streamed.push_str(&chunk);
+            }
+        })
         .expect("probe turn failed");
     println!("provider={} model={}", exchange.provider, exchange.model);
     println!(
@@ -34,4 +28,10 @@ fn main() {
     println!("token_usage={:?}", exchange.token_usage);
     println!("streamed={streamed}");
     println!("reply={}", exchange.reply);
+    if let Some(classification) = exchange.basal_prompt_classification.as_ref() {
+        println!(
+            "basal_prompt_classification={}",
+            serde_json::to_string(classification).expect("classification metadata")
+        );
+    }
 }

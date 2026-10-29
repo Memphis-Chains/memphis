@@ -159,6 +159,7 @@ async function discoverThreshold(
   endpoint: string,
   model: string | null,
   signal: AbortSignal,
+  localOnly = false,
 ): Promise<number> {
   try {
     const index = endpoint.indexOf('/v1/');
@@ -166,6 +167,7 @@ async function discoverThreshold(
       index >= 0 ? endpoint.slice(0, index) + '/health' : new URL('/health', endpoint).toString();
     const response = await fetch(healthUrl, {
       signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
+      ...(localOnly ? { redirect: 'error' as const } : {}),
     });
     if (!response.ok) {
       await response.body?.cancel();
@@ -269,6 +271,7 @@ function validAnswer(
 export async function runMemphisClassify(
   input: MemphisClassifyInput,
   rawEnv: NodeJS.ProcessEnv = process.env,
+  requestPolicy: { timeoutMs?: number; localOnly?: boolean } = {},
 ): Promise<MemphisClassifyOutput> {
   const state = input.state?.toString().trim();
   if (!state) {
@@ -330,6 +333,30 @@ export async function runMemphisClassify(
       : DEFAULT_THRESHOLD;
   const orders = input.orders === 1 ? 1 : 2;
   const url = resolveUrl(rawEnv);
+  const timeoutMs = requestPolicy.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > REQUEST_TIMEOUT_MS) {
+    return { ok: false, stateKind: 'bad-request', error: 'Invalid classification deadline' };
+  }
+  if (requestPolicy.localOnly) {
+    try {
+      const endpoint = new URL(url);
+      if (
+        !['http:', 'https:'].includes(endpoint.protocol) ||
+        !['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname) ||
+        endpoint.username ||
+        endpoint.password ||
+        endpoint.search ||
+        endpoint.hash
+      )
+        throw new Error('nonlocal');
+    } catch {
+      return {
+        ok: false,
+        stateKind: 'bad-request',
+        error: 'Automatic classification requires a loopback endpoint',
+      };
+    }
+  }
 
   const body = {
     state,
@@ -344,7 +371,7 @@ export async function runMemphisClassify(
   };
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   let payload: ServiceResponse = {};
   try {
@@ -353,6 +380,7 @@ export async function runMemphisClassify(
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
       signal: controller.signal,
+      ...(requestPolicy.localOnly ? { redirect: 'error' as const } : {}),
     });
     if (response.ok) {
       payload = await readServicePayload(response);
@@ -361,6 +389,7 @@ export async function runMemphisClassify(
           url,
           typeof payload.model === 'string' ? payload.model : null,
           controller.signal,
+          requestPolicy.localOnly,
         );
       }
     } else await response.body?.cancel();
@@ -370,7 +399,7 @@ export async function runMemphisClassify(
     return {
       ok: false,
       error: aborted
-        ? `BASAL did not answer within ${REQUEST_TIMEOUT_MS / 1000}s`
+        ? `BASAL did not answer within ${timeoutMs / 1000}s`
         : `Cannot reach the BASAL service at ${url}`,
       stateKind: aborted ? 'timeout' : 'unreachable',
       hint: `Start it with: cd ~/.local/share/basal && setsid ./venv/bin/python ./basal_cpu.py & — then GET ${url.replace('/v1/systemone', '/health')} to confirm readiness.`,
