@@ -18,6 +18,9 @@ JSON envelope:
   "windowDays": 7,
   "windowStart": "2026-04-22T...",
   "windowEnd": "2026-04-29T...",
+  "sampleWindowStart": "2026-04-28T...",
+  "maxAgeMs": 86400000,
+  "evaluatedSamples": 1234,
   "spanFilesScanned": 7,
   "totalSamples": 1234,
   "failingSlos": [],
@@ -30,17 +33,46 @@ JSON envelope:
       "thresholdDirection": "below",
       "value": 1450,
       "status": "pass",
-      "samples": 200
+      "samples": 200,
+      "lastSampleAt": "2026-04-29T11:58:00.000Z",
+      "ageMs": 120000
     },
     ...
   ]
 }
 ```
 
+### The recency bound (`maxAgeMs`)
+
+An SLO describes the **current** state of the runtime, so samples older
+than the recency bound do not decide pass/fail.
+
+- Default: **24h** (`MEMPHIS_SLO_MAX_AGE_MS`, milliseconds).
+- `MEMPHIS_SLO_MAX_AGE_MS=0` disables the bound and restores the
+  window-average semantics (7-day request = 7-day average).
+- `sampleWindowStart` is the effective start of the evaluated population:
+  the requested window intersected with the bound.
+- `lastSampleAt` / `ageMs` say how old the newest evidence for that SLO is.
+  When a class went dark, the reason names it: `no tool.call spans in
+  window - last tool.call span 3d ago`.
+
+Why the bound exists (measured 2026-10-29): every failing SLO in the 7-day
+window was decided by evidence from 2026-10-25 — one 34-minute Telegram
+turn, one confabulation event, and a tool-error rate computed from
+`tool.call` spans that stopped being emitted on 2026-10-26. The report said
+"fail" every day for a runtime with no current tool telemetry at all.
+
 `status` is one of:
 - `pass` — value is on the right side of the threshold
 - `fail` — value crossed the threshold; investigate
-- `unavailable` — not enough samples in the window to compute (`reason` field explains why)
+- `unavailable` — the report cannot judge: no samples in the evaluated
+  window, or fewer than `minSamples` of them. `reason` explains which, and
+  `lastSampleAt` / `ageMs` say how old the last evidence was.
+
+`unavailable` is not a soft `fail`. A runtime with no current telemetry is
+a runtime nobody measured — it must not be reported as healthy, and it must
+not be reported as broken either. The autonomy gate treats only `fail` as
+blocking (`src/infra/runtime/self-governance.ts`).
 
 ## Current SLOs
 
@@ -101,11 +133,27 @@ memphis cron add \
 
 Runs every Monday 9 AM, appends snapshot to `slo-history.log`. Compare across weeks to spot drift before it crosses thresholds.
 
+## Where the spans come from
+
+Two surfaces write to the same JSONL sink
+(`<dataDir>/telemetry/spans-YYYY-MM-DD.jsonl`), in the same record shape:
+
+| Surface | Emitter | What it records |
+| --- | --- | --- |
+| TypeScript gateway (Telegram, CLI chat, HTTP) | `src/infra/observability/instrument.ts` | `turn.dispatch`, `provider.completion`, `tool.call` |
+| Native Rust operator (the authoritative TUI) | `crates/memphis-operator/src/telemetry.rs` | `tool.call` |
+
+The native surface executes tools itself, so without the Rust sink every
+native tool call was invisible here — measured on 2026-10-29: `tool.call`
+spans stopped on 2026-10-26, the day the operator moved to the Rust TUI.
+Both sinks honour `MEMPHIS_TELEMETRY_LOCAL_SINK=false`.
+
 ## Adding new SLOs
 
-1. New SLO contributors emit spans through `recordLocalSpan({ name, attrs, durationMs, status })` in `src/infra/observability/console-exporter.ts`.
+1. New SLO contributors emit spans through `recordLocalSpan({ name, attrs, durationMs, status })` in `src/infra/observability/console-exporter.ts` — or, on the native surface, `crate::telemetry::record_span(...)` in `crates/memphis-operator/src/telemetry.rs`.
 2. Add a compute function in `src/observability/slo-evaluator.ts` that reads those spans from the window and returns `SloResult`.
 3. Push the new function into the `slos` array in `evaluateSlos()`.
+3a. If the SLO has its own span class, add the class name to `SLO_CLASS_SPANS` so the report can say how old that evidence is.
 4. Cover with a unit test in `tests/unit/slo-evaluator.test.ts`.
 5. Document the new SLO in this file (threshold, direction, why it matters, how to remediate).
 

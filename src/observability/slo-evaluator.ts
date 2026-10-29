@@ -15,6 +15,15 @@ export interface SloResult {
   status: SloStatus;
   samples: number;
   reason?: string;
+  /**
+   * Newest span of this SLO's class inside the requested window.
+   *
+   * `ageMs` says how old that evidence is. A report that says "fail"
+   * without saying "that evidence is four days old" is exactly how a
+   * stale breach keeps looking like a current one.
+   */
+  lastSampleAt?: string;
+  ageMs?: number;
 }
 
 /**
@@ -47,6 +56,19 @@ export interface SloReport {
   windowHours?: number;
   windowStart: string;
   windowEnd: string;
+  /**
+   * Start of the population actually evaluated.
+   *
+   * The requested window is `windowStart..windowEnd`; the evaluated
+   * population is that window intersected with the recency bound
+   * (`maxAgeMs`). A 7-day request with the default 24h bound evaluates
+   * the last 24h of evidence and says so here.
+   */
+  sampleWindowStart: string;
+  /** Recency bound applied to samples, in ms. 0 = unbounded. */
+  maxAgeMs: number;
+  /** Spans inside the evaluated population (window ∩ recency bound). */
+  evaluatedSamples: number;
   spanFilesScanned: number;
   totalSamples: number;
   slos: SloResult[];
@@ -64,6 +86,68 @@ interface SpanRecord {
 
 const SPANS_FILE_RE = /^spans-(\d{4}-\d{2}-\d{2})\.jsonl$/;
 const DEFAULT_MIN_SAMPLES = 10;
+
+/**
+ * Default recency bound for evaluated samples: 24h.
+ *
+ * WHY A BOUND AT ALL
+ * ------------------
+ * Measured on this host (2026-10-29): every failing SLO in the 7-day
+ * window was decided by evidence from 2026-10-25 — one 34-minute
+ * Telegram turn, one confabulation event, and a tool-error rate
+ * computed from `tool.call` spans that stopped being emitted on
+ * 2026-10-26. The report said "fail" every day for a runtime that had
+ * no current tool telemetry at all.
+ *
+ * The bound says: an SLO describes the CURRENT state of the runtime.
+ * Evidence older than the bound is still read (so the report can say
+ * "last tool.call 3 days ago"), but it does not decide pass/fail.
+ *
+ * `MEMPHIS_SLO_MAX_AGE_MS=0` disables the bound and restores the
+ * window-average semantics; a larger value widens the horizon.
+ */
+const DEFAULT_MAX_SAMPLE_AGE_MS = 24 * 60 * 60 * 1000;
+
+/** Span class behind each SLO name — used for freshness reporting. */
+const SLO_CLASS_SPANS: Record<string, string> = {
+  p99_turn_latency_ms: 'turn.dispatch',
+  confabulation_rate: 'turn.dispatch',
+  provider_error_rate: 'provider.completion',
+  tool_error_rate: 'tool.call',
+};
+
+function resolveMaxAgeMs(explicit: number | undefined, rawEnv: NodeJS.ProcessEnv): number {
+  if (typeof explicit === 'number' && Number.isFinite(explicit)) {
+    return explicit < 0 ? 0 : Math.floor(explicit);
+  }
+  const raw = rawEnv.MEMPHIS_SLO_MAX_AGE_MS;
+  if (raw === undefined || raw.trim().length === 0) return DEFAULT_MAX_SAMPLE_AGE_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_MAX_SAMPLE_AGE_MS;
+  return Math.floor(parsed);
+}
+
+function newestSpanTs(spans: SpanRecord[]): string | undefined {
+  let best: string | undefined;
+  let bestMs = Number.NEGATIVE_INFINITY;
+  for (const span of spans) {
+    const ms = Date.parse(span.ts);
+    if (!Number.isFinite(ms)) continue;
+    if (ms > bestMs) {
+      bestMs = ms;
+      best = span.ts;
+    }
+  }
+  return best;
+}
+
+function formatAge(ms: number): string {
+  const minutes = Math.round(ms / 60000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+}
 
 function insufficientSamples(
   samples: number,
@@ -299,6 +383,13 @@ export interface EvaluateSlosOptions {
   windowDays?: number;
   windowHours?: number;
   minSamples?: number;
+  /**
+   * Recency bound for evaluated samples, in milliseconds.
+   *
+   * 0 disables the bound and restores the window-average semantics.
+   * Defaults to `MEMPHIS_SLO_MAX_AGE_MS`, then to 24h.
+   */
+  maxAgeMs?: number;
   rawEnv?: NodeJS.ProcessEnv;
   now?: Date;
 }
@@ -327,20 +418,55 @@ export function evaluateSlos(options: EvaluateSlosOptions = {}): SloReport {
       ? Math.max(1, Math.floor(options.minSamples))
       : DEFAULT_MIN_SAMPLES;
   const windowStart = new Date(now.getTime() - (windowHours ?? windowDays * 24) * 60 * 60 * 1000);
+  const maxAgeMs = resolveMaxAgeMs(options.maxAgeMs, rawEnv);
+  // The evaluated population is the requested window intersected with the
+  // recency bound. Older spans are still READ (so the report can name the
+  // last time a class was seen) but they do not decide pass/fail.
+  const sampleWindowStartMs =
+    maxAgeMs > 0
+      ? Math.max(windowStart.getTime(), now.getTime() - maxAgeMs)
+      : windowStart.getTime();
+  const sampleWindowStart = new Date(sampleWindowStartMs);
 
   const { spans, filesScanned } = readSpansInWindow(rawEnv, windowStart);
+  const evaluated = spans.filter((span) => Date.parse(span.ts) >= sampleWindowStartMs);
   const slos: SloResult[] = [
-    computeP99TurnLatency(spans, minSamples, rawEnv),
-    computeConfabulationRate(spans, minSamples),
-    computeProviderErrorRate(spans, minSamples),
-    computeToolErrorRate(spans, minSamples),
+    computeP99TurnLatency(evaluated, minSamples, rawEnv),
+    computeConfabulationRate(evaluated, minSamples),
+    computeProviderErrorRate(evaluated, minSamples),
+    computeToolErrorRate(evaluated, minSamples),
   ];
+
+  // Freshness and reasons. Without this the report says "fail" for
+  // evidence that is days old, and says nothing when the only evidence
+  // is "this class has not been seen since 3 days ago".
+  const boundHours = Math.round(maxAgeMs / 3600000);
+  for (const slo of slos) {
+    const className = SLO_CLASS_SPANS[slo.name];
+    if (!className) continue;
+    const newest = newestSpanTs(spans.filter((span) => span.name === className));
+    if (newest) {
+      slo.lastSampleAt = newest;
+      slo.ageMs = Math.max(0, now.getTime() - Date.parse(newest));
+    }
+    if (slo.status !== 'unavailable') continue;
+    if (maxAgeMs > 0 && slo.reason?.startsWith('insufficient samples')) {
+      slo.reason = `${slo.reason} within the last ${boundHours}h`;
+    }
+    if (slo.samples === 0 && newest && maxAgeMs > 0) {
+      const age = formatAge(now.getTime() - Date.parse(newest));
+      slo.reason = `${slo.reason ?? 'no samples'} - last ${className} span ${age} ago`;
+    }
+  }
 
   return {
     windowDays,
     windowHours,
     windowStart: windowStart.toISOString(),
     windowEnd: now.toISOString(),
+    sampleWindowStart: sampleWindowStart.toISOString(),
+    maxAgeMs,
+    evaluatedSamples: evaluated.length,
     spanFilesScanned: filesScanned,
     totalSamples: spans.length,
     slos,
