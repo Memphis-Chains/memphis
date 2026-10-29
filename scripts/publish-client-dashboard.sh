@@ -37,6 +37,12 @@ REMOTE_FILE="index.html"
 # whole publish down with it.
 REMOTE_BACKUP_DIR="${REMOTE_BACKUP_DIR:-site-backups/memphis-v5/client-status}"
 
+# The client's own credential. Separate from the operator's internal-docs
+# password ON PURPOSE: sharing one .htpasswd would give the client the
+# whole `docs/internal/` tree — which holds `secrets/`, `deploy/` and
+# `incidents/` (measured 2026-10-29: 34 KB, 40 KB, 36 KB).
+CREDENTIAL_FILE="${CREDENTIAL_FILE:-$DATA_DIR/site-secrets/memphis-v5-client-status.password}"
+
 LOG="$(mktemp)"
 log() { printf '%s %s\n' "$(date -Iseconds)" "$*" | tee -a "$LOG"; }
 
@@ -113,5 +119,49 @@ if [[ "$HTTP_CODE" != "401" && "$HTTP_CODE" != "200" ]]; then
   exit 1
 fi
 log "verified: $PUBLIC_URL answers $HTTP_CODE (401 = protected by auth)"
+
+# 6. The password file must stay READABLE by the web server.
+#
+# Measured 2026-10-29: Apache runs as a different uid than the hosting
+# account, so a 640 `.htpasswd` is unreadable for it. Apache then
+# answers 500 instead of 401, and the correct password is rejected.
+# The operator's own `docs/internal/.htpasswd` had that mode and had
+# been failing since 10:37 that morning — the 401 without a password
+# looked exactly like a working gate.
+#
+# The file holds a bcrypt HASH, not a password, and `.htaccess` denies
+# HTTP access to it.
+# NOTE: stderr goes to the log, stdout to the pipe. Redirecting stdout
+# to the log as well (`>>"$LOG" 2>&1 | tail -1`) sends the pipe nothing —
+# the redirection wins over the pipe, and `tail` reads an empty stream.
+HTPASSWD_MODE="$(ssh "${SSH_OPTS[@]}" "$SSH_HOST" \
+  "chmod 644 '$REMOTE_DIR/.htpasswd' 2>/dev/null; stat -c '%a' '$REMOTE_DIR/.htpasswd'" \
+  2>>"$LOG" | tail -1)"
+if [[ "$HTPASSWD_MODE" != "644" ]]; then
+  log "VERIFY FAILED (.htpasswd is not mode 644 — Apache could not read it)"
+  rm -rf "$BUILD_OUT"
+  exit 1
+fi
+log "verified: .htpasswd is mode 644 (readable by the web server)"
+
+# 7. The real proof: the page must answer 200 WITH the client's
+#    password. A 401 without a password only proves the path exists —
+#    it says nothing about whether the credential works.
+if [[ -r "$CREDENTIAL_FILE" ]]; then
+  CLIENT_PASSWORD="$(cat "$CREDENTIAL_FILE")"
+  AUTH_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+    -u "szczepan:$CLIENT_PASSWORD" "$PUBLIC_URL" || echo 000)"
+  if [[ "$AUTH_CODE" != "200" ]]; then
+    log "VERIFY FAILED (authenticated fetch answers $AUTH_CODE, expected 200) — restoring backup"
+    ssh "${SSH_OPTS[@]}" "$SSH_HOST" \
+      "if [ -f '$REMOTE_BACKUP_DIR/$REMOTE_FILE.$STAMP.bak' ]; then cp -a '$REMOTE_BACKUP_DIR/$REMOTE_FILE.$STAMP.bak' '$REMOTE_DIR/$REMOTE_FILE'; fi" \
+      >>"$LOG" 2>&1 || true
+    rm -rf "$BUILD_OUT"
+    exit 1
+  fi
+  log "verified: authenticated fetch answers 200"
+else
+  log "NOTE: no credential file at $CREDENTIAL_FILE — skipped the authenticated check"
+fi
 rm -rf "$BUILD_OUT"
 exit 0
