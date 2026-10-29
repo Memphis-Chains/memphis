@@ -89,6 +89,56 @@ describe('publish is safe', () => {
     }
   });
 
+  it('verifies the page with the CREDENTIAL, not only without one', () => {
+    const source = readFileSync(PUBLISH, 'utf8');
+    // Measured 2026-10-29: the first version of this script checked only
+    // that the path answers 401. That proves the path exists — and
+    // nothing about whether the password works. Apache was answering 500
+    // on an authenticated request (it could not read the 640-mode
+    // `.htpasswd`), while the unauthenticated request answered a
+    // perfectly healthy-looking 401.
+    //
+    // A gate that cannot see its own failure mode is worse than no gate.
+    expect(source).toContain('CREDENTIAL_FILE');
+    expect(source).toContain('AUTH_CODE');
+    expect(source).toMatch(/AUTH_CODE.*!=.*200/);
+    expect(source).toContain('authenticated fetch answers 200');
+  });
+
+  it('keeps the password file readable by the web server', () => {
+    const source = readFileSync(PUBLISH, 'utf8');
+    // Apache runs as a different uid than the hosting account, so a
+    // 640 `.htpasswd` is unreadable for it. The operator's own
+    // `docs/internal/.htpasswd` had that mode and had been rejecting the
+    // correct password since 10:37 that morning.
+    expect(source).toContain('chmod 644');
+    expect(source).toContain('HTPASSWD_MODE');
+    // The variable has to be COMPARED, not merely assigned. A test that
+    // only checked the name survived the mutation that removed the
+    // comparison — the variable was still there, and the gate was gone.
+    expect(source).toMatch(/HTPASSWD_MODE"?\s*!=\s*"644"/);
+    // And the comparison has to be a gate: it must exit non-zero.
+    const gate = source.slice(source.indexOf('HTPASSWD_MODE'));
+    expect(gate).toMatch(/!=\s*"644"[\s\S]{0,400}exit 1/);
+  });
+
+  it('does not share the operator credential with the client path', () => {
+    const source = readFileSync(PUBLISH, 'utf8');
+    // The client path must use its own credential file. Sharing one
+    // `.htpasswd` with `docs/internal/` would hand the client the whole
+    // internal tree — `secrets/`, `deploy/`, `incidents/`.
+    expect(source).toContain('memphis-v5-client-status.password');
+    // Read the EXECUTED lines only. A `not.toContain` over the whole file
+    // matches the script's own comment explaining why the paths are
+    // separate — the same trap as the site-claims contract.
+    const executed = source
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith('#'))
+      .join('\n');
+    expect(executed).not.toContain('docs/internal/.htpasswd');
+  });
+
   it('verifies the stamp the server actually serves', () => {
     const source = readFileSync(PUBLISH, 'utf8');
     expect(source).toContain('NEW_STAMP');
