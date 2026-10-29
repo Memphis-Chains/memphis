@@ -4,6 +4,10 @@ import {
   extractToolsCalled,
   type ConfabAuditResult,
 } from './anti-confab-audit.js';
+import {
+  classifyPromptIntent,
+  renderBasalPromptClassification,
+} from './basal-prompt-classification.js';
 import type { LlmClient, LoopLimits, MemoryClient, ToolExecutor } from './chat-types.js';
 import {
   prepareCognitivePrelude,
@@ -1311,6 +1315,22 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
         },
       });
     }
+    const basalPromptClassification = await classifyPromptIntent(
+      prepared.originalUserText,
+      rawEnvWithTier3,
+    );
+    if (basalPromptClassification) {
+      prepared.systemPrompt += '\n\n' + renderBasalPromptClassification(basalPromptClassification);
+      log.info(
+        {
+          event: 'basal.prompt.classified',
+          turnId,
+          surface: auditSurface,
+          ...basalPromptClassification,
+        },
+        'Basal prompt classification',
+      );
+    }
     const llm = resolveLlm(options, prepared.cognitiveModeContribution);
     // Phase 1.3 production sprint: pre-flight check the provider budget.
     // Throws PROVIDER_RATE_LIMIT (429) if cap is exceeded; the cascade
@@ -1561,8 +1581,8 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
       Math.max(0, (options.messages ?? []).length - baseMessages.length) +
       contextGuard.trimmedMessages +
       contextGuard.truncatedMessages;
-    const buildTurnTelemetrySnapshot = (): RuntimeTelemetry =>
-      buildRuntimeTelemetry({
+    const buildTurnTelemetrySnapshot = (): RuntimeTelemetry => ({
+      ...buildRuntimeTelemetry({
         provider: llm.provider,
         model: llm.model,
         systemPrompt: prepared.systemPrompt,
@@ -1575,7 +1595,9 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
         degradationReason:
           options.providerCascade?.reason ??
           (persistence.errors.length > 0 ? persistence.errors[0] : undefined),
-      });
+      }),
+      ...(basalPromptClassification ? { basalPromptClassification } : {}),
+    });
 
     if (options.conversationContext && options.conversationId && persistence.sessionUpdated) {
       try {

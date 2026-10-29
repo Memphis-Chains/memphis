@@ -1,3 +1,4 @@
+import type { RuntimeTelemetry } from '../../core/types.js';
 import type { MemoryClient } from '../../gateway/chat-types.js';
 import type { ConversationContextService } from '../../gateway/conversation-context-service.js';
 import { runTurnRuntime } from '../../gateway/turn-runtime.js';
@@ -33,6 +34,7 @@ function trimMessages(messages: ChatMessage[]): void {
 }
 
 export type ChatTurnResult = {
+  telemetry?: RuntimeTelemetry;
   provider: string;
   model: string;
   timingMs: number;
@@ -69,6 +71,7 @@ export async function runChatTurn(state: ChatState, input: string): Promise<Chat
       model: result.model,
       timingMs: result.timingMs,
       output: result.output,
+      ...(result.telemetry?.basalPromptClassification ? { telemetry: result.telemetry } : {}),
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

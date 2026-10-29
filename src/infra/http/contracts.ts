@@ -34,6 +34,23 @@ const degradationInfoSchema = z.object({
 });
 
 const runtimeTelemetrySchema = z.object({
+  basalPromptClassification: z
+    .object({
+      status: z.enum(['classified', 'unavailable']),
+      contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+      inputBytes: z.number().int().nonnegative(),
+      classifiedBytes: z.number().int().min(0).max(1024),
+      truncated: z.boolean(),
+      latencyMs: z.number().int().nonnegative(),
+      uncertain: z.boolean(),
+      intent: z
+        .enum(['clarify', 'conversation', 'correction', 'execute', 'recall', 'remember'])
+        .optional(),
+      confidence: z.number().min(0).max(1).optional(),
+      threshold: z.number().min(0).max(1).optional(),
+      failureReason: z.string().optional(),
+    })
+    .optional(),
   usage: usageSchema.optional(),
   contextWindowTokens: z.number().int().nonnegative().optional(),
   estimatedPromptTokens: z.number().int().nonnegative().optional(),
