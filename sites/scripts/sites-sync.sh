@@ -109,6 +109,7 @@ rsync_pull() { # <site> <dest>
     rsync -az -e "$RSYNC_SSH" \
       --exclude 'panel-app/' --exclude 'panel/' --exclude 'api/' --exclude 'data/' \
       --exclude '.memphis-snapshots/' \
+      --exclude 'client-status/' \
       "$SSH_HOST:$REMOTE_ROOT/$site/" "$dest" >/dev/null 2>&1
     rc=$?
     set -e
