@@ -4,20 +4,14 @@ Tier-0 only. No LLM. No new dependencies. Stdlib only."""
 import http.server, sqlite3, json, urllib.request, urllib.parse
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
-import os, time
+import os, sys, time
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from dashboard_probes import ALL_PROBES, probe_one  # noqa: E402
 
 PORT = int(os.environ.get("DASH_API_PORT", "8766"))
 DB = "/home/memphis/memphis/data/dashboard.db"
 LOG = "/tmp/dashboard-api.log"
-
-# known endpoints to probe (idempotent, in-process; not persistent cron)
-PROBES = [
-  "http://dsmxshop.com/szczepan/",
-  "http://dsmxshop.com/usa/",
-  "http://dsmxshop.com/extra/",
-  "http://dsmxshop.com/bonus/",
-  "http://localhost:8765/szczepan/",
-]
 
 def query_stats():
   con = sqlite3.connect(DB); c = con.cursor()
@@ -49,23 +43,10 @@ def query_decisions(limit=10):
 
 def do_probes():
   con = sqlite3.connect(DB); c = con.cursor()
-  for u in PROBES:
-    try:
-      t0 = time.time()
-      req = urllib.request.Request(u, headers={"User-Agent":"MemphisDashboardAPI/1.0"})
-      with urllib.request.urlopen(req, timeout=8) as r:
-        body = r.read()
-        dt = (time.time()-t0)*1000
-        title = ""
-        if b"<title>" in body[:2000]:
-          ts = body.find(b"<title>")+7
-          te = body.find(b"</title>", ts)
-          title = body[ts:te].decode("utf-8","replace")[:80]
-        c.execute("INSERT INTO http_probes(url,ts,http_code,bytes,time_ms,title) VALUES (?,?,?,?,?,?)",
-          (u, time.strftime("%Y-%m-%dT%H:%M:%S"), r.status, len(body), round(dt,1), title))
-    except Exception as e:
-      c.execute("INSERT INTO http_probes(url,ts,http_code,bytes,time_ms,title) VALUES (?,?,?,?,?,?)",
-        (u, time.strftime("%Y-%m-%dT%H:%M:%S"), 0, 0, -1, str(e)[:80]))
+  for u in ALL_PROBES:
+    row = probe_one(u)
+    c.execute("INSERT INTO http_probes(url,ts,http_code,bytes,time_ms,title) VALUES (?,?,?,?,?,?)",
+      (u, time.strftime("%Y-%m-%dT%H:%M:%S"), row["http_code"], row["bytes"], row["time_ms"], row["title"]))
   con.commit(); con.close()
 
 class H(http.server.BaseHTTPRequestHandler):
