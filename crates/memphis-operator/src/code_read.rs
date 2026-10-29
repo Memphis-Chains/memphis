@@ -134,6 +134,68 @@ pub fn assert_contained(resolved: &Path, home: &Path) -> Result<(), String> {
     ))
 }
 
+/// The write path may only touch files inside ~/memphis/.
+///
+/// The read path is allowed the wider set of roots in `allowed_roots`, so
+/// the write path needs a check of its own: the target must resolve --
+/// through symlinks -- to a path inside ~/memphis. Without the
+/// resolution a symlink inside the workspace was a door out of it, and
+/// the native `memphis_self_modify` wrote through it.
+pub fn assert_write_contained(resolved: &Path, home: &Path) -> Result<(), String> {
+    let root = home.join("memphis");
+    let real_root = std::fs::canonicalize(&root).unwrap_or(root);
+    let real_target = realpath_resolving_links(resolved, 0);
+    if real_target == real_root || real_target.starts_with(&real_root) {
+        return Ok(());
+    }
+    Err(format!(
+        "Path '{}' resolves outside ~/memphis/ and must not be written",
+        resolved.to_string_lossy()
+    ))
+}
+
+/// Resolve a path through symlinks even when the target does not exist.
+///
+/// `std::fs::canonicalize` fails when the last component does not exist,
+/// and `realpath_nearest` resolves the nearest EXISTING ancestor -- so a
+/// symlink to a file that is about to be written (the create-new case)
+/// resolved to ITSELF. A link out of the workspace was therefore
+/// invisible to the write path, and the write went through it.
+///
+/// The walk follows every component that is a link, at any depth, and
+/// stops at 40 hops like the kernel does for a link loop.
+fn realpath_resolving_links(path: &Path, depth: usize) -> PathBuf {
+    if depth > 40 {
+        return path.to_path_buf();
+    }
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::RootDir => out.push("/"),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::Prefix(prefix) => out.push(prefix.as_os_str()),
+            Component::Normal(part) => {
+                out.push(part);
+                if let Ok(target) = std::fs::read_link(&out) {
+                    let target = if target.is_absolute() {
+                        target
+                    } else {
+                        match out.parent() {
+                            Some(parent) => parent.join(target),
+                            None => target,
+                        }
+                    };
+                    out = realpath_resolving_links(&target, depth + 1);
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Split file content into lines.
 ///
 /// A line terminator is not part of the line: `\n` and `\r\n` both end

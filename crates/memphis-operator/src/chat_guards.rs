@@ -299,35 +299,6 @@ pub(crate) fn secret_exfiltration_patterns(
     .into_iter()
 }
 
-/// Paths the native `memphis_code_read` must refuse.
-///
-/// The TypeScript surface has refused these since the tool landed
-/// (ALWAYS_BLOCKED_READ_PATTERNS in src/mcp/tools/code-read.ts). The native
-/// tool checked only that the path sat under ~/memphis/, so `memphis_code_read`
-/// on the authoritative surface would happily return `.env`, `vault-state.json`
-/// and `vault-entries.json` -- the exact files the boundary exists to protect,
-/// in the directory where they live.
-///
-/// Returned as Err with an operator-facing reason rather than silently
-/// skipping, so the refusal is legible in the TUI.
-
-pub(crate) fn assert_path_not_secret_material(resolved: &str) -> Result<(), String> {
-    // The list of blocked segments lives in `code_read`, because that
-    // is where the `memphis_code_read` contract keeps it. This
-    // function used to carry a second copy, whose `node_modules/`
-    // pattern never matched a path segment -- so the write path
-    // allowed what the read path refused.
-    for segment in resolved.split('/') {
-        if segment.is_empty() || segment == "." {
-            continue;
-        }
-        if let Some(label) = crate::code_read::blocked_segment(segment) {
-            return Err(crate::code_read::blocked_path_message(resolved, label));
-        }
-    }
-    Ok(())
-}
-
 /// Scan content about to be written to a file, mirroring
 /// `scanContent(content, 'code-change')` in src/security/content-scan.ts.
 ///

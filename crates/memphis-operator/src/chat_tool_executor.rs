@@ -21,8 +21,7 @@ use crate::chat_basal::{
     BASAL_TIMEOUT_SECS,
 };
 use crate::chat_guards::{
-    assert_path_not_secret_material, build_wrapped_segment, emit_runtime_security_event,
-    scan_code_change_content, sha256_hex,
+    build_wrapped_segment, emit_runtime_security_event, scan_code_change_content, sha256_hex,
 };
 use crate::chat_memory::{
     append_case_entry, append_generic_block, read_chain_blocks, recall_result_with_sources,
@@ -32,8 +31,10 @@ use crate::chat_memory::{
 use crate::chat_tool_catalog::tool_tier;
 use crate::code_read::{
     assert_contained as assert_code_read_path_contained,
-    assert_not_blocked as assert_code_read_path_not_blocked, resolve_path as resolve_code_read_path,
-    split_lines as split_code_read_lines, CODE_READ_MAX_CONTENT_CHARS,
+    assert_not_blocked as assert_code_read_path_not_blocked,
+    assert_write_contained as assert_code_read_write_contained,
+    resolve_path as resolve_code_read_path, split_lines as split_code_read_lines,
+    CODE_READ_MAX_CONTENT_CHARS,
 };
 use crate::code_read_range::resolve_code_read_range;
 use crate::ssrf_guard::{assert_url_safe, resolve_redirect};
@@ -844,19 +845,28 @@ fn execute_native_tool_inner(
             }
 
             let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-            let memphis_dir = std::path::Path::new(&home).join("memphis");
-            let resolved_path = path_str.replace("~/", &format!("{}/", home));
-            let resolved = std::path::Path::new(&resolved_path);
-            if !resolved.starts_with(&memphis_dir) {
-                return Err(OperatorError::Message(format!(
-                    "Path '{}' is outside ~/memphis/",
-                    path_str
-                )));
+            let home_path = std::path::Path::new(&home);
+            let memphis_dir = home_path.join("memphis");
+            // The rules the read path applies, in the same words: resolve
+            // the path the way the other arm resolves it, refuse the
+            // blocked segments by name, and refuse a target that leaves
+            // ~/memphis/ through a symlink.
+            //
+            // Checking only that the path sat under ~/memphis/ left the
+            // write path able to write .env, .git/ and node_modules/ --
+            // the very segments the read path refuses -- and to write
+            // through a symlink straight out of the workspace.
+            let resolved = resolve_code_read_path(path_str, home_path);
+            if let Err(reason) = assert_code_read_path_not_blocked(&resolved) {
+                return Err(OperatorError::Message(reason));
+            }
+            if let Err(reason) = assert_code_read_write_contained(&resolved, home_path) {
+                return Err(OperatorError::Message(reason));
             }
 
             // Snapshot: save original content for rollback
             let original = if resolved.exists() {
-                Some(fs::read_to_string(resolved).map_err(|e| {
+                Some(fs::read_to_string(&resolved).map_err(|e| {
                     OperatorError::Message(format!("Failed to read original: {}", e))
                 })?)
             } else {
@@ -894,7 +904,7 @@ fn execute_native_tool_inner(
                     let mut file = std::fs::OpenOptions::new()
                         .create(true)
                         .append(true)
-                        .open(resolved)
+                        .open(&resolved)
                         .map_err(|e| {
                             OperatorError::Message(format!("Failed to open file: {}", e))
                         })?;
@@ -902,7 +912,7 @@ fn execute_native_tool_inner(
                         .map_err(|e| OperatorError::Message(format!("Failed to append: {}", e)))?;
                 }
                 _ => {
-                    fs::write(resolved, content)
+                    fs::write(&resolved, content)
                         .map_err(|e| OperatorError::Message(format!("Failed to write: {}", e)))?;
                 }
             }
@@ -926,9 +936,9 @@ fn execute_native_tool_inner(
                         let stderr = String::from_utf8_lossy(&output.stderr);
                         // Rollback: restore original file
                         if let Some(ref orig) = original {
-                            let _ = fs::write(resolved, orig);
+                            let _ = fs::write(&resolved, orig);
                         } else {
-                            let _ = fs::remove_file(resolved);
+                            let _ = fs::remove_file(&resolved);
                         }
                         return Err(OperatorError::Message(format!(
                             "self_modify: build failed — rolled back {}. Error: {}",
@@ -939,9 +949,9 @@ fn execute_native_tool_inner(
                     Err(e) => {
                         // Rollback on build command failure
                         if let Some(ref orig) = original {
-                            let _ = fs::write(resolved, orig);
+                            let _ = fs::write(&resolved, orig);
                         } else {
-                            let _ = fs::remove_file(resolved);
+                            let _ = fs::remove_file(&resolved);
                         }
                         return Err(OperatorError::Message(format!(
                             "self_modify: build command failed — rolled back {}. Error: {}",

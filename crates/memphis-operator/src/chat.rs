@@ -797,8 +797,7 @@ mod tests {
 
     use crate::chat_basal::{classify_reply_to_json, parse_basal_threshold};
     use crate::chat_guards::{
-        assert_path_not_secret_material, load_json_file, scan_code_change_content,
-        scan_memory_content, secret_exfiltration_patterns,
+        load_json_file, scan_code_change_content, scan_memory_content, secret_exfiltration_patterns,
     };
     use crate::chat_memory::{
         append_generic_block, ensure_soul_manifest, read_chain_blocks, run_native_journal,
@@ -2810,9 +2809,10 @@ mod tests {
     /// stops being usable and the block becomes invisible to everyone.
     #[test]
     fn native_code_read_still_reads_ordinary_source_files() {
-        assert!(assert_path_not_secret_material("/home/memphis/memphis/src/index.ts").is_ok());
-        assert!(assert_path_not_secret_material("/home/memphis/memphis/crates/x.rs").is_ok());
-        assert!(assert_path_not_secret_material("/home/memphis/memphis/environment.rs").is_ok());
+        use crate::code_read::assert_not_blocked;
+        assert!(assert_not_blocked(Path::new("/home/memphis/memphis/src/index.ts")).is_ok());
+        assert!(assert_not_blocked(Path::new("/home/memphis/memphis/crates/x.rs")).is_ok());
+        assert!(assert_not_blocked(Path::new("/home/memphis/memphis/environment.rs")).is_ok());
     }
     /// The cut must not split a multi-byte character.
     ///
@@ -2957,17 +2957,99 @@ mod tests {
 
     /// The write path must refuse what the read path refuses.
     ///
-    /// `assert_path_not_secret_material` carried its own copy of the
-    /// blocked-segment list, and that copy's `node_modules/` pattern
-    /// never matched a path segment -- so the write path allowed what
-    /// the read path refused.
+    /// The guard existed -- `assert_path_not_secret_material` -- but
+    /// nothing called it: the write path checked only that the path sat
+    /// under ~/memphis/, so it could write `.env`, `.git/` and
+    /// `node_modules/` -- the very segments the read path refuses.
+    ///
+    /// The probe is `node_modules/`, not `.env`: a refusal happens
+    /// before anything is written, but a REGRESSION would write the
+    /// file, and the operator's own `.env` must not be what a test
+    /// risks.
     #[test]
-    fn the_write_path_refuses_the_same_segments() {
-        assert!(assert_path_not_secret_material("/home/memphis/memphis/node_modules/pkg/i.js")
-            .is_err());
-        assert!(assert_path_not_secret_material("/home/memphis/memphis/.env").is_err());
-        assert!(assert_path_not_secret_material("/home/memphis/memphis/src/.env").is_err());
-        assert!(assert_path_not_secret_material("/home/memphis/memphis/src/index.ts").is_ok());
+    fn native_self_modify_refuses_the_segments_the_read_path_refuses() {
+        let root = temp_runtime_root("native-self-modify-blocked-segment");
+        let runtime = runtime_for(root.as_path());
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
+        let workspace = std::path::Path::new(&home).join("memphis");
+        let probe = workspace.join("node_modules").join(".memphis-write-probe");
+        std::fs::create_dir_all(probe.parent().expect("probe parent")).expect("probe dir");
+        let _ = std::fs::remove_file(&probe);
+
+        let call = ChatToolCall {
+            id: "modify-call".to_string(),
+            name: "memphis_self_modify".to_string(),
+            arguments: json!({
+                "path": probe.to_string_lossy(),
+                "content": "probe\n",
+                "mode": "write",
+            }),
+        };
+
+        let result = execute_native_tool(&runtime, &call, 2);
+        let _ = std::fs::remove_file(&probe);
+
+        let error = result.expect_err("a blocked segment must be refused");
+        assert!(
+            error.to_string().contains("blocked because it matches"),
+            "the refusal must name the reason: {error}"
+        );
+        assert!(
+            !probe.exists(),
+            "the file was written despite the refusal: {}",
+            probe.display()
+        );
+    }
+
+    /// A symlink inside the workspace must not become a door out of it.
+    ///
+    /// The write path compared the path it was given with ~/memphis/ and
+    /// never resolved it, so a link inside the workspace could be
+    /// written straight through to a file outside it -- the vault state
+    /// in ~/.memphis/ is exactly such a target.
+    #[test]
+    fn native_self_modify_refuses_to_write_through_a_symlink_out_of_the_workspace() {
+        let root = temp_runtime_root("native-self-modify-symlink");
+        let runtime = runtime_for(root.as_path());
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
+        let workspace = std::path::Path::new(&home).join("memphis");
+
+        let outside =
+            std::env::temp_dir().join(format!("memphis-write-escape-{}", std::process::id()));
+        let link = workspace.join(".memphis-write-escape-link");
+        let _ = std::fs::remove_file(&outside);
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(&outside, &link).expect("create the symlink");
+
+        let call = ChatToolCall {
+            id: "modify-call".to_string(),
+            name: "memphis_self_modify".to_string(),
+            arguments: json!({
+                "path": link.to_string_lossy(),
+                "content": "escaped\n",
+                "mode": "write",
+            }),
+        };
+
+        let result = execute_native_tool(&runtime, &call, 2);
+        let _ = std::fs::remove_file(&link);
+        // The write path stages the workspace before it writes, so the
+        // probe has to leave the index again.
+        let _ = std::process::Command::new("git")
+            .args(["reset", "-q", "--", ".memphis-write-escape-link"])
+            .current_dir(&workspace)
+            .output();
+        let escaped = std::fs::read_to_string(&outside).unwrap_or_default();
+        let _ = std::fs::remove_file(&outside);
+
+        assert!(
+            result.is_err(),
+            "writing through a symlink out of the workspace must be refused"
+        );
+        assert!(
+            escaped.is_empty(),
+            "the file outside the workspace was written: {escaped}"
+        );
     }
 
     /// The two layers assign tiers independently, and they disagreed.
