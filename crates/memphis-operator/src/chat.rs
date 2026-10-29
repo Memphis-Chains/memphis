@@ -4,6 +4,10 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::chat_basal_prompt::{
+    audit_basal_prompt_classification, classify_prompt_for_turn, render_basal_prompt_annotation,
+    BasalPromptClassification,
+};
 use crate::chat_guards::{
     audit_input_classification, build_wrapped_segment, guard_model_output, sha256_hex,
 };
@@ -150,6 +154,15 @@ pub struct ChatExchange {
     /// limit the account enforces, not the advertised one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effective_context_window: Option<u64>,
+    /// The Basal intent hint for this turn, when the feature is enabled.
+    /// Advisory only: it never grants a permission and never replaces an
+    /// input-risk verdict.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "basalPromptClassification"
+    )]
+    pub basal_prompt_classification: Option<BasalPromptClassification>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -288,7 +301,7 @@ impl OperatorRuntime {
         } else {
             resolved_provider
         };
-        let options = ChatRequestOptions {
+        let mut options = ChatRequestOptions {
             provider: provider.map(ToString::to_string),
             model: model.map(ToString::to_string),
             system_prompt: Some(system_prompt),
@@ -308,6 +321,23 @@ impl OperatorRuntime {
 
         let input_classification = classify_input(trimmed_prompt);
         audit_input_classification(self, &input_classification, "rust-tui")?;
+
+        // Automatic Basal intent classification: exactly one bounded,
+        // loopback-only classification per turn. It runs after the
+        // deterministic input-risk audit and before the first provider call,
+        // so the tool loop cannot classify the same prompt twice. The result
+        // is advisory: existing risk, permission and consent gates stay
+        // authoritative.
+        let basal_prompt_classification =
+            classify_prompt_for_turn(&self.config, trimmed_prompt, cancel_flag)?;
+        if let Some(classification) = basal_prompt_classification.as_ref() {
+            audit_basal_prompt_classification(self, classification)?;
+            let annotation = render_basal_prompt_annotation(classification);
+            options.system_prompt = Some(match options.system_prompt.take() {
+                Some(prompt) => format!("{prompt}\n\n{annotation}"),
+                None => annotation,
+            });
+        }
         let wrapped_user = build_wrapped_segment(
             "user_input",
             trimmed_prompt,
@@ -399,6 +429,7 @@ impl OperatorRuntime {
             degraded: exchange.degraded,
             degradation_reason: exchange.degradation_reason,
             effective_context_window: exchange.effective_context_window,
+            basal_prompt_classification,
         })
     }
 }
@@ -572,6 +603,7 @@ fn run_turn(
                     degraded: false,
                     degradation_reason: None,
                     effective_context_window: completion.effective_context_window,
+                    basal_prompt_classification: None,
                 });
             }
 

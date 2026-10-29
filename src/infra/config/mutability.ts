@@ -27,6 +27,8 @@ export type MutabilityTier = 'hot' | 'warm' | 'cold' | 'secret';
  * Keep in lockstep with `src/infra/config/schema.ts`.
  */
 export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
+  MEMPHIS_BASAL_PROMPT_ENABLED: 'hot',
+  MEMPHIS_BASAL_PROMPT_TIMEOUT_MS: 'hot',
   // ── Process/runtime — cold (restart-bound) ──
   MEMPHIS_RUNTIME_ROOT: 'cold',
   MEMPHIS_RUNTIME_ROOT_SOURCE: 'cold',
