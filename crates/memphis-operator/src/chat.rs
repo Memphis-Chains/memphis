@@ -2767,6 +2767,12 @@ mod tests {
         let target = std::path::Path::new(&home)
             .join("memphis")
             .join(".code-read-range-probe.md");
+        // The probe lives under $HOME/memphis because that is where the
+        // tool's allowlist resolves `~` -- but in CI HOME is a fresh
+        // temporary directory and ~/memphis does not exist yet. Without
+        // this the test failed there with "No such file or directory"
+        // while passing everywhere else.
+        std::fs::create_dir_all(target.parent().expect("probe parent")).expect("probe dir");
         let _ = std::fs::remove_file(&target);
         // The probe must be long enough that `startLine` is INSIDE the
         // file -- that is the shape of the incident, where the file had
