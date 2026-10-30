@@ -58,6 +58,25 @@ on:
   # repository whose own CI cannot report its own completion events.
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
+  # The fast path. `workflow_run` fires when a run of a named workflow
+  # finishes, and for a run on a pull request the payload carries the HEAD of
+  # that pull request -- not a merge commit.
+  #
+  # Measured 2026-10-30 on the ci runs of PR #722 and #723: head_branch is
+  # the pull request branch and head_sha is the head commit of that branch.
+  # The 2026-10-10 measurement that made this trigger look dead pointed it at
+  # the automerge workflow itself, whose runs happen on main -- so the payload
+  # carried a main commit and "which pull request contains this commit"
+  # correctly answered none. Pointing it at the workflows that produce the
+  # required checks is the difference.
+  #
+  # Why it matters: the schedule is the fallback, and the schedule fires
+  # every four to seven hours on this repository (measured over 24 runs,
+  # 2026-10-24 to 2026-10-30, whatever the cron says). A pull request that is
+  # green therefore waited hours for the next scheduled attempt.
+  workflow_run:
+    workflows: ['ci', 'chain-invariant']
+    types: [completed]
   schedule:
     # Every 5 minutes. The first entry is off-peak so the repository is not hit
     # on the hour by every workflow at once.
@@ -124,6 +143,7 @@ jobs:
           # works in production and makes the step untestable locally — the
           # extracted script then fails on a bad substitution.
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           if [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
@@ -143,6 +163,28 @@ jobs:
             fi
             SHA="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq .head.sha)"
             draft="false"
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]; then
+            # The payload carries the commit the finished run was made
+            # against. For a run on a pull request that commit is the head of
+            # that pull request, so the pull request can be found by asking
+            # which pull requests contain it. For a run on main it contains
+            # none, and the step stops with a notice.
+            SHA="${WORKFLOW_SHA:-}"
+            if [[ -z "$SHA" ]]; then
+              echo "::error::No commit in the workflow_run payload — refusing."
+              exit 1
+            fi
+            pr="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/pulls" \
+              --jq '[.[] | select(.state == "open")][0].number // empty' 2>/dev/null || echo "")"
+            if [[ -z "$pr" ]]; then
+              echo "::notice::No open pull request contains ${SHA} — nothing to merge."
+              exit 0
+            fi
+            draft="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq .draft)"
+            if [[ "$draft" == "true" ]]; then
+              echo "::notice::PR #${pr} is a draft — not merging."
+              exit 0
+            fi
           elif [[ "${GITHUB_EVENT_NAME}" == "pull_request_target" ]]; then
             # The number is in the payload. Looking it up by commit instead is a
             # second source that can disagree with the event, and when it came
@@ -218,14 +260,78 @@ jobs:
           fi
           echo "required=$contexts" >>"$GITHUB_OUTPUT"
 
+      # A pull request whose head is behind the base branch cannot be merged:
+      # GitHub refuses the merge with "the head branch is not up to date with
+      # the base branch", and `gh pr merge` exits 1.
+      #
+      # Measured on PR #708, 2026-10-30: its head lives in a fork that this
+      # token can only read, so nothing here could update it. The scheduled run
+      # failed on exactly that from 00:49 onwards, every five minutes, and the
+      # pull request sat green and open for days.
+      #
+      # When the head IS in this repository, the API can update it without
+      # checking out anything -- no code from the pull request is executed, so
+      # the write token is not exposed. The update creates a NEW head commit,
+      # which means the required checks have to run again: the step therefore
+      # stops this run with a notice and lets the next scheduled attempt merge
+      # once the new head is green.
+      #
+      # A head that cannot be updated is reported as an error with the two
+      # things that would fix it, rather than as a merge failure that says
+      # nothing about the cause.
+      - name: Bring a behind pull request up to date
+        id: sync
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${PR_NUMBER:-}" ]]; then
+            echo "::notice::No pull request to synchronise."
+            exit 0
+          fi
+          state="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+            --jq '.mergeable_state // "unknown"' 2>/dev/null || echo unknown)"
+          if [[ "$state" != "behind" ]]; then
+            echo "::notice::PR #${PR_NUMBER} is '${state}' -- the head is current."
+            exit 0
+          fi
+          echo "::notice::PR #${PR_NUMBER} is behind the base branch -- updating the head."
+          if updated="$(gh api -X PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/update-branch" \
+            --jq '.sha // "unknown"' 2>&1)"; then
+            echo "updated=true" >>"$GITHUB_OUTPUT"
+            echo "::notice::Head updated to ${updated} -- waiting for the checks on the new head."
+            exit 0
+          fi
+          echo "::error::PR #${PR_NUMBER} is behind the base branch and the head could not be updated from here."
+          echo "::error::Push the branch to this repository, or rebase it onto the base branch with a token that has write access to the head repository."
+          exit 1
+
       - name: Merge when every required check passed
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REQUIRED: ${{ steps.policy.outputs.required }}
           HEAD_SHA: ${{ steps.pr.outputs.sha }}
           PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          HEAD_UPDATED: ${{ steps.sync.outputs.updated }}
         run: |
           set -euo pipefail
+          # The head moved while this run was reading the checks, so the green
+          # verdicts below describe a commit that is no longer the head.
+          # Merging on them would merge something nobody checked.
+          if [[ "${HEAD_UPDATED:-}" == "true" ]]; then
+            echo "::notice::The head moved -- the required checks have to run again. Not merging this run."
+            exit 0
+          fi
+          # The verdicts above are read for one commit. A pull request pushed
+          # again since that commit was read has a different head, and those
+          # verdicts say nothing about it.
+          current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+            --jq '.head.sha' 2>/dev/null || echo unknown)"
+          if [[ "$current" != "$HEAD_SHA" ]]; then
+            echo "::notice::The head moved since the checks were read -- not merging this run."
+            exit 0
+          fi
           IFS=',' read -ra contexts <<<"$REQUIRED"
 
           for ctx in "${contexts[@]}"; do
