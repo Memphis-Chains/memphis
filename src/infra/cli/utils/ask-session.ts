@@ -14,6 +14,8 @@ import {
 } from '../../../core/ask-session-store.js';
 import type { RequestedProviderName, RuntimeTelemetry } from '../../../core/types.js';
 import { classifyPromptIntent } from '../../../gateway/basal-prompt-classification.js';
+import { guardModelOutput } from '../../../gateway/prompt-boundary.js';
+import { resolveSurfacePolicy } from '../../../gateway/surface-policy.js';
 import { createPinoLogger } from '../../logging/pino.js';
 
 const log = createPinoLogger();
@@ -134,39 +136,53 @@ export async function runAskSessionTurn(params: {
   const commandOutcome = handleAskSessionMetaCommand(trimmed, params);
   if (commandOutcome) return commandOutcome;
 
-  const deterministicRecall = buildLocalFallbackRecallAnswer(
-    params.session,
-    params.rawInput,
-    params.runtime.provider.name,
-  );
-  if (deterministicRecall) {
-    // This local recall shortcut answers a user turn without entering runChatTurn.
-    const basalPromptClassification = await classifyPromptIntent(params.rawInput, process.env);
-    if (basalPromptClassification) {
-      deterministicRecall.telemetry = { basalPromptClassification };
-      deterministicRecall.timingMs += basalPromptClassification.latencyMs;
-      log.info(
-        { event: 'basal.prompt.classified', surface: 'cli.chat', ...basalPromptClassification },
-        'Basal prompt classification',
-      );
-    }
-    appendAskSessionExchange(params.session, params.rawInput, deterministicRecall.output);
+  const previousUserTurn = readAskSession(params.session, process.env)
+    .filter((turn) => turn.role === 'user' && turn.content.trim().length > 0)
+    .at(-1);
+  const exactPreviousMessageRequest =
+    /^(?:co (?:właśnie|przed chwilą) (?:powiedziałem|powiedziałam|napisałem|napisałam)|what did i just say)[?!.]*$/iu.test(
+      trimmed,
+    );
+  const canRecallLocally =
+    previousUserTurn &&
+    exactPreviousMessageRequest &&
+    resolveSurfacePolicy('cli.chat', process.env).allowMemoryRecall;
+  if (canRecallLocally) {
+    const basal = await classifyPromptIntent(params.rawInput, process.env);
+    const intro = /^what did i just say/iu.test(trimmed)
+      ? 'Your previous message: '
+      : 'Twoja poprzednia wiadomość: ';
+    const guarded = await guardModelOutput(intro + previousUserTurn.content, 'cli.chat');
+    const localRecall: AskGenerateResult = {
+      id: `ask_${Date.now().toString(36)}`,
+      providerUsed: 'local-session',
+      modelUsed: 'deterministic-session-recall',
+      output: guarded.output,
+      timingMs: basal?.latencyMs ?? 0,
+      usage: { outputTokens: 0 },
+      ...(basal ? { telemetry: { basalPromptClassification: basal } } : {}),
+    };
+    log.info(
+      {
+        event: 'session.local_recall',
+        surface: 'cli.chat',
+        ...basal,
+        route: 'local-session',
+        providerCalls: 0,
+      },
+      'Deterministic session recall',
+    );
+    appendAskSessionExchange(params.session, params.rawInput, localRecall.output);
     const refreshedStats = askSessionStats(
       readAskSession(params.session, process.env),
       process.env,
     );
-    if (params.json) {
-      print({ ...deterministicRecall, session: params.session, context: refreshedStats }, true);
-      return { exit: false };
-    }
-    if (params.tui) {
-      printTuiAnswer(deterministicRecall);
-    } else {
-      printChat(deterministicRecall);
-    }
+    if (params.json)
+      print({ ...localRecall, session: params.session, context: refreshedStats }, true);
+    else if (params.tui) printTuiAnswer(localRecall);
+    else printChat(localRecall);
     return { exit: false };
   }
-
   const { chatState, userTurn } = buildAskSessionState(
     params.runtime,
     params.session,
@@ -195,28 +211,6 @@ export async function runAskSessionTurn(params: {
   }
 
   return { exit: false };
-}
-
-function buildLocalFallbackRecallAnswer(
-  session: string,
-  rawInput: string,
-  providerName: string,
-): AskGenerateResult | undefined {
-  if (providerName !== 'local-fallback') return undefined;
-  if (!/what did i just say\??/i.test(rawInput.trim())) return undefined;
-  const previousUserTurn = readAskSession(session, process.env)
-    .filter((turn) => turn.role === 'user' && turn.content.trim().length > 0)
-    .at(-1);
-  if (!previousUserTurn) return undefined;
-  const output = `Fallback response: ${previousUserTurn.content}`;
-  return {
-    id: `ask_${Date.now().toString(36)}`,
-    providerUsed: 'local-fallback',
-    modelUsed: 'local-fallback-v0',
-    output,
-    timingMs: 0,
-    usage: { outputTokens: estimateTokens(output) },
-  };
 }
 
 function handleAskSessionMetaCommand(

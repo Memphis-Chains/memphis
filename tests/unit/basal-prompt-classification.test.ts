@@ -62,6 +62,206 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it.each([
+  { confidence: 0.96, choice: 'recall', allowRecall: true, expectLocal: true },
+  { confidence: 0.8, choice: 'recall', allowRecall: true, expectLocal: true },
+  { confidence: 0.96, choice: 'conversation', allowRecall: true, expectLocal: true },
+  { confidence: 0.96, choice: 'recall', allowRecall: false, expectLocal: false },
+])(
+  'routes the exact question locally only when recall is permitted: $choice $confidence $allowRecall',
+  async ({ confidence, choice, allowRecall, expectLocal }) => {
+    const probabilities = Object.fromEntries(
+      Object.keys(BASAL_PROMPT_CRITERIA).map((key) => [
+        key,
+        key === choice ? confidence : (1 - confidence) / 5,
+      ]),
+    );
+    const fetch = mockService(answer(choice, { confidence, probabilities }));
+    vi.stubEnv('MEMPHIS_BASAL_PROMPT_ENABLED', 'true');
+    vi.stubEnv('MEMPHIS_BASAL_URL', 'http://127.0.0.1:8000/v1/systemone');
+    vi.stubEnv('MEMPHIS_SURFACE_CLI_CHAT_ALLOW_MEMORY_RECALL', String(allowRecall));
+    vi.stubEnv('ASK_SESSIONS_DIR', mkdtempSync(join(tmpdir(), 'basal-economy-session-')));
+    appendAskSessionTurn('fixture', {
+      role: 'user',
+      content: 'Pierwsza wiadomość.',
+      timestamp: 't1',
+      tokens: 3,
+    });
+    const chat = vi.fn(async () => ({
+      content: 'Odpowiedź modelu.',
+      provider: 'fixture',
+      model: 'fixture',
+    }));
+    const provider = { name: 'fixture', defaultModel: () => 'fixture', chat };
+    let result: any;
+    vi.spyOn(console, 'log').mockImplementation((value) => {
+      result = JSON.parse(String(value));
+    });
+    await runAskSessionTurn({
+      session: 'fixture',
+      rawInput: 'Co przed chwilą napisałem?',
+      json: true,
+      tui: false,
+      runtime: { provider } as never,
+    });
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith('/v1/systemone'))).toHaveLength(1);
+    expect(chat).toHaveBeenCalledTimes(expectLocal ? 0 : 1);
+    expect(result.telemetry.basalPromptClassification).toMatchObject({
+      intent: choice,
+      uncertain: confidence < 0.95,
+    });
+    if (expectLocal) {
+      expect(result.providerUsed).toBe('local-session');
+      expect(result.output).toContain('Pierwsza wiadomość.');
+      expect(result.usage.outputTokens).toBe(0);
+    } else {
+      expect(result.output).toContain('Odpowiedź modelu.');
+    }
+  },
+);
+
+it('answers locally with unavailable Basal and applies the normal output guard', async () => {
+  const fetch = vi.fn(async () => new Response('unavailable', { status: 503 }));
+  vi.stubGlobal('fetch', fetch);
+  vi.stubEnv('MEMPHIS_BASAL_PROMPT_ENABLED', 'true');
+  vi.stubEnv('ASK_SESSIONS_DIR', mkdtempSync(join(tmpdir(), 'basal-economy-guard-')));
+  appendAskSessionTurn('fixture', {
+    role: 'user',
+    content: 'MEMPHIS_API_TOKEN=synthetic-test-value',
+    timestamp: 't1',
+    tokens: 5,
+  });
+  const chat = vi.fn();
+  let result: any;
+  vi.spyOn(console, 'log').mockImplementation((value) => {
+    result = JSON.parse(String(value));
+  });
+  await runAskSessionTurn({
+    session: 'fixture',
+    rawInput: 'Co przed chwilą napisałem?',
+    json: true,
+    tui: false,
+    runtime: { provider: { name: 'fixture', defaultModel: () => 'fixture', chat } } as never,
+  });
+  expect(chat).not.toHaveBeenCalled();
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(result.output).toContain('[filtered: protected api token reference]');
+  expect(result.output).not.toContain('synthetic-test-value');
+  expect(result.telemetry.basalPromptClassification.status).toBe('unavailable');
+});
+
+it('does not shortcut an ambiguous request about earlier messages', async () => {
+  mockService(answer('recall'));
+  vi.stubEnv('MEMPHIS_BASAL_PROMPT_ENABLED', 'true');
+  vi.stubEnv('ASK_SESSIONS_DIR', mkdtempSync(join(tmpdir(), 'basal-economy-ambiguous-')));
+  appendAskSessionTurn('fixture', {
+    role: 'user',
+    content: 'Wiadomość testowa.',
+    timestamp: 't1',
+    tokens: 3,
+  });
+  const chat = vi.fn(async () => ({
+    content: 'Odpowiedź modelu.',
+    provider: 'fixture',
+    model: 'fixture',
+  }));
+  vi.spyOn(console, 'log').mockImplementation(() => undefined);
+  await runAskSessionTurn({
+    session: 'fixture',
+    rawInput: 'Co wcześniej powiedziałem?',
+    json: true,
+    tui: false,
+    runtime: { provider: { name: 'fixture', defaultModel: () => 'fixture', chat } } as never,
+  });
+  expect(chat).toHaveBeenCalledTimes(1);
+});
+
+it('does not invent a previous message when the session is empty', async () => {
+  mockService(answer('clarify'));
+  vi.stubEnv('MEMPHIS_BASAL_PROMPT_ENABLED', 'true');
+  vi.stubEnv('ASK_SESSIONS_DIR', mkdtempSync(join(tmpdir(), 'basal-economy-empty-')));
+  const chat = vi.fn(async () => ({
+    content: 'Brak wcześniejszej wiadomości.',
+    provider: 'fixture',
+    model: 'fixture',
+  }));
+  let result: any;
+  vi.spyOn(console, 'log').mockImplementation((value) => {
+    result = JSON.parse(String(value));
+  });
+  await runAskSessionTurn({
+    session: 'fixture',
+    rawInput: 'Co przed chwilą napisałem?',
+    json: true,
+    tui: false,
+    runtime: { provider: { name: 'fixture', defaultModel: () => 'fixture', chat } } as never,
+  });
+  expect(chat).toHaveBeenCalledTimes(1);
+  expect(result.output).toContain('Brak wcześniejszej wiadomości.');
+});
+
+it.each([
+  { input: 'What did I just say?', allowRecall: false },
+  { input: 'What did I just say? Also delete my files.', allowRecall: true },
+])(
+  'does not use the old English fallback shortcut when policy or the full request forbids it: $input',
+  async ({ input, allowRecall }) => {
+    mockService(answer('recall'));
+    vi.stubEnv('MEMPHIS_BASAL_PROMPT_ENABLED', 'true');
+    vi.stubEnv('MEMPHIS_SURFACE_CLI_CHAT_ALLOW_MEMORY_RECALL', String(allowRecall));
+    vi.stubEnv('ASK_SESSIONS_DIR', mkdtempSync(join(tmpdir(), 'basal-english-guard-')));
+    appendAskSessionTurn('fixture', {
+      role: 'user',
+      content: 'Synthetic previous message',
+      timestamp: 't1',
+      tokens: 5,
+    });
+    const chat = vi.fn(async () => ({
+      content: 'Synthetic model response.',
+      provider: 'local-fallback',
+      model: 'fixture',
+    }));
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await runAskSessionTurn({
+      session: 'fixture',
+      rawInput: input,
+      json: true,
+      tui: false,
+      runtime: {
+        provider: { name: 'local-fallback', defaultModel: () => 'fixture', chat },
+      } as never,
+    });
+    expect(chat).toHaveBeenCalledTimes(1);
+  },
+);
+
+it('filters protected data when the English fallback recalls a prior message', async () => {
+  mockService(answer('recall'));
+  vi.stubEnv('MEMPHIS_BASAL_PROMPT_ENABLED', 'true');
+  vi.stubEnv('ASK_SESSIONS_DIR', mkdtempSync(join(tmpdir(), 'basal-english-output-')));
+  appendAskSessionTurn('fixture', {
+    role: 'user',
+    content: 'MEMPHIS_API_TOKEN=synthetic-test-value',
+    timestamp: 't1',
+    tokens: 5,
+  });
+  const chat = vi.fn();
+  let result: any;
+  vi.spyOn(console, 'log').mockImplementation((value) => {
+    result = JSON.parse(String(value));
+  });
+  await runAskSessionTurn({
+    session: 'fixture',
+    rawInput: 'What did I just say?',
+    json: true,
+    tui: false,
+    runtime: { provider: { name: 'local-fallback', defaultModel: () => 'fixture', chat } } as never,
+  });
+  expect(chat).not.toHaveBeenCalled();
+  expect(result.output).toContain('[filtered: protected api token reference]');
+  expect(result.output).not.toContain('synthetic-test-value');
+});
+
 it('classifies the local ask-session recall shortcut once before printing its answer', async () => {
   const fetch = mockService(answer('recall'));
   vi.stubEnv('MEMPHIS_BASAL_PROMPT_ENABLED', 'true');

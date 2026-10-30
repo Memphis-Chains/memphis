@@ -76,12 +76,26 @@ async function notify(message: string, rawEnv: NodeJS.ProcessEnv): Promise<Built
  */
 export function runtimeWatchFailures(input: {
   healthStatus: string;
+  /**
+   * WHY the health check is not healthy.
+   *
+   * Measured 2026-10-29: the watch alerted `health=unhealthy` twice in
+   * one evening and the message named nothing but the status — the
+   * operator could not tell whether the database, the repair state or
+   * the recall path was broken, and the chain kept no record of it. A
+   * gate that says "something is wrong" without saying what is not a
+   * diagnosis.
+   */
+  healthDetail?: string;
   recent: RecentActivity;
   failingSlos: string[];
 }): string[] {
   const failures: string[] = [];
   if (input.healthStatus !== 'healthy') {
-    failures.push(`health=${input.healthStatus}`);
+    const detail = input.healthDetail?.trim();
+    failures.push(
+      detail ? `health=${input.healthStatus} (${detail})` : `health=${input.healthStatus}`,
+    );
   }
   if (input.recent.turn?.status === 'error') {
     failures.push('last turn failed');
@@ -92,6 +106,31 @@ export function runtimeWatchFailures(input: {
   return failures;
 }
 
+/**
+ * One line naming the unhealthy part of a health payload.
+ *
+ * Order matters: the repair state explains most failures, and the
+ * individual checks explain the rest.
+ */
+export function describeHealthFailure(payload: {
+  runtime?: { repair?: { status?: string; reasons?: string[] } };
+  checks?: Record<string, { status?: string; message?: string }>;
+}): string | undefined {
+  const repair = payload.runtime?.repair;
+  if (repair?.status && repair.status !== 'healthy') {
+    const reason = (repair.reasons ?? []).find((entry) => entry.trim().length > 0);
+    return reason ? `repair=${repair.status}: ${reason}` : `repair=${repair.status}`;
+  }
+  for (const [name, check] of Object.entries(payload.checks ?? {})) {
+    if (check?.status && check.status !== 'ok' && check.status !== 'pass') {
+      return check.message
+        ? `check=${name}=${check.status}: ${check.message}`
+        : `check=${name}=${check.status}`;
+    }
+  }
+  return undefined;
+}
+
 async function runtimeWatch(rawEnv: NodeJS.ProcessEnv): Promise<BuiltinJobResult> {
   const health = await buildHealthPayload(loadConfig(rawEnv), rawEnv);
   const slo = runMemphisSloStatus({ windowDays: 7 }, rawEnv);
@@ -100,6 +139,7 @@ async function runtimeWatch(rawEnv: NodeJS.ProcessEnv): Promise<BuiltinJobResult
   const recent = runMemphisSloStatus({ windowHours: 24 }, rawEnv);
   const failures = runtimeWatchFailures({
     healthStatus: health.status,
+    healthDetail: describeHealthFailure(health),
     recent: recent.recent,
     failingSlos: slo.failingSlos,
   });
