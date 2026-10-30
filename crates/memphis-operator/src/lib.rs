@@ -11,6 +11,7 @@ mod chat_session;
 mod chat_streaming;
 mod chat_tool_catalog;
 mod chat_tool_executor;
+mod code_read_range;
 mod config;
 mod context;
 mod openai_codex;
@@ -34,3 +35,4 @@ pub use runtime::{
     VaultEntryMetadata, VaultSecretView, VaultSummary,
 };
 pub use text_truncation::{truncate_on_char_boundary, truncate_with_ellipsis};
+pub use code_read_range::{resolve_code_read_range, CodeReadRange};
