@@ -170,23 +170,43 @@ describe('automerge — it merges, and only by squash', () => {
         'pull_request_target',
         'schedule',
         'workflow_dispatch',
+        'workflow_run',
       ]);
     });
 
-    it('retries on a schedule instead of trusting a completion event', () => {
+    it('wakes on the completion of the checks, and keeps the schedule as the retry', () => {
       // Measured on PR #669, with the checks green the whole time:
       //   workflow_run  fired 4x with head_branch=main and a merge-commit
       //                 head_sha, so "which PR contains this commit" answered
       //                 none every time;
       //   check_run    fired 0x — GitHub omits it for check suites it created
       //                 itself, which is all of them here.
-      // Neither can be the second door. The schedule re-reads the checks.
+      //
+      // That measurement was taken with the trigger pointing at the automerge
+      // workflow ITSELF, whose runs happen on main. Pointed at the workflows
+      // that produce the required checks it carries the HEAD of the pull
+      // request — measured 2026-10-30 on the ci runs of PR #722 and #723 —
+      // and the pull request is found by the commit it contains.
+      //
+      // The schedule stays as the retry, because the schedule on this
+      // repository fires every four to seven hours whatever the cron says
+      // (24 runs measured 2026-10-24 to 2026-10-30), and a green pull request
+      // cannot wait that long.
       const triggers = (
         doc as {
-          on: Record<string, Array<{ cron?: string }> | undefined>;
+          on: Record<
+            string,
+            Array<{ cron?: string }> | { workflows?: string[]; types?: string[] } | undefined
+          >;
         }
       ).on;
-      expect(triggers.workflow_run).toBeUndefined();
+      const wf = triggers.workflow_run as { workflows?: string[] } | undefined;
+      expect(wf).toBeDefined();
+      // The workflows that produce the four required checks. Pointing the
+      // trigger at anything else brings back the dead door of 2026-10-10.
+      expect(wf?.workflows ?? []).toEqual(expect.arrayContaining(['ci', 'chain-invariant']));
+      // Pointing it at itself is the mistake that made it look dead.
+      expect(wf?.workflows ?? []).not.toContain('automerge');
       expect(triggers.check_run).toBeUndefined();
       expect(triggers.pull_request_target).toBeDefined();
       expect(triggers.schedule?.[0]?.cron ?? '').not.toBe('');
@@ -300,5 +320,22 @@ describe('automerge — a pull request behind the base branch', () => {
     const sync = stepsScript('behind pull request');
     expect(sync).toContain('could not be updated');
     expect(sync).toContain('write access to the head repository');
+  });
+});
+
+describe('automerge — the fast path has to name the right pull request', () => {
+  it('finds the pull request by the commit the finished run was made against', () => {
+    const resolve = stepsScript('resolve');
+    expect(resolve).toContain('/commits/');
+    expect(resolve).toContain('/pulls');
+    expect(resolve).toContain('No open pull request contains');
+  });
+
+  it('refuses to merge when the pull request has moved on from the checked commit', () => {
+    // The verdicts are read for one commit. A pull request pushed again since
+    // then has a different head, and those verdicts say nothing about it.
+    const merge = stepsScript('merge when every required check');
+    expect(merge).toContain('.head.sha');
+    expect(merge).toContain('The head moved since the checks were read');
   });
 });

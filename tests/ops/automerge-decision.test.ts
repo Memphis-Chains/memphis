@@ -94,10 +94,11 @@ function shellSingleQuote(value: string): string {
  * itself and read its head SHA back. The stub answers only what the step asks.
  */
 function runResolve(args: {
-  event: 'pull_request_target' | 'schedule' | 'workflow_dispatch';
+  event: 'pull_request_target' | 'schedule' | 'workflow_dispatch' | 'workflow_run';
   openPrs: Array<{ number: number; state: string }>;
   draftFor: Record<number, boolean>;
   headSha?: string;
+  workflowSha?: string;
 }): { r: SpawnSyncReturns<string>; outFile: string; calls: string[] } {
   const binDir = tmp('memphis-gh-');
   const ghPath = path.join(binDir, 'gh');
@@ -164,6 +165,7 @@ function runResolve(args: {
       GITHUB_OUTPUT: outFile,
       GITHUB_EVENT_NAME: args.event,
       SHA: headSha,
+      WORKFLOW_SHA: args.workflowSha ?? '',
       PR_NUMBER: '4242',
     },
     encoding: 'utf8',
@@ -196,6 +198,14 @@ function installStub(dir: string, verdictsFile: string): void {
     '    if [[ "$1" == "--jq" ]]; then expr="${2:-}"; shift 2; else shift; fi',
     '  done',
     '  name="$(printf %s "$expr" | sed -n \'s/.*\\.name == "\\([^"]*\\)".*/\\1/p\')"',
+    // The merge step asks which commit the pull request points at now. A stub
+    // that answered "missing" to everything made the step believe the head had
+    // moved on every run, and the merge it was supposed to perform never
+    // happened.
+    '  if [[ "$expr" == *".head.sha"* ]]; then',
+    '    printf "%s\\n" "${STUB_HEAD_SHA:-deadbeef}"',
+    '    exit 0',
+    '  fi',
     '  v="missing"',
     `  if [[ -n "$name" && -f "${verdictsFile}" ]]; then`,
     `    v="$(grep -F -- "$name=" "${verdictsFile}" | head -1 | cut -d= -f2- || true)"`,
@@ -215,7 +225,7 @@ function installStub(dir: string, verdictsFile: string): void {
 function runMerge(
   verdicts: string,
   required = CHECK_NAMES.join(','),
-  opts: { headUpdated?: string } = {},
+  opts: { headUpdated?: string; headSha?: string } = {},
 ) {
   const binDir = tmp('memphis-stub-');
   const verdictsFile = path.join(binDir, 'verdicts');
@@ -232,6 +242,7 @@ function runMerge(
       HEAD_SHA: 'deadbeef',
       REQUIRED: required,
       HEAD_UPDATED: opts.headUpdated ?? '',
+      STUB_HEAD_SHA: opts.headSha ?? 'deadbeef',
     },
     encoding: 'utf8',
   });
@@ -567,6 +578,69 @@ describe('automerge — a pull request behind the base branch', () => {
 
   it('still merges when the head did not move', () => {
     const r = runMerge(verdictsFor(), CHECK_NAMES.join(','), { headUpdated: '' });
+    expect(r.stdout).toContain('MERGE-CALLED');
+  });
+});
+
+describe('automerge — the fast path: a finished check run wakes the merge', () => {
+  it('finds the pull request by the commit in the payload', () => {
+    // The payload of a run on a pull request carries the HEAD of that pull
+    // request, not a merge commit — measured on the ci runs of PR #722 and
+    // #723. So "which pull request contains this commit" answers with the
+    // pull request that just finished its checks.
+    // Two open pull requests: the step must pick the one that contains the
+    // commit in the payload, not the newest open one. A step that fell
+    // through to "the newest open pull request" would answer 731 and pass a
+    // test that only ever had one pull request in it.
+    const { r, outFile } = runResolve({
+      event: 'workflow_run',
+      openPrs: [
+        { number: 730, state: 'open' },
+        { number: 731, state: 'open' },
+      ],
+      draftFor: { 730: false, 731: false },
+      workflowSha: 'abc123',
+    });
+    expect(r.status).toBe(0);
+    expect(readFileSync(outFile, 'utf8')).toContain('number=730');
+    expect(readFileSync(outFile, 'utf8')).not.toContain('number=731');
+  });
+
+  it('stops when no open pull request contains the commit', () => {
+    // A run on main contains no pull request. Merging something else would
+    // merge a pull request nobody asked about.
+    const { r, outFile } = runResolve({
+      event: 'workflow_run',
+      openPrs: [],
+      draftFor: {},
+      workflowSha: 'abc123',
+    });
+    expect(r.status).toBe(0);
+    expect(`${r.stdout}${r.stderr}`).toContain('No open pull request contains');
+    expect(existsSync(outFile)).toBe(false);
+  });
+
+  it('refuses when the payload carries no commit', () => {
+    const { r } = runResolve({
+      event: 'workflow_run',
+      openPrs: [{ number: 730, state: 'open' }],
+      draftFor: { 730: false },
+      workflowSha: '',
+    });
+    expect(r.status).not.toBe(0);
+    expect(`${r.stdout}${r.stderr}`).toContain('refusing');
+  });
+
+  it('does not merge on verdicts for a commit the pull request has moved on from', () => {
+    // The verdicts are read for one commit. A pull request pushed again since
+    // then has a different head, and those verdicts say nothing about it.
+    const r = runMerge(verdictsFor(), CHECK_NAMES.join(','), { headSha: 'cafebabe' });
+    expect(r.stdout).toContain('The head moved since the checks were read');
+    expect(r.stdout).not.toContain('MERGE-CALLED');
+  });
+
+  it('merges when the head is the commit the checks were read for', () => {
+    const r = runMerge(verdictsFor(), CHECK_NAMES.join(','), { headSha: 'deadbeef' });
     expect(r.stdout).toContain('MERGE-CALLED');
   });
 });
