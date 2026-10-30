@@ -15,14 +15,46 @@ import {
 // that pull `SafeFetchDeps` from this module keep working.
 export type { SafeFetchDeps };
 
-const MAX_BODY_CHARS = 4000;
+/// How many bytes of the body a fetch returns.
+///
+/// The native arm has always read 32 000 and the cockpit advertises
+/// that to the model. This arm truncated at 4 000, with a test pinning
+/// that number since the tool landed, so the same URL answered
+/// differently depending on which surface the model was talking to.
+///
+/// 4 000 bytes of a documentation page is the first paragraph and the
+/// navigation menu -- a fragment the model cannot use. 32 000 bytes is
+/// about 8 000 tokens against a 475 000-token window, so it is bounded
+/// and still useful. The number is a parameter now, so the two arms
+/// agree and the caller can ask for less.
+const MAX_BODY_BYTES = 32_000;
 // Phase 1.5.3: env-driven via MEMPHIS_WEB_FETCH_TIMEOUT_MS (default 1 min,
 // was 8 s hardcode — operator constraint cost-unconstrained).
 const FETCH_TIMEOUT_MS = MEMPHIS_WEB_FETCH_TIMEOUT_MS.read(process.env);
 const MAX_REDIRECTS = 5;
 
+/**
+ * Cut a body to a number of UTF-8 bytes without splitting a character
+ * in half.
+ */
+function sliceUtf8Bytes(text: string, maxBytes: number): { content: string; truncated: boolean } {
+  const buffer = Buffer.from(text, 'utf8');
+  if (buffer.length <= maxBytes) {
+    return { content: text, truncated: false };
+  }
+  let end = maxBytes;
+  // A continuation byte means the character it belongs to starts
+  // earlier, so the cut moves back to the character's first byte.
+  while (end > 0 && (buffer[end] & 0xc0) === 0x80) {
+    end -= 1;
+  }
+  return { content: buffer.subarray(0, end).toString('utf8'), truncated: true };
+}
+
 export type MemphisWebFetchInput = {
   url: string;
+  /** The most bytes of the body to return (1..32000). */
+  maxBytes?: number;
 };
 
 export type MemphisWebFetchOutput = {
@@ -78,8 +110,10 @@ export async function runMemphisWebFetch(
   }
 
   const raw = await response.text();
-  const truncated = raw.length > MAX_BODY_CHARS;
-  const content = truncated ? raw.slice(0, MAX_BODY_CHARS) : raw;
+  // Counted in bytes, like the native arm: a page with Polish text
+  // must not be cut differently on the two surfaces.
+  const maxBytes = Math.min(Math.max(input.maxBytes ?? MAX_BODY_BYTES, 1), MAX_BODY_BYTES);
+  const { content, truncated } = sliceUtf8Bytes(raw, maxBytes);
 
   return {
     url: currentUrl,

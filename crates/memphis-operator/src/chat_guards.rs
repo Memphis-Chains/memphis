@@ -299,43 +299,6 @@ pub(crate) fn secret_exfiltration_patterns(
     .into_iter()
 }
 
-/// Paths the native `memphis_code_read` must refuse.
-///
-/// The TypeScript surface has refused these since the tool landed
-/// (ALWAYS_BLOCKED_READ_PATTERNS in src/mcp/tools/code-read.ts). The native
-/// tool checked only that the path sat under ~/memphis/, so `memphis_code_read`
-/// on the authoritative surface would happily return `.env`, `vault-state.json`
-/// and `vault-entries.json` -- the exact files the boundary exists to protect,
-/// in the directory where they live.
-///
-/// Returned as Err with an operator-facing reason rather than silently
-/// skipping, so the refusal is legible in the TUI.
-
-pub(crate) fn assert_path_not_secret_material(resolved: &str) -> Result<(), String> {
-    const BLOCKED: &[(&str, fn(&str) -> bool)] = &[
-        (".env", |p: &str| p == ".env" || p.starts_with(".env.")),
-        ("vault-state.json", |p: &str| p == "vault-state.json"),
-        ("vault-entries.json", |p: &str| p == "vault-entries.json"),
-        (".git/", |p: &str| p == ".git" || p.starts_with(".git/")),
-        ("node_modules/", |p: &str| p.starts_with("node_modules/")),
-    ];
-
-    // Match on any path segment, so `src/.env` is refused like `.env`.
-    for segment in resolved.split('/') {
-        if segment.is_empty() || segment == "." {
-            continue;
-        }
-        for (label, matches) in BLOCKED {
-            if matches(segment) {
-                return Err(format!(
-                    "Path '{resolved}' is blocked because it matches {label} and may contain secrets or generated state"
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
 /// Scan content about to be written to a file, mirroring
 /// `scanContent(content, 'code-change')` in src/security/content-scan.ts.
 ///

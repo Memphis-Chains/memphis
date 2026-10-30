@@ -2,7 +2,7 @@ import { runMemphisProviders } from '../../../mcp/tools/providers.js';
 import { runMemphisSystemInfo } from '../../../mcp/tools/system-info.js';
 import { runMemphisWebFetch } from '../../../mcp/tools/web-fetch.js';
 import { buildTool, type RuntimeToolDefinition } from '../../tool-runtime.js';
-import { requiredString } from '../input-normalization.js';
+import { optionalIntegerInRange, requiredString } from '../input-normalization.js';
 
 export function createExternalInfoRuntimeTools(
   rawEnv?: NodeJS.ProcessEnv,
@@ -33,13 +33,19 @@ export function createExternalInfoRuntimeTools(
       description: 'Fetch a public URL',
       inputSchema: {
         type: 'object',
-        properties: { url: { type: 'string', description: 'URL to fetch' } },
+        properties: {
+          url: { type: 'string', description: 'URL to fetch' },
+          maxBytes: { type: 'number', description: 'Max bytes of the body to return (default 32000)' },
+        },
         required: ['url'],
       },
       isConcurrencySafe: true,
       isReadOnly: true,
       validateInput(args) {
-        return { url: requiredString(args, 'url') };
+        return {
+          url: requiredString(args, 'url'),
+          maxBytes: optionalIntegerInRange(args, 'maxBytes', 1, 32000),
+        };
       },
       async execute(input) {
         return runMemphisWebFetch(input, {

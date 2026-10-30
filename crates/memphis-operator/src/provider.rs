@@ -1963,22 +1963,57 @@ pub fn resolve_provider(
     }
 }
 
+/// The providers the cockpit reports on, in display order.
+const CONFIGURED_PROVIDER_NAMES: [&str; 9] = [
+    "openai",
+    "local-fallback",
+    "shared-llm",
+    "decentralized-llm",
+    "ollama",
+    "minimax",
+    "deepseek",
+    "glm",
+    "anthropic",
+];
+
+/// Resolve every configured provider and report its status.
+///
+/// The providers are resolved and probed CONCURRENTLY. Resolving one
+/// of them may have to decrypt a vault entry, and that decryption is
+/// a scrypt KDF — measured on the operator's host at ~6.4 s for a
+/// single provider (`minimax`, whose key lives in the vault). The
+/// sequential version therefore made the cockpit's first paint wait
+/// for the slowest provider, and the whole panel arrived at once,
+/// seconds after the operator had already started typing.
+///
+/// Concurrency does not make the KDF itself faster — it stops the
+/// other eight providers from queueing behind it.
 pub fn configured_provider_statuses(config: &OperatorConfig) -> Vec<ProviderStatus> {
-    [
-        "openai",
-        "local-fallback",
-        "shared-llm",
-        "decentralized-llm",
-        "ollama",
-        "minimax",
-        "deepseek",
-        "glm",
-        "anthropic",
-    ]
-    .into_iter()
-    .filter_map(|name| resolve_provider(config, Some(name)).ok())
-    .map(|provider| provider.status())
-    .collect()
+    let results: Vec<Option<ProviderStatus>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = CONFIGURED_PROVIDER_NAMES
+            .iter()
+            .map(|name| {
+                let config = config.clone();
+                let name = *name;
+                scope.spawn(move || {
+                    resolve_provider(&config, Some(name))
+                        .ok()
+                        .map(|provider| provider.status())
+                })
+            })
+            .collect();
+
+        handles
+            .into_iter()
+            .map(|handle| {
+                handle
+                    .join()
+                    .unwrap_or_else(|_| None)
+            })
+            .collect()
+    });
+
+    results.into_iter().flatten().collect()
 }
 
 fn build_tools_json(tools: &[ChatToolDefinition]) -> Vec<Value> {

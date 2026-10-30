@@ -29,6 +29,8 @@ export type MemphisCodeReadOutput = {
   path: string;
   content: string;
   lineCount: number;
+  /** The number of lines in the whole file. */
+  totalLines: number;
   truncated: boolean;
   error?: string;
 };
@@ -64,15 +66,23 @@ function allowedReadRoots(): string[] {
   return [...baseRoots, ...extraRoots];
 }
 
-const ALWAYS_BLOCKED_READ_PATTERNS: RegExp[] = [
-  /(^|\/)\.env$/,
-  /(^|\/)\.env\.[^/]+$/,
-  /(^|\/)vault-state\.json$/,
-  /(^|\/)vault-entries\.json$/,
-  /(^|\/)\.git\//,
-  /(^|\/)\.git$/,
-  /(^|\/)node_modules\//,
-];
+/**
+ * The path segments that are never readable.
+ *
+ * The native arm names the segment it refused ("matches node_modules
+ * and may contain secrets or generated state"); this arm used to say
+ * only "is blocked because it may contain secrets", so the same
+ * refusal read differently on the two surfaces.
+ */
+function blockedSegmentLabel(segment: string): string | null {
+  if (segment === '.env') return '.env';
+  if (segment === 'vault-state.json') return 'vault-state.json';
+  if (segment === 'vault-entries.json') return 'vault-entries.json';
+  if (segment === '.git') return '.git';
+  if (segment === 'node_modules') return 'node_modules';
+  if (segment.startsWith('.env.')) return '.env.*';
+  return null;
+}
 
 function realpathRoot(root: string): string {
   try {
@@ -84,11 +94,13 @@ function realpathRoot(root: string): string {
 
 function assertInMemphisDir(resolvedPath: string): void {
   const normalized = path.normalize(resolvedPath);
-  for (const pattern of ALWAYS_BLOCKED_READ_PATTERNS) {
-    if (pattern.test(normalized)) {
+  for (const segment of normalized.split('/')) {
+    if (segment === '' || segment === '.') continue;
+    const label = blockedSegmentLabel(segment);
+    if (label) {
       throw new AppError(
         'VALIDATION_ERROR',
-        `Path '${resolvedPath}' is blocked because it may contain secrets or generated state`,
+        `Path '${resolvedPath}' is blocked because it matches ${label} and may contain secrets or generated state`,
         403,
       );
     }
@@ -132,6 +144,7 @@ export function runMemphisCodeRead(input: MemphisCodeReadInput): MemphisCodeRead
       path: resolvedPath,
       content: '',
       lineCount: 0,
+      totalLines: 0,
       truncated: false,
       error: `File not found or not accessible: ${resolvedPath}`,
     };
@@ -142,6 +155,7 @@ export function runMemphisCodeRead(input: MemphisCodeReadInput): MemphisCodeRead
       path: resolvedPath,
       content: '',
       lineCount: 0,
+      totalLines: 0,
       truncated: false,
       error: `Not a regular file: ${resolvedPath}`,
     };
@@ -155,12 +169,20 @@ export function runMemphisCodeRead(input: MemphisCodeReadInput): MemphisCodeRead
       path: resolvedPath,
       content: '',
       lineCount: 0,
+      totalLines: 0,
       truncated: false,
       error: `Could not read file: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 
-  const allLines = rawContent.split('\n');
+  // A line terminator is not part of the line, and a trailing newline
+  // does not add an empty line. The native arm counts the same way.
+  const allLines = rawContent
+    .split('\n')
+    .map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line));
+  while (allLines.length > 0 && allLines[allLines.length - 1] === '') {
+    allLines.pop();
+  }
   const totalLines = allLines.length;
 
   // Apply line range
@@ -173,6 +195,7 @@ export function runMemphisCodeRead(input: MemphisCodeReadInput): MemphisCodeRead
         path: resolvedPath,
         content: '',
         lineCount: 0,
+        totalLines,
         truncated: false,
         error: `startLine ${input.startLine} is out of range (file has ${totalLines} lines)`,
       };
@@ -186,6 +209,7 @@ export function runMemphisCodeRead(input: MemphisCodeReadInput): MemphisCodeRead
         path: resolvedPath,
         content: '',
         lineCount: 0,
+        totalLines,
         truncated: false,
         error: `endLine ${input.endLine} is out of range (file has ${totalLines} lines)`,
       };
@@ -193,17 +217,48 @@ export function runMemphisCodeRead(input: MemphisCodeReadInput): MemphisCodeRead
     endIdx = input.endLine;
   }
 
-  // Apply limit (also cap at MAX_LINE_COUNT)
+  // Apply limit. A limit outside 1..2000 is refused rather than
+  // absorbed: the schema advertises 2000 as the maximum, and the
+  // native arm refuses it too. A limit of zero used to return an
+  // empty result with no error, which the model could not tell from
+  // "this file is empty".
   const requestedLimit = input.limit ?? MAX_LINE_COUNT;
-  const effectiveLimit = Math.min(requestedLimit, MAX_LINE_COUNT);
+  if (requestedLimit < 1) {
+    return {
+      path: resolvedPath,
+      content: '',
+      lineCount: 0,
+      totalLines: 0,
+      truncated: false,
+      error: 'limit must be at least 1',
+    };
+  }
+  if (requestedLimit > MAX_LINE_COUNT) {
+    return {
+      path: resolvedPath,
+      content: '',
+      lineCount: 0,
+      totalLines: 0,
+      truncated: false,
+      error: `limit must be at most ${MAX_LINE_COUNT}`,
+    };
+  }
+  const effectiveLimit = requestedLimit;
 
+  // The window the caller asked for, before the limit cuts it.
+  const requestedEnd = endIdx;
   if (endIdx - startIdx > effectiveLimit) {
     endIdx = startIdx + effectiveLimit;
   }
 
   const selectedLines = allLines.slice(startIdx, endIdx);
   const content = selectedLines.join('\n');
-  const truncated = endIdx < totalLines || content.length > MAX_CONTENT_CHARS;
+  // The window is what the caller named: an explicit endLine, or the
+  // whole file when there is none. A file with five thousand lines
+  // read at startLine 1, endLine 10 is not truncated -- the ten lines
+  // asked for were delivered. Both arms used to say it was, which
+  // told the model to re-read a file it had already been given.
+  const truncated = endIdx < requestedEnd || content.length > MAX_CONTENT_CHARS;
   const returnedContent = truncated
     ? content.slice(0, MAX_CONTENT_CHARS) + '\n... (truncated)'
     : content;
@@ -212,6 +267,7 @@ export function runMemphisCodeRead(input: MemphisCodeReadInput): MemphisCodeRead
     path: resolvedPath,
     content: returnedContent,
     lineCount: endIdx - startIdx,
+    totalLines,
     truncated,
   };
 }

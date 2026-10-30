@@ -958,12 +958,13 @@ export function createMemphisMcpServer(
           'Fetch a public URL and return its content (blocks internal/private addresses)',
         inputSchema: {
           url: z.string().url(),
+          maxBytes: z.number().int().positive().max(32000).optional(),
           approval_request_id: z.string().optional(),
         },
       },
-      withApprovalGate('memphis_web_fetch', webFetchPolicy, approvals, async ({ url }) => {
+      withApprovalGate('memphis_web_fetch', webFetchPolicy, approvals, async ({ url, maxBytes }) => {
         const result = await runMemphisWebFetch(
-          { url },
+          { url, maxBytes },
           {
             allowPrivateNetwork:
               (rawEnv.MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK ?? '').toLowerCase() === 'true',

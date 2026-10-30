@@ -175,7 +175,9 @@ pub(crate) fn native_tool_definitions() -> Vec<ChatToolDefinition> {
                     "pattern": { "type": "string", "description": "Regex pattern to search for" },
                     "path": { "type": "string", "description": "Directory or file to search in (default: ~/memphis)" },
                     "glob": { "type": "string", "description": "Glob filter e.g. '*.ts'" },
-                    "maxResults": { "type": "number", "description": "Max results (default 50)" }
+                    "limit": { "type": "number", "minimum": 1, "maximum": 200, "description": "Max results to return (default 50)" },
+                    "context": { "type": "number", "description": "Lines of context around each match" },
+                    "ignoreCase": { "type": "boolean", "description": "Case-insensitive search" }
                 },
                 "required": ["pattern"]
             }),
@@ -187,7 +189,8 @@ pub(crate) fn native_tool_definitions() -> Vec<ChatToolDefinition> {
                 "type": "object",
                 "properties": {
                     "pattern": { "type": "string", "description": "Glob pattern e.g. 'src/**/*.ts'" },
-                    "path": { "type": "string", "description": "Base directory (default: ~/memphis)" }
+                    "path": { "type": "string", "description": "Base directory (default: ~/memphis)" },
+                    "limit": { "type": "number", "minimum": 1, "maximum": 500, "description": "Max files to return (default 100)" }
                 },
                 "required": ["pattern"]
             }),
@@ -198,7 +201,8 @@ pub(crate) fn native_tool_definitions() -> Vec<ChatToolDefinition> {
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "command": { "type": "string", "description": "Git subcommand e.g. 'log --oneline -10', 'status', 'diff'" }
+                    "subcommand": { "type": "string", "description": "Git subcommand e.g. 'status', 'log', 'diff'" },
+                    "args": { "type": "array", "items": { "type": "string" }, "description": "Arguments to pass to the subcommand" }
                 },
                 "required": ["command"]
             }),
@@ -210,7 +214,7 @@ pub(crate) fn native_tool_definitions() -> Vec<ChatToolDefinition> {
                 "type": "object",
                 "properties": {
                     "url": { "type": "string", "description": "URL to fetch" },
-                    "maxBytes": { "type": "number", "description": "Max bytes to read (default 32000)" }
+                    "maxBytes": { "type": "number", "minimum": 1, "maximum": 32000, "description": "Max bytes to read (default 32000)" }
                 },
                 "required": ["url"]
             }),

@@ -1,0 +1,66 @@
+{
+  "description": "The cases where the two arms of memphis_code_read used to disagree. Checked by a test in Rust and a test in TypeScript. {ROOT} = <home>/memphis, {HOME} = <home>.",
+  "cases": [
+    {
+      "name": "a trailing newline is not an extra line",
+      "files": [{ "path": "{ROOT}/a.txt", "content": "alpha\nbeta\ngamma\n" }],
+      "call": { "path": "{ROOT}/a.txt" },
+      "expect": { "ok": true, "content": "alpha\nbeta\ngamma", "lineCount": 3, "totalLines": 3, "truncated": false }
+    },
+    {
+      "name": "a carriage return goes with its terminator",
+      "files": [{ "path": "{ROOT}/a.txt", "content": "alpha\r\nbeta\r\n" }],
+      "call": { "path": "{ROOT}/a.txt" },
+      "expect": { "ok": true, "content": "alpha\nbeta", "lineCount": 2, "totalLines": 2, "truncated": false }
+    },
+    {
+      "name": "a limit of zero is refused",
+      "files": [{ "path": "{ROOT}/a.txt", "content": "alpha\nbeta\n" }],
+      "call": { "path": "{ROOT}/a.txt", "limit": 0 },
+      "expect": { "ok": false, "error": "limit must be at least 1" }
+    },
+    {
+      "name": "a limit above the cap is refused",
+      "files": [{ "path": "{ROOT}/a.txt", "content": "alpha\nbeta\n" }],
+      "call": { "path": "{ROOT}/a.txt", "limit": 5000 },
+      "expect": { "ok": false, "error": "limit must be at most 2000" }
+    },
+    {
+      "name": "the limit cuts the window and says so",
+      "files": [{ "path": "{ROOT}/a.txt", "content": "alpha\nbeta\ngamma\n" }],
+      "call": { "path": "{ROOT}/a.txt", "limit": 2 },
+      "expect": { "ok": true, "content": "alpha\nbeta\n... (truncated)", "lineCount": 2, "totalLines": 3, "truncated": true }
+    },
+    {
+      "name": "an explicit range inside a long file was delivered whole",
+      "files": [{ "path": "{ROOT}/a.txt", "content": "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n" }],
+      "call": { "path": "{ROOT}/a.txt", "startLine": 1, "endLine": 2 },
+      "expect": { "ok": true, "content": "l1\nl2", "lineCount": 2, "totalLines": 10, "truncated": false }
+    },
+    {
+      "name": "a relative path resolves against the workspace root",
+      "files": [{ "path": "{ROOT}/a.txt", "content": "alpha\n" }],
+      "call": { "path": "a.txt" },
+      "expect": { "ok": true, "content": "alpha", "lineCount": 1, "totalLines": 1, "truncated": false }
+    },
+    {
+      "name": "node_modules is refused",
+      "files": [{ "path": "{ROOT}/node_modules/pkg/index.js", "content": "module.exports = 1;\n" }],
+      "call": { "path": "{ROOT}/node_modules/pkg/index.js" },
+      "expect": { "ok": false, "error": "Path '{ROOT}/node_modules/pkg/index.js' is blocked because it matches node_modules and may contain secrets or generated state" }
+    },
+    {
+      "name": "a .env file is refused",
+      "files": [{ "path": "{ROOT}/.env", "content": "SECRET=1\n" }],
+      "call": { "path": "{ROOT}/.env" },
+      "expect": { "ok": false, "error": "Path '{ROOT}/.env' is blocked because it matches .env and may contain secrets or generated state" }
+    },
+    {
+      "name": "a symlink out of the workspace is refused, not followed",
+      "files": [{ "path": "{HOME}/outside.txt", "content": "SENSITIVE\n" }],
+      "symlinks": [{ "path": "{ROOT}/escape.txt", "target": "{HOME}/outside.txt" }],
+      "call": { "path": "{ROOT}/escape.txt" },
+      "expect": { "ok": false, "error": "Path '{ROOT}/escape.txt' is outside the allowed read roots: ~/memphis, ~/.memphis, ~/projects" }
+    }
+  ]
+}

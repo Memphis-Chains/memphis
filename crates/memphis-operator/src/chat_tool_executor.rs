@@ -21,8 +21,7 @@ use crate::chat_basal::{
     BASAL_TIMEOUT_SECS,
 };
 use crate::chat_guards::{
-    assert_path_not_secret_material, build_wrapped_segment, emit_runtime_security_event,
-    scan_code_change_content, sha256_hex,
+    build_wrapped_segment, emit_runtime_security_event, scan_code_change_content, sha256_hex,
 };
 use crate::chat_memory::{
     append_case_entry, append_generic_block, read_chain_blocks, recall_result_with_sources,
@@ -30,7 +29,15 @@ use crate::chat_memory::{
     value_string_array, value_usize,
 };
 use crate::chat_tool_catalog::tool_tier;
+use crate::code_read::{
+    assert_contained as assert_code_read_path_contained,
+    assert_not_blocked as assert_code_read_path_not_blocked,
+    assert_write_contained as assert_code_read_write_contained,
+    resolve_path as resolve_code_read_path, split_lines as split_code_read_lines,
+    CODE_READ_MAX_CONTENT_CHARS,
+};
 use crate::code_read_range::resolve_code_read_range;
+use crate::ssrf_guard::{assert_url_safe, resolve_redirect};
 use memphis_case_index::CaseIndex;
 use memphis_core::case_entry::{CaseEntry, CaseQuery};
 
@@ -48,6 +55,45 @@ use crate::OperatorRuntime;
 /// 2026-10-26, the day the operator moved to the Rust TUI — the native
 /// surface executes tools itself, so every native call was invisible to
 /// the SLO evaluator.
+
+/// The hard ceiling on a fetched body, in bytes.
+///
+/// Also the default. The ceiling cannot be raised: the tool schema
+/// advertises it, and a cap above it would break that promise.
+const WEB_FETCH_MAX_BYTES: usize = 32_000;
+
+/// How many redirects a fetch may follow, each one checked.
+const WEB_FETCH_MAX_REDIRECTS: usize = 5;
+
+/// The fetch timeout, in milliseconds.
+///
+/// The TypeScript surface reads `MEMPHIS_WEB_FETCH_TIMEOUT_MS` (default
+/// one minute). The native arm had a hardcoded ten seconds, so the
+/// same URL was answered on one surface and timed out on the other.
+fn web_fetch_timeout_ms() -> u64 {
+    std::env::var("MEMPHIS_WEB_FETCH_TIMEOUT_MS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .map(|value| value.clamp(1_000, 600_000))
+        .unwrap_or(60_000)
+}
+
+/// Cut a body to a number of bytes without splitting a character.
+///
+/// The cut moves back to the start of the character it would have
+/// split, so the result is always valid UTF-8.
+pub(crate) fn cut_on_char_boundary(body: &[u8], max_bytes: usize) -> String {
+    if body.len() <= max_bytes {
+        return String::from_utf8_lossy(body).into_owned();
+    }
+    let mut end = max_bytes;
+    // A continuation byte (0b10xxxxxx) means the character starts
+    // earlier, so the cut moves back until it lands on a boundary.
+    while end > 0 && (body[end] & 0xC0) == 0x80 {
+        end -= 1;
+    }
+    String::from_utf8_lossy(&body[..end]).into_owned()
+}
 pub(crate) fn execute_native_tool(
     runtime: &OperatorRuntime,
     call: &ChatToolCall,
@@ -289,31 +335,24 @@ fn execute_native_tool_inner(
                 .and_then(Value::as_u64)
                 .map(|v| v as usize);
 
-            // Security: restrict to ~/memphis/
+            // Security: the same rules the TypeScript arm applies.
+            // Checking only that the path sat under ~/memphis/ was not
+            // enough: a symlink inside the workspace could read any
+            // file on the host.
             let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-            let memphis_dir = Path::new(&home).join("memphis");
-            let resolved_path = path_str.replace("~/", &home);
-            let resolved = Path::new(&resolved_path);
-            if !resolved.starts_with(&memphis_dir) {
-                return Err(OperatorError::Message(format!(
-                    "Path '{}' is outside the allowed ~/memphis/ directory",
-                    path_str
-                )));
+            let home_path = Path::new(&home);
+            let resolved = resolve_code_read_path(path_str, home_path);
+            if let Err(reason) = assert_code_read_path_not_blocked(&resolved) {
+                return Err(OperatorError::Message(reason));
             }
-
-            // Being under ~/memphis/ is not the same as safe to read: the
-            // operator's own .env and vault state live in that directory.
-            // The TypeScript surface has refused these since code_read
-            // landed (ALWAYS_BLOCKED_READ_PATTERNS); without this the native
-            // tool was a way around the boundary it was supposed to enforce.
-            if let Err(reason) = assert_path_not_secret_material(&resolved_path) {
+            if let Err(reason) = assert_code_read_path_contained(&resolved, home_path) {
                 return Err(OperatorError::Message(reason));
             }
 
-            let content = fs::read_to_string(resolved)
+            let content = fs::read_to_string(&resolved)
                 .map_err(|e| OperatorError::Message(format!("Failed to read file: {}", e)))?;
 
-            let lines: Vec<&str> = content.lines().collect();
+            let lines: Vec<&str> = split_code_read_lines(&content);
             let total_lines = lines.len();
 
             // The range is validated in one place, `code_read_range`,
@@ -327,8 +366,20 @@ fn execute_native_tool_inner(
                 .map_err(OperatorError::Message)?;
 
             let slice: Vec<&str> = lines.get(range.start..range.slice_end()).unwrap_or(&[]).to_vec();
-            let result_content = slice.join("\n");
-            let truncated = range.is_truncated(total_lines);
+            let mut result_content = slice.join("\n");
+            let mut truncated = range.is_truncated();
+            // The same marker the TypeScript arm appends, and the same
+            // content cap: the model reads one shape on both surfaces.
+            if truncated {
+                result_content.push_str("\n... (truncated)");
+            } else if result_content.chars().count() > CODE_READ_MAX_CONTENT_CHARS {
+                result_content = result_content
+                    .chars()
+                    .take(CODE_READ_MAX_CONTENT_CHARS)
+                    .collect::<String>()
+                    + "\n... (truncated)";
+                truncated = true;
+            }
 
             let json = serde_json::json!({
                 "path": path_str,
@@ -371,7 +422,25 @@ fn execute_native_tool_inner(
                     base_path
                 )));
             }
-            let max_results = value_usize(call.arguments.get("maxResults")).unwrap_or(50);
+            // The registry names the result cap `limit`; the native arm
+            // called it `maxResults`, so a caller that learned the
+            // registry's shape silently got the default instead of the
+            // cap it asked for. The old name still works.
+            let max_results = value_usize(call.arguments.get("limit"))
+                .or_else(|| value_usize(call.arguments.get("maxResults")))
+                .unwrap_or(50)
+                .min(200);
+            // `context` and `ignoreCase` are in the registry too, and
+            // the native arm ignored them: a caller asking for two
+            // lines of context got one, and a caller asking for a
+            // case-insensitive search got a case-sensitive one.
+            let context =
+                value_usize(call.arguments.get("context")).map(|value| value.to_string());
+            let ignore_case = call
+                .arguments
+                .get("ignoreCase")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             let glob_filter = call
                 .arguments
                 .get("glob")
@@ -379,6 +448,13 @@ fn execute_native_tool_inner(
                 .unwrap_or("");
 
             let mut args = vec!["grep", "-rn", "--max-count=1"];
+            if ignore_case {
+                args.push("-i");
+            }
+            if let Some(context) = context.as_deref() {
+                args.push("-C");
+                args.push(context);
+            }
             if !glob_filter.is_empty() {
                 args.push("--include");
                 args.push(glob_filter);
@@ -433,6 +509,10 @@ fn execute_native_tool_inner(
                 )));
             }
 
+            // The registry names the cap `limit`; the native arm had a
+            // hardcoded 200 and ignored the argument entirely.
+            let limit = value_usize(call.arguments.get("limit")).unwrap_or(100).min(500);
+
             let output = std::process::Command::new("find")
                 .arg(&base_path)
                 .arg("-name")
@@ -443,7 +523,7 @@ fn execute_native_tool_inner(
                 .map_err(|e| OperatorError::Message(format!("glob/find failed: {}", e)))?;
 
             let stdout = String::from_utf8_lossy(&output.stdout);
-            let files: Vec<&str> = stdout.lines().take(200).collect();
+            let files: Vec<&str> = stdout.lines().take(limit).collect();
             let json = serde_json::json!({
                 "pattern": pattern,
                 "files": files,
@@ -460,13 +540,35 @@ fn execute_native_tool_inner(
             ))
         }
         "memphis_git" => {
-            let command = call
-                .arguments
-                .get("command")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    OperatorError::Message("memphis_git requires command".to_string())
-                })?;
+            // The registry names the subcommand and its arguments
+            // separately; the native arm took one whitespace-separated
+            // string under the name `command`, so a caller that learned
+            // the registry's shape was refused outright. The old shape
+            // still works.
+            let (subcommand, git_args): (String, Vec<String>) =
+                match call.arguments.get("subcommand").and_then(Value::as_str) {
+                    Some(subcommand) => (
+                        subcommand.to_string(),
+                        value_string_array(call.arguments.get("args")),
+                    ),
+                    None => {
+                        let command = call
+                            .arguments
+                            .get("command")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| {
+                                OperatorError::Message(
+                                    "memphis_git requires subcommand".to_string(),
+                                )
+                            })?;
+                        let mut parts = command.split_whitespace();
+                        let subcommand = parts.next().unwrap_or("").to_string();
+                        (
+                            subcommand,
+                            parts.map(|part| part.to_string()).collect(),
+                        )
+                    }
+                };
             let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
             let memphis_dir = std::path::Path::new(&home).join("memphis");
 
@@ -485,7 +587,7 @@ fn execute_native_tool_inner(
                 "ls-files",
                 "remote",
             ];
-            let subcmd = command.split_whitespace().next().unwrap_or("");
+            let subcmd = subcommand.split_whitespace().next().unwrap_or("");
             if !read_only.contains(&subcmd) {
                 return Err(OperatorError::Message(format!(
                     "memphis_git: '{}' is not a read-only git subcommand",
@@ -496,7 +598,8 @@ fn execute_native_tool_inner(
             let output = std::process::Command::new("git")
                 .arg("-C")
                 .arg(&memphis_dir)
-                .args(command.split_whitespace())
+                .arg(&subcommand)
+                .args(&git_args)
                 .output()
                 .map_err(|e| OperatorError::Message(format!("git failed: {}", e)))?;
 
@@ -504,7 +607,7 @@ fn execute_native_tool_inner(
             let stderr = String::from_utf8_lossy(&output.stderr);
             let truncated = stdout.len() > 32000;
             let json = serde_json::json!({
-                "command": format!("git {}", command),
+                "command": format!("git {}", subcommand),
                 "stdout": &stdout[..stdout.len().min(32000)],
                 "stderr": &stderr[..stderr.len().min(8000)],
                 "exitCode": output.status.code().unwrap_or(1),
@@ -528,29 +631,72 @@ fn execute_native_tool_inner(
                 .ok_or_else(|| {
                     OperatorError::Message("memphis_web_fetch requires url".to_string())
                 })?;
+            // The same number the TypeScript arm uses, and the same
+            // ceiling the tool schema advertises.
             let max_bytes = call
                 .arguments
                 .get("maxBytes")
                 .and_then(Value::as_u64)
-                .unwrap_or(32000) as usize;
+                .unwrap_or(WEB_FETCH_MAX_BYTES as u64)
+                .min(WEB_FETCH_MAX_BYTES as u64) as usize;
 
-            let response = ureq::get(url)
-                .timeout(std::time::Duration::from_secs(10))
-                .call()
-                .map_err(|e| OperatorError::Message(format!("web_fetch failed: {}", e)))?;
+            // The gateway surface has refused private and internal
+            // targets since ADR-007. The native arm called `ureq`
+            // directly, with no guard at all, so the same request was
+            // refused on one surface and allowed on the other -- on the
+            // one the operator drives. Redirects are followed by hand,
+            // every hop checked, because a public URL may redirect into
+            // the private network.
+            let timeout = std::time::Duration::from_millis(web_fetch_timeout_ms());
+            let mut current = url.to_string();
+            let mut raw: Vec<u8> = Vec::new();
+            let mut hops = 0usize;
+            loop {
+                assert_url_safe(&current).map_err(OperatorError::Message)?;
+                let agent = ureq::AgentBuilder::new()
+                    .timeout(timeout)
+                    .redirects(0)
+                    .build();
+                let response = agent
+                    .get(&current)
+                    .call()
+                    .map_err(|e| OperatorError::Message(format!("web_fetch failed: {}", e)))?;
+                if (300..400).contains(&response.status()) {
+                    if hops >= WEB_FETCH_MAX_REDIRECTS {
+                        return Err(OperatorError::Message(
+                            "web_fetch failed: too many redirects".to_string(),
+                        ));
+                    }
+                    let location = response.header("location").ok_or_else(|| {
+                        OperatorError::Message(
+                            "web_fetch failed: redirect without a location".to_string(),
+                        )
+                    })?;
+                    current =
+                        resolve_redirect(&current, location).map_err(OperatorError::Message)?;
+                    hops += 1;
+                    continue;
+                }
+                // The body is read as bytes and cut on a character
+                // boundary. Reading it straight into a String failed the
+            // whole fetch when the cut landed in the middle of a
+            // multi-byte character -- so a page with Polish text failed
+            // depending on where the byte boundary happened to fall.
+                response
+                    .into_reader()
+                    .take(max_bytes as u64)
+                    .read_to_end(&mut raw)
+                    .map_err(|e| OperatorError::Message(format!("web_fetch read failed: {}", e)))?;
+                break;
+            }
+            let mut body = cut_on_char_boundary(&raw, max_bytes);
 
-            let mut body = String::new();
-            response
-                .into_reader()
-                .take(max_bytes as u64)
-                .read_to_string(&mut body)
-                .map_err(|e| OperatorError::Message(format!("web_fetch read failed: {}", e)))?;
-
+            let truncated = raw.len() >= max_bytes;
             let json = serde_json::json!({
                 "url": url,
                 "content": body,
-                "bytes": body.len(),
-                "truncated": body.len() >= max_bytes
+                "bytes": raw.len(),
+                "truncated": truncated
             });
             Ok((
                 format!("fetched {} bytes", body.len()),
@@ -699,19 +845,28 @@ fn execute_native_tool_inner(
             }
 
             let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-            let memphis_dir = std::path::Path::new(&home).join("memphis");
-            let resolved_path = path_str.replace("~/", &format!("{}/", home));
-            let resolved = std::path::Path::new(&resolved_path);
-            if !resolved.starts_with(&memphis_dir) {
-                return Err(OperatorError::Message(format!(
-                    "Path '{}' is outside ~/memphis/",
-                    path_str
-                )));
+            let home_path = std::path::Path::new(&home);
+            let memphis_dir = home_path.join("memphis");
+            // The rules the read path applies, in the same words: resolve
+            // the path the way the other arm resolves it, refuse the
+            // blocked segments by name, and refuse a target that leaves
+            // ~/memphis/ through a symlink.
+            //
+            // Checking only that the path sat under ~/memphis/ left the
+            // write path able to write .env, .git/ and node_modules/ --
+            // the very segments the read path refuses -- and to write
+            // through a symlink straight out of the workspace.
+            let resolved = resolve_code_read_path(path_str, home_path);
+            if let Err(reason) = assert_code_read_path_not_blocked(&resolved) {
+                return Err(OperatorError::Message(reason));
+            }
+            if let Err(reason) = assert_code_read_write_contained(&resolved, home_path) {
+                return Err(OperatorError::Message(reason));
             }
 
             // Snapshot: save original content for rollback
             let original = if resolved.exists() {
-                Some(fs::read_to_string(resolved).map_err(|e| {
+                Some(fs::read_to_string(&resolved).map_err(|e| {
                     OperatorError::Message(format!("Failed to read original: {}", e))
                 })?)
             } else {
@@ -749,7 +904,7 @@ fn execute_native_tool_inner(
                     let mut file = std::fs::OpenOptions::new()
                         .create(true)
                         .append(true)
-                        .open(resolved)
+                        .open(&resolved)
                         .map_err(|e| {
                             OperatorError::Message(format!("Failed to open file: {}", e))
                         })?;
@@ -757,7 +912,7 @@ fn execute_native_tool_inner(
                         .map_err(|e| OperatorError::Message(format!("Failed to append: {}", e)))?;
                 }
                 _ => {
-                    fs::write(resolved, content)
+                    fs::write(&resolved, content)
                         .map_err(|e| OperatorError::Message(format!("Failed to write: {}", e)))?;
                 }
             }
@@ -781,9 +936,9 @@ fn execute_native_tool_inner(
                         let stderr = String::from_utf8_lossy(&output.stderr);
                         // Rollback: restore original file
                         if let Some(ref orig) = original {
-                            let _ = fs::write(resolved, orig);
+                            let _ = fs::write(&resolved, orig);
                         } else {
-                            let _ = fs::remove_file(resolved);
+                            let _ = fs::remove_file(&resolved);
                         }
                         return Err(OperatorError::Message(format!(
                             "self_modify: build failed — rolled back {}. Error: {}",
@@ -794,9 +949,9 @@ fn execute_native_tool_inner(
                     Err(e) => {
                         // Rollback on build command failure
                         if let Some(ref orig) = original {
-                            let _ = fs::write(resolved, orig);
+                            let _ = fs::write(&resolved, orig);
                         } else {
-                            let _ = fs::remove_file(resolved);
+                            let _ = fs::remove_file(&resolved);
                         }
                         return Err(OperatorError::Message(format!(
                             "self_modify: build command failed — rolled back {}. Error: {}",
