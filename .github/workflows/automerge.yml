@@ -218,14 +218,69 @@ jobs:
           fi
           echo "required=$contexts" >>"$GITHUB_OUTPUT"
 
+      # A pull request whose head is behind the base branch cannot be merged:
+      # GitHub refuses the merge with "the head branch is not up to date with
+      # the base branch", and `gh pr merge` exits 1.
+      #
+      # Measured on PR #708, 2026-10-30: its head lives in a fork that this
+      # token can only read, so nothing here could update it. The scheduled run
+      # failed on exactly that from 00:49 onwards, every five minutes, and the
+      # pull request sat green and open for days.
+      #
+      # When the head IS in this repository, the API can update it without
+      # checking out anything -- no code from the pull request is executed, so
+      # the write token is not exposed. The update creates a NEW head commit,
+      # which means the required checks have to run again: the step therefore
+      # stops this run with a notice and lets the next scheduled attempt merge
+      # once the new head is green.
+      #
+      # A head that cannot be updated is reported as an error with the two
+      # things that would fix it, rather than as a merge failure that says
+      # nothing about the cause.
+      - name: Bring a behind pull request up to date
+        id: sync
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${PR_NUMBER:-}" ]]; then
+            echo "::notice::No pull request to synchronise."
+            exit 0
+          fi
+          state="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+            --jq '.mergeable_state // "unknown"' 2>/dev/null || echo unknown)"
+          if [[ "$state" != "behind" ]]; then
+            echo "::notice::PR #${PR_NUMBER} is '${state}' -- the head is current."
+            exit 0
+          fi
+          echo "::notice::PR #${PR_NUMBER} is behind the base branch -- updating the head."
+          if updated="$(gh api -X PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/update-branch" \
+            --jq '.sha // "unknown"' 2>&1)"; then
+            echo "updated=true" >>"$GITHUB_OUTPUT"
+            echo "::notice::Head updated to ${updated} -- waiting for the checks on the new head."
+            exit 0
+          fi
+          echo "::error::PR #${PR_NUMBER} is behind the base branch and the head could not be updated from here."
+          echo "::error::Push the branch to this repository, or rebase it onto the base branch with a token that has write access to the head repository."
+          exit 1
+
       - name: Merge when every required check passed
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REQUIRED: ${{ steps.policy.outputs.required }}
           HEAD_SHA: ${{ steps.pr.outputs.sha }}
           PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          HEAD_UPDATED: ${{ steps.sync.outputs.updated }}
         run: |
           set -euo pipefail
+          # The head moved while this run was reading the checks, so the green
+          # verdicts below describe a commit that is no longer the head.
+          # Merging on them would merge something nobody checked.
+          if [[ "${HEAD_UPDATED:-}" == "true" ]]; then
+            echo "::notice::The head moved -- the required checks have to run again. Not merging this run."
+            exit 0
+          fi
           IFS=',' read -ra contexts <<<"$REQUIRED"
 
           for ctx in "${contexts[@]}"; do

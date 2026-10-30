@@ -271,3 +271,34 @@ describe('automerge — it merges, and only by squash', () => {
     });
   });
 });
+
+describe('automerge — a pull request behind the base branch', () => {
+  it('updates the head through the API instead of checking it out', () => {
+    // The job holds contents:write and pull-requests:write. A checkout of the
+    // pull request head would turn it into an arbitrary-code-execution hole,
+    // so the branch is moved through the API and nothing is executed.
+    expect(wf).toContain('update-branch');
+    const steps = (doc as { jobs: { automerge: { steps: Array<{ uses?: string }> } } }).jobs
+      .automerge.steps;
+    const checkouts = steps.filter((st) => (st.uses ?? '').includes('actions/checkout'));
+    expect(checkouts).toEqual([]);
+  });
+
+  it('does not merge on verdicts that describe a head that has moved', () => {
+    // The update creates a new head commit, so the verdicts read before the
+    // update describe a commit that is no longer the head of the pull request.
+    const merge = stepsScript('merge when every required check');
+    expect(merge).toContain('HEAD_UPDATED');
+    expect(merge).toContain('The head moved');
+  });
+
+  it('names the fix when the head cannot be updated', () => {
+    // "Pull request is not mergeable: the head branch is not up to date with
+    // the base branch" is the message the old workflow ended on, every five
+    // minutes, with nothing about the cause. The two things that fix it are
+    // named instead.
+    const sync = stepsScript('behind pull request');
+    expect(sync).toContain('could not be updated');
+    expect(sync).toContain('write access to the head repository');
+  });
+});
