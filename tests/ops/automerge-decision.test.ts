@@ -43,7 +43,7 @@ function tmp(prefix: string): string {
 }
 
 /** The two run blocks, pulled out of the workflow as plain bash. */
-function steps(): { resolve: string; policy: string; merge: string } {
+function steps(): { resolve: string; policy: string; sync: string; merge: string } {
   const wf = parseYaml(readFileSync(wfPath, 'utf8')) as {
     jobs: { automerge: { steps: Array<{ name?: string; run?: string }> } };
   };
@@ -60,6 +60,7 @@ function steps(): { resolve: string; policy: string; merge: string } {
   return {
     resolve: named('resolve the pull request'),
     policy: named('read required checks'),
+    sync: named('behind pull request'),
     merge: named('merge when every required check'),
   };
 }
@@ -79,6 +80,9 @@ const CHECK_NAMES = [
  *  return without any test asserting on its value. */
 const DEFAULT_SHA = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
 
+/** The head commit an updated branch reports back. */
+const NEW_SHA = 'c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00';
+
 function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
@@ -90,10 +94,11 @@ function shellSingleQuote(value: string): string {
  * itself and read its head SHA back. The stub answers only what the step asks.
  */
 function runResolve(args: {
-  event: 'pull_request_target' | 'schedule' | 'workflow_dispatch';
+  event: 'pull_request_target' | 'schedule' | 'workflow_dispatch' | 'workflow_run';
   openPrs: Array<{ number: number; state: string }>;
   draftFor: Record<number, boolean>;
   headSha?: string;
+  workflowSha?: string;
 }): { r: SpawnSyncReturns<string>; outFile: string; calls: string[] } {
   const binDir = tmp('memphis-gh-');
   const ghPath = path.join(binDir, 'gh');
@@ -160,6 +165,7 @@ function runResolve(args: {
       GITHUB_OUTPUT: outFile,
       GITHUB_EVENT_NAME: args.event,
       SHA: headSha,
+      WORKFLOW_SHA: args.workflowSha ?? '',
       PR_NUMBER: '4242',
     },
     encoding: 'utf8',
@@ -192,6 +198,14 @@ function installStub(dir: string, verdictsFile: string): void {
     '    if [[ "$1" == "--jq" ]]; then expr="${2:-}"; shift 2; else shift; fi',
     '  done',
     '  name="$(printf %s "$expr" | sed -n \'s/.*\\.name == "\\([^"]*\\)".*/\\1/p\')"',
+    // The merge step asks which commit the pull request points at now. A stub
+    // that answered "missing" to everything made the step believe the head had
+    // moved on every run, and the merge it was supposed to perform never
+    // happened.
+    '  if [[ "$expr" == *".head.sha"* ]]; then',
+    '    printf "%s\\n" "${STUB_HEAD_SHA:-deadbeef}"',
+    '    exit 0',
+    '  fi',
     '  v="missing"',
     `  if [[ -n "$name" && -f "${verdictsFile}" ]]; then`,
     `    v="$(grep -F -- "$name=" "${verdictsFile}" | head -1 | cut -d= -f2- || true)"`,
@@ -208,7 +222,11 @@ function installStub(dir: string, verdictsFile: string): void {
   chmodSync(p, 0o755);
 }
 
-function runMerge(verdicts: string, required = CHECK_NAMES.join(',')) {
+function runMerge(
+  verdicts: string,
+  required = CHECK_NAMES.join(','),
+  opts: { headUpdated?: string; headSha?: string } = {},
+) {
   const binDir = tmp('memphis-stub-');
   const verdictsFile = path.join(binDir, 'verdicts');
   writeFileSync(verdictsFile, verdicts, 'utf8');
@@ -223,9 +241,63 @@ function runMerge(verdicts: string, required = CHECK_NAMES.join(',')) {
       PR_NUMBER: '999',
       HEAD_SHA: 'deadbeef',
       REQUIRED: required,
+      HEAD_UPDATED: opts.headUpdated ?? '',
+      STUB_HEAD_SHA: opts.headSha ?? 'deadbeef',
     },
     encoding: 'utf8',
   });
+}
+
+/**
+ * Run the "bring a behind pull request up to date" step with a stub `gh`.
+ *
+ * The stub answers two routes and refuses everything else:
+ *
+ *   repos/OWNER/REPO/pulls/N          -> the mergeable_state of the PR
+ *   repos/OWNER/REPO/pulls/N/update-branch -> the new head, or a refusal
+ *
+ * The refusal is the case that was measured on PR #708: the head lives in a
+ * fork that this token can only read, so the update is refused by the API and
+ * the pull request cannot be merged until somebody else moves it.
+ */
+function runSync(args: { state: string; updateOk: boolean }): {
+  r: SpawnSyncReturns<string>;
+  outFile: string;
+  calls: string[];
+} {
+  const binDir = tmp('memphis-sync-');
+  const ghPath = path.join(binDir, 'gh');
+  const callsFile = path.join(tmp('memphis-synccalls-'), 'calls');
+  const stub = [
+    '#!/usr/bin/env bash',
+    `printf '%s\\n' "$*" >> ${JSON.stringify(callsFile)}`,
+    'case "$*" in',
+    '  *update-branch*)',
+    args.updateOk
+      ? `    printf '%s\\n' "${NEW_SHA}"; exit 0 ;;`
+      : '    echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1 ;;',
+    '  *pulls/*)',
+    `    printf '%s\\n' ${shellSingleQuote(args.state)}; exit 0 ;;`,
+    'esac',
+    'exit 1',
+  ].join('\n');
+  writeFileSync(ghPath, stub, 'utf8');
+  chmodSync(ghPath, 0o755);
+
+  const outFile = path.join(tmp('memphis-out-'), 'gh_output');
+  const r = spawnSync('bash', ['-c', steps().sync], {
+    cwd: repoRoot,
+    env: {
+      PATH: `${binDir}:${process.env.PATH ?? ''}`,
+      GH_TOKEN: 'test',
+      GITHUB_REPOSITORY: 'Memphis-Chains/memphis',
+      GITHUB_OUTPUT: outFile,
+      PR_NUMBER: '999',
+    },
+    encoding: 'utf8',
+  });
+  const calls = existsSync(callsFile) ? readFileSync(callsFile, 'utf8').split('\n') : [];
+  return { r, outFile, calls };
 }
 
 /** Run the policy step with a stub curl that returns `rulesetJson`. */
@@ -463,5 +535,112 @@ describe('automerge — the scheduled retry has to find its own pull request', (
     expect(made).toHaveLength(1);
     expect(made[0]).toContain('/pulls/4242');
     expect(made[0]).not.toContain('commits/');
+  });
+});
+
+describe('automerge — a pull request behind the base branch', () => {
+  it('updates the head and waits for the checks on the new head', () => {
+    // The update creates a new head commit, so the verdicts read on the old
+    // head describe a commit that is no longer the head. The step says so and
+    // lets the next scheduled run merge.
+    const { r, outFile, calls } = runSync({ state: 'behind', updateOk: true });
+    expect(r.status).toBe(0);
+    expect(readFileSync(outFile, 'utf8')).toContain('updated=true');
+    expect(calls.join('\n')).toContain('update-branch');
+  });
+
+  it('refuses with the two things that would fix it when the head cannot be updated', () => {
+    // PR #708: the head lives in a fork this token can only read. The old
+    // workflow said "Pull request is not mergeable: the head branch is not up
+    // to date with the base branch" and exited 1, every five minutes, with
+    // nothing in the message about the cause.
+    const { r } = runSync({ state: 'behind', updateOk: false });
+    expect(r.status).not.toBe(0);
+    const said = `${r.stdout}${r.stderr}`;
+    expect(said).toContain('could not be updated');
+    expect(said).toContain('write access to the head repository');
+  });
+
+  it('does not touch the branch when the head is current', () => {
+    const { r, outFile, calls } = runSync({ state: 'clean', updateOk: true });
+    expect(r.status).toBe(0);
+    expect(calls.join('\n')).not.toContain('update-branch');
+    expect(existsSync(outFile)).toBe(false);
+  });
+
+  it('does not merge on verdicts that describe a head that has moved', () => {
+    // The merge step must refuse when the sync step moved the head. Merging
+    // on the old verdicts would merge a commit nobody checked.
+    const r = runMerge(verdictsFor(), CHECK_NAMES.join(','), { headUpdated: 'true' });
+    expect(r.stdout).toContain('The head moved');
+    expect(r.stdout).not.toContain('MERGE-CALLED');
+  });
+
+  it('still merges when the head did not move', () => {
+    const r = runMerge(verdictsFor(), CHECK_NAMES.join(','), { headUpdated: '' });
+    expect(r.stdout).toContain('MERGE-CALLED');
+  });
+});
+
+describe('automerge — the fast path: a finished check run wakes the merge', () => {
+  it('finds the pull request by the commit in the payload', () => {
+    // The payload of a run on a pull request carries the HEAD of that pull
+    // request, not a merge commit — measured on the ci runs of PR #722 and
+    // #723. So "which pull request contains this commit" answers with the
+    // pull request that just finished its checks.
+    // Two open pull requests: the step must pick the one that contains the
+    // commit in the payload, not the newest open one. A step that fell
+    // through to "the newest open pull request" would answer 731 and pass a
+    // test that only ever had one pull request in it.
+    const { r, outFile } = runResolve({
+      event: 'workflow_run',
+      openPrs: [
+        { number: 730, state: 'open' },
+        { number: 731, state: 'open' },
+      ],
+      draftFor: { 730: false, 731: false },
+      workflowSha: 'abc123',
+    });
+    expect(r.status).toBe(0);
+    expect(readFileSync(outFile, 'utf8')).toContain('number=730');
+    expect(readFileSync(outFile, 'utf8')).not.toContain('number=731');
+  });
+
+  it('stops when no open pull request contains the commit', () => {
+    // A run on main contains no pull request. Merging something else would
+    // merge a pull request nobody asked about.
+    const { r, outFile } = runResolve({
+      event: 'workflow_run',
+      openPrs: [],
+      draftFor: {},
+      workflowSha: 'abc123',
+    });
+    expect(r.status).toBe(0);
+    expect(`${r.stdout}${r.stderr}`).toContain('No open pull request contains');
+    expect(existsSync(outFile)).toBe(false);
+  });
+
+  it('refuses when the payload carries no commit', () => {
+    const { r } = runResolve({
+      event: 'workflow_run',
+      openPrs: [{ number: 730, state: 'open' }],
+      draftFor: { 730: false },
+      workflowSha: '',
+    });
+    expect(r.status).not.toBe(0);
+    expect(`${r.stdout}${r.stderr}`).toContain('refusing');
+  });
+
+  it('does not merge on verdicts for a commit the pull request has moved on from', () => {
+    // The verdicts are read for one commit. A pull request pushed again since
+    // then has a different head, and those verdicts say nothing about it.
+    const r = runMerge(verdictsFor(), CHECK_NAMES.join(','), { headSha: 'cafebabe' });
+    expect(r.stdout).toContain('The head moved since the checks were read');
+    expect(r.stdout).not.toContain('MERGE-CALLED');
+  });
+
+  it('merges when the head is the commit the checks were read for', () => {
+    const r = runMerge(verdictsFor(), CHECK_NAMES.join(','), { headSha: 'deadbeef' });
+    expect(r.stdout).toContain('MERGE-CALLED');
   });
 });
