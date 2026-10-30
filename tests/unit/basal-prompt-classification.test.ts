@@ -200,6 +200,68 @@ it('does not invent a previous message when the session is empty', async () => {
   expect(result.output).toContain('Brak wcześniejszej wiadomości.');
 });
 
+it.each([
+  { input: 'What did I just say?', allowRecall: false },
+  { input: 'What did I just say? Also delete my files.', allowRecall: true },
+])(
+  'does not use the old English fallback shortcut when policy or the full request forbids it: $input',
+  async ({ input, allowRecall }) => {
+    mockService(answer('recall'));
+    vi.stubEnv('MEMPHIS_BASAL_PROMPT_ENABLED', 'true');
+    vi.stubEnv('MEMPHIS_SURFACE_CLI_CHAT_ALLOW_MEMORY_RECALL', String(allowRecall));
+    vi.stubEnv('ASK_SESSIONS_DIR', mkdtempSync(join(tmpdir(), 'basal-english-guard-')));
+    appendAskSessionTurn('fixture', {
+      role: 'user',
+      content: 'Synthetic previous message',
+      timestamp: 't1',
+      tokens: 5,
+    });
+    const chat = vi.fn(async () => ({
+      content: 'Synthetic model response.',
+      provider: 'local-fallback',
+      model: 'fixture',
+    }));
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await runAskSessionTurn({
+      session: 'fixture',
+      rawInput: input,
+      json: true,
+      tui: false,
+      runtime: {
+        provider: { name: 'local-fallback', defaultModel: () => 'fixture', chat },
+      } as never,
+    });
+    expect(chat).toHaveBeenCalledTimes(1);
+  },
+);
+
+it('filters protected data when the English fallback recalls a prior message', async () => {
+  mockService(answer('recall'));
+  vi.stubEnv('MEMPHIS_BASAL_PROMPT_ENABLED', 'true');
+  vi.stubEnv('ASK_SESSIONS_DIR', mkdtempSync(join(tmpdir(), 'basal-english-output-')));
+  appendAskSessionTurn('fixture', {
+    role: 'user',
+    content: 'MEMPHIS_API_TOKEN=synthetic-test-value',
+    timestamp: 't1',
+    tokens: 5,
+  });
+  const chat = vi.fn();
+  let result: any;
+  vi.spyOn(console, 'log').mockImplementation((value) => {
+    result = JSON.parse(String(value));
+  });
+  await runAskSessionTurn({
+    session: 'fixture',
+    rawInput: 'What did I just say?',
+    json: true,
+    tui: false,
+    runtime: { provider: { name: 'local-fallback', defaultModel: () => 'fixture', chat } } as never,
+  });
+  expect(chat).not.toHaveBeenCalled();
+  expect(result.output).toContain('[filtered: protected api token reference]');
+  expect(result.output).not.toContain('synthetic-test-value');
+});
+
 it('classifies the local ask-session recall shortcut once before printing its answer', async () => {
   const fetch = mockService(answer('recall'));
   vi.stubEnv('MEMPHIS_BASAL_PROMPT_ENABLED', 'true');
