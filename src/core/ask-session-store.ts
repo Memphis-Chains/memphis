@@ -1,10 +1,13 @@
 import {
   appendFileSync,
+  closeSync,
+  constants,
   existsSync,
+  fstatSync,
+  ftruncateSync,
   mkdirSync,
+  openSync,
   readFileSync,
-  truncateSync,
-  writeFileSync,
 } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
@@ -28,7 +31,35 @@ export function askSessionsDir(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 export function askSessionPath(name: string, env: NodeJS.ProcessEnv = process.env): string {
+  const hasControl = Array.from(name).some((character) => {
+    const code = character.codePointAt(0)!;
+    return code < 32 || code === 127;
+  });
+  if (!name.trim() || name === '.' || name === '..' || /[\\/:]/u.test(name) || hasControl) {
+    throw new Error(
+      'Invalid session name: use a name without path separators or control characters.',
+    );
+  }
   return resolve(askSessionsDir(env), `${name}.jsonl`);
+}
+
+function noFollow(): number {
+  if (
+    typeof constants.O_NOFOLLOW !== 'number' ||
+    constants.O_NOFOLLOW === 0 ||
+    typeof constants.O_NONBLOCK !== 'number' ||
+    constants.O_NONBLOCK === 0
+  ) {
+    throw new Error('Session storage requires nonblocking, no-follow file opens.');
+  }
+  return constants.O_NOFOLLOW | constants.O_NONBLOCK;
+}
+
+function ensurePrivateRegularFile(fd: number): void {
+  const stat = fstatSync(fd);
+  if (!stat.isFile() || stat.nlink > 1) {
+    throw new Error('Session storage requires a regular file with no hard links.');
+  }
 }
 
 export function readAskSession(
@@ -37,11 +68,17 @@ export function readAskSession(
 ): AskSessionTurn[] {
   const target = askSessionPath(name, env);
   if (!existsSync(target)) return [];
-  return readFileSync(target, 'utf8')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as AskSessionTurn);
+  const fd = openSync(target, constants.O_RDONLY | noFollow());
+  try {
+    ensurePrivateRegularFile(fd);
+    return readFileSync(fd, 'utf8')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as AskSessionTurn);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export function appendAskSessionTurn(
@@ -51,17 +88,29 @@ export function appendAskSessionTurn(
 ): string {
   const target = askSessionPath(name, env);
   mkdirSync(dirname(target), { recursive: true });
-  appendFileSync(target, `${JSON.stringify(turn)}\n`, 'utf8');
+  const fd = openSync(
+    target,
+    constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | noFollow(),
+    0o600,
+  );
+  try {
+    ensurePrivateRegularFile(fd);
+    appendFileSync(fd, `${JSON.stringify(turn)}\n`, 'utf8');
+  } finally {
+    closeSync(fd);
+  }
   return target;
 }
 
 export function clearAskSession(name: string, env: NodeJS.ProcessEnv = process.env): string {
   const target = askSessionPath(name, env);
   mkdirSync(dirname(target), { recursive: true });
-  if (existsSync(target)) {
-    truncateSync(target, 0);
-  } else {
-    writeFileSync(target, '', 'utf8');
+  const fd = openSync(target, constants.O_WRONLY | constants.O_CREAT | noFollow(), 0o600);
+  try {
+    ensurePrivateRegularFile(fd);
+    ftruncateSync(fd, 0);
+  } finally {
+    closeSync(fd);
   }
   return target;
 }
