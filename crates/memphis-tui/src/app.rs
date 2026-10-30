@@ -11,8 +11,9 @@ use std::{
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use memphis_operator::{
-    ChatExchange, ChatStreamEvent, ChatTranscriptEntry, MemoryQueryResult, ModelCapabilitySummary,
-    ProviderStatus, SearchMode, TelegramReadinessSummary, TokenUsageSummary, VaultSecretView,
+    ChatExchange, ChatSessionView, ChatStreamEvent, ChatTranscriptEntry, MemoryQueryResult,
+    ModelCapabilitySummary, ProviderStatus, SearchMode, TelegramReadinessSummary, TokenUsageSummary,
+    VaultSecretView,
 };
 use serde_json::{json, Value};
 
@@ -718,6 +719,31 @@ pub struct AppState {
     pub chat_provider: Option<String>,
     pub chat_model: Option<String>,
     pub provider_statuses: Vec<ProviderStatus>,
+    /// The cockpit has painted at least once and knows whether the
+    /// runtime snapshot has arrived yet.
+    ///
+    /// The operator used to stare at an empty terminal for ~5.5 s
+    /// (measured: 5852 / 5575 / 5319 ms to the first paint) because
+    /// the startup did a synchronous snapshot + provider probe before
+    /// it entered raw mode. The cockpit now paints IMMEDIATELY and
+    /// fills itself in when the data lands, so this flag tells the
+    /// renderer whether to show "starting up" or the real overview.
+    pub booted: bool,
+    /// The transcript of the current session, loaded from the database
+    /// at startup.
+    ///
+    /// A restart used to wipe the visible conversation: the transcript
+    /// was only ever read by `/session <id>`, so the operator lost the
+    /// context of the session they were working in — while the very
+    /// same rows sat in SQLite (measured: 470 messages in
+    /// `primary::operator:local`, 1447 in `tui-6ade6161`).
+    pub session_history: Vec<ChatTranscriptEntry>,
+    /// How many messages the session has in total, when known.
+    pub session_history_total: Option<usize>,
+    /// True while the session transcript is still being read.
+    pub session_history_loading: bool,
+    /// The worker reading the session transcript, if one is running.
+    session_history_loader: Option<std::thread::JoinHandle<(String, Result<ChatSessionView, String>)>>,
     last_token_usage: Option<TokenUsageSummary>,
     live_token_usage: Option<TokenUsageSummary>,
     /// Account-granted context window observed on a completed turn. Lower
@@ -757,6 +783,11 @@ impl AppState {
             chat_provider: None,
             chat_model: None,
             provider_statuses: Vec::new(),
+            booted: false,
+            session_history: Vec::new(),
+            session_history_total: None,
+            session_history_loading: false,
+            session_history_loader: None,
             last_token_usage: None,
             live_token_usage: None,
             account_context_window: None,
@@ -788,14 +819,177 @@ impl AppState {
     ) {
         self.snapshot = snapshot;
         self.provider_statuses = provider_statuses;
-        if self.output_buffer.is_empty() {
-            self.append_line(title("Memphis operator cockpit ready."));
-            self.append_line(dim(
+        // The opening screen is NOT the overview. `append_bootstrap` fills the
+        // buffer with the "starting…" lines, so an is_empty() test would
+        // never fire and the operator would stare at the placeholder
+        // forever. `booted` is the flag that says whether the real
+        // overview has arrived yet.
+        if !self.booted {
+            self.booted = true;
+            // The boot placeholder is replaced by the real overview, but
+            // only the placeholder: the session transcript may already be
+            // in the buffer (it arrives in ~15 ms, while this refresh
+            // waits ~6.4 s on the vault KDF). Removing the whole buffer
+            // would throw the conversation away.
+            let boot_lines = self.bootstrap_lines();
+            self.output_buffer
+                .retain(|line| !boot_lines.iter().any(|boot| boot.content == line.content));
+            // The overview goes on top so the transcript stays last, and
+            // therefore stays in view.
+            let mut header = vec![title("Memphis operator cockpit ready.")];
+            header.push(dim(
                 "Plain text sends chat. Use /help for commands and /overview for a runtime snapshot.",
             ));
-            self.append_blank();
-            self.append_lines(self.surface_lines(Screen::Overview));
-            self.append_blank();
+            header.push(blank());
+            header.extend(self.surface_lines(Screen::Overview));
+            header.push(blank());
+            for (index, line) in header.into_iter().enumerate() {
+                self.output_buffer.insert(index, line);
+            }
+        }
+    }
+
+    /// The opening screen, painted before any data has arrived.
+    ///
+    /// The cockpit used to compute the whole runtime snapshot BEFORE
+    /// it entered raw mode, so the operator watched an empty terminal
+    /// for ~5.5 s (measured: 5852 / 5575 / 5319 ms) before anything
+    /// appeared. The slow part was the provider probe: resolving one
+    /// provider may decrypt a vault entry, and that decryption is a
+    /// scrypt KDF — ~6.4 s for `minimax` alone on this host.
+    ///
+    /// The cockpit now paints this line immediately and fills itself
+    /// in when the data lands. The operator can type during the wait;
+    /// nothing is lost.
+    /// Put the "starting" screen into the output buffer.
+    ///
+    /// The cockpit paints before the runtime snapshot arrives, so the
+    /// first frame must say something. The buffer is replaced rather
+    /// than appended to: the operator has seen nothing yet, and a
+    /// leftover line from the construction path would be noise.
+    pub fn append_bootstrap(&mut self) {
+        self.output_buffer.clear();
+        self.append_lines(self.bootstrap_lines());
+    }
+
+    pub fn bootstrap_lines(&self) -> Vec<StyledLine> {
+        vec![
+            title("Memphis operator cockpit starting…"),
+            dim("Reading the runtime snapshot and the session transcript."),
+            dim("You can type already — Enter sends when the cockpit is ready."),
+            blank(),
+        ]
+    }
+
+    /// The session transcript, loaded from the database.
+    ///
+    /// The transcript used to be visible only after `/session <id>`,
+    /// which meant a restart threw away the conversation the operator
+    /// was in: the rows were in SQLite all along (measured: 470
+    /// messages in `primary::operator:local`, 1447 in `tui-6ade6161`),
+    /// but the cockpit started on an empty screen every time.
+    ///
+    /// The transcript is now part of the opening screen, so a restart
+    /// resumes where the operator left off.
+    pub fn apply_session_history(
+        &mut self,
+        session_id: String,
+        messages: Vec<ChatTranscriptEntry>,
+        total: Option<usize>,
+    ) {
+        self.session_history = messages;
+        self.session_history_total = total;
+        self.session_history_loading = false;
+        if self.chat_session_id != session_id {
+            return;
+        }
+        self.render_history_into_transcript();
+    }
+
+    /// Put the loaded transcript into the scrollback.
+    ///
+    /// The transcript is the conversation, so it goes FIRST — above the
+    /// runtime overview, which is reference material. The operator
+    /// opens the cockpit to read what was said, not to read the
+    /// provider table.
+    fn render_history_into_transcript(&mut self) {
+        if self.session_history.is_empty() {
+            return;
+        }
+
+        let total = self.session_history_total.unwrap_or(self.session_history.len());
+        let shown = self.session_history.len();
+        let mut lines = vec![section(format!(
+            "Session transcript — {shown} of {total} messages"
+        ))];
+        if shown < total {
+            lines.push(dim(format!(
+                "  showing the most recent {shown}; the rest is still in the database"
+            )));
+        }
+        lines.push(blank());
+
+        for message in &self.session_history {
+            transcript_entry_lines(&mut lines, message);
+        }
+        lines.push(blank());
+
+        // The transcript goes at the END of the buffer, not on top of it.
+        //
+        // The body scrolls to the bottom (auto_scroll), so "on top" meant
+        // "off screen": with 399 messages the operator saw the boot
+        // placeholder and the overview while the conversation sat
+        // thousands of lines above the viewport. The conversation is what
+        // the operator came back for, so it must be the last thing in
+        // the buffer — the part the viewport actually shows.
+        self.output_buffer.append(&mut lines);
+        self.trim_output_buffer();
+    }
+
+    /// Start reading the session transcript in the background.
+    ///
+    /// The read is cheap (measured: 12.9 ms for 400 messages) but it
+    /// touches SQLite, so it happens on a worker thread — the cockpit
+    /// is already interactive by then.
+    pub fn spawn_session_history_load(
+        &mut self,
+        client: MemphisClient,
+        session_id: String,
+        limit: usize,
+    ) {
+        self.session_history_loading = true;
+        let handle = std::thread::spawn(move || {
+            let outcome = client.load_chat_session(Some(session_id.as_str()), limit);
+            (session_id, outcome)
+        });
+        self.session_history_loader = Some(handle);
+    }
+
+    /// Collect the session transcript if the background read finished.
+    pub fn poll_session_history(&mut self) {
+        let Some(handle) = self.session_history_loader.as_ref() else {
+            return;
+        };
+        if !handle.is_finished() {
+            return;
+        }
+        let handle = self.session_history_loader.take().expect("checked above");
+        let Ok((session_id, outcome)) = handle.join() else {
+                self.session_history_loading = false;
+            return;
+        };
+        match outcome {
+            Ok(view) => {
+                let total = Some(view.messages.len());
+                self.apply_session_history(session_id, view.messages, total);
+            }
+            Err(error) => {
+                self.session_history_loading = false;
+                self.note(
+                    LineTone::Warning,
+                    &format!("session transcript unavailable: {error}"),
+                );
+            }
         }
     }
 
@@ -5482,6 +5676,30 @@ fn split_command_tokens(input: &str) -> Result<Vec<String>, String> {
     }
 
     Ok(tokens)
+}
+
+/// Format one transcript entry the way the cockpit shows a message.
+///
+/// One function for both paths that render a transcript: the session
+/// history loaded at startup and the `/session <id>` switch. Two
+/// implementations of one format is how the two screens drift apart.
+fn transcript_entry_lines(lines: &mut Vec<StyledLine>, message: &ChatTranscriptEntry) {
+    let prefix = match message.role.as_str() {
+        "user" => "You",
+        "assistant" => "Memphis",
+        "tool" => message.tool_name.as_deref().unwrap_or("Tool"),
+        other => other,
+    };
+    let tone = match message.role.as_str() {
+        "user" => LineTone::Prompt,
+        "assistant" => LineTone::Plain,
+        "tool" => LineTone::Accent,
+        _ => LineTone::Dim,
+    };
+    lines.push(styled(format!("[{prefix}] {}", message.content), tone));
+    if let (Some(provider), Some(model)) = (&message.provider, &message.model) {
+        lines.push(dim(format!("    via {provider} / {model}")));
+    }
 }
 
 fn styled(content: impl Into<String>, tone: LineTone) -> StyledLine {

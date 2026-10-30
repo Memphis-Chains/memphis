@@ -33,6 +33,16 @@ use crossterm::{
 };
 use serde::Serialize;
 
+/// How many messages of the session transcript the cockpit loads at
+/// startup.
+///
+/// The read is cheap (measured: 12.9 ms for 400 messages), so the
+/// limit is generous — the operator wants to see the conversation, not
+/// a sample of it. The rendering cost is the real constraint: wrapping
+/// the transcript costs ~19 µs per line per frame, so a few hundred
+/// messages is where the cockpit stays responsive.
+const SESSION_HISTORY_LIMIT: usize = 400;
+
 /// Set UTF-8 locale environment variables for proper Unicode support
 /// This ensures Polish characters and other non-ASCII text render correctly in the terminal
 fn setup_utf8_locale() {
@@ -293,13 +303,14 @@ fn main() -> ExitCode {
     let config = TuiConfig::from_env();
     let mut client = MemphisClient::new();
     let mut app = AppState::new(config.clone());
-    app.refresh(&client);
 
     if args.check_only {
+        app.refresh(&client);
         return run_check_only(&app, &client, args.json);
     }
 
     if let Some(command) = args.run_command {
+        app.refresh(&client);
         return run_command(&mut app, &mut client, &command, args.json);
     }
 
@@ -331,7 +342,26 @@ fn main() -> ExitCode {
     // finished). Each background task creates its own MemphisClient — vault
     // entry reads are file-open + AES-GCM decrypt, safe to do concurrently
     // with the main thread (no shared mutable state, no locking required).
-    let mut pending_refresh: Option<mpsc::Receiver<RefreshResult>> = None;
+    // The cockpit paints IMMEDIATELY.
+    //
+    // The startup used to do the whole runtime snapshot synchronously,
+    // before the terminal was even in raw mode: measured at 5852 /
+    // 5575 / 5319 ms to the first paint on the operator's host. The
+    // dominant cost was resolving a provider whose key lives in the
+    // vault — that decryption is a scrypt KDF, ~6.4 s for `minimax`
+    // alone.
+    //
+    // So: paint a "starting" screen now, and let the slow data arrive
+    // on the background thread that was already there for periodic
+    // refreshes. The operator can type during the wait.
+    app.append_bootstrap();
+    let session_id = app.chat_session_id.clone();
+    app.spawn_session_history_load(client.clone(), session_id, SESSION_HISTORY_LIMIT);
+    // The in-flight refresh worker, if any. Only one runs at a time: the
+    // next tick skips spawning while the previous result has not landed.
+    // Initialised with the worker already running rather than None, because
+    // None was never read — the spawn below overwrote it unconditionally.
+    let mut pending_refresh: Option<mpsc::Receiver<RefreshResult>> = Some(spawn_refresh());
 
     if let Some(input) = args.input {
         app.set_input_text(input);
@@ -340,6 +370,7 @@ fn main() -> ExitCode {
 
     loop {
         app.poll_active_command();
+        app.poll_session_history();
 
         if let Err(error) = renderer.draw(&app) {
             eprintln!("failed to draw Rust TUI: {error}");

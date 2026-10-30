@@ -238,11 +238,12 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     inputSchema: z
       .object({
         url: z.string().url(),
+        maxBytes: z.number().int().positive().max(32000).optional(),
         approval_request_id: z.string().optional(),
       })
       .strict(),
     helpText:
-      "GET a public HTTP(S) URL and return the body (truncated to safe length). Network-capability tool — surface policy controls whether it's available (Telegram blocks by default; CLI/MCP allow with approval). Returns content-type + body; redirects followed up to 5 hops; 30s timeout. Use to read external docs/APIs the operator referenced; do NOT use for crawling — narrow targets only.",
+      "GET a public HTTP(S) URL and return the body (up to 32000 bytes, or less if maxBytes says so). Network-capability tool — surface policy controls whether it's available (Telegram blocks by default; CLI/MCP allow with approval). Returns content-type + body; redirects followed up to 5 hops; 30s timeout. Use to read external docs/APIs the operator referenced; do NOT use for crawling — narrow targets only.",
     cliFlags: [
       {
         name: '--url',

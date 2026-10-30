@@ -59,8 +59,17 @@ describe('mcp tools — web-fetch', () => {
     expect(result.truncated).toBe(false);
   });
 
-  it('truncates responses over 4000 chars', async () => {
-    const longContent = 'x'.repeat(5000);
+  // The cap was 4 000 since the tool landed, with this test pinning
+  // it, while the native arm read 32 000 and the cockpit advertised
+  // that. The same URL therefore answered differently depending on
+  // which surface the model was talking to.
+  //
+  // Both arms now use 32 000 bytes. 4 000 bytes of a documentation
+  // page is the first paragraph and the navigation menu -- a fragment
+  // the model cannot use; 32 000 bytes is about 8 000 tokens against
+  // a 475 000-token window, so it is bounded and still useful.
+  it('truncates responses over the cap', async () => {
+    const longContent = 'x'.repeat(50_000);
     const result = await runMemphisWebFetch(
       { url: 'https://example.com/long' },
       {
@@ -69,7 +78,34 @@ describe('mcp tools — web-fetch', () => {
       },
     );
     expect(result.truncated).toBe(true);
-    expect(result.content.length).toBe(4000);
+    expect(result.content.length).toBe(32_000);
+  });
+
+  it('honours an explicit maxBytes below the cap', async () => {
+    const longContent = 'x'.repeat(50_000);
+    const result = await runMemphisWebFetch(
+      { url: 'https://example.com/long', maxBytes: 100 },
+      {
+        dnsLookup: PUBLIC_LOOKUP,
+        fetch: mockFetch(() => ({ status: 200, text: async () => longContent })),
+      },
+    );
+    expect(result.truncated).toBe(true);
+    expect(result.content.length).toBe(100);
+  });
+
+  /// The cut must not split a multi-byte character: the native arm
+  /// failed the whole fetch when it did.
+  it('cuts on a character boundary', async () => {
+    const result = await runMemphisWebFetch(
+      { url: 'https://example.com/pl', maxBytes: 2 },
+      {
+        dnsLookup: PUBLIC_LOOKUP,
+        fetch: mockFetch(() => ({ status: 200, text: async () => 'aóbc' })),
+      },
+    );
+    expect(result.content).toBe('a');
+    expect(result.truncated).toBe(true);
   });
 
   it('blocks localhost URLs (SSRF protection)', async () => {
