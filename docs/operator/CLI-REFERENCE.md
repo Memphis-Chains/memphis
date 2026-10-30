@@ -33,6 +33,10 @@ memphis <command> --help
 - `agents list|discover|show`, `relationships show`
 - `decision-inference` is an internal legacy helper, not part of chain-first runtime cognition
 
+Session names cannot contain path separators, colons or control characters.
+Session files must be regular files without symbolic or hard links; use a normal
+name such as `moja-sesja` rather than a path.
+
 ## Cognitive Layer
 
 - `reflect [--save]`
