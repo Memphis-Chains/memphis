@@ -14,6 +14,8 @@ import {
 } from '../../../core/ask-session-store.js';
 import type { RequestedProviderName, RuntimeTelemetry } from '../../../core/types.js';
 import { classifyPromptIntent } from '../../../gateway/basal-prompt-classification.js';
+import { guardModelOutput } from '../../../gateway/prompt-boundary.js';
+import { resolveSurfacePolicy } from '../../../gateway/surface-policy.js';
 import { createPinoLogger } from '../../logging/pino.js';
 
 const log = createPinoLogger();
@@ -139,6 +141,54 @@ export async function runAskSessionTurn(params: {
     params.rawInput,
     params.runtime.provider.name,
   );
+  const previousUserTurn = readAskSession(params.session, process.env)
+    .filter((turn) => turn.role === 'user' && turn.content.trim().length > 0)
+    .at(-1);
+  const exactPreviousMessageRequest =
+    /^(?:co (?:właśnie|przed chwilą) (?:powiedziałem|powiedziałam|napisałem|napisałam)|what did i just say)[?!.]*$/iu.test(
+      trimmed,
+    );
+  const canRecallLocally =
+    !deterministicRecall &&
+    previousUserTurn &&
+    exactPreviousMessageRequest &&
+    resolveSurfacePolicy('cli.chat', process.env).allowMemoryRecall;
+  if (canRecallLocally) {
+    const basal = await classifyPromptIntent(params.rawInput, process.env);
+    const guarded = await guardModelOutput(
+      `Twoja poprzednia wiadomość: ${previousUserTurn.content}`,
+      'cli.chat',
+    );
+    const localRecall: AskGenerateResult = {
+      id: `ask_${Date.now().toString(36)}`,
+      providerUsed: 'local-session',
+      modelUsed: 'deterministic-session-recall',
+      output: guarded.output,
+      timingMs: basal?.latencyMs ?? 0,
+      usage: { outputTokens: 0 },
+      ...(basal ? { telemetry: { basalPromptClassification: basal } } : {}),
+    };
+    log.info(
+      {
+        event: 'session.local_recall',
+        surface: 'cli.chat',
+        ...basal,
+        route: 'local-session',
+        providerCalls: 0,
+      },
+      'Deterministic session recall',
+    );
+    appendAskSessionExchange(params.session, params.rawInput, localRecall.output);
+    const refreshedStats = askSessionStats(
+      readAskSession(params.session, process.env),
+      process.env,
+    );
+    if (params.json)
+      print({ ...localRecall, session: params.session, context: refreshedStats }, true);
+    else if (params.tui) printTuiAnswer(localRecall);
+    else printChat(localRecall);
+    return { exit: false };
+  }
   if (deterministicRecall) {
     // This local recall shortcut answers a user turn without entering runChatTurn.
     const basalPromptClassification = await classifyPromptIntent(params.rawInput, process.env);
