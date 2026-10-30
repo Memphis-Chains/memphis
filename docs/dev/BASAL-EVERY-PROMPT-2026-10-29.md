@@ -11,12 +11,10 @@ the user again. Control commands that do not enter a dialogue turn and explicit
 `provider-only` diagnostics keep their separate paths; they are not user turns
 through the canonical chat runtime.
 
-The local-fallback ask-session shortcut for “What did I just say?” also
-classifies once before printing its source-based answer and exposes the same
-metadata. Session control commands such as `/context` do not classify.
+Session control commands such as `/context` do not classify.
 
 In `ask --session`, a narrow exact request for the immediately preceding user
-message can also be answered from that session without a dialogue-provider call,
+message in Polish or English can be answered from that session without a dialogue-provider call,
 provided the surface allows memory recall and a prior message exists. Basal is
 still called once when enabled, but this deterministic shortcut does not depend
 on its verdict; the ordinary output guard still applies. Missing history or an

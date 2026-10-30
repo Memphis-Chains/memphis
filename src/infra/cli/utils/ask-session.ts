@@ -136,11 +136,6 @@ export async function runAskSessionTurn(params: {
   const commandOutcome = handleAskSessionMetaCommand(trimmed, params);
   if (commandOutcome) return commandOutcome;
 
-  const deterministicRecall = buildLocalFallbackRecallAnswer(
-    params.session,
-    params.rawInput,
-    params.runtime.provider.name,
-  );
   const previousUserTurn = readAskSession(params.session, process.env)
     .filter((turn) => turn.role === 'user' && turn.content.trim().length > 0)
     .at(-1);
@@ -149,16 +144,15 @@ export async function runAskSessionTurn(params: {
       trimmed,
     );
   const canRecallLocally =
-    !deterministicRecall &&
     previousUserTurn &&
     exactPreviousMessageRequest &&
     resolveSurfacePolicy('cli.chat', process.env).allowMemoryRecall;
   if (canRecallLocally) {
     const basal = await classifyPromptIntent(params.rawInput, process.env);
-    const guarded = await guardModelOutput(
-      `Twoja poprzednia wiadomość: ${previousUserTurn.content}`,
-      'cli.chat',
-    );
+    const intro = /^what did i just say/iu.test(trimmed)
+      ? 'Your previous message: '
+      : 'Twoja poprzednia wiadomość: ';
+    const guarded = await guardModelOutput(intro + previousUserTurn.content, 'cli.chat');
     const localRecall: AskGenerateResult = {
       id: `ask_${Date.now().toString(36)}`,
       providerUsed: 'local-session',
@@ -189,34 +183,6 @@ export async function runAskSessionTurn(params: {
     else printChat(localRecall);
     return { exit: false };
   }
-  if (deterministicRecall) {
-    // This local recall shortcut answers a user turn without entering runChatTurn.
-    const basalPromptClassification = await classifyPromptIntent(params.rawInput, process.env);
-    if (basalPromptClassification) {
-      deterministicRecall.telemetry = { basalPromptClassification };
-      deterministicRecall.timingMs += basalPromptClassification.latencyMs;
-      log.info(
-        { event: 'basal.prompt.classified', surface: 'cli.chat', ...basalPromptClassification },
-        'Basal prompt classification',
-      );
-    }
-    appendAskSessionExchange(params.session, params.rawInput, deterministicRecall.output);
-    const refreshedStats = askSessionStats(
-      readAskSession(params.session, process.env),
-      process.env,
-    );
-    if (params.json) {
-      print({ ...deterministicRecall, session: params.session, context: refreshedStats }, true);
-      return { exit: false };
-    }
-    if (params.tui) {
-      printTuiAnswer(deterministicRecall);
-    } else {
-      printChat(deterministicRecall);
-    }
-    return { exit: false };
-  }
-
   const { chatState, userTurn } = buildAskSessionState(
     params.runtime,
     params.session,
@@ -245,28 +211,6 @@ export async function runAskSessionTurn(params: {
   }
 
   return { exit: false };
-}
-
-function buildLocalFallbackRecallAnswer(
-  session: string,
-  rawInput: string,
-  providerName: string,
-): AskGenerateResult | undefined {
-  if (providerName !== 'local-fallback') return undefined;
-  if (!/what did i just say\??/i.test(rawInput.trim())) return undefined;
-  const previousUserTurn = readAskSession(session, process.env)
-    .filter((turn) => turn.role === 'user' && turn.content.trim().length > 0)
-    .at(-1);
-  if (!previousUserTurn) return undefined;
-  const output = `Fallback response: ${previousUserTurn.content}`;
-  return {
-    id: `ask_${Date.now().toString(36)}`,
-    providerUsed: 'local-fallback',
-    modelUsed: 'local-fallback-v0',
-    output,
-    timingMs: 0,
-    usage: { outputTokens: estimateTokens(output) },
-  };
 }
 
 function handleAskSessionMetaCommand(
