@@ -15,19 +15,27 @@ The local-fallback ask-session shortcut for “What did I just say?” also
 classifies once before printing its source-based answer and exposes the same
 metadata. Session control commands such as `/context` do not classify.
 
+In `ask --session`, a narrow exact request for the immediately preceding user
+message can also be answered from that session without a dialogue-provider call,
+provided the surface allows memory recall and a prior message exists. Basal is
+still called once when enabled, but this deterministic shortcut does not depend
+on its verdict; the ordinary output guard still applies. Missing history or an
+ambiguous request follows the normal model path. The shortcut applies to CLI
+ask sessions only, not to the native TUI or other channels.
+
 ## Intent and use
 
 The same fixed question and alphabetically ordered criteria are used by Node
 and Rust. This also lets identical requests share the service's exact cache.
 
-| Intent | Meaning |
-| --- | --- |
-| `clarify` | An incomplete or unclear request |
+| Intent         | Meaning                                                 |
+| -------------- | ------------------------------------------------------- |
+| `clarify`      | An incomplete or unclear request                        |
 | `conversation` | Conversation, greeting, general question or explanation |
-| `correction` | Correction or withdrawal of a prior fact or preference |
-| `execute` | A request to perform a concrete action |
-| `recall` | Recall of previous conversations, facts or agreements |
-| `remember` | An explicit request to remember something new |
+| `correction`   | Correction or withdrawal of a prior fact or preference  |
+| `execute`      | A request to perform a concrete action                  |
+| `recall`       | Recall of previous conversations, facts or agreements   |
+| `remember`     | An explicit request to remember something new           |
 
 The model receives `<basal_prompt_classification>` with the actual verdict,
 confidence, threshold and uncertainty. Confident labels add static intent
@@ -47,7 +55,7 @@ local classifier. Enable the operator's installation using the canonical
 `memphis_config_set` operation:
 
 ```json
-{"key":"MEMPHIS_BASAL_PROMPT_ENABLED","value":"true"}
+{ "key": "MEMPHIS_BASAL_PROMPT_ENABLED", "value": "true" }
 ```
 
 `MEMPHIS_BASAL_PROMPT_TIMEOUT_MS` defaults to 60000, including response reading
