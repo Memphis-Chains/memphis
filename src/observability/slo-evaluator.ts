@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { getDataDir } from '../config/paths.js';
+import { readSinkStatusEntries, type SinkStatusEntry } from '../infra/observability/sink-status.js';
 
 export type SloStatus = 'pass' | 'fail' | 'unavailable';
 
@@ -74,6 +75,15 @@ export interface SloReport {
   slos: SloResult[];
   /** How the most recent attempts in the window ended. */
   recent: RecentActivity;
+  /**
+   * The state of the local span sinks that feed this report.
+   *
+   * A sink that cannot write and a runtime that is idle both produce no
+   * spans. Without this field the report cannot tell them apart, and a
+   * broken sink reads as "nothing happened" — which is how the missing
+   * `tool.call` spans of 2026-10-26 stayed invisible for days.
+   */
+  sinkStatus: SinkStatusEntry[];
 }
 
 interface SpanRecord {
@@ -429,6 +439,7 @@ export function evaluateSlos(options: EvaluateSlosOptions = {}): SloReport {
   const sampleWindowStart = new Date(sampleWindowStartMs);
 
   const { spans, filesScanned } = readSpansInWindow(rawEnv, windowStart);
+  const sinkStatus = readSinkStatusEntries(getDataDir(rawEnv));
   const evaluated = spans.filter((span) => Date.parse(span.ts) >= sampleWindowStartMs);
   const slos: SloResult[] = [
     computeP99TurnLatency(evaluated, minSamples, rawEnv),
@@ -457,6 +468,18 @@ export function evaluateSlos(options: EvaluateSlosOptions = {}): SloReport {
       const age = formatAge(now.getTime() - Date.parse(newest));
       slo.reason = `${slo.reason ?? 'no samples'} - last ${className} span ${age} ago`;
     }
+    // A degraded sink explains the absence of spans better than silence
+    // does. The operator learns that the measurement broke, not that the
+    // runtime was idle.
+    if (slo.samples === 0) {
+      const degraded = sinkStatus.filter((entry) => entry.state === 'degraded');
+      if (degraded.length > 0) {
+        const detail = degraded
+          .map((entry) => `${entry.surface}${entry.lastError ? `: ${entry.lastError}` : ''}`)
+          .join(', ');
+        slo.reason = `${slo.reason ?? 'no samples'} - the local span sink is degraded (${detail})`;
+      }
+    }
   }
 
   return {
@@ -471,5 +494,6 @@ export function evaluateSlos(options: EvaluateSlosOptions = {}): SloReport {
     totalSamples: spans.length,
     slos,
     recent: readRecentActivity(spans),
+    sinkStatus,
   };
 }

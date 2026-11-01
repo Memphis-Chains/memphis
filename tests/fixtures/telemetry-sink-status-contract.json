@@ -1,0 +1,36 @@
+{
+  "description": "The contract between the two local span sinks: the TypeScript gateway (src/infra/observability/console-exporter.ts) and the native Rust arm (crates/memphis-operator/src/telemetry.rs). Both write the same status file shape and produce the same retry schedule, so the SLO report can tell a broken sink apart from an idle runtime. Checked by tests/unit/observability-sink-contract.test.ts and crates/memphis-operator/tests/sink_contract.rs.",
+  "statusFile": {
+    "namePattern": "^sink-status-(.+)\\.json$",
+    "directory": "the data directory, NOT telemetry/ — a span write and a status write fail for different reasons, and the status file has to survive the case where telemetry/ is the thing that is unwritable",
+    "fields": [
+      "surface",
+      "state",
+      "consecutiveFailures",
+      "lastError",
+      "lastFailureAt",
+      "lastSuccessAt",
+      "nextRetryAt",
+      "updatedAt"
+    ],
+    "states": ["ok", "degraded"],
+    "surfaces": ["ts", "rust"]
+  },
+  "retry": {
+    "baseMs": 1000,
+    "multiplier": 2,
+    "maxMs": 60000,
+    "description": "The delay before the next write attempt after N consecutive failures. 1-based: the delay after the first failure is the base delay. The delay doubles per further failure and is capped at maxMs.",
+    "schedule": [
+      { "consecutiveFailures": 0, "delayMs": 0 },
+      { "consecutiveFailures": 1, "delayMs": 1000 },
+      { "consecutiveFailures": 2, "delayMs": 2000 },
+      { "consecutiveFailures": 3, "delayMs": 4000 },
+      { "consecutiveFailures": 4, "delayMs": 8000 },
+      { "consecutiveFailures": 5, "delayMs": 16000 },
+      { "consecutiveFailures": 6, "delayMs": 32000 },
+      { "consecutiveFailures": 7, "delayMs": 60000 },
+      { "consecutiveFailures": 20, "delayMs": 60000 }
+    ]
+  }
+}

@@ -12,6 +12,8 @@ mod chat_streaming;
 mod chat_tool_catalog;
 mod chat_tool_executor;
 mod code_read_range;
+pub mod sink_retry;
+pub mod sink_status;
 mod ssrf_guard;
 mod config;
 mod context;
