@@ -6,7 +6,7 @@ mod prompt;
 mod search;
 mod status_bar;
 
-pub use activity::ActivityPanel;
+pub use activity::{ToolActivityStrip, MAX_VISIBLE_CALLS};
 pub use body::{OutputBody, ScrollState};
 pub use help::HelpOverlay;
 pub use notification::NotificationBanner;

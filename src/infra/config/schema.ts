@@ -310,6 +310,11 @@ export const envSchema = z.object({
   MEMPHIS_SNAPSHOT_MAX_AGE_MS: z.coerce.number().int().min(3600000).max(2592000000).optional(),
   MEMPHIS_SNAPSHOT_MIN_KEEP: z.coerce.number().int().min(1).max(1000).optional(),
   MEMPHIS_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(5000).max(3600000).optional(),
+  // The share of the HOST's memory this process may hold before the
+  // health check warns. The old knob was a heap-occupancy ratio, which
+  // flapped the health state once an hour on a healthy process.
+  MEMPHIS_MEMORY_WARN_SHARE: z.coerce.number().min(0.05).max(0.95).optional(),
+  // Deprecated: the heap-occupancy ratio the memory check used to use.
   MEMPHIS_MEMORY_WARN_THRESHOLD: z.coerce.number().min(0.5).max(0.99).optional(),
   MEMPHIS_FEATURES: z.string().optional(),
   MEMPHIS_SKILLS_DIR: z.string().optional(),

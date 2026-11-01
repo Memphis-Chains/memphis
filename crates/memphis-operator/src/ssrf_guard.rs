@@ -25,8 +25,33 @@ use std::net::{IpAddr, ToSocketAddrs};
 
 /// Whether the operator opened the private network for this surface.
 pub fn allow_private_network() -> bool {
-    let value = std::env::var("MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK").unwrap_or_default();
-    matches!(value.trim().to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on")
+    parse_private_network_flag(
+        std::env::var("MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK").ok().as_deref(),
+    )
+}
+
+/// Whether the operator opened the private network, read from the
+/// runtime configuration rather than from the process environment.
+///
+/// The native arm keeps its configuration in `OperatorConfig::raw_env`,
+/// so the policy belongs there: a runtime built with an explicit
+/// configuration must behave the same way whatever the process
+/// environment happens to say. That is what makes the guard testable --
+/// and the tests ARE the reason: the operator's own `.env` sets
+/// `MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK=true`, and it is exported
+/// into the environment the tests run in.
+pub fn allow_private_network_in(raw_env: &std::collections::HashMap<String, String>) -> bool {
+    parse_private_network_flag(raw_env.get("MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK").map(|v| v.as_str()))
+}
+
+fn parse_private_network_flag(value: Option<&str>) -> bool {
+    match value {
+        Some(value) => matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "true" | "1" | "yes" | "on"
+        ),
+        None => false,
+    }
 }
 
 /// Strip the brackets an IPv6 literal carries in a URL.
@@ -199,8 +224,26 @@ pub fn parse_url_shape(raw: &str) -> Result<UrlShape, String> {
 
 /// The first-pass check: the shape of the URL, before any DNS.
 pub fn assert_url_shape_safe(raw: &str) -> Result<UrlShape, String> {
+    assert_url_shape_safe_with(raw, allow_private_network())
+}
+
+/// The shape check with the private-network policy passed in.
+///
+/// The policy is an argument, not a read of the process environment: the
+/// environment is global and the tests of one binary run in parallel, so a
+/// test that set `MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK` would change
+/// the behaviour of every other test running at that moment.
+///
+/// This matters more than usual here. The operator's own `.env` sets
+/// `MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK=true`, and that variable is
+/// exported into the environment the tests run in — so the rules this
+/// guard exists to enforce had NO coverage on the operator's machine:
+/// every one of them was green because the guard was disabled, not
+/// because it worked. The CI runner does not have the variable, so CI
+/// was green for a different reason than the local suite was red.
+pub fn assert_url_shape_safe_with(raw: &str, allow_private: bool) -> Result<UrlShape, String> {
     let shape = parse_url_shape(raw)?;
-    if allow_private_network() {
+    if allow_private {
         return Ok(shape);
     }
     if shape.host == "localhost" {
@@ -223,7 +266,15 @@ pub fn assert_url_shape_safe(raw: &str) -> Result<UrlShape, String> {
 /// A public name pointed at an internal address is the case this
 /// catches; a literal address never gets this far.
 pub fn assert_host_safe(host: &str) -> Result<(), String> {
-    if allow_private_network() {
+    assert_host_safe_with(host, allow_private_network())
+}
+
+/// The host check with the private-network policy passed in.
+///
+/// See `assert_url_shape_safe_with` for why the policy is an argument and
+/// not a read of the environment.
+pub fn assert_host_safe_with(host: &str, allow_private: bool) -> Result<(), String> {
+    if allow_private {
         return Ok(());
     }
     let host = strip_ipv6_brackets(host).to_ascii_lowercase();
@@ -259,6 +310,13 @@ pub fn assert_host_safe(host: &str) -> Result<(), String> {
 pub fn assert_url_safe(raw: &str) -> Result<UrlShape, String> {
     let shape = assert_url_shape_safe(raw)?;
     assert_host_safe(&shape.host)?;
+    Ok(shape)
+}
+
+/// The whole check with the private-network policy passed in.
+pub fn assert_url_safe_with(raw: &str, allow_private: bool) -> Result<UrlShape, String> {
+    let shape = assert_url_shape_safe_with(raw, allow_private)?;
+    assert_host_safe_with(&shape.host, allow_private)?;
     Ok(shape)
 }
 
@@ -363,15 +421,15 @@ mod tests {
     #[test]
     fn only_http_and_https_are_allowed() {
         assert_eq!(
-            assert_url_shape_safe("ftp://example.com/x").unwrap_err(),
+            assert_url_shape_safe_with("ftp://example.com/x", false).unwrap_err(),
             "URL blocked: only http(s) is allowed"
         );
         assert_eq!(
-            assert_url_shape_safe("file:///etc/passwd").unwrap_err(),
+            assert_url_shape_safe_with("file:///etc/passwd", false).unwrap_err(),
             "URL blocked: only http(s) is allowed"
         );
         assert_eq!(
-            assert_url_shape_safe("not a url").unwrap_err(),
+            assert_url_shape_safe_with("not a url", false).unwrap_err(),
             "URL blocked: invalid URL"
         );
     }
@@ -380,7 +438,7 @@ mod tests {
     fn a_long_query_string_is_refused() {
         let long = format!("https://example.com/?q={}", "a".repeat(201));
         assert_eq!(
-            assert_url_shape_safe(&long).unwrap_err(),
+            assert_url_shape_safe_with(&long, false).unwrap_err(),
             "URL blocked: query string too long"
         );
     }
@@ -388,15 +446,15 @@ mod tests {
     #[test]
     fn localhost_and_the_internal_suffixes_are_refused() {
         assert_eq!(
-            assert_url_shape_safe("http://localhost:8080/x").unwrap_err(),
+            assert_url_shape_safe_with("http://localhost:8080/x", false).unwrap_err(),
             "URL blocked: localhost"
         );
         assert_eq!(
-            assert_url_shape_safe("http://printer.local/x").unwrap_err(),
+            assert_url_shape_safe_with("http://printer.local/x", false).unwrap_err(),
             "URL blocked: .local/.internal domain"
         );
         assert_eq!(
-            assert_url_shape_safe("http://db.internal/x").unwrap_err(),
+            assert_url_shape_safe_with("http://db.internal/x", false).unwrap_err(),
             "URL blocked: .local/.internal domain"
         );
     }
@@ -406,18 +464,18 @@ mod tests {
     #[test]
     fn a_private_ip_literal_is_refused() {
         assert_eq!(
-            assert_url_shape_safe("http://169.254.169.254/latest/meta-data/").unwrap_err(),
+            assert_url_shape_safe_with("http://169.254.169.254/latest/meta-data/", false).unwrap_err(),
             "URL blocked: private/internal IP literal (169.254.169.254)"
         );
         assert_eq!(
-            assert_url_shape_safe("http://[::1]:8080/x").unwrap_err(),
+            assert_url_shape_safe_with("http://[::1]:8080/x", false).unwrap_err(),
             "URL blocked: private/internal IP literal (::1)"
         );
     }
 
     #[test]
     fn the_host_of_a_safe_url_is_parsed() {
-        let shape = assert_url_shape_safe("https://example.com/docs?a=1").unwrap();
+        let shape = assert_url_shape_safe_with("https://example.com/docs?a=1", false).unwrap();
         assert_eq!(shape.scheme, "https");
         assert_eq!(shape.host, "example.com");
         assert_eq!(shape.path, "/docs");
@@ -444,7 +502,52 @@ mod tests {
     /// A host that cannot be resolved is refused, not fetched.
     #[test]
     fn an_unresolvable_host_is_refused() {
-        let error = assert_host_safe("this-host-does-not-exist.invalid").unwrap_err();
+        let error = assert_host_safe_with("this-host-does-not-exist.invalid", false).unwrap_err();
         assert_eq!(error, "URL blocked: host could not be resolved");
+    }
+
+    /// The other side of the policy: when the operator opens the private
+    /// network, the same targets are allowed.
+    ///
+    /// The operator's own `.env` opens it, so this is the configuration
+    /// the machine actually runs in. Without this test the "allow" branch
+    /// would be the one nobody measured.
+    #[test]
+    fn an_open_private_network_allows_the_same_targets() {
+        assert!(assert_url_shape_safe_with("http://localhost:8080/x", true).is_ok());
+        assert!(assert_url_shape_safe_with("http://169.254.169.254/latest/", true).is_ok());
+        assert!(assert_url_shape_safe_with("http://printer.local/x", true).is_ok());
+    }
+
+    /// The policy is read from the runtime configuration, not from the
+    /// process environment.
+    ///
+    /// The process environment on the operator's machine has
+    /// `MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK=true` exported into it,
+    /// so a guard that read the environment would be OFF in every test
+    /// that ran on that machine -- and the rules it exists to enforce
+    /// would have had no coverage at all.
+    #[test]
+    fn the_private_network_policy_comes_from_the_configuration() {
+        let mut raw_env = std::collections::HashMap::new();
+        assert!(!allow_private_network_in(&raw_env), "unset means closed");
+
+        raw_env.insert(
+            "MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK".to_string(),
+            "true".to_string(),
+        );
+        assert!(allow_private_network_in(&raw_env), "true means open");
+
+        raw_env.insert(
+            "MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK".to_string(),
+            "false".to_string(),
+        );
+        assert!(!allow_private_network_in(&raw_env), "false means closed");
+
+        raw_env.insert(
+            "MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK".to_string(),
+            "yes".to_string(),
+        );
+        assert!(allow_private_network_in(&raw_env), "yes means open");
     }
 }

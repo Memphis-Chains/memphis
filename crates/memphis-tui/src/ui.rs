@@ -9,20 +9,9 @@ use ratatui::{
 
 use crate::app::{AppState, StatusBarContext};
 use crate::widgets::{
-    prompt_layout, ActivityPanel, HelpOverlay, NotificationBanner, OutputBody, PromptState,
-    PromptWidget, ScrollState, SearchBar, StatusBar, MAX_PROMPT_ROWS,
+    prompt_layout, HelpOverlay, NotificationBanner, OutputBody, PromptState, PromptWidget,
+    ScrollState, SearchBar, StatusBar, ToolActivityStrip, MAX_PROMPT_ROWS,
 };
-
-/// The side panel's share of the width, in percent.
-const PANEL_PERCENT: usize = 30;
-/// The panel never gets narrower than this.
-const MIN_PANEL_WIDTH: u16 = 28;
-/// …nor wider than this.
-const MAX_PANEL_WIDTH: u16 = 46;
-/// Below this terminal width the panel is dropped: a cockpit with a
-/// 28-column panel and a 60-column conversation is worse than no
-/// panel at all.
-const MIN_TERMINAL_FOR_PANEL: u16 = 100;
 
 const RENDERER_MODE: &str = "ratatui";
 
@@ -171,11 +160,39 @@ fn render_ui(
 
     // The search bar takes a row of its own, above the prompt, so the
     // query never competes with what the operator is typing.
+    //
+    // The tool activity strip sits between the conversation and the
+    // search bar: one bordered box, at most three calls, taking the
+    // full width. The side panel it replaces took a third of the
+    // screen for the same information and left the conversation in a
+    // narrow column; the strip gives that width back.
+    let strip = ToolActivityStrip::new(&app.tool_activity);
+    let strip_rows = strip.height();
+
+    // The strip is a luxury on a short terminal. The conversation
+    // keeps its three-row minimum and the strip is dropped when there
+    // is no room for it.
+    let reserved_rows = 1 // status bar
+        + usize::from(has_notification)
+        + usize::from(search.is_some())
+        + 3 // body minimum
+        + prompt_height as usize;
+    let spare_rows = (frame.area().height as usize).saturating_sub(reserved_rows);
+    let show_strip = strip_rows >= 3 && spare_rows >= 3;
+    let strip_height = if show_strip {
+        strip_rows.min(spare_rows as u16)
+    } else {
+        0
+    };
+
     let mut constraints = Vec::new();
     if has_notification {
         constraints.push(Constraint::Length(1)); // notification banner
     }
     constraints.push(Constraint::Min(3)); // body
+    if show_strip {
+        constraints.push(Constraint::Length(strip_height)); // tool activity strip
+    }
     if search.is_some() {
         constraints.push(Constraint::Length(1)); // search bar
     }
@@ -194,40 +211,23 @@ fn render_ui(
         idx += 1;
     }
 
-    // Two panes, like the first Memphis TUI had: the conversation on
-    // the left, a fixed column on the right for the session's runtime
-    // and the tool calls of the running turn. On a narrow terminal the
-    // panel is dropped rather than squeezing the conversation.
-    let panel_width = if frame_width >= MIN_TERMINAL_FOR_PANEL {
-        (frame_width as usize * PANEL_PERCENT / 100) as u16
-    } else {
-        0
-    };
-    let panel_width = panel_width.clamp(MIN_PANEL_WIDTH, MAX_PANEL_WIDTH);
+    // The conversation gets the full width of the terminal. The tool
+    // calls live in one place — the strip under the conversation —
+    // so they are not duplicated into the transcript as well.
+    let body_area = chunks[idx];
+    frame.render_stateful_widget(
+        OutputBody::with_search(output_buffer, search),
+        body_area,
+        scroll_state,
+    );
+    idx += 1;
 
-    if panel_width > 0 {
-        let panes = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(30), Constraint::Length(panel_width)])
-            .split(chunks[idx]);
-        frame.render_stateful_widget(
-            OutputBody::with_search(output_buffer, search),
-            panes[0],
-            scroll_state,
-        );
-        frame.render_widget(
-            ActivityPanel::new(status_context, &app.tool_activity),
-            panes[1],
-        );
-    } else {
-        frame.render_stateful_widget(
-            OutputBody::with_search(output_buffer, search),
-            chunks[idx],
-            scroll_state,
-        );
+    if show_strip {
+        frame.render_widget(strip, chunks[idx]);
+        idx += 1;
     }
 
-    let mut next = idx + 1;
+    let mut next = idx;
     if let Some(search) = search {
         frame.render_widget(SearchBar::new(search), chunks[next]);
         next += 1;
@@ -252,7 +252,6 @@ fn render_ui(
     // body area when the operator just toggled mouse capture. Single
     // line, small footprint, doesn't disturb the layout.
     if let Some(captured) = mouse_toast {
-        let body_area = chunks[idx];
         let label = if captured {
             " mouse: ON  (scroll wheel works · Shift+drag to copy) "
         } else {
@@ -322,6 +321,7 @@ mod tests {
     fn formats_connected_status_bar() {
         let context = StatusBarContext {
             connected: true,
+            reasoning_effort: None,
             provider: "ollama".to_string(),
             model: "qwen2.5-coder:3b".to_string(),
             context_window_tokens: Some(8192),
@@ -361,6 +361,7 @@ mod tests {
     fn formats_cancelling_provider_wait_status_bar() {
         let context = StatusBarContext {
             connected: true,
+            reasoning_effort: None,
             provider: "shared-llm".to_string(),
             model: "shared-llm".to_string(),
             context_window_tokens: None,
@@ -391,6 +392,7 @@ mod tests {
     fn formats_busy_status_bar_with_spinner() {
         let context = StatusBarContext {
             connected: true,
+            reasoning_effort: None,
             provider: "ollama".to_string(),
             model: "qwen2.5-coder:3b".to_string(),
             context_window_tokens: Some(8192),

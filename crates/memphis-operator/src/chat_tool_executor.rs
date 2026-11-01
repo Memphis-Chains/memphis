@@ -38,7 +38,7 @@ use crate::code_read::{
     CODE_READ_MAX_CONTENT_CHARS,
 };
 use crate::code_read_range::resolve_code_read_range;
-use crate::ssrf_guard::{assert_url_safe, resolve_redirect};
+use crate::ssrf_guard::{allow_private_network_in, assert_url_safe_with, resolve_redirect};
 use memphis_case_index::CaseIndex;
 use memphis_core::case_entry::{CaseEntry, CaseQuery};
 
@@ -688,11 +688,20 @@ fn execute_native_tool_inner(
             // every hop checked, because a public URL may redirect into
             // the private network.
             let timeout = std::time::Duration::from_millis(web_fetch_timeout_ms());
+            // The private-network policy comes from the runtime
+            // configuration, not from the process environment: a runtime
+            // built with an explicit configuration must behave the same
+            // way whatever the ambient environment says. The operator's
+            // own `.env` opens the private network, and that variable is
+            // exported into the environment the tests run in -- so a
+            // guard that read the environment had NO coverage on the
+            // operator's machine.
+            let allow_private = allow_private_network_in(&runtime.config().raw_env);
             let mut current = url.to_string();
             let mut raw: Vec<u8> = Vec::new();
             let mut hops = 0usize;
             loop {
-                assert_url_safe(&current).map_err(OperatorError::Message)?;
+                assert_url_safe_with(&current, allow_private).map_err(OperatorError::Message)?;
                 let agent = ureq::AgentBuilder::new()
                     .timeout(timeout)
                     .redirects(0)

@@ -125,6 +125,80 @@ pub(crate) fn record_tool_call(
     );
 }
 
+/// Record the turn itself, in the same shape the TypeScript gateway
+/// emits, so one evaluator can read both surfaces.
+///
+/// The SLO evaluator reads three of its four signals from this span:
+/// `p99_turn_latency_ms` takes its duration, and
+/// `confabulation_rate` divides the number of `confabulation.event`
+/// spans by the number of turns. Without it, the cockpit — the
+/// authoritative surface — is invisible to both.
+///
+/// Measured on this host (2026-11-01): the report said "no turn.dispatch
+/// spans in window — last turn.dispatch span 3d ago" while the operator
+/// was talking to the cockpit every day. The TypeScript gateway emits
+/// the span; the native arm did not.
+pub(crate) fn record_turn_dispatch(
+    config: &OperatorConfig,
+    session_id: &str,
+    provider: &str,
+    model: &str,
+    duration_ms: u64,
+    failed: bool,
+    error_message: Option<&str>,
+) {
+    let status = if failed { "error" } else { "ok" };
+    record_span(
+        config,
+        "turn.dispatch",
+        vec![
+            ("surface", Value::String("rust-tui".to_string())),
+            ("audit.surface", Value::String("rust-tui".to_string())),
+            ("conversation.id", Value::String(session_id.to_string())),
+            ("actor.id", Value::String("local".to_string())),
+            ("provider", Value::String(provider.to_string())),
+            ("model", Value::String(model.to_string())),
+            ("turn.timing_ms", Value::from(duration_ms)),
+        ],
+        duration_ms,
+        status,
+        error_message,
+    );
+}
+
+/// Record one provider completion, in the same shape the TypeScript
+/// gateway emits.
+///
+/// `provider_error_rate` is the ratio of `provider.completion` spans
+/// with status=error, so without this span the cockpit's provider
+/// failures are invisible: the report would keep quoting the gateway's
+/// last measurement, or say "no provider.completion spans in window".
+pub(crate) fn record_provider_completion(
+    config: &OperatorConfig,
+    provider: &str,
+    model: &str,
+    tools_count: usize,
+    messages_count: usize,
+    duration_ms: u64,
+    failed: bool,
+    error_message: Option<&str>,
+) {
+    let status = if failed { "error" } else { "ok" };
+    record_span(
+        config,
+        "provider.completion",
+        vec![
+            ("provider.name", Value::String(provider.to_string())),
+            ("provider.model", Value::String(model.to_string())),
+            ("provider.tools.count", Value::from(tools_count)),
+            ("provider.messages.count", Value::from(messages_count)),
+        ],
+        duration_ms,
+        status,
+        error_message,
+    );
+}
+
 fn append_line(path: &PathBuf, line: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -150,6 +224,33 @@ mod tests {
         vars.insert("HOME".to_string(), "/tmp/home".to_string());
         vars.insert("MEMPHIS_DATA_DIR".to_string(), data_dir.to_string());
         OperatorConfig::from_iter(vars)
+    }
+
+    /// A config writing to a directory of its own, so two tests never
+    /// read each other's spans.
+    fn test_config() -> OperatorConfig {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("unix time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "memphis-native-telemetry-{}-{nanos}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        config_with_data_dir(dir.to_str().unwrap())
+    }
+
+    /// The last span written for this config, parsed.
+    fn read_last_span(config: &OperatorConfig) -> Value {
+        let path = spans_file_path(config, Utc::now());
+        let content = read_to_string(&path).expect("the span file must exist");
+        let line = content
+            .trim()
+            .lines()
+            .next_back()
+            .expect("at least one span line");
+        serde_json::from_str(line).expect("span line must be JSON")
     }
 
     #[test]
@@ -181,6 +282,74 @@ mod tests {
     }
 
     #[test]
+    /// The cockpit is the authoritative surface, and it has to be
+    /// measurable: `p99_turn_latency_ms` and `confabulation_rate` both
+    /// read the `turn.dispatch` span, `provider_error_rate` reads the
+    /// `provider.completion` one.
+    ///
+    /// Measured on this host (2026-11-01) the report said "no
+    /// turn.dispatch spans in window — last turn.dispatch span 3d ago"
+    /// while the operator was talking to the cockpit every day: the
+    /// TypeScript gateway emits the span, the native arm did not.
+    #[test]
+    fn a_turn_is_recorded_in_the_shape_the_evaluator_reads() {
+        let config = test_config();
+        record_turn_dispatch(
+            &config,
+            "session-7",
+            "minimax",
+            "MiniMax-M3.1-Flash",
+            1234,
+            false,
+            None,
+        );
+
+        let parsed = read_last_span(&config);
+        assert_eq!(parsed["name"], "turn.dispatch");
+        assert_eq!(parsed["status"], "ok");
+        assert_eq!(parsed["durationMs"], 1234);
+        assert_eq!(parsed["attrs"]["surface"], "rust-tui");
+        assert_eq!(parsed["attrs"]["conversation.id"], "session-7");
+        assert_eq!(parsed["attrs"]["provider"], "minimax");
+        assert_eq!(parsed["attrs"]["turn.timing_ms"], 1234);
+    }
+
+    #[test]
+    fn a_failed_turn_is_recorded_as_an_error() {
+        let config = test_config();
+        record_turn_dispatch(&config, "session-7", "minimax", "model", 10, true, Some("boom"));
+
+        let parsed = read_last_span(&config);
+        assert_eq!(parsed["name"], "turn.dispatch");
+        assert_eq!(parsed["status"], "error");
+        assert_eq!(parsed["errorMessage"], "boom");
+    }
+
+    #[test]
+    fn a_provider_completion_is_recorded_with_its_shape() {
+        let config = test_config();
+        record_provider_completion(&config, "minimax", "model-x", 24, 3, 500, false, None);
+
+        let parsed = read_last_span(&config);
+        assert_eq!(parsed["name"], "provider.completion");
+        assert_eq!(parsed["status"], "ok");
+        assert_eq!(parsed["durationMs"], 500);
+        assert_eq!(parsed["attrs"]["provider.name"], "minimax");
+        assert_eq!(parsed["attrs"]["provider.tools.count"], 24);
+        assert_eq!(parsed["attrs"]["provider.messages.count"], 3);
+    }
+
+    #[test]
+    fn a_failed_provider_completion_is_recorded_as_an_error() {
+        let config = test_config();
+        record_provider_completion(&config, "minimax", "model-x", 24, 3, 500, true, Some("502"));
+
+        let parsed = read_last_span(&config);
+        assert_eq!(parsed["name"], "provider.completion");
+        assert_eq!(parsed["status"], "error");
+        assert_eq!(parsed["errorMessage"], "502");
+    }
+
     fn failed_tool_calls_are_recorded_as_errors() {
         let dir = std::env::temp_dir().join(format!(
             "memphis-native-telemetry-err-{}",
