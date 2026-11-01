@@ -206,6 +206,11 @@ const HELP_ENTRIES: &[HelpEntry] = &[
         route: CommandRoute::Native,
     },
     HelpEntry {
+        display: "/effort <low|medium|high|xhigh|max>",
+        example: "/effort medium",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
         display: "/model <id>",
         example: "/model local-fallback-v0",
         route: CommandRoute::Native,
@@ -426,21 +431,43 @@ pub struct SearchState {
     pub current: usize,
 }
 
+/// What became of a tool call.
+///
+/// The three outcomes are deliberately distinct. A call that is still
+/// running must not look like a call that succeeded, and a call whose
+/// outcome was never observed — the turn ended before the tool
+/// reported — must not look like a success either.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolOutcome {
+    /// The call is running right now.
+    Pending,
+    /// The call finished and succeeded.
+    Succeeded,
+    /// The call finished and failed.
+    Failed,
+    /// The call's outcome was never observed.
+    Unknown,
+}
+
 /// One tool call, as the cockpit shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolActivity {
+    /// The provider's tool-call id. It pairs a pending entry with its
+    /// completion, so a slow call is updated in place instead of
+    /// turning into two entries.
+    pub id: String,
     /// The tool's full name, e.g. `memphis_chain_verify`.
     pub name: String,
     /// The normalized summary, e.g. `chain verify ok=86`.
     pub display: String,
-    /// Whether the call failed.
-    pub failed: bool,
-    /// How long it took, in milliseconds.
+    /// How the call ended.
+    pub outcome: ToolOutcome,
+    /// How long it took, in milliseconds. Zero while the call is pending.
     pub elapsed_ms: u64,
 }
 
 impl ToolActivity {
-    /// The short label the panel shows: `memphis_chain_verify` becomes
+    /// The short label the strip shows: `memphis_chain_verify` becomes
     /// `chain verify`, `memphis_exec` becomes `exec`.
     ///
     /// The `memphis_` prefix is noise in a cockpit that only ever
@@ -494,6 +521,46 @@ impl ToolActivity {
             _ => format!("{}m", self.elapsed_ms / 60_000),
         }
     }
+
+    /// The mark that tells the four outcomes apart at a glance.
+    pub fn outcome_mark(&self) -> (&'static str, ratatui::style::Color) {
+        match self.outcome {
+            ToolOutcome::Pending => ("◌", ratatui::style::Color::Cyan),
+            ToolOutcome::Succeeded => ("✓", ratatui::style::Color::Green),
+            ToolOutcome::Failed => ("✗", ratatui::style::Color::Yellow),
+            ToolOutcome::Unknown => ("?", ratatui::style::Color::DarkGray),
+        }
+    }
+
+    /// What the strip says about the call's state.
+    ///
+    /// The wording is the contract: a pending call says it is running,
+    /// an unknown call says the outcome was never observed, and neither
+    /// of them borrows the wording of a success.
+    pub fn state_label(&self) -> &'static str {
+        match self.outcome {
+            ToolOutcome::Pending => "running",
+            ToolOutcome::Succeeded => "ok",
+            ToolOutcome::Failed => "failed",
+            ToolOutcome::Unknown => "outcome unknown",
+        }
+    }
+}
+
+/// The reasoning effort to show in the status bar, if any.
+///
+/// The effort only reaches the provider on a MiniMax-Flash request, so
+/// showing a level next to any other provider would be a claim the
+/// next turn does not honour. `None` means: say nothing.
+fn reasoning_effort_for(provider: &str, model: &str, effort: Option<&str>) -> Option<String> {
+    let effort = effort?;
+    if !provider.eq_ignore_ascii_case("minimax") {
+        return None;
+    }
+    if !model.to_ascii_lowercase().contains("flash") {
+        return None;
+    }
+    Some(effort.to_string())
 }
 
 /// Byte offset of the character before `index`.
@@ -531,6 +598,10 @@ pub struct StatusBarContext {
     pub connected: bool,
     pub provider: String,
     pub model: String,
+    /// The reasoning effort the next turn will ask for, when the
+    /// provider takes one. Shown so the operator can see the level
+    /// without opening a menu.
+    pub reasoning_effort: Option<String>,
     pub context_window_tokens: Option<u32>,
     pub context_pressure: Option<ContextPressureSummary>,
     pub token_usage: Option<TokenUsageSummary>,
@@ -628,13 +699,30 @@ enum WorkerEvent {
         chunk: String,
     },
     ChatUsage(TokenUsageSummary),
+    /// A native tool is about to run inside the chat loop.
+    ///
+    /// The payload carries the tool's name and the provider's
+    /// tool-call id, and nothing else: no arguments, no result, and
+    /// no outcome that has not happened yet.
+    ChatToolStarted {
+        id: String,
+        name: String,
+        detail: String,
+    },
     /// A native tool ran inside the chat loop. The payload is the
     /// normalized form — never the raw tool output.
     ChatTool {
+        id: String,
         name: String,
         display: String,
         failed: bool,
         elapsed_ms: u64,
+    },
+    /// The provider stopped the answer early — `finish_reason: length`
+    /// means the completion ceiling was reached and the text so far is
+    /// partial.
+    Truncated {
+        reason: String,
     },
     ChatCompleted(ChatExchange),
     DegradationUpdate {
@@ -704,6 +792,14 @@ pub struct AppState {
     /// per call, with the outcome and the duration. The raw payload
     /// is never in this list — it lives in the transcript.
     pub tool_activity: Vec<ToolActivity>,
+    /// The reasoning effort the next turn will ask for.
+    ///
+    /// `None` means "whatever the provider's own default is", and the
+    /// status bar says nothing in that case. A level the operator
+    /// picked — here or in their own configuration — is shown, so the
+    /// effective setting is never a guess.
+    pub reasoning_effort: Option<String>,
+    turn_truncated: bool,
     pub output_buffer: Vec<StyledLine>,
     pub history: Vec<String>,
     pub history_index: Option<usize>,
@@ -773,6 +869,8 @@ impl AppState {
             last_search_query: String::new(),
             last_assistant_answer: None,
             tool_activity: Vec::new(),
+            reasoning_effort: None,
+            turn_truncated: false,
             output_buffer: Vec::new(),
             history: Vec::new(),
             history_index: None,
@@ -803,6 +901,11 @@ impl AppState {
     pub fn refresh(&mut self, client: &MemphisClient) {
         let snapshot = client.fetch_snapshot();
         let provider_statuses = client.provider_statuses();
+        // Keep the visible reasoning effort in step with the one the
+        // runtime will actually send. The level is read from the
+        // resolved configuration, so an operator who configured a level
+        // outside this TUI sees it here too.
+        self.reasoning_effort = Some(client.minimax_reasoning_effort());
         self.apply_refresh_snapshot(snapshot, provider_statuses);
     }
 
@@ -903,7 +1006,25 @@ impl AppState {
         if self.chat_session_id != session_id {
             return;
         }
+        if !self.active_native_chat_running() {
+            let history = self.session_history.clone();
+            self.restore_tool_history(&history);
+        }
         self.render_history_into_transcript();
+    }
+
+    /// Restore recent tool records without inventing outcomes or durations.
+    fn restore_tool_history(&mut self, messages: &[ChatTranscriptEntry]) {
+        let mut recent: Vec<&ChatTranscriptEntry> = messages.iter().rev()
+            .filter(|entry| entry.role == "tool").take(3).collect();
+        recent.reverse();
+        self.tool_activity = recent.into_iter().enumerate().map(|(index, entry)| ToolActivity {
+            id: format!("history:{index}"),
+            name: entry.tool_name.clone().unwrap_or_else(|| "tool".to_string()),
+            display: entry.content.clone(),
+            outcome: ToolOutcome::Unknown,
+            elapsed_ms: 0,
+        }).collect();
     }
 
     /// Put the loaded transcript into the scrollback.
@@ -1111,32 +1232,87 @@ impl AppState {
         self.append_blank();
     }
 
-    /// Record a tool call and leave one discreet line in the transcript.
+    /// Track a tool call that is about to run.
     ///
-    /// The line is deliberately short: the operator wants to know that
-    /// the agent is working and what kind of work it is doing, not to
-    /// read the tool's output. The output is in the transcript, one
-    /// keystroke away, for when it is actually needed.
-    pub fn record_tool_activity(&mut self, activity: ToolActivity) {
-        let line = format!(
-            "\u{25b8} {} \u{00b7} {} \u{00b7} {}",
-            activity.label(),
-            activity.summary(),
-            activity.duration_label(),
-        );
-        let tone = if activity.failed {
-            LineTone::Warning
-        } else {
-            LineTone::Dim
-        };
-        self.append_line(StyledLine {
-            content: line,
-            tone,
+    /// The entry starts as pending, so the cockpit can say "this is
+    /// running" without pretending it has an outcome it does not have
+    /// yet. Nothing is written to the transcript: the live tool calls
+    /// live in one place — the activity strip — and a second copy in
+    /// the chat is the duplication this replaced. The durable record
+    /// of the call is the operation row in the database, and the
+    /// tool's normalized display is persisted with the transcript.
+    pub fn begin_tool_activity(&mut self, id: &str, name: &str) {
+        self.tool_activity.push(ToolActivity {
+            id: id.to_string(),
+            name: name.to_string(),
+            display: String::new(),
+            outcome: ToolOutcome::Pending,
+            elapsed_ms: 0,
         });
-        self.append_blank();
+        self.trim_tool_activity();
+    }
 
-        self.tool_activity.push(activity);
-        // The panel shows the recent calls; older ones are history.
+    /// Settle a tool call with the outcome that actually happened.
+    ///
+    /// The pending entry is updated in place, so the operator watches
+    /// one row change from "running" to "ok" or "failed" instead of
+    /// seeing a second row appear. If the start event never arrived,
+    /// the completion is recorded on its own — a finished call is
+    /// still a fact.
+    pub fn complete_tool_activity(
+        &mut self,
+        id: &str,
+        name: &str,
+        display: &str,
+        failed: bool,
+        elapsed_ms: u64,
+    ) {
+        // A successful tool dispatch can still contain a failed command.
+        // Preserve the model's payload, but show the actual exit status.
+        let process_failed = matches!(name, "memphis_exec" | "memphis_git")
+            && display.rsplit_once("exit=")
+                .and_then(|(_, code)| code.trim().parse::<i32>().ok())
+                .is_some_and(|code| code != 0);
+        let outcome = if failed || process_failed {
+            ToolOutcome::Failed
+        } else {
+            ToolOutcome::Succeeded
+        };
+        if let Some(entry) = self.tool_activity.iter_mut().rev().find(|entry| entry.id == id) {
+            entry.name = name.to_string();
+            entry.display = display.to_string();
+            entry.outcome = outcome;
+            entry.elapsed_ms = elapsed_ms;
+            return;
+        }
+        self.tool_activity.push(ToolActivity {
+            id: id.to_string(),
+            name: name.to_string(),
+            display: display.to_string(),
+            outcome,
+            elapsed_ms,
+        });
+        self.trim_tool_activity();
+    }
+
+    /// Mark every still-running call as unknown.
+    ///
+    /// When a turn dies — provider timeout, error limit, cancellation —
+    /// the calls that were running never reported an outcome. They are
+    /// marked unknown, which is neither success nor failure: the
+    /// operator needs to know that the call may or may not have taken
+    /// effect.
+    pub fn settle_pending_tool_activity_unknown(&mut self) {
+        for entry in self.tool_activity.iter_mut() {
+            if entry.outcome == ToolOutcome::Pending {
+                entry.outcome = ToolOutcome::Unknown;
+            }
+        }
+    }
+
+    /// Keep the recent calls and drop the rest.
+    fn trim_tool_activity(&mut self) {
+        // The strip shows the recent calls; older ones are history.
         const TOOL_ACTIVITY_LIMIT: usize = 40;
         if self.tool_activity.len() > TOOL_ACTIVITY_LIMIT {
             let overflow = self.tool_activity.len() - TOOL_ACTIVITY_LIMIT;
@@ -1528,6 +1704,7 @@ impl AppState {
                 .unwrap_or(0)
         );
         self.chat_session_id = new_session.clone();
+        self.tool_activity.clear();
         self.append_line(success(format!(
             "Chat history dropped. Fresh session: {new_session}"
         )));
@@ -1713,6 +1890,7 @@ impl AppState {
     }
 
     fn start_chat_task(&mut self, client: MemphisClient, prompt_text: String) {
+        self.turn_truncated = false;
         let session_id = self.chat_session_id.clone();
         let provider = self.chat_provider.clone();
         let model = self.chat_model.clone();
@@ -1737,17 +1915,25 @@ impl AppState {
                                 chunk,
                             },
                             ChatStreamEvent::Usage(usage) => WorkerEvent::ChatUsage(usage),
+                            ChatStreamEvent::ToolStarted { id, name, detail } => {
+                                WorkerEvent::ChatToolStarted { id, name, detail }
+                            }
                             ChatStreamEvent::Tool {
+                                id,
                                 name,
                                 display,
                                 failed,
                                 elapsed_ms,
                             } => WorkerEvent::ChatTool {
+                                id,
                                 name,
                                 display,
                                 failed,
                                 elapsed_ms,
                             },
+                            ChatStreamEvent::Truncated { reason } => {
+                                WorkerEvent::Truncated { reason }
+                            }
                         };
                         let _ = chunk_sender.send(worker_event);
                     },
@@ -1826,6 +2012,34 @@ impl AppState {
         }
 
         match tokens.as_slice() {
+            [cmd, rest @ ..] if *cmd == "effort" => {
+                // The reasoning effort for future turns. `/effort` with
+                // no argument reports the level in force; `/effort high`
+                // changes it. The change applies to the turns that
+                // follow — the turn in flight is not re-asked.
+                let requested = rest.join(" ").trim().to_string();
+                if requested.is_empty() {
+                    let current = client.minimax_reasoning_effort();
+                    self.append_line(success(format!(
+                        "reasoning effort: {current} — levels: low, medium, high, xhigh, max"
+                    )));
+                    self.append_blank();
+                } else {
+                    match client.set_minimax_reasoning_effort(requested.as_str()) {
+                        Ok(level) => {
+                            self.reasoning_effort = Some(level.clone());
+                            self.append_line(success(format!(
+                                "reasoning effort set to {level} for the next turns"
+                            )));
+                            self.append_blank();
+                        }
+                        Err(error) => {
+                            self.append_line(error_line(format!("/effort failed: {error}")));
+                            self.append_blank();
+                        }
+                    }
+                }
+            }
             [cmd] if *cmd == "help" => {
                 self.append_help();
                 self.append_blank();
@@ -2080,8 +2294,10 @@ impl AppState {
         }
 
         self.chat_session_id = session_id.to_string();
+        self.tool_activity.clear();
         match client.load_chat_session(Some(self.chat_session_id.as_str()), 20) {
             Ok(view) => {
+                self.restore_tool_history(&view.messages);
                 self.append_line(success(format!(
                     "chat session switched to {}",
                     self.chat_session_id
@@ -2290,18 +2506,31 @@ impl AppState {
                 self.live_token_usage = Some(usage);
                 false
             }
+            WorkerEvent::ChatToolStarted { id, name, detail } => {
+                self.begin_tool_activity(&id, &name);
+                if let Some(entry) = self.tool_activity.last_mut() { entry.display = detail; }
+                false
+            }
             WorkerEvent::ChatTool {
+                id,
                 name,
                 display,
                 failed,
                 elapsed_ms,
             } => {
-                self.record_tool_activity(ToolActivity {
-                    name,
-                    display,
-                    failed,
-                    elapsed_ms,
-                });
+                self.complete_tool_activity(&id, &name, &display, failed, elapsed_ms);
+                false
+            }
+            WorkerEvent::Truncated { reason } => {
+                self.turn_truncated = true;
+                // The provider stopped early. Say so: an answer cut off
+                // by the completion ceiling is partial, and reporting it
+                // as a finished answer is a claim the operator cannot
+                // check.
+                self.append_line(warning(format!(
+                    "[provider] the answer stopped early (finish_reason: {reason}) — the text above is partial"
+                )));
+                self.append_blank();
                 false
             }
             WorkerEvent::ChatCompleted(exchange) => {
@@ -2366,16 +2595,21 @@ impl AppState {
                     });
                 }
                 self.append_blank();
-                self.append_line(success(format!(
-                    "reply complete via {} / {}{}",
-                    exchange.provider,
+                let completion_label = if self.turn_truncated { "reply incomplete" } else { "reply complete" };
+                self.append_line(if self.turn_truncated { warning(format!(
+                    "{} via {} / {}{}",
+                    completion_label, exchange.provider, exchange.model,
+                    exchange.token_usage.as_ref().map(|usage| format!(" · {}", format_full_token_usage(usage))).unwrap_or_default()
+                )) } else { success(format!(
+                    "{} via {} / {}{}",
+                    completion_label, exchange.provider,
                     exchange.model,
                     exchange
                         .token_usage
                         .as_ref()
                         .map(|usage| format!(" · {}", format_full_token_usage(usage)))
                         .unwrap_or_default()
-                )));
+                )) });
                 self.append_blank();
                 true
             }
@@ -2427,6 +2661,10 @@ impl AppState {
                     self.live_token_usage = None;
                     self.live_output_chars = None;
                     self.stream_trailing_newlines.clear();
+                    // The turn is over and the calls that were running
+                    // never reported an outcome. They are unknown now,
+                    // not successful.
+                    self.settle_pending_tool_activity_unknown();
                 }
                 if let Some(target_chat) = self.active_telegram_target() {
                     self.append_telegram_send_failure(target_chat, error);
@@ -2441,6 +2679,7 @@ impl AppState {
                     self.live_token_usage = None;
                     self.live_output_chars = None;
                     self.stream_trailing_newlines.clear();
+                    self.settle_pending_tool_activity_unknown();
                 }
                 if let Some(target_chat) = self.active_telegram_target() {
                     self.append_telegram_send_cancelled(target_chat);
@@ -3838,6 +4077,7 @@ impl AppState {
     }
 
     fn append_transcript_entry(&mut self, message: &ChatTranscriptEntry) {
+        if message.role == "tool" { return; }
         let prefix = match message.role.as_str() {
             "user" => "You",
             "assistant" => "Memphis",
@@ -4670,6 +4910,7 @@ impl AppState {
 
         StatusBarContext {
             connected,
+            reasoning_effort: reasoning_effort_for(&provider, &model, self.reasoning_effort.as_deref()),
             provider,
             model,
             context_window_tokens,
@@ -4962,6 +5203,7 @@ fn is_native_command_tokens(tokens: &[String]) -> bool {
         [scope, action, _name] if *scope == "provider" && *action == "set" => true,
         [scope, action, _model @ ..] if *scope == "model" && *action == "set" => true,
         [cmd, _value] if *cmd == "provider" => true,
+        [cmd, _values @ ..] if *cmd == "effort" => true,
         [cmd, _value @ ..] if *cmd == "model" => true,
         [cmd, _value] if *cmd == "session" => true,
         _ => false,
@@ -5684,6 +5926,7 @@ fn split_command_tokens(input: &str) -> Result<Vec<String>, String> {
 /// history loaded at startup and the `/session <id>` switch. Two
 /// implementations of one format is how the two screens drift apart.
 fn transcript_entry_lines(lines: &mut Vec<StyledLine>, message: &ChatTranscriptEntry) {
+    if message.role == "tool" { return; }
     let prefix = match message.role.as_str() {
         "user" => "You",
         "assistant" => "Memphis",
@@ -5804,7 +6047,7 @@ mod tests {
         split_command_tokens, styled, unsupported_tui_command_notice, ActiveCommand,
         ActiveCommandKind, AppAction, AppState, CancelBehavior, DegradationState, LineTone,
         ModelCapabilitySummary, MouseCaptureToast, Screen, TelegramSendOutcome, TokenUsageSummary,
-        ToolActivity, WorkerEvent, HELP_ENTRIES,
+        ToolActivity, ToolOutcome, WorkerEvent, HELP_ENTRIES,
     };
     use crate::client::{AppSnapshot, CliBridgeResult, ExtensionHostResult, MemphisClient};
     use crate::config::TuiConfig;
@@ -6014,81 +6257,93 @@ mod tests {
     }
 
     #[test]
-    /// The tool's own display string repeats the tool's name; the
-    /// cockpit shows the name once.
-    #[test]
-    fn a_tool_summary_does_not_repeat_the_label() {
+    fn tool_summary_removes_repeated_label() {
         let activity = ToolActivity {
-            name: "memphis_chain_verify".to_string(),
-            display: "chain_verify: ok (1 chains, 86 blocks)".to_string(),
-            failed: false,
-            elapsed_ms: 90,
+            id: "call-1".into(), name: "memphis_chain_verify".into(),
+            display: "chain_verify: ok (1 chains, 86 blocks)".into(),
+            outcome: ToolOutcome::Succeeded, elapsed_ms: 90,
         };
         assert_eq!(activity.label(), "chain verify");
         assert_eq!(activity.summary(), "ok (1 chains, 86 blocks)");
-
-        let spelled_out = ToolActivity {
-            name: "memphis_chain_verify".to_string(),
-            display: "chain verify ok=86".to_string(),
-            failed: false,
-            elapsed_ms: 90,
-        };
-        assert_eq!(spelled_out.summary(), "ok=86");
     }
 
-    /// A summary that does not start with the label is left alone.
     #[test]
-    fn a_tool_summary_that_does_not_repeat_anything_is_kept() {
-        let activity = ToolActivity {
-            name: "memphis_health".to_string(),
-            display: "runtime health snapshot".to_string(),
-            failed: false,
-            elapsed_ms: 17,
-        };
-        assert_eq!(activity.summary(), "runtime health snapshot");
-    }
-
-    /// The transcript gets one discreet line per tool call, and the
-    /// side panel keeps the list.
-    #[test]
-    fn a_tool_call_leaves_one_line_and_one_entry() {
+    fn tool_activity_updates_in_place_without_duplicate_transcript() {
         let mut app = AppState::new(config());
-        app.record_tool_activity(ToolActivity {
-            name: "memphis_exec".to_string(),
-            display: "exec ok".to_string(),
-            failed: false,
-            elapsed_ms: 420,
-        });
+        let before = app.output_buffer.len();
+        app.begin_tool_activity("call-1", "memphis_exec");
+        assert_eq!(app.tool_activity[0].outcome, ToolOutcome::Pending);
+        app.complete_tool_activity("call-1", "memphis_exec", "exit=0", false, 420);
         assert_eq!(app.tool_activity.len(), 1);
-        let line = app
-            .output_buffer
-            .iter()
-            .find(|line| line.content.contains("\u{25b8}"))
-            .map(|line| line.content.clone())
-            .expect("the tool call leaves a line in the transcript");
-        // The label is not repeated: the display started with it.
-        assert_eq!(line, "\u{25b8} exec \u{00b7} ok \u{00b7} 420ms");
+        assert_eq!(app.tool_activity[0].outcome, ToolOutcome::Succeeded);
+        assert_eq!(app.tool_activity[0].elapsed_ms, 420);
+        assert_eq!(app.output_buffer.len(), before);
     }
 
-    /// A failed call has to be visible — that is the one the operator
-    /// needs to notice.
     #[test]
-    fn a_failed_tool_call_is_marked_in_the_transcript() {
+    fn failed_and_unknown_tool_outcomes_are_distinct() {
         let mut app = AppState::new(config());
-        app.record_tool_activity(ToolActivity {
-            name: "memphis_vault_list".to_string(),
-            display: "error: locked".to_string(),
-            failed: true,
-            elapsed_ms: 900,
-        });
-        let line = app
-            .output_buffer
-            .iter()
-            .find(|line| line.content.contains("\u{25b8}"))
-            .map(|line| (line.content.clone(), line.tone))
-            .expect("the failed call leaves a line in the transcript");
-        assert!(line.0.contains("vault list"), "got: {}", line.0);
-        assert_eq!(line.1, LineTone::Warning);
+        app.begin_tool_activity("failed", "memphis_vault_list");
+        app.complete_tool_activity("failed", "memphis_vault_list", "locked", true, 900);
+        app.begin_tool_activity("unknown", "memphis_exec");
+        app.settle_pending_tool_activity_unknown();
+        assert_eq!(app.tool_activity[0].outcome, ToolOutcome::Failed);
+        assert_eq!(app.tool_activity[1].outcome, ToolOutcome::Unknown);
+    }
+
+    #[test]
+    fn nonzero_process_exit_is_shown_as_failure() {
+        let mut app = AppState::new(config());
+        app.begin_tool_activity("one", "memphis_exec");
+        app.complete_tool_activity("one", "memphis_exec", "exit=2", false, 4);
+        assert_eq!(app.tool_activity[0].outcome, ToolOutcome::Failed);
+        app.begin_tool_activity("two", "memphis_exec");
+        app.complete_tool_activity("two", "memphis_exec", "exit=0", false, 4);
+        assert_eq!(app.tool_activity[1].outcome, ToolOutcome::Succeeded);
+    }
+
+    #[test]
+    fn history_keeps_only_three_tools_in_one_place_with_unknown_outcomes() {
+        let mut app = AppState::new(config());
+        let session = app.chat_session_id.clone();
+        let mut messages = Vec::new();
+        for index in 0..4 {
+            messages.push(serde_json::from_value(serde_json::json!({
+                "role": "tool", "content": format!("tool-summary-{index}"),
+                "created_at": "2026-01-01T00:00:00Z", "tool_name": "memphis_exec"
+            })).unwrap());
+        }
+        app.apply_session_history(session, messages, Some(4));
+        assert_eq!(app.tool_activity.len(), 3);
+        assert_eq!(app.tool_activity[0].display, "tool-summary-1");
+        assert!(app.tool_activity.iter().all(|a| a.outcome == ToolOutcome::Unknown));
+        assert!(!app.output_buffer.iter().any(|line| line.content.contains("tool-summary-")));
+    }
+
+    #[test]
+    fn tool_started_displays_safe_detail() {
+        let mut app = AppState::new(config());
+        app.apply_worker_event(WorkerEvent::ChatToolStarted { id: "x".into(), name: "memphis_exec".into(), detail: "git".into() });
+        assert_eq!(app.tool_activity[0].display, "git");
+        assert_eq!(app.tool_activity[0].outcome, ToolOutcome::Pending);
+    }
+
+    #[test]
+    fn truncated_reply_is_not_reported_complete() {
+        let mut app = AppState::new(config());
+        app.apply_worker_event(WorkerEvent::Truncated { reason: "length".into() });
+        let exchange = serde_json::from_value(serde_json::json!({
+            "session_id":"fixture", "provider":"minimax", "model":"MiniMax-M3.1-Flash", "reply":"partial", "messages":[]
+        })).unwrap();
+        app.apply_worker_event(WorkerEvent::ChatCompleted(exchange));
+        assert!(app.output_buffer.iter().any(|line| line.content.contains("reply incomplete")));
+        assert!(!app.output_buffer.iter().any(|line| line.content.contains("reply complete")));
+    }
+
+    #[test]
+    fn effort_command_is_routed_to_the_native_tui() {
+        assert_eq!(classify_input_route("/effort").unwrap(), super::CommandRoute::Native);
+        assert_eq!(classify_input_route("/effort medium").unwrap(), super::CommandRoute::Native);
     }
 
     #[test]

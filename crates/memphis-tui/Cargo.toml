@@ -10,4 +10,5 @@ serde_json.workspace = true
 thiserror.workspace = true
 crossterm = "0.28"
 ratatui = "0.30.2"
+unicode-width = "0.2"
 memphis-operator = { path = "../memphis-operator" }

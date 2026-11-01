@@ -13,9 +13,30 @@ import type { AppConfig } from '../../src/infra/config/schema.js';
 // the test sets them via cfg. Stub them in `beforeAll` so the registry
 // behaves the same locally and in CI; vi.stubEnv auto-restores after
 // the suite, so no test-pollution across files.
+//
+// The VAULT references have to be stubbed as well, and this is the part
+// that bit on the operator's machine. The registry is vault-first: with
+// `MINIMAX_VAULT_KEY` set, it looks the key up in the vault and, when
+// the lookup fails, refuses the plaintext fallback on purpose:
+//
+//   [memphis-provider] SECURITY: minimax vault misconfigured — entry
+//   'minimax_api_key' not found in vault. Plaintext fallback exists but
+//   will NOT be used.
+//
+// The test runs against a temporary vault, so the entry is never there
+// and the provider was dropped from the registry — while on CI, where
+// the variable is unset, the same test was green. The operator's `.env`
+// exports `MINIMAX_VAULT_KEY`, so the environment the tests run in was
+// different from the environment CI ran in: the same code, two answers.
+//
+// Stubbing the reference to an empty string is what "no vault
+// reference" looks like, and then the plaintext key the test already
+// stubs is the one that counts.
 beforeAll(() => {
   vi.stubEnv('ANTHROPIC_API_KEY', 'ci-mock-anthropic');
   vi.stubEnv('MINIMAX_API_KEY', 'ci-mock-minimax');
+  vi.stubEnv('ANTHROPIC_VAULT_KEY', '');
+  vi.stubEnv('MINIMAX_VAULT_KEY', '');
 });
 
 afterAll(() => {

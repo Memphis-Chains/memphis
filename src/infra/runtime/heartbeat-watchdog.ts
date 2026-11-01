@@ -14,6 +14,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { MEMPHIS_AGENT_NAME } from '../../config/env-registry.js';
@@ -184,7 +185,8 @@ function runHealthChecks(): WatchdogCheck[] {
   // Process memory
   try {
     const mem = process.memoryUsage();
-    const threshold = parseFloat(process.env.MEMPHIS_MEMORY_WARN_THRESHOLD ?? '0.9') || 0.9;
+    const threshold =
+      parseFloat(process.env.MEMPHIS_MEMORY_WARN_SHARE ?? '') || DEFAULT_MEMORY_WARN_SHARE;
     checks.push(evaluateMemoryCheck(mem, { threshold }));
   } catch {
     checks.push({ name: 'memory', status: 'ok' });
@@ -198,31 +200,56 @@ function runHealthChecks(): WatchdogCheck[] {
  * with synthetic `memoryUsage()` snapshots without touching the real
  * process heap.
  *
- * The `minHeapBytes` gate was added because a young Node process
- * routinely hits >90 % heapUsed/heapTotal in the first few seconds —
- * that is normal GC pressure at a tiny heap size, not host-memory
- * exhaustion. Operator on a 16 GB machine saw
- * "warn:memory:40/43 MB (91%)" in PULSE. Requiring heapTotal to grow
- * past 128 MB before we raise the warn filters out that false
- * positive while still catching long-running processes that bloat.
+ * WHAT IT MEASURES, AND WHY IT CHANGED
+ * ------------------------------------
+ * It used to warn when `heapUsed / heapTotal` crossed 90 %, with a
+ * 128 MB floor on the heap to filter out a young process. Measured on
+ * the operator's machine (2026-11-01), that check flapped the health
+ * state once an hour: the runtime watch does a burst of work, the V8
+ * heap grows to ~343 MB, the ratio sits at ~90 %, the state goes
+ * `degraded`, and a minute later the GC has run and it is `healthy`
+ * again. 103 degraded / 102 healthy transitions in the system chain --
+ * half of them noise.
+ *
+ * The ratio is GC pressure, not resource pressure. V8 grows the heap
+ * lazily and does not shrink it eagerly, so a long-running process
+ * parks at a high occupancy forever while being perfectly healthy: the
+ * memphis service was using 310 MB of a 343 MB heap on a machine with
+ * 10 GB free, and there is no cgroup limit on the unit
+ * (`MemoryMax=infinity`).
+ *
+ * The failure this check exists to catch is the process starving the
+ * machine and being OOM-killed. So it measures the process's RSS
+ * against the HOST's memory, which is the OOM killer's own view. On
+ * this machine the service sits at 629 MB of 15 423 MB -- 4 % -- which
+ * is what "healthy" looks like.
+ *
+ * The heap occupancy stays in the message: it is worth knowing, it just
+ * does not decide the state.
  */
-export const DEFAULT_MIN_HEAP_BYTES_FOR_WARN = 128 * 1024 * 1024;
+export const DEFAULT_MEMORY_WARN_SHARE = 0.25;
+
+export interface MemorySnapshot {
+  heapUsed: number;
+  heapTotal: number;
+  /** The process's resident set size — the OOM killer's view of it. */
+  rss: number;
+}
 
 export function evaluateMemoryCheck(
-  mem: { heapUsed: number; heapTotal: number },
-  options: { threshold?: number; minHeapBytes?: number } = {},
+  mem: MemorySnapshot,
+  options: { threshold?: number; hostTotalBytes?: number } = {},
 ): WatchdogCheck {
-  const threshold = options.threshold ?? 0.9;
-  const minHeapBytes = options.minHeapBytes ?? DEFAULT_MIN_HEAP_BYTES_FOR_WARN;
-  const heapUsedMb = Math.round(mem.heapUsed / (1024 * 1024));
-  const heapTotalMb = Math.round(mem.heapTotal / (1024 * 1024));
-  const ratio = mem.heapTotal > 0 ? mem.heapUsed / mem.heapTotal : 0;
-  const overThreshold = ratio > threshold;
-  const heapMatureEnough = mem.heapTotal > minHeapBytes;
+  const threshold = options.threshold ?? DEFAULT_MEMORY_WARN_SHARE;
+  const hostTotal = options.hostTotalBytes ?? os.totalmem();
+  const rssMb = Math.round(mem.rss / (1024 * 1024));
+  const hostMb = Math.round(hostTotal / (1024 * 1024));
+  const share = hostTotal > 0 ? mem.rss / hostTotal : 0;
+  const heapRatio = mem.heapTotal > 0 ? mem.heapUsed / mem.heapTotal : 0;
   return {
     name: 'memory',
-    status: overThreshold && heapMatureEnough ? 'warn' : 'ok',
-    message: `${heapUsedMb}/${heapTotalMb} MB (${Math.round(ratio * 100)}%)`,
+    status: share > threshold ? 'warn' : 'ok',
+    message: `RSS ${rssMb}/${hostMb} MB (${Math.round(share * 100)}% of host, heap ${Math.round(heapRatio * 100)}%)`,
   };
 }
 

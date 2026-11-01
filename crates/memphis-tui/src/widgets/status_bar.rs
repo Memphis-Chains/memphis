@@ -133,6 +133,17 @@ pub fn status_bar_parts(
     let mode = sanitize_for_tui(&context.cognitive_mode);
     let pulse = sanitize_for_tui(&context.pulse_health);
 
+    // The reasoning effort in force, so the operator can see what the
+    // next turn will ask for without opening a menu. It is shown as
+    // the level itself — never as a promise about speed or quality.
+    let effort = context
+        .reasoning_effort
+        .as_deref()
+        .map(sanitize_for_tui)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!(" · effort:{value}"))
+        .unwrap_or_default();
+
     StatusBarParts {
         prefix: format!(
             "{degraded_icon}{indicator} [Mode:{mode}] {provider}/{model} · {context_window}{} · {token_usage} · ",
@@ -143,7 +154,7 @@ pub fn status_bar_parts(
         ),
         spinner,
         activity,
-        suffix: format!(" · PULSE:{pulse} · session:{session} · {timestamp}"),
+        suffix: format!("{effort} · PULSE:{pulse} · session:{session} · {timestamp}"),
     }
 }
 
@@ -244,6 +255,7 @@ mod tests {
     fn make_context(degraded: bool) -> StatusBarContext {
         StatusBarContext {
             connected: true,
+            reasoning_effort: None,
             provider: "ollama".to_string(),
             model: "qwen2.5:3b".to_string(),
             context_window_tokens: Some(8192),
