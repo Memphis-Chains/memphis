@@ -15,21 +15,97 @@
 //! rate measured by the TypeScript gateway three days earlier, and the
 //! report had no way to say "there is no current tool telemetry".
 //!
-//! Failure handling is fire-and-forget: telemetry must never break the
-//! tool path. The first write failure disables the sink for the rest of
-//! the process and reports once on stderr.
+//! FAILURE HANDLING
+//! ----------------
+//! A failed write does NOT disable the sink. The first version set
+//! `WRITE_FAILED_ONCE` and stopped emitting for the rest of the process
+//! lifetime after a single error — silently, apart from one line on
+//! stderr. A broken sink then looked exactly like an idle runtime: both
+//! produce no spans.
+//!
+//! The sink now mirrors the TypeScript arm:
+//!   - it retries with the same exponential backoff schedule
+//!     (`sink_retry::sink_retry_delay_ms`, checked against
+//!     `tests/fixtures/telemetry-sink-status-contract.json`);
+//!   - it records its own state in `<dataDir>/sink-status-rust.json`,
+//!     so the report can say "the sink is degraded" instead of "there is
+//!     no telemetry";
+//!   - it writes to a status file one level ABOVE the telemetry
+//!     directory, because a span write and a status write fail for
+//!     different reasons and the status file has to survive the case
+//!     where `telemetry/` is the thing that is unwritable.
+//!
+//! Telemetry must never break the tool path: every failure path here is
+//! best-effort and swallows its own errors.
 
+use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{LazyLock, Mutex};
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
 use serde_json::{Map, Value};
 
+use crate::sink_retry::sink_retry_delay_ms;
+use crate::sink_status::{write_sink_status, SinkState, SinkStatusEntry, LOCAL_SINK_SURFACE};
 use crate::OperatorConfig;
 
-static WRITE_FAILED_ONCE: AtomicBool = AtomicBool::new(false);
+/// The retry state of one local sink.
+#[derive(Debug, Clone, Default)]
+struct SinkRetryState {
+    consecutive_failures: u32,
+    next_attempt_at_ms: Option<i64>,
+    last_error: Option<String>,
+    last_failure_at_ms: Option<i64>,
+    last_success_at_ms: Option<i64>,
+    /// Whether this outage was already reported, so the operator hears
+    /// about it once, not once per retry.
+    outage_reported: bool,
+}
+
+impl SinkRetryState {
+    fn may_attempt(&self, now_ms: i64) -> bool {
+        match self.next_attempt_at_ms {
+            None => true,
+            Some(next) => now_ms >= next,
+        }
+    }
+
+    fn record_failure(&mut self, now_ms: i64, error: &str) {
+        self.consecutive_failures = self.consecutive_failures.saturating_add(1);
+        self.next_attempt_at_ms =
+            Some(now_ms.saturating_add(sink_retry_delay_ms(self.consecutive_failures)));
+        self.last_error = Some(error.to_string());
+        self.last_failure_at_ms = Some(now_ms);
+    }
+
+    fn record_success(&mut self, now_ms: i64) {
+        self.consecutive_failures = 0;
+        self.next_attempt_at_ms = None;
+        self.last_error = None;
+        self.last_success_at_ms = Some(now_ms);
+        self.outage_reported = false;
+    }
+}
+
+/// The retry state of every local sink, keyed by its data directory.
+///
+/// The state belongs to the SINK, and a sink is identified by the data
+/// directory it writes to. A single process-wide state would be wrong in
+/// two ways: two runtimes with different data directories would share
+/// one failure counter, and one runtime's failure would silence the
+/// other's telemetry.
+static SINK_RETRY_STATES: LazyLock<Mutex<HashMap<PathBuf, SinkRetryState>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn with_sink_state<R>(data_dir: &std::path::Path, f: impl FnOnce(&mut SinkRetryState) -> R) -> R {
+    let mut states = SINK_RETRY_STATES
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let state = states.entry(data_dir.to_path_buf()).or_default();
+    f(state)
+}
 
 /// Directory holding the span files — the same one the TypeScript sink
 /// writes to, resolved from the same data dir.
@@ -40,6 +116,55 @@ pub(crate) fn spans_dir(config: &OperatorConfig) -> PathBuf {
 /// Path of the span file for a given instant (UTC day, like the TS sink).
 pub(crate) fn spans_file_path(config: &OperatorConfig, now: DateTime<Utc>) -> PathBuf {
     spans_dir(config).join(format!("spans-{}.jsonl", now.format("%Y-%m-%d")))
+}
+
+/// The sink's current status entry, for the surfaces that report it.
+pub(crate) fn sink_status_entry(config: &OperatorConfig) -> SinkStatusEntry {
+    let state = with_sink_state(&config.data_dir, |state| state.clone());
+    SinkStatusEntry {
+        surface: LOCAL_SINK_SURFACE.to_string(),
+        state: if state.consecutive_failures > 0 {
+            SinkState::Degraded
+        } else {
+            SinkState::Ok
+        },
+        consecutive_failures: state.consecutive_failures,
+        last_error: state.last_error.clone(),
+        last_failure_at: state.last_failure_at_ms.map(iso_from_ms),
+        last_success_at: state.last_success_at_ms.map(iso_from_ms),
+        next_retry_at: state.next_attempt_at_ms.map(iso_from_ms),
+        updated_at: iso_from_ms(Utc::now().timestamp_millis()),
+    }
+}
+
+fn iso_from_ms(ms: i64) -> String {
+    Utc.timestamp_millis_opt(ms)
+        .single()
+        .map(|value| value.to_rfc3339_opts(SecondsFormat::Millis, true))
+        .unwrap_or_else(|| String::from("1970-01-01T00:00:00.000Z"))
+}
+
+/// Write this arm's sink status file. Best effort: the caller is already
+/// handling a broken sink, so a failure here must not raise.
+fn publish_sink_status(config: &OperatorConfig) {
+    let _ = write_sink_status(&config.data_dir, &sink_status_entry(config));
+}
+
+/// Test-only: clear the retry state of one data directory.
+pub(crate) fn __reset_sink_state_for_tests(data_dir: &std::path::Path) {
+    let mut states = SINK_RETRY_STATES
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    states.remove(data_dir);
+}
+
+/// Test-only: let the next write attempt through immediately.
+///
+/// The backoff window is real time, and a test must not sleep through it.
+pub(crate) fn __expire_sink_backoff_for_tests(data_dir: &std::path::Path) {
+    with_sink_state(data_dir, |state| {
+        state.next_attempt_at_ms = None;
+    });
 }
 
 /// `MEMPHIS_TELEMETRY_LOCAL_SINK=false` turns the local sink off, exactly
@@ -67,10 +192,11 @@ pub(crate) fn record_span(
     if !sink_enabled(config) {
         return;
     }
-    if WRITE_FAILED_ONCE.load(Ordering::Relaxed) {
+    let now = Utc::now();
+    let now_ms = now.timestamp_millis();
+    if !with_sink_state(&config.data_dir, |state| state.may_attempt(now_ms)) {
         return;
     }
-    let now = Utc::now();
     let mut attr_map = Map::new();
     for (key, value) in attrs {
         attr_map.insert(key.to_string(), value);
@@ -92,8 +218,34 @@ pub(crate) fn record_span(
     }
     let line = format!("{}\n", Value::Object(record));
     if let Err(error) = append_line(&spans_file_path(config, now), &line) {
-        WRITE_FAILED_ONCE.store(true, Ordering::Relaxed);
-        eprintln!("[memphis-telemetry] native span sink disabled after first failure: {error}");
+        let (was_healthy, failures) = with_sink_state(&config.data_dir, |state| {
+            let was_healthy = state.consecutive_failures == 0;
+            state.record_failure(now_ms, &error);
+            (was_healthy, state.consecutive_failures)
+        });
+        publish_sink_status(config);
+        eprintln!("[memphis-telemetry] native span sink write failed ({failures}x): {error}");
+        if was_healthy {
+            let already_reported = with_sink_state(&config.data_dir, |state| {
+                let reported = state.outage_reported;
+                state.outage_reported = true;
+                reported
+            });
+            if !already_reported {
+                eprintln!("[memphis-telemetry] native span sink degraded: {error}");
+            }
+        }
+        return;
+    }
+    let recovered = with_sink_state(&config.data_dir, |state| {
+        let recovered = state.consecutive_failures > 0;
+        state.record_success(now_ms);
+        state.outage_reported = false;
+        recovered
+    });
+    if recovered {
+        publish_sink_status(config);
+        eprintln!("[memphis-telemetry] native span sink recovered");
     }
 }
 
@@ -215,6 +367,7 @@ fn append_line(path: &PathBuf, line: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sink_status::read_sink_status_entries;
     use crate::OperatorConfig;
     use std::collections::HashMap;
     use std::fs::read_to_string;
@@ -239,6 +392,19 @@ mod tests {
         ));
         let _ = fs::remove_dir_all(&dir);
         config_with_data_dir(dir.to_str().unwrap())
+    }
+
+    /// A temporary directory of its own, so two tests never read each
+    /// other's spans.
+    fn temp_dir_for_tests(prefix: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("unix time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("{prefix}-{}-{nanos}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("create the temporary directory");
+        dir
     }
 
     /// The last span written for this config, parsed.
@@ -281,7 +447,6 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    #[test]
     /// The cockpit is the authoritative surface, and it has to be
     /// measurable: `p99_turn_latency_ms` and `confabulation_rate` both
     /// read the `turn.dispatch` span, `provider_error_rate` reads the
@@ -317,7 +482,15 @@ mod tests {
     #[test]
     fn a_failed_turn_is_recorded_as_an_error() {
         let config = test_config();
-        record_turn_dispatch(&config, "session-7", "minimax", "model", 10, true, Some("boom"));
+        record_turn_dispatch(
+            &config,
+            "session-7",
+            "minimax",
+            "model",
+            10,
+            true,
+            Some("boom"),
+        );
 
         let parsed = read_last_span(&config);
         assert_eq!(parsed["name"], "turn.dispatch");
@@ -372,6 +545,64 @@ mod tests {
         assert_eq!(parsed["status"], "error");
         assert_eq!(parsed["attrs"]["tool.output.shape"], "error");
         assert_eq!(parsed["errorMessage"], "boom");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The bug this arm had: a failed write disabled the sink for the
+    /// rest of the process lifetime, silently. A broken sink then looked
+    /// exactly like an idle runtime — both produce no spans.
+    ///
+    /// The native arm is the authoritative surface, so this is the arm
+    /// where the silence cost the most.
+    #[test]
+    fn a_failed_write_does_not_disable_the_sink_and_the_sink_recovers() {
+        let dir = temp_dir_for_tests("memphis-native-telemetry-recovery");
+        __reset_sink_state_for_tests(&dir);
+        let config = config_with_data_dir(dir.to_str().unwrap());
+
+        // The telemetry directory is a FILE, so the span write cannot
+        // create it — a genuine write failure.
+        fs::write(dir.join("telemetry"), b"not a directory").expect("write the obstruction");
+
+        record_tool_call(&config, "memphis_journal", "call-fail", 5, false, None);
+
+        let degraded = sink_status_entry(&config);
+        assert_eq!(degraded.state, SinkState::Degraded);
+        assert_eq!(degraded.consecutive_failures, 1);
+        assert!(
+            degraded.last_error.is_some(),
+            "the failure must be recorded"
+        );
+
+        // The status file is what lets the report tell a broken sink
+        // apart from an idle runtime.
+        let status_path =
+            crate::sink_status::sink_status_path(&config.data_dir, LOCAL_SINK_SURFACE);
+        assert!(
+            status_path.exists(),
+            "the sink status file must exist at {}",
+            status_path.display()
+        );
+        let entries = read_sink_status_entries(&config.data_dir);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].state, SinkState::Degraded);
+
+        // Remove the obstruction: the sink comes back on its own.
+        fs::remove_file(dir.join("telemetry")).expect("remove the obstruction");
+        __expire_sink_backoff_for_tests(&dir);
+        record_tool_call(&config, "memphis_journal", "call-ok", 5, false, None);
+
+        let recovered = sink_status_entry(&config);
+        assert_eq!(recovered.state, SinkState::Ok);
+        assert_eq!(recovered.consecutive_failures, 0);
+        assert!(
+            spans_file_path(&config, Utc::now()).exists(),
+            "the sink must write spans again after the cause is gone"
+        );
+        let entries = read_sink_status_entries(&config.data_dir);
+        assert_eq!(entries[0].state, SinkState::Ok);
+
+        __reset_sink_state_for_tests(&dir);
         let _ = fs::remove_dir_all(&dir);
     }
 

@@ -1,7 +1,7 @@
 import { accessSync, constants, existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-import { getAppVersion } from '../../config/paths.js';
+import { getAppVersion, getDataDir } from '../../config/paths.js';
 import {
   formatSurfaceStatusLines,
   getActiveSurfacesSnapshot,
@@ -10,6 +10,7 @@ import {
 import { buildSurfacePolicySnapshot, type SurfacePolicy } from '../../gateway/surface-policy.js';
 import type { AppConfig } from '../config/schema.js';
 import { countConfabulationEventsInWindow } from '../observability/confabulation-detector.js';
+import { readSinkStatusEntries, type SinkStatusEntry } from '../observability/sink-status.js';
 import {
   getLocalWorkerRuntimeStatus,
   type LocalWorkerRuntimeStatus,
@@ -64,6 +65,14 @@ export type HealthPayload = {
    * Always returned (zero when telemetry sink is empty / disabled).
    */
   confabulationEvents7d: number;
+  /**
+   * The state of the local span sinks.
+   *
+   * A sink that cannot write produces no spans, and no spans look
+   * exactly like an idle runtime. This field is how `/health` tells the
+   * operator that the MEASUREMENT broke, not the runtime.
+   */
+  telemetrySinks?: SinkStatusEntry[];
   /**
    * Phase 3.4 (autopilot 2026-05-08): demo readiness state. Populated
    * from data/demo-armed.json which `memphis demo arm` (Phase 3.1)
@@ -465,6 +474,7 @@ export async function buildHealthPayload(
     '24h': evaluateSlos({ rawEnv, windowDays: 1 }),
     '7d': evaluateSlos({ rawEnv, windowDays: 7 }),
   };
+  const telemetrySinks = readSinkStatusEntries(getDataDir(rawEnv));
   const { getAllProviderBudgets } = await import('../runtime/cost-cap.js');
   const providerBudgets = getAllProviderBudgets(rawEnv);
   const { getAllBreakerSnapshots } = await import('../runtime/circuit-breaker.js');
@@ -521,6 +531,7 @@ export async function buildHealthPayload(
     scheduler,
     latestTurnTelemetry: snapshotTurnTelemetry(),
     confabulationEvents7d: countConfabulationEventsInWindow(undefined, rawEnv),
+    telemetrySinks: telemetrySinks.length > 0 ? telemetrySinks : undefined,
     version: appVersion(),
     uptime_seconds: Math.floor(process.uptime()),
     shutdown: shutdown.shuttingDown ? shutdown : undefined,
