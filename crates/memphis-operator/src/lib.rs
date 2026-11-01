@@ -37,5 +37,8 @@ pub use runtime::{
 };
 pub use text_truncation::{truncate_on_char_boundary, truncate_with_ellipsis};
 pub mod code_read;
-pub use code_read::{assert_contained, assert_not_blocked, resolve_path, split_lines};
+pub use code_read::{
+    assert_not_blocked, assert_not_write_blocked, assert_within_read_roots, assert_within_roots,
+    resolve_path, split_lines,
+};
 pub use code_read_range::{resolve_code_read_range, CodeReadRange};

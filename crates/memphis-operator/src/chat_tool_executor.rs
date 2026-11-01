@@ -30,8 +30,9 @@ use crate::chat_memory::{
 };
 use crate::chat_tool_catalog::tool_tier;
 use crate::code_read::{
-    assert_contained as assert_code_read_path_contained,
     assert_not_blocked as assert_code_read_path_not_blocked,
+    assert_not_write_blocked as assert_code_read_path_not_write_blocked,
+    assert_within_read_roots as assert_code_read_within_read_roots,
     assert_write_contained as assert_code_read_write_contained,
     resolve_path as resolve_code_read_path, split_lines as split_code_read_lines,
     CODE_READ_MAX_CONTENT_CHARS,
@@ -335,17 +336,19 @@ fn execute_native_tool_inner(
                 .and_then(Value::as_u64)
                 .map(|v| v as usize);
 
-            // Security: the same rules the TypeScript arm applies.
-            // Checking only that the path sat under ~/memphis/ was not
-            // enough: a symlink inside the workspace could read any
-            // file on the host.
+            // The same rules the TypeScript arm applies, in the same
+            // order: refuse vault material by segment name, then refuse a
+            // path outside the configured read roots. With no roots
+            // configured (the default) every path on the host is
+            // readable — the tier carries the authorization, exactly as
+            // `memphis_exec` at the same tier already could.
             let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
             let home_path = Path::new(&home);
             let resolved = resolve_code_read_path(path_str, home_path);
             if let Err(reason) = assert_code_read_path_not_blocked(&resolved) {
                 return Err(OperatorError::Message(reason));
             }
-            if let Err(reason) = assert_code_read_path_contained(&resolved, home_path) {
+            if let Err(reason) = assert_code_read_within_read_roots(&resolved) {
                 return Err(OperatorError::Message(reason));
             }
 
@@ -408,19 +411,23 @@ fn execute_native_tool_inner(
                     OperatorError::Message("memphis_grep requires pattern".to_string())
                 })?;
             let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-            let memphis_dir = std::path::Path::new(&home).join("memphis");
+            let home_path = std::path::Path::new(&home);
+            let memphis_dir = home_path.join("memphis");
             let base_path = call
                 .arguments
                 .get("path")
                 .and_then(Value::as_str)
-                .map(|p| p.replace("~/", &format!("{}/", home)))
-                .unwrap_or_else(|| memphis_dir.to_string_lossy().to_string());
+                .map(|p| resolve_code_read_path(p, home_path))
+                .unwrap_or_else(|| memphis_dir.clone());
             let base = std::path::Path::new(&base_path);
-            if !base.starts_with(&memphis_dir) {
-                return Err(OperatorError::Message(format!(
-                    "Path '{}' is outside ~/memphis/",
-                    base_path
-                )));
+            // The read scope: the tier carries the authorization, and
+            // `MEMPHIS_CODE_READ_ROOTS` narrows it when set. Vault
+            // material stays refused — the output is indexed.
+            if let Err(reason) = assert_code_read_path_not_blocked(base) {
+                return Err(OperatorError::Message(reason));
+            }
+            if let Err(reason) = assert_code_read_within_read_roots(base) {
+                return Err(OperatorError::Message(reason));
             }
             // The registry names the result cap `limit`; the native arm
             // called it `maxResults`, so a caller that learned the
@@ -448,6 +455,19 @@ fn execute_native_tool_inner(
                 .unwrap_or("");
 
             let mut args = vec!["grep", "-rn", "--max-count=1"];
+            // Vault material inside the searched directory: the directory is
+            // not a secret, but a file inside it can be, and the output is
+            // indexed — the same rule the TypeScript arm applies.
+            let mut excludes: Vec<String> = Vec::new();
+            // `--exclude` matches the file name against a glob, so `.env*`
+            // is needed to cover `.env.production` too: `--exclude=.env`
+            // matches only a file named exactly `.env`.
+            for excluded in [".env*", "vault-state.json", "vault-entries.json"] {
+                excludes.push(format!("--exclude={excluded}"));
+            }
+            for exclude in &excludes {
+                args.push(exclude.as_str());
+            }
             if ignore_case {
                 args.push("-i");
             }
@@ -460,7 +480,8 @@ fn execute_native_tool_inner(
                 args.push(glob_filter);
             }
             args.push(pattern);
-            args.push(&base_path);
+            let base_path_string = base_path.to_string_lossy().to_string();
+            args.push(&base_path_string);
 
             let output = std::process::Command::new(args[0])
                 .args(&args[1..])
@@ -494,19 +515,23 @@ fn execute_native_tool_inner(
                     OperatorError::Message("memphis_glob requires pattern".to_string())
                 })?;
             let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-            let memphis_dir = std::path::Path::new(&home).join("memphis");
+            let home_path = std::path::Path::new(&home);
+            let memphis_dir = home_path.join("memphis");
             let base_path = call
                 .arguments
                 .get("path")
                 .and_then(Value::as_str)
-                .map(|p| p.replace("~/", &format!("{}/", home)))
-                .unwrap_or_else(|| memphis_dir.to_string_lossy().to_string());
+                .map(|p| resolve_code_read_path(p, home_path))
+                .unwrap_or_else(|| memphis_dir.clone());
             let base = std::path::Path::new(&base_path);
-            if !base.starts_with(&memphis_dir) {
-                return Err(OperatorError::Message(format!(
-                    "Path '{}' is outside ~/memphis/",
-                    base_path
-                )));
+            // The read scope: the tier carries the authorization, and
+            // `MEMPHIS_CODE_READ_ROOTS` narrows it when set. Vault
+            // material stays refused — the output is indexed.
+            if let Err(reason) = assert_code_read_path_not_blocked(base) {
+                return Err(OperatorError::Message(reason));
+            }
+            if let Err(reason) = assert_code_read_within_read_roots(base) {
+                return Err(OperatorError::Message(reason));
             }
 
             // The registry names the cap `limit`; the native arm had a
@@ -523,7 +548,22 @@ fn execute_native_tool_inner(
                 .map_err(|e| OperatorError::Message(format!("glob/find failed: {}", e)))?;
 
             let stdout = String::from_utf8_lossy(&output.stdout);
-            let files: Vec<&str> = stdout.lines().take(limit).collect();
+            // Vault material inside the searched directory: the file list is
+            // indexed — the same rule the TypeScript arm applies.
+            let files: Vec<&str> = stdout
+                .lines()
+                .filter(|line| {
+                    let name = std::path::Path::new(line)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    name != ".env"
+                        && !name.starts_with(".env.")
+                        && name != "vault-state.json"
+                        && name != "vault-entries.json"
+                })
+                .take(limit)
+                .collect();
             let json = serde_json::json!({
                 "pattern": pattern,
                 "files": files,
@@ -857,7 +897,7 @@ fn execute_native_tool_inner(
             // the very segments the read path refuses -- and to write
             // through a symlink straight out of the workspace.
             let resolved = resolve_code_read_path(path_str, home_path);
-            if let Err(reason) = assert_code_read_path_not_blocked(&resolved) {
+            if let Err(reason) = assert_code_read_path_not_write_blocked(&resolved) {
                 return Err(OperatorError::Message(reason));
             }
             if let Err(reason) = assert_code_read_write_contained(&resolved, home_path) {

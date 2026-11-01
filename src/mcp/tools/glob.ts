@@ -1,21 +1,33 @@
 /**
  * memphis_glob — file discovery tool using glob patterns.
  *
- * Tier 1: read-only file search restricted to ~/memphis/.
+ * Read-only file search. The scope is the tier (2, vault passphrase), not a
+ * directory whitelist: `memphis_exec` at the same tier could `find` any
+ * directory anyway. Set `MEMPHIS_CODE_READ_ROOTS` to narrow it back down.
+ *
+ * Vault material (`.env`, `.env.*`, `vault-state.json`,
+ * `vault-entries.json`) is refused: the file list is indexed, and an
+ * indexed secret is a plaintext copy outside the encrypted vault.
  */
 
 import { execFileSync } from 'node:child_process';
-import { realpathSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 
-import { AppError } from '../../core/errors.js';
+import {
+  assertNotSecretMaterial,
+  assertWithinReadRoots,
+  displayPrefix,
+  escapeForRegExp,
+  isVaultMaterialName,
+  resolveReadPath,
+  VAULT_MATERIAL_GLOBS,
+} from './read-scope.js';
 import { resolveInstallRoot } from '../../infra/runtime/install-root.js';
 
 export type MemphisGlobInput = {
   /** Glob pattern (e.g. "src/components/*.ts", "*.json") */
   pattern: string;
-  /** Optional subdirectory to search within (relative to ~/memphis/) */
+  /** Optional subdirectory to search within (absolute, ~-relative, or relative to ~/memphis/) */
   path?: string;
   /** Max results (default 100, max 500) */
   limit?: number;
@@ -37,58 +49,15 @@ export type MemphisGlobOutput = {
 const PROJECT_ROOT = resolveInstallRoot();
 const MAX_RESULTS = 500;
 
-// REV2 Temat 1 (2026-05-12): additional read-only roots the LLM may
-// glob over. Telegram attachments now persist under
-// `<data>/state/telegram-attachments/` (default `~/.memphis/state/...`)
-// so the agent can re-discover files an operator forwarded earlier.
-// Operator's session 2026-05-12 22:31 surfaced the gap — bot told
-// operator "Telegram nie zapisuje lokalnie" because (a) the temp
-// file had been unlinked and (b) glob refused to look outside
-// ~/memphis/. Resolution is run-time so MEMPHIS_DATA_DIR overrides
-// (CI, tests, alt installs) work.
-function buildAdditionalReadRoots(rawEnv: NodeJS.ProcessEnv): string[] {
-  const roots: string[] = [];
-  roots.push(path.join(os.homedir(), '.memphis', 'state', 'telegram-attachments'));
-  const dataOverride = rawEnv.MEMPHIS_DATA_DIR;
-  if (dataOverride && dataOverride.length > 0) {
-    roots.push(path.resolve(dataOverride, 'state', 'telegram-attachments'));
-  }
-  return roots;
-}
-
-// Codex round-1 N1 (PR #596 review): hardening against symlink path
-// traversal. Without this, a same-uid local process could pre-plant
-// `~/.memphis/state/telegram-attachments/<sub>` as a symlink targeting
-// `/etc/` (or any other readable path) — `path.normalize` doesn't
-// follow symlinks, so the string-prefix check would pass. Resolve
-// through `realpath` to anchor on the actual filesystem target.
-// realpath throws for non-existent paths; tolerate that case (the
-// caller will get a fd/find error downstream) by falling back to the
-// non-resolved normalized form.
-function safeRealpath(target: string): string {
-  try {
-    return realpathSync(target);
-  } catch {
-    return path.normalize(target);
-  }
-}
-
-function assertInProject(resolvedPath: string, rawEnv: NodeJS.ProcessEnv = process.env): void {
-  const realResolved = safeRealpath(resolvedPath);
-  const extraRoots = buildAdditionalReadRoots(rawEnv).map(safeRealpath);
-  const realProjectRoot = safeRealpath(PROJECT_ROOT);
-  const normalized = path.normalize(realResolved);
-  const insideProject =
-    normalized.startsWith(realProjectRoot + path.sep) || normalized === realProjectRoot;
-  if (insideProject) return;
-  for (const root of extraRoots) {
-    if (normalized.startsWith(root + path.sep) || normalized === root) return;
-  }
-  throw new AppError(
-    'VALIDATION_ERROR',
-    `Path '${resolvedPath}' is outside ${PROJECT_ROOT} and the allowed extra roots (telegram-attachments)`,
-    403,
-  );
+/**
+ * Refuse a path the read scope does not cover.
+ *
+ * The rules live in `read-scope.ts`, shared with `memphis_code_read` and
+ * `memphis_grep` and mirrored by the native arm.
+ */
+function assertSearchable(resolvedPath: string): void {
+  assertNotSecretMaterial(resolvedPath);
+  assertWithinReadRoots(resolvedPath);
 }
 
 function findFd(): string | null {
@@ -160,13 +129,36 @@ function isImplicitlyIgnored(relativePath: string): boolean {
     );
 }
 
+/**
+ * The arguments for the `fd` invocation.
+ *
+ * A pure function, so the rule that vault material is excluded from the
+ * listing can be tested on a host where `fd` is not installed — which is
+ * the case on this host, and the reason the exclusion had no test.
+ */
+export function buildFdArgs(pattern: string, searchPath: string, limit: number): string[] {
+  return [
+    '--glob',
+    pattern,
+    '--type',
+    'f',
+    '--max-results',
+    String(limit),
+    '--color',
+    'never',
+    // Vault material inside the listed directory: the file list is indexed.
+    ...VAULT_MATERIAL_GLOBS.flatMap((glob) => ['--glob', glob]),
+    searchPath,
+  ];
+}
+
 export function runMemphisGlob(input: MemphisGlobInput): MemphisGlobOutput {
   if (!input.pattern || input.pattern.length > 300) {
     return { files: [], count: 0, truncated: false, error: 'pattern required (max 300 chars)' };
   }
 
-  const searchPath = input.path ? path.resolve(PROJECT_ROOT, input.path) : PROJECT_ROOT;
-  assertInProject(searchPath);
+  const searchPath = input.path ? resolveReadPath(input.path, PROJECT_ROOT) : PROJECT_ROOT;
+  assertSearchable(searchPath);
 
   const limit = Math.min(input.limit ?? 100, MAX_RESULTS);
   const fdBin = findFd();
@@ -176,25 +168,11 @@ export function runMemphisGlob(input: MemphisGlobInput): MemphisGlobOutput {
 
     if (fdBin) {
       // fd uses regex by default; --glob makes it use glob patterns
-      output = execFileSync(
-        fdBin,
-        [
-          '--glob',
-          input.pattern,
-          '--type',
-          'f',
-          '--max-results',
-          String(limit),
-          '--color',
-          'never',
-          searchPath,
-        ],
-        {
-          encoding: 'utf8',
-          timeout: 10_000,
-          maxBuffer: 1024 * 1024,
-        },
-      );
+      output = execFileSync(fdBin, buildFdArgs(input.pattern, searchPath, limit), {
+        encoding: 'utf8',
+        timeout: 10_000,
+        maxBuffer: 1024 * 1024,
+      });
     } else {
       // `find -name` only matches basenames, so patterns such as
       // `src/**/*.ts` silently returned zero while fd returned matches.
@@ -211,6 +189,7 @@ export function runMemphisGlob(input: MemphisGlobInput): MemphisGlobOutput {
           const relativeToSearch = path.relative(searchPath, file);
           return (
             !isImplicitlyIgnored(relativeToSearch) &&
+            !isVaultMaterialName(path.basename(file)) &&
             matchesGlobPattern(relativeToSearch, input.pattern)
           );
         })
@@ -219,8 +198,11 @@ export function runMemphisGlob(input: MemphisGlobInput): MemphisGlobOutput {
     }
 
     const allFiles = output.trim().split('\n').filter(Boolean);
-    // Strip project root for readability
-    const relative = allFiles.map((f) => f.replace(PROJECT_ROOT + '/', ''));
+    // Strip the prefix for readability: the install root when the search
+    // happened inside it, the search path itself when it happened
+    // elsewhere on the host.
+    const prefix = escapeForRegExp(displayPrefix(searchPath, PROJECT_ROOT)) + '/';
+    const relative = allFiles.map((f) => f.replace(prefix, ''));
     const truncated = relative.length > limit;
     const files = relative.slice(0, limit);
 

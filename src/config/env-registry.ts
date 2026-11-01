@@ -365,10 +365,31 @@ export const MEMPHIS_NAPI_HARD_EXIT = defineStringAccessor({
   defaultValue: '',
 });
 
+/**
+ * `MEMPHIS_CODE_READ_ROOTS` — the allowlist for the read tools
+ * (`memphis_code_read`, `memphis_grep`, `memphis_glob`).
+ *
+ * Empty (the default) means the WHOLE HOST is readable: the operator asked
+ * for "Memphis must be able to read everything on this computer", and the
+ * tier (2, vault passphrase) is the authorization that carries the access.
+ *
+ * Set it to a comma-separated list of roots to narrow the scope back down:
+ * a path outside every listed root is refused by both arms with the same
+ * words.
+ */
+export const MEMPHIS_CODE_READ_ROOTS = defineStringAccessor({
+  name: 'MEMPHIS_CODE_READ_ROOTS',
+  envKey: 'MEMPHIS_CODE_READ_ROOTS',
+  description:
+    'Comma-separated allowlist for the read tools. Empty means the whole host is readable.',
+  defaultValue: '',
+});
+
 export const MEMPHIS_CODE_READ_EXTRA_ROOTS = defineStringAccessor({
   name: 'MEMPHIS_CODE_READ_EXTRA_ROOTS',
   envKey: 'MEMPHIS_CODE_READ_EXTRA_ROOTS',
-  description: 'Comma-separated additional roots allowed by memphis_code_read',
+  description:
+    'Deprecated: use MEMPHIS_CODE_READ_ROOTS. Kept so an existing configuration still loads.',
   defaultValue: '',
 });
 
@@ -748,6 +769,7 @@ export const ENV_REGISTRY: readonly EnvAccessor<unknown>[] = [
   MEMPHIS_SAFE_MODE,
   MEMPHIS_KARTOGRAF_ENABLE,
   MEMPHIS_NAPI_HARD_EXIT,
+  MEMPHIS_CODE_READ_ROOTS,
   MEMPHIS_CODE_READ_EXTRA_ROOTS,
   MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK,
   MEMPHIS_FAULT_INJECT,

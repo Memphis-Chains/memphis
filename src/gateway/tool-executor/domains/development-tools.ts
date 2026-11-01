@@ -18,10 +18,10 @@ export function createDevelopmentRuntimeTools(): RuntimeToolDefinition[] {
   return [
     buildTool({
       name: 'memphis_code_read',
-      description: 'Read files inside ~/memphis/ (whitelisted, read-only)',
+      description: 'Read any file on the host (read-only; vault material refused)',
       inputSchema: buildRegistryInputJsonSchema('memphis_code_read', {
         propertyDescriptions: {
-          path: 'Absolute or ~-relative path inside ~/memphis/',
+          path: 'Absolute or ~-relative path (or relative to ~/memphis)',
           startLine: 'Start line (1-indexed, inclusive)',
           endLine: 'End line (1-indexed, inclusive)',
           limit: 'Max lines to return (default 2000, max 2000)',
