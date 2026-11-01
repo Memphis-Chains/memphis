@@ -417,6 +417,7 @@ impl OperatorRuntime {
         // were still in flight as `unknown` before returning. Without this,
         // an interrupted turn left `started` rows that nothing ever settled,
         // and the next turn had no way to know the work may already be done.
+        let turn_started = std::time::Instant::now();
         let turn_result = run_turn(
             self,
             &conn,
@@ -434,6 +435,34 @@ impl OperatorRuntime {
             &mut error_trail,
             &mut on_chunk,
         );
+        // The turn itself, measured. The TypeScript gateway records this
+        // span; without it here, `p99_turn_latency_ms` and
+        // `confabulation_rate` read the gateway's last measurement
+        // instead of the cockpit's — the surface the operator actually
+        // uses. Measured on this host: the report said "last
+        // turn.dispatch span 3d ago" while the operator was talking to
+        // the cockpit every day.
+        let turn_elapsed = turn_started.elapsed().as_millis() as u64;
+        match &turn_result {
+            Ok(exchange) => crate::telemetry::record_turn_dispatch(
+                &self.config,
+                session_id.as_str(),
+                exchange.provider.as_str(),
+                exchange.model.as_str(),
+                turn_elapsed,
+                false,
+                None,
+            ),
+            Err(error) => crate::telemetry::record_turn_dispatch(
+                &self.config,
+                session_id.as_str(),
+                provider_runtime.name(),
+                options.model.as_deref().unwrap_or("unknown"),
+                turn_elapsed,
+                true,
+                Some(error.to_string().as_str()),
+            ),
+        }
 
         // Whatever happened, an operation without a settled outcome is
         // reported as `unknown` — the tool may have applied its effect
@@ -575,13 +604,49 @@ fn run_turn(
                     on_chunk(ChatStreamEvent::Truncated { reason })
                 }
             };
-            let mut completion = provider_runtime.chat_stream_with_cancel(
+            // One provider completion, measured. The TypeScript gateway
+            // records this span; without it here, `provider_error_rate`
+            // reads the gateway's last measurement instead of the
+            // cockpit's, and the report says "no provider.completion
+            // spans in window" for the surface the operator actually
+            // uses.
+            let provider_started = std::time::Instant::now();
+            let provider_result = provider_runtime.chat_stream_with_cancel(
                 &request_context,
                 &options,
                 &tool_definitions,
                 cancel_flag,
                 &mut stream_sink,
-            )?;
+            );
+            let provider_elapsed = provider_started.elapsed().as_millis() as u64;
+            let mut completion = match provider_result {
+                Ok(completion) => {
+                    crate::telemetry::record_provider_completion(
+                        &runtime.config,
+                        provider_runtime.name(),
+                        completion.model.as_str(),
+                        tool_definitions.len(),
+                        request_context.len(),
+                        provider_elapsed,
+                        false,
+                        None,
+                    );
+                    completion
+                }
+                Err(error) => {
+                    crate::telemetry::record_provider_completion(
+                        &runtime.config,
+                        provider_runtime.name(),
+                        options.model.as_deref().unwrap_or("unknown"),
+                        tool_definitions.len(),
+                        request_context.len(),
+                        provider_elapsed,
+                        true,
+                        Some(error.to_string().as_str()),
+                    );
+                    return Err(error);
+                }
+            };
             let mut emit_text = |text: &str| {
                 on_chunk(ChatStreamEvent::Text(text.to_string()));
             };
