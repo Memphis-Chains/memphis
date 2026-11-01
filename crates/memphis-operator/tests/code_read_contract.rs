@@ -8,7 +8,9 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 
-use memphis_operator::code_read::{assert_contained, assert_not_blocked, resolve_path, split_lines};
+use memphis_operator::code_read::{
+    assert_not_blocked, assert_within_read_roots, resolve_path, split_lines,
+};
 use memphis_operator::resolve_code_read_range;
 use serde_json::Value;
 
@@ -72,7 +74,7 @@ fn the_native_arm_agrees_with_the_typescript_arm() {
         // The arm's own order: block, then contain, then the range.
         let mut refusal = assert_not_blocked(&resolved)
             .err()
-            .or_else(|| assert_contained(&resolved, &home).err());
+            .or_else(|| assert_within_read_roots(&resolved).err());
 
         let content = refusal.is_none().then(|| fs::read_to_string(&resolved).ok()).flatten();
         let lines = content.as_deref().map(split_lines).unwrap_or_default();

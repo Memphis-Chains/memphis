@@ -154,7 +154,7 @@ pub(crate) fn native_tool_definitions() -> Vec<ChatToolDefinition> {
         // --- Tier 1 tools ---
         ChatToolDefinition {
             name: "memphis_code_read".to_string(),
-            description: "Read a file from the Memphis workspace (~/memphis/)".to_string(),
+            description: "Read any file on the host (read-only; vault material refused)".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -168,7 +168,7 @@ pub(crate) fn native_tool_definitions() -> Vec<ChatToolDefinition> {
         },
         ChatToolDefinition {
             name: "memphis_grep".to_string(),
-            description: "Search file contents by regex pattern in the Memphis workspace".to_string(),
+            description: "Search file contents by regex pattern anywhere on the host".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -184,7 +184,7 @@ pub(crate) fn native_tool_definitions() -> Vec<ChatToolDefinition> {
         },
         ChatToolDefinition {
             name: "memphis_glob".to_string(),
-            description: "Find files by glob pattern in the Memphis workspace".to_string(),
+            description: "Find files by glob pattern anywhere on the host".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {

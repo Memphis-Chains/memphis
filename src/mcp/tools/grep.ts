@@ -1,21 +1,34 @@
 /**
  * memphis_grep — code search tool using ripgrep (rg) or fallback grep.
  *
- * Tier 1: read-only code search restricted to ~/memphis/.
- * No writes, no traversal outside project root.
+ * Read-only code search. The scope is the tier (2, vault passphrase), not a
+ * directory whitelist: `memphis_exec` at the same tier could `grep` any
+ * directory anyway. Set `MEMPHIS_CODE_READ_ROOTS` to narrow it back down.
+ *
+ * Vault material (`.env`, `.env.*`, `vault-state.json`,
+ * `vault-entries.json`) is refused: grep output is indexed, and an indexed
+ * secret is a plaintext copy outside the encrypted vault.
  */
 
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 
-import { AppError } from '../../core/errors.js';
+import {
+  assertNotSecretMaterial,
+  assertWithinReadRoots,
+  displayPrefix,
+  escapeForRegExp,
+  isVaultMaterialName,
+  projectRoot,
+  resolveReadPath,
+  VAULT_MATERIAL_GLOBS,
+} from './read-scope.js';
 
 export type MemphisGrepInput = {
   /** Regex pattern to search for */
   pattern: string;
-  /** Optional path (relative to ~/memphis/) to search within */
+  /** Optional path (absolute, ~-relative, or relative to ~/memphis/) to search within */
   path?: string;
   /** Glob to filter files (e.g. "*.ts", "*.rs") */
   glob?: string;
@@ -56,16 +69,15 @@ const DEFAULT_EXCLUDED_DIRS = new Set([
   'coverage',
 ]);
 
-function assertInProject(resolvedPath: string): void {
-  const projectRoot = getProjectRoot();
-  const normalized = path.normalize(resolvedPath);
-  if (!normalized.startsWith(projectRoot + path.sep) && normalized !== projectRoot) {
-    throw new AppError('VALIDATION_ERROR', `Path '${resolvedPath}' is outside ~/memphis/`, 403);
-  }
-}
-
-function getProjectRoot(): string {
-  return path.join(os.homedir(), 'memphis');
+/**
+ * Refuse a path the read scope does not cover.
+ *
+ * The rules live in `read-scope.ts`, shared with `memphis_code_read` and
+ * `memphis_glob` and mirrored by the native arm.
+ */
+function assertSearchable(resolvedPath: string): void {
+  assertNotSecretMaterial(resolvedPath);
+  assertWithinReadRoots(resolvedPath);
 }
 
 function findRg(): string | null {
@@ -78,7 +90,10 @@ function findRg(): string | null {
 }
 
 function isExecUnavailable(error: unknown): boolean {
-  return error instanceof Error && /(spawnSync (rg|grep) EPERM|spawnSync (rg|grep) EACCES)/.test(error.message);
+  return (
+    error instanceof Error &&
+    /(spawnSync (rg|grep) EPERM|spawnSync (rg|grep) EACCES)/.test(error.message)
+  );
 }
 
 function jsSearch(
@@ -125,6 +140,9 @@ function jsSearch(
 
     if (!stat.isFile() || stat.size > 2 * 1024 * 1024) return;
 
+    // Vault material inside the searched directory: the output is indexed.
+    if (isVaultMaterialName(path.basename(current))) return;
+
     let content: string;
     try {
       content = readFileSync(current, 'utf8');
@@ -151,6 +169,69 @@ function jsSearch(
   };
 }
 
+/**
+ * The arguments for the ripgrep invocation.
+ *
+ * A pure function, so the rule that vault material is excluded from the
+ * results can be tested on a host where ripgrep is not installed — which
+ * is the case on this host, and the reason the exclusion had no test.
+ */
+export function buildRipgrepArgs(options: {
+  pattern: string;
+  searchPath: string;
+  limit: number;
+  context: number;
+  ignoreCase: boolean;
+  glob?: string;
+}): string[] {
+  const args: string[] = [
+    '--no-heading',
+    '--line-number',
+    '--color=never',
+    '--max-filesize=2M',
+    `--max-count=${options.limit}`,
+  ];
+  if (options.ignoreCase) args.push('--ignore-case');
+  if (options.context > 0) args.push(`--context=${options.context}`);
+  for (const excluded of DEFAULT_EXCLUDED_GLOBS) args.push(`--glob=${excluded}`);
+  // Vault material inside the searched directory: the directory is not a
+  // secret, but a file inside it can be, and the output is indexed.
+  for (const excluded of VAULT_MATERIAL_GLOBS) args.push(`--glob=${excluded}`);
+  if (options.glob) args.push(`--glob=${options.glob}`);
+  args.push('--', options.pattern, options.searchPath);
+  return args;
+}
+
+/**
+ * The arguments for the GNU grep fallback.
+ *
+ * A pure function, for the same reason as `buildRipgrepArgs`.
+ */
+export function buildGrepArgs(options: {
+  pattern: string;
+  searchPath: string;
+  limit: number;
+  context: number;
+  ignoreCase: boolean;
+  glob?: string;
+}): string[] {
+  const args: string[] = ['-rn', '--color=never'];
+  for (const excluded of ['node_modules', 'dist', 'target', 'data', 'logs', 'coverage']) {
+    args.push(`--exclude-dir=${excluded}`);
+  }
+  // `--exclude` matches the file name against a glob, so `.env*` is needed
+  // to cover `.env.production` too: `--exclude=.env` matches only a file
+  // named exactly `.env`.
+  for (const excluded of ['.env*', 'vault-state.json', 'vault-entries.json']) {
+    args.push(`--exclude=${excluded}`);
+  }
+  if (options.ignoreCase) args.push('-i');
+  if (options.context > 0) args.push(`-C${options.context}`);
+  if (options.glob) args.push(`--include=${options.glob}`);
+  args.push('-m', String(options.limit), '--', options.pattern, options.searchPath);
+  return args;
+}
+
 export function runMemphisGrep(input: MemphisGrepInput): MemphisGrepOutput {
   if (!input.pattern || input.pattern.length > 500) {
     return {
@@ -161,47 +242,31 @@ export function runMemphisGrep(input: MemphisGrepInput): MemphisGrepOutput {
     };
   }
 
-  const projectRoot = getProjectRoot();
-  const searchPath = input.path ? path.resolve(projectRoot, input.path) : projectRoot;
-  assertInProject(searchPath);
+  const root = projectRoot();
+  const searchPath = input.path ? resolveReadPath(input.path) : root;
+  assertSearchable(searchPath);
 
   const limit = Math.min(input.limit ?? 50, MAX_RESULTS);
   const context = Math.min(input.context ?? 0, 10);
 
   const rgBin = findRg();
-  const args: string[] = [];
-
-  if (rgBin) {
-    args.push(
-      '--no-heading',
-      '--line-number',
-      '--color=never',
-      '--max-filesize=2M',
-      `--max-count=${limit}`,
-    );
-    if (input.ignoreCase) args.push('--ignore-case');
-    if (context > 0) args.push(`--context=${context}`);
-    for (const excluded of DEFAULT_EXCLUDED_GLOBS) args.push(`--glob=${excluded}`);
-    if (input.glob) args.push(`--glob=${input.glob}`);
-    args.push('--', input.pattern, searchPath);
-  } else {
-    // Fallback to grep
-    args.push('-rn', '--color=never');
-    for (const excluded of [
-      'node_modules',
-      'dist',
-      'target',
-      'data',
-      'logs',
-      'coverage',
-    ]) {
-      args.push(`--exclude-dir=${excluded}`);
-    }
-    if (input.ignoreCase) args.push('-i');
-    if (context > 0) args.push(`-C${context}`);
-    if (input.glob) args.push(`--include=${input.glob}`);
-    args.push('-m', String(limit), '--', input.pattern, searchPath);
-  }
+  const args = rgBin
+    ? buildRipgrepArgs({
+        pattern: input.pattern,
+        searchPath,
+        limit,
+        context,
+        ignoreCase: input.ignoreCase === true,
+        glob: input.glob,
+      })
+    : buildGrepArgs({
+        pattern: input.pattern,
+        searchPath,
+        limit,
+        context,
+        ignoreCase: input.ignoreCase === true,
+        glob: input.glob,
+      });
 
   const bin = rgBin ?? 'grep';
 
@@ -212,8 +277,11 @@ export function runMemphisGrep(input: MemphisGrepInput): MemphisGrepOutput {
       maxBuffer: 2 * 1024 * 1024,
     });
 
-    // Strip project root prefix for readability
-    const cleaned = output.replace(new RegExp(projectRoot + '/', 'g'), '');
+    // Strip the prefix for readability: the install root when the search
+    // happened inside it, the search path itself when it happened
+    // elsewhere on the host.
+    const prefix = escapeForRegExp(displayPrefix(searchPath, root));
+    const cleaned = output.replace(new RegExp(prefix + '/', 'g'), '');
     const truncated = cleaned.length > MAX_OUTPUT_CHARS;
     const content = truncated ? cleaned.slice(0, MAX_OUTPUT_CHARS) + '\n... (truncated)' : cleaned;
     const matchCount = content.split('\n').filter(Boolean).length;
@@ -226,7 +294,7 @@ export function runMemphisGrep(input: MemphisGrepInput): MemphisGrepOutput {
       return { matches: '', matchCount: 0, truncated: false };
     }
     if (isExecUnavailable(err)) {
-      return jsSearch(projectRoot, searchPath, input.pattern, {
+      return jsSearch(root, searchPath, input.pattern, {
         limit,
         ignoreCase: input.ignoreCase === true,
       });

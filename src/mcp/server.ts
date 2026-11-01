@@ -324,12 +324,15 @@ function withScopedApprovalGate<T extends Record<string, unknown>>(
     const subject = extra?.authInfo?.clientId ?? 'local-mcp';
     const sessionId = extra?.sessionId ?? serverSession;
     const callerId = JSON.stringify(['mcp', subject, sessionId]);
-    const execute = () => withOperatorContext({ surface: 'mcp', subject, sessionId }, () => handler(args));
+    const execute = () =>
+      withOperatorContext({ surface: 'mcp', subject, sessionId }, () => handler(args));
     if (policy === 'deny') return pendingResult({ approved: false, reason: 'policy-denied' });
     if (policy === 'allow') return execute();
     const operationArgs = { ...args };
     delete operationArgs.approval_request_id;
-    const binding = createHmac('sha256', approvalBindingKey).update(stableStringify(operationArgs)).digest('hex');
+    const binding = createHmac('sha256', approvalBindingKey)
+      .update(stableStringify(operationArgs))
+      .digest('hex');
     const approvalRequestId = (args as Record<string, unknown>).approval_request_id as
       | string
       | undefined;
@@ -378,8 +381,11 @@ export function createMemphisMcpServer(
   });
   const serverSession = randomUUID();
   const withApprovalGate = <T extends Record<string, unknown>>(
-    toolName: string, policy: ToolPolicy, approvals: SqliteToolCallApprovalRepository,
-    handler: (args: T) => Promise<ToolResult>, redactFields: readonly string[] = [],
+    toolName: string,
+    policy: ToolPolicy,
+    approvals: SqliteToolCallApprovalRepository,
+    handler: (args: T) => Promise<ToolResult>,
+    redactFields: readonly string[] = [],
   ) => withScopedApprovalGate(serverSession, toolName, policy, approvals, handler, redactFields);
 
   const { permissions, approvals } = getRepos(rawEnv);
@@ -962,19 +968,24 @@ export function createMemphisMcpServer(
           approval_request_id: z.string().optional(),
         },
       },
-      withApprovalGate('memphis_web_fetch', webFetchPolicy, approvals, async ({ url, maxBytes }) => {
-        const result = await runMemphisWebFetch(
-          { url, maxBytes },
-          {
-            allowPrivateNetwork:
-              (rawEnv.MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK ?? '').toLowerCase() === 'true',
-          },
-        );
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as Record<string, unknown>,
-        };
-      }),
+      withApprovalGate(
+        'memphis_web_fetch',
+        webFetchPolicy,
+        approvals,
+        async ({ url, maxBytes }) => {
+          const result = await runMemphisWebFetch(
+            { url, maxBytes },
+            {
+              allowPrivateNetwork:
+                (rawEnv.MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK ?? '').toLowerCase() === 'true',
+            },
+          );
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as Record<string, unknown>,
+          };
+        },
+      ),
     );
   }
 
@@ -983,7 +994,8 @@ export function createMemphisMcpServer(
     server.registerTool(
       'memphis_code_read',
       {
-        description: 'Read files inside ~/memphis/ (whitelisted, read-only, no path traversal)',
+        description:
+          'Read any file on the host (read-only; vault material refused, scope narrowed by MEMPHIS_CODE_READ_ROOTS)',
         inputSchema: registryMcpInputSchema('memphis_code_read'),
       },
       withApprovalGate('memphis_code_read', codeReadPolicy, approvals, async (args) => {

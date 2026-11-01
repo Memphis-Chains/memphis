@@ -1,21 +1,27 @@
 /**
- * memphis_code_read — safe, read-only file reader restricted to ~/memphis/ codebase.
+ * memphis_code_read — read-only file reader.
  *
- * Whitelisted paths only. No writes. No traversal outside ~/memphis/.
- * This tool exists because memphis_exec with cat/grep is Tier 2 (vault passphrase required),
- * but code inspection is a common Tier 1 need. memphis_code_read fills that gap.
+ * Reads any file on the host. The scope is the tier (2, vault passphrase),
+ * not a whitelist of directories: `memphis_exec` at the same tier could
+ * `cat` any file anyway, so a directory whitelist protected nothing — it
+ * only made the tool refuse work the operator asked for. Set
+ * `MEMPHIS_CODE_READ_ROOTS` to narrow the scope back down.
+ *
+ * Vault material (`.env`, `.env.*`, `vault-state.json`,
+ * `vault-entries.json`) is still refused, because this tool's output is
+ * indexed: it lands in the journal and in the semantic embed index, i.e. a
+ * plaintext copy of a secret outside the encrypted vault.
+ *
+ * The policy lives in `read-scope.ts` so the TypeScript and native arms
+ * cannot drift apart.
  */
 
-import { readFileSync, realpathSync, statSync } from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import { readFileSync, statSync } from 'node:fs';
 
-import { isInsideMemphisSandbox, realpathOrNearest } from './fs-permission.js';
-import { MEMPHIS_CODE_READ_EXTRA_ROOTS } from '../../config/env-registry.js';
-import { AppError } from '../../core/errors.js';
+import { assertNotSecretMaterial, assertWithinReadRoots, resolveReadPath } from './read-scope.js';
 
 export type MemphisCodeReadInput = {
-  /** Absolute or ~-relative path to a file inside ~/memphis/ */
+  /** Absolute or ~-relative path to a file */
   path: string;
   /** Optional line range: start (1-indexed) */
   startLine?: number;
@@ -35,97 +41,23 @@ export type MemphisCodeReadOutput = {
   error?: string;
 };
 
-/** Resolve ~ and relative paths to absolute, checking the whitelist. */
-function resolvePath(inputPath: string): string {
-  const projectRoot = path.join(os.homedir(), 'memphis');
-  const expanded = inputPath.startsWith('~/')
-    ? path.join(os.homedir(), inputPath.slice(2))
-    : path.isAbsolute(inputPath)
-      ? inputPath
-      : path.resolve(projectRoot, inputPath);
-  return expanded;
-}
-
 /**
- * Read-only inspection roots. Keep this narrower than arbitrary $HOME:
- * Memphis source, Memphis operator data, and operator project checkouts are
- * enough for normal agent work while still avoiding accidental secret reads.
- */
-function allowedReadRoots(): string[] {
-  const home = os.homedir();
-  const baseRoots = [
-    path.join(home, 'memphis'),
-    path.join(home, '.memphis'),
-    path.join(home, 'projects'),
-  ];
-  const extraRoots = MEMPHIS_CODE_READ_EXTRA_ROOTS.read(process.env)
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map((item) => (item.startsWith('~/') ? path.join(home, item.slice(2)) : path.resolve(item)));
-  return [...baseRoots, ...extraRoots];
-}
-
-/**
- * The path segments that are never readable.
+ * The refusal message and the allowlist check, in one place.
  *
- * The native arm names the segment it refused ("matches node_modules
- * and may contain secrets or generated state"); this arm used to say
- * only "is blocked because it may contain secrets", so the same
- * refusal read differently on the two surfaces.
+ * The native arm applies the same two rules in the same order: refuse
+ * vault material by segment name, then refuse a path outside the
+ * configured roots.
  */
-function blockedSegmentLabel(segment: string): string | null {
-  if (segment === '.env') return '.env';
-  if (segment === 'vault-state.json') return 'vault-state.json';
-  if (segment === 'vault-entries.json') return 'vault-entries.json';
-  if (segment === '.git') return '.git';
-  if (segment === 'node_modules') return 'node_modules';
-  if (segment.startsWith('.env.')) return '.env.*';
-  return null;
-}
-
-function realpathRoot(root: string): string {
-  try {
-    return realpathSync(root);
-  } catch {
-    return path.normalize(root);
-  }
-}
-
-function assertInMemphisDir(resolvedPath: string): void {
-  const normalized = path.normalize(resolvedPath);
-  for (const segment of normalized.split('/')) {
-    if (segment === '' || segment === '.') continue;
-    const label = blockedSegmentLabel(segment);
-    if (label) {
-      throw new AppError(
-        'VALIDATION_ERROR',
-        `Path '${resolvedPath}' is blocked because it matches ${label} and may contain secrets or generated state`,
-        403,
-      );
-    }
-  }
-
-  if (isInsideMemphisSandbox(resolvedPath)) return;
-
-  const realTarget = realpathOrNearest(resolvedPath);
-  for (const root of allowedReadRoots()) {
-    const realRoot = realpathRoot(root);
-    if (realTarget === realRoot || realTarget.startsWith(realRoot + path.sep)) return;
-  }
-
-  throw new AppError(
-    'VALIDATION_ERROR',
-    `Path '${resolvedPath}' is outside the allowed read roots: ~/memphis, ~/.memphis, ~/projects`,
-    403,
-  );
+function assertReadable(resolvedPath: string): void {
+  assertNotSecretMaterial(resolvedPath);
+  assertWithinReadRoots(resolvedPath);
 }
 
 const MAX_LINE_COUNT = 2000;
 const MAX_CONTENT_CHARS = 500_000; // ~500 KB of text
 
 /**
- * Safely read a file inside ~/memphis/.
+ * Read a file from the host.
  *
  * Supports:
  * - Absolute paths or ~-relative paths
@@ -133,8 +65,8 @@ const MAX_CONTENT_CHARS = 500_000; // ~500 KB of text
  * - Line count limit (truncation warning)
  */
 export function runMemphisCodeRead(input: MemphisCodeReadInput): MemphisCodeReadOutput {
-  const resolvedPath = resolvePath(input.path);
-  assertInMemphisDir(resolvedPath);
+  const resolvedPath = resolveReadPath(input.path);
+  assertReadable(resolvedPath);
 
   let stat: ReturnType<typeof statSync>;
   try {

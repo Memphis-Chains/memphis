@@ -180,7 +180,12 @@ export const envSchema = z.object({
   // Set by tier-3/full-access Telegram turns when the operator wants
   // memphis_web_fetch to inspect local dashboards and managed services.
   MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK: boolFromString.optional(),
-  // Additional comma-separated read-only roots for memphis_code_read.
+  // Allowlist for the read tools (memphis_code_read, memphis_grep,
+  // memphis_glob). Empty means the whole host is readable; the tier (2,
+  // vault passphrase) carries the authorization.
+  MEMPHIS_CODE_READ_ROOTS: z.string().optional(),
+  // Deprecated alias of MEMPHIS_CODE_READ_ROOTS, kept so an existing
+  // configuration still loads.
   MEMPHIS_CODE_READ_EXTRA_ROOTS: z.string().optional(),
   MEMPHIS_SAFE_MODE: boolFromString.default(false),
   MEMPHIS_STRICT_MODE: boolFromString.default(false),

@@ -21,6 +21,7 @@ import { existsSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { findWriteBlockedLabel } from './read-scope.js';
 import { AppError } from '../../core/errors.js';
 
 export type FsPermissionOperation =
@@ -39,15 +40,14 @@ export interface FsPermissionContext {
   tier3Active: boolean;
 }
 
-const ALWAYS_BLOCKED_PATTERNS: RegExp[] = [
-  /(^|\/)\.env$/,
-  /(^|\/)\.env\.[^/]+$/,
-  /(^|\/)vault-state\.json$/,
-  /(^|\/)vault-entries\.json$/,
-  /(^|\/)\.git\//,
-  /(^|\/)\.git$/,
-  /(^|\/)node_modules\//,
-];
+// The list of always-blocked paths lives in `read-scope.ts`, shared with
+// the native arm: the read path refuses vault material, the write path
+// refuses vault material plus `.git/` and `node_modules/`.
+//
+// It used to be a list of regular expressions here. The regexes missed
+// one shape — a path that IS the `node_modules` directory rather than a
+// file inside it — and they were a second, independent copy of a list the
+// native arm also carried.
 
 export function resolveFsPath(inputPath: string): string {
   if (inputPath.startsWith('~/')) {
@@ -104,15 +104,13 @@ export function isInsideMemphisSandbox(resolvedPath: string): boolean {
 }
 
 function assertNotAlwaysBlocked(resolvedPath: string): void {
-  const normalized = path.normalize(resolvedPath);
-  for (const pattern of ALWAYS_BLOCKED_PATTERNS) {
-    if (pattern.test(normalized)) {
-      throw new AppError(
-        'VALIDATION_ERROR',
-        `Operation on '${resolvedPath}' is always blocked (Memphis recoverability path)`,
-        403,
-      );
-    }
+  const label = findWriteBlockedLabel(resolvedPath);
+  if (label) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      `Operation on '${resolvedPath}' is always blocked (Memphis recoverability path)`,
+      403,
+    );
   }
 }
 
