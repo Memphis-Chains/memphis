@@ -117,6 +117,24 @@ fn chat_max_tokens() -> usize {
     )
 }
 
+/// The generation ceiling the operator actually configured, if any.
+///
+/// `chat_max_tokens` cannot answer that question: it always returns a
+/// number, and the number may be the generic 2 048 default. The
+/// MiniMax path needs the difference — its completion ceiling has a
+/// default of its own, and the generic fallback must not silently
+/// become that ceiling.
+fn chat_max_tokens_explicit() -> Option<usize> {
+    ["MEMPHIS_GEN_MAX_TOKENS", "GEN_MAX_TOKENS"]
+        .iter()
+        .find_map(|var| {
+            std::env::var(var)
+                .ok()
+                .and_then(|raw| raw.trim().parse::<usize>().ok())
+                .filter(|v| *v > 0)
+        })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatTranscriptEntry {
     pub role: String,
@@ -313,10 +331,21 @@ impl OperatorRuntime {
                 .config
                 .env("MINIMAX_REASONING_EFFORT")
                 .map(ToString::to_string),
+            // The explicit MiniMax ceiling wins; an explicitly
+            // configured generic generation ceiling is the operator's
+            // number too and is preserved. The generic 2 048 default is
+            // deliberately *not* folded in here: MiniMax-Flash carries
+            // its own measured default, and the thinking tokens share
+            // this budget with the answer.
             minimax_max_completion_tokens: self
                 .config
                 .env("MINIMAX_MAX_COMPLETION_TOKENS")
-                .and_then(|value| value.parse::<u32>().ok()),
+                .and_then(|value| value.parse::<u32>().ok())
+                .or_else(|| {
+                    chat_max_tokens_explicit().and_then(|value| u32::try_from(value).ok())
+                })
+                // Keep the generic 2048 default out of MiniMax Flash.
+                .or(Some(32_768)),
         };
 
         let input_classification = classify_input(trimmed_prompt);
@@ -434,6 +463,19 @@ impl OperatorRuntime {
     }
 }
 
+/// A short nonsecret description of a tool action while it is running.
+/// Only known executable names are shown; arguments may contain secrets.
+fn safe_tool_action_detail(call: &crate::provider::ChatToolCall) -> String {
+    if call.name != "memphis_exec" { return String::new(); }
+    let executable = call.arguments.get("command").and_then(|v| v.as_str())
+        .and_then(|s| s.split_whitespace().next())
+        .and_then(|s| s.rsplit('/').next()).unwrap_or("");
+    match executable {
+        "git" | "cargo" | "npm" | "node" | "python" | "python3" | "rg" | "ls" | "find" | "cat" | "pwd" | "curl" => executable.to_string(),
+        _ => String::new(),
+    }
+}
+
 /// One turn of the operator loop: ask the provider, run the tools it asks
 /// for, repeat until it answers without tool calls.
 #[allow(clippy::too_many_arguments)]
@@ -520,6 +562,18 @@ fn run_turn(
                 // A provider never reports a tool call — the chat loop
                 // does, after the call has already run.
                 ChatStreamEvent::Tool { .. } => {}
+                // The provider's own tool-call bookkeeping is not the
+                // chat loop's: the loop emits the real `ToolStarted`
+                // when it actually runs a tool. Forwarding the
+                // provider's copy would show a pending call that no
+                // completion ever matches.
+                ChatStreamEvent::ToolStarted { .. } => {}
+                // A truncated answer is the operator's business: it
+                // must reach the surface, otherwise a cut-off answer
+                // renders like a finished one.
+                ChatStreamEvent::Truncated { reason } => {
+                    on_chunk(ChatStreamEvent::Truncated { reason })
+                }
             };
             let mut completion = provider_runtime.chat_stream_with_cancel(
                 &request_context,
@@ -640,6 +694,16 @@ fn run_turn(
 
                 let tool_started = std::time::Instant::now();
                 let mut tool_failed = false;
+                // Tell the surface the call is about to run, so a tool
+                // that takes ninety seconds shows as pending instead of
+                // leaving the agent looking idle. The event carries the
+                // name and the id only: no arguments, no result, and
+                // nothing about an outcome that has not happened yet.
+                on_chunk(ChatStreamEvent::ToolStarted {
+                    id: tool_call.id.clone(),
+                    name: tool_call.name.clone(),
+                    detail: safe_tool_action_detail(&tool_call),
+                });
                 let (tool_display, tool_payload) = match execute_native_tool(
                     runtime, &tool_call, max_tier,
                 ) {
@@ -660,22 +724,6 @@ fn run_turn(
                             .trim()
                             .to_string();
                         error_trail.push((tool_call.name.clone(), first_line));
-                        if *errors > chat_max_errors() {
-                            let trail = error_trail
-                                .iter()
-                                .map(|(name, msg)| {
-                                    if msg.is_empty() {
-                                        name.clone()
-                                    } else {
-                                        format!("{name}: {msg}")
-                                    }
-                                })
-                                .collect::<Vec<_>>()
-                                .join("; ");
-                            return Err(OperatorError::Message(format!(
-                                    "native rust chat exceeded recoverable error limit ({errors} errors). Trail: {trail}"
-                                )));
-                        }
                         let error_json = json!({ "error": error.to_string() }).to_string();
                         tool_failed = true;
                         (
@@ -693,12 +741,37 @@ fn run_turn(
                 // Tell the surface what just ran, in the normalized
                 // form. The raw payload stays in the transcript; the
                 // cockpit gets one discreet line per call.
+                //
+                // This happens *before* the error-limit check below. A
+                // turn that ends on the error threshold used to return
+                // without ever reporting the call that failed, so the
+                // operator saw the turn die with no trace of the tool
+                // that killed it. The failure is reported first; the
+                // turn ends after.
                 on_chunk(ChatStreamEvent::Tool {
+                    id: tool_call.id.clone(),
                     name: tool_call.name.clone(),
                     display: tool_display.clone(),
                     failed: tool_failed,
                     elapsed_ms: tool_started.elapsed().as_millis() as u64,
                 });
+
+                if tool_failed && *errors > chat_max_errors() {
+                    let trail = error_trail
+                        .iter()
+                        .map(|(name, msg)| {
+                            if msg.is_empty() {
+                                name.clone()
+                            } else {
+                                format!("{name}: {msg}")
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    return Err(OperatorError::Message(format!(
+                        "native rust chat exceeded recoverable error limit ({errors} errors). Trail: {trail}"
+                    )));
+                }
 
                 pending.push(MessageToPersist {
                     role: "tool",
@@ -815,6 +888,14 @@ mod tests {
         Arc,
     };
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn safe_tool_detail_never_includes_command_arguments() {
+        let mut call = ChatToolCall { id: "x".into(), name: "memphis_exec".into(), arguments: json!({"command":"git status --example-sensitive-value"}) };
+        assert_eq!(safe_tool_action_detail(&call), "git");
+        call.arguments = json!({"command":"unknown-tool secret"});
+        assert!(safe_tool_action_detail(&call).is_empty());
+    }
 
     #[test]
     fn native_max_tokens_respects_explicit_env_and_default() {

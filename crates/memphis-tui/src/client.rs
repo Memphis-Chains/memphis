@@ -142,6 +142,36 @@ impl MemphisClient {
         Ok(applied)
     }
 
+    /// The reasoning effort the next MiniMax-Flash request will use.
+    ///
+    /// This is the *effective* level: the operator's own configuration
+    /// if they set one, otherwise the native default. A level the
+    /// operator configured to something stronger than the default is
+    /// reported as it is, never quietly lowered.
+    pub fn minimax_reasoning_effort(&self) -> String {
+        self.runtime
+            .config()
+            .env("MINIMAX_REASONING_EFFORT")
+            .and_then(memphis_operator::normalize_minimax_reasoning_effort)
+            .unwrap_or(memphis_operator::MINIMAX_DEFAULT_REASONING_EFFORT)
+            .to_string()
+    }
+
+    /// Set the reasoning effort for future turns.
+    ///
+    /// The level is validated here, so an unknown level is refused
+    /// before it reaches the provider. The setting lives in this TUI
+    /// process: the operator's configuration on disk is not rewritten,
+    /// because a cockpit toggle is a session decision and not an edit of
+    /// their setup.
+    pub fn set_minimax_reasoning_effort(&mut self, level: &str) -> Result<String, String> {
+        let normalized = memphis_operator::normalize_minimax_reasoning_effort(level)
+            .ok_or_else(|| format!("unknown reasoning effort '{level}'"))?;
+        std::env::set_var("MINIMAX_REASONING_EFFORT", normalized);
+        self.runtime = OperatorRuntime::from_env();
+        Ok(normalized.to_string())
+    }
+
     /// Persist a single `KEY=VALUE` line into `installRoot/.env` and update
     /// the in-process env so the next `OperatorRuntime::from_env()` reads
     /// the new value. Used by `/provider` and `/model` slash commands to

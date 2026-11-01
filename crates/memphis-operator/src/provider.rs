@@ -172,6 +172,21 @@ pub struct TokenUsageSummary {
 pub enum ChatStreamEvent {
     Text(String),
     Usage(TokenUsageSummary),
+    /// A native tool is about to run inside the chat loop.
+    ///
+    /// Emitted *before* the tool executes, so a surface can show the
+    /// call as pending instead of pretending the agent is idle while a
+    /// ninety-second command runs. The event carries no arguments and
+    /// no result: it says only that the call exists.
+    ToolStarted {
+        /// The provider's tool-call id. It is the correlation key that
+        /// pairs this start with its completion.
+        id: String,
+        /// The tool's full name, e.g. `memphis_chain_verify`.
+        name: String,
+        /// Safe, factual detail about the requested action.
+        detail: String,
+    },
     /// A native tool ran inside the chat loop.
     ///
     /// The payload is the *normalized* form — the same short string
@@ -180,6 +195,9 @@ pub enum ChatStreamEvent {
     /// reads; one line per call is enough to know what happened, and
     /// the raw payload stays one keystroke away in the transcript.
     Tool {
+        /// The provider's tool-call id — the same id the
+        /// `ToolStarted` event carried.
+        id: String,
         /// The tool's full name, e.g. `memphis_chain_verify`.
         name: String,
         /// The normalized summary, e.g. `chain verify ok=86`.
@@ -189,6 +207,17 @@ pub enum ChatStreamEvent {
         failed: bool,
         /// How long the call took, in milliseconds.
         elapsed_ms: u64,
+    },
+    /// The provider stopped the answer early.
+    ///
+    /// `reason` carries the provider's own `finish_reason` — `length`
+    /// means the completion ceiling was reached, so the text so far is
+    /// partial. The surface must say so: an answer cut off by the
+    /// ceiling is not a finished answer, and reporting it as one is
+    /// how a "the model answered" claim turns into a false one.
+    Truncated {
+        /// The provider's `finish_reason`, e.g. `length`.
+        reason: String,
     },
 }
 
@@ -792,10 +821,7 @@ impl ProviderRuntime {
         };
 
         if self.kind == ProviderKind::Minimax && is_minimax_m31_flash(model) {
-            let reserved_output_tokens = opts
-                .minimax_max_completion_tokens
-                .or(opts.max_tokens)
-                .unwrap_or(MINIMAX_M3_RECOMMENDED_COMPLETION_TOKENS) as u64;
+            let reserved_output_tokens = u64::from(minimax_flash_max_completion_tokens(opts));
             check_minimax_context_budget(model, &all_messages, tools, reserved_output_tokens)?;
         }
 
@@ -875,14 +901,20 @@ impl ProviderRuntime {
             provider_messages
         };
 
-        let response = post_response_with_provider(
-            format!("{}/chat/completions", base_url).as_str(),
-            openai_compatible_request_body(self.kind, model, all_messages, opts, tools, true),
-            Some(api_key),
-            self.timeout_ms,
-            &[("Accept", "text/event-stream")],
-            Some(self.name.as_str()),
-        )?;
+        let stream_url = format!("{}/chat/completions", base_url);
+        let payload = openai_compatible_request_body(self.kind, model, all_messages, opts, tools, true);
+        let response = if self.kind == ProviderKind::Minimax {
+            post_stream_response_with_provider(
+                &stream_url, payload, Some(api_key), stream_connect_timeout_ms(self.timeout_ms),
+                stream_read_idle_timeout_ms(self.timeout_ms), &[("Accept", "text/event-stream")],
+                Some(self.name.as_str()),
+            )?
+        } else {
+            post_response_with_provider(
+                &stream_url, payload, Some(api_key), self.timeout_ms,
+                &[("Accept", "text/event-stream")], Some(self.name.as_str()),
+            )?
+        };
         let reader = BufReader::new(response.into_reader());
         let mut content = String::new();
         let mut reasoning_content = String::new();
@@ -956,6 +988,30 @@ impl ProviderRuntime {
 
             if let Some(token) = delta.get("reasoning_content").and_then(Value::as_str) {
                 reasoning_content.push_str(token);
+            }
+
+            // The provider's own end-of-answer signal. `length` means the
+            // completion ceiling was reached and the text so far is
+            // partial; the surface has to be told, or a truncated answer
+            // reads as a finished one.
+            if let Some(finish_reason) = payload
+                .get("choices")
+                .and_then(Value::as_array)
+                .and_then(|choices| choices.first())
+                .and_then(|choice| choice.get("finish_reason"))
+                .and_then(Value::as_str)
+            {
+                // `tool_calls` is a *normal* end of an assistant turn:
+                // the model finished and asked for tools. It is not
+                // truncation and must never be reported as such.
+                // Only genuinely incomplete endings — the completion
+                // ceiling (`length`) or a content filter — mean the
+                // text so far is partial.
+                if incomplete_finish_reason(finish_reason) {
+                    on_event(ChatStreamEvent::Truncated {
+                        reason: finish_reason.to_string(),
+                    });
+                }
             }
 
             if let Some(tool_calls) = delta.get("tool_calls") {
@@ -2036,6 +2092,70 @@ const MINIMAX_M31_FLASH_MODEL: &str = "MiniMax-M3.1-Flash";
 const MINIMAX_M3_RECOMMENDED_COMPLETION_TOKENS: u32 = 131_072;
 const MINIMAX_M3_MAX_COMPLETION_TOKENS: u32 = 524_288;
 
+/// The reasoning effort the native MiniMax path uses when the operator
+/// has not chosen one.
+///
+/// Medium is the default because it is the level the TypeScript side
+/// has always defaulted to, and the two paths had drifted: the native
+/// path asked for `max` while the TypeScript path asked for `medium`,
+/// so the same operator got two different amounts of thinking depending
+/// on which surface they typed in. Medium is the common ground, and an
+/// operator who wants more still has `high`, `xhigh` and `max` one
+/// command away.
+pub const MINIMAX_DEFAULT_REASONING_EFFORT: &str = "medium";
+
+/// The reasoning levels MiniMax accepts, weakest first.
+///
+/// An operator who has configured one of these keeps it: the default
+/// only applies when nothing valid is configured.
+pub const MINIMAX_REASONING_EFFORT_LEVELS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
+
+/// Normalize an operator-supplied reasoning level.
+///
+/// Returns `None` for anything MiniMax does not accept, so a typo
+/// falls back to the default instead of being sent to the provider.
+pub fn normalize_minimax_reasoning_effort(value: &str) -> Option<&'static str> {
+    match value.trim() {
+        "low" => Some("low"),
+        "medium" => Some("medium"),
+        "high" => Some("high"),
+        "xhigh" => Some("xhigh"),
+        "max" => Some("max"),
+        _ => None,
+    }
+}
+
+/// The completion ceiling for a MiniMax-M3.1-Flash request.
+///
+/// This is a *ceiling*, not a promise of how much is generated: the
+/// provider stops at the ceiling if it gets there, and it usually does
+/// not. It is deliberately separate from the generic 2 048 `max_tokens`
+/// fallback that every other provider uses — 2 048 output tokens is a
+/// reasonable ceiling for a short chat and a hard stop for a reasoning
+/// model, whose thinking shares the completion budget and can therefore
+/// produce an empty answer with `finish_reason: length`.
+///
+/// An explicit `MINIMAX_MAX_COMPLETION_TOKENS`, or an explicit
+/// `MEMPHIS_GEN_MAX_TOKENS` / `GEN_MAX_TOKENS`, always wins over this
+/// default: the operator's number is the operator's number.
+const MINIMAX_M31_FLASH_MAX_COMPLETION_TOKENS: u32 = 32_768;
+
+/// The completion ceiling for one MiniMax-M3.1-Flash request.
+fn minimax_flash_max_completion_tokens(opts: &ChatRequestOptions) -> u32 {
+    opts.minimax_max_completion_tokens
+        .or(opts.max_tokens)
+        .unwrap_or(MINIMAX_M31_FLASH_MAX_COMPLETION_TOKENS)
+        .clamp(1, MINIMAX_M3_MAX_COMPLETION_TOKENS)
+}
+
+/// The reasoning effort one MiniMax request runs with.
+fn minimax_reasoning_effort(opts: &ChatRequestOptions) -> &str {
+    opts.minimax_reasoning_effort
+        .as_deref()
+        .and_then(normalize_minimax_reasoning_effort)
+        .unwrap_or(MINIMAX_DEFAULT_REASONING_EFFORT)
+}
+
 fn normalize_minimax_model_id(model: &str) -> String {
     let trimmed = model.trim();
     if trimmed.eq_ignore_ascii_case("MiniMax-M3.1-Flash-Preview") {
@@ -2047,13 +2167,6 @@ fn normalize_minimax_model_id(model: &str) -> String {
 
 fn is_minimax_m31_flash(model: &str) -> bool {
     normalize_minimax_model_id(model).eq_ignore_ascii_case(MINIMAX_M31_FLASH_MODEL)
-}
-
-fn minimax_reasoning_effort(opts: &ChatRequestOptions) -> &str {
-    match opts.minimax_reasoning_effort.as_deref().map(str::trim) {
-        Some(value @ ("low" | "medium" | "high" | "xhigh" | "max")) => value,
-        _ => "max",
-    }
 }
 
 /// Estimated context budget for a MiniMax request.
@@ -2120,12 +2233,7 @@ fn openai_compatible_request_body(
     });
 
     if kind == ProviderKind::Minimax && is_minimax_m31_flash(model) {
-        let max_completion_tokens = opts
-            .minimax_max_completion_tokens
-            .or(opts.max_tokens)
-            .unwrap_or(MINIMAX_M3_RECOMMENDED_COMPLETION_TOKENS)
-            .clamp(1, MINIMAX_M3_MAX_COMPLETION_TOKENS);
-        payload["max_completion_tokens"] = json!(max_completion_tokens);
+        payload["max_completion_tokens"] = json!(minimax_flash_max_completion_tokens(opts));
         payload["reasoning_effort"] = json!(minimax_reasoning_effort(opts));
         payload["reasoning_split"] = Value::Bool(true);
         payload["thinking"] = json!({ "type": "adaptive" });
@@ -2574,9 +2682,84 @@ fn post_response_with_provider(
     extra_headers: &[(&str, &str)],
     provider_name: Option<&str>,
 ) -> Result<ureq::Response, OperatorError> {
-    let mut request = ureq::post(url)
+    let request = ureq::post(url)
         .timeout(Duration::from_millis(timeout_ms))
         .set("Content-Type", "application/json");
+    send_json_request(request, payload, url, bearer_token, extra_headers, provider_name)
+}
+
+/// Only these provider finish reasons describe an incomplete answer.
+fn incomplete_finish_reason(reason: &str) -> bool {
+    matches!(reason, "length" | "content_filter")
+}
+
+/// Connect timeout for a streaming request.
+///
+/// Bounded independently of the read budget so a dead host fails
+/// fast instead of hanging until the read-idle budget runs out.
+fn stream_connect_timeout_ms(timeout_ms: u64) -> u64 {
+    timeout_ms.min(30_000).max(1_000)
+}
+
+/// Read *inactivity* timeout for a streaming request.
+///
+/// This is the budget that replaces the old total deadline: the
+/// connection counts as dead only when no bytes have arrived for this
+/// long. A stream that keeps producing data may run as long as it
+/// needs; a stalled one still fails.
+fn stream_read_idle_timeout_ms(timeout_ms: u64) -> u64 {
+    timeout_ms.max(1_000)
+}
+
+/// Send a *streaming* request.
+///
+/// Unlike the non-streaming path, this deliberately does **not** use
+/// ureq's `Request::timeout`. That timeout is a total deadline over
+/// the whole request *including reading the response body*, so a
+/// healthy 45-second stream was killed at 45 s even though data was
+/// actively arriving — and the operator saw "provider stream timeout"
+/// for a stream that was working.
+///
+/// Instead the streaming path uses two separate budgets:
+///
+/// * a connect timeout (bounded, so a dead host fails fast), and
+/// * a read *inactivity* timeout (bounded, so a stalled stream still
+///   fails) — reset every time bytes arrive.
+///
+/// A long, active stream is therefore allowed to finish, while a
+/// genuinely idle connection is still bounded. Non-stream requests
+/// keep the original total-deadline semantics.
+fn post_stream_response_with_provider(
+    url: &str,
+    payload: Value,
+    bearer_token: Option<&str>,
+    connect_timeout_ms: u64,
+    read_idle_timeout_ms: u64,
+    extra_headers: &[(&str, &str)],
+    provider_name: Option<&str>,
+) -> Result<ureq::Response, OperatorError> {
+    let agent = ureq::builder()
+        .timeout_connect(Duration::from_millis(connect_timeout_ms))
+        .timeout_read(Duration::from_millis(read_idle_timeout_ms))
+        .timeout_write(Duration::from_millis(read_idle_timeout_ms))
+        .build();
+    let request = agent.post(url).set("Content-Type", "application/json");
+    send_json_request(request, payload, url, bearer_token, extra_headers, provider_name)
+}
+
+/// Send a JSON body and map the provider's failure shapes onto
+/// `OperatorError`.
+///
+/// Shared by the total-deadline request path and the streaming path
+/// so both report the same errors for the same provider failures.
+fn send_json_request(
+    mut request: ureq::Request,
+    payload: Value,
+    url: &str,
+    bearer_token: Option<&str>,
+    extra_headers: &[(&str, &str)],
+    provider_name: Option<&str>,
+) -> Result<ureq::Response, OperatorError> {
     if let Some(token) = bearer_token {
         request = request.set("Authorization", &format!("Bearer {token}"));
     }
@@ -4202,7 +4385,7 @@ mod tests {
         );
 
         assert_eq!(payload["max_completion_tokens"], json!(524_288));
-        assert_eq!(payload["reasoning_effort"], json!("max"));
+        assert_eq!(payload["reasoning_effort"], json!("medium"));
     }
 
     #[test]
@@ -4438,5 +4621,68 @@ mod tests {
             !super::has_explicit_overflow_marker(completion_tokens_body),
             "completion_tokens-cap rejection should NOT match overflow marker",
         );
+    }
+
+    #[test]
+    fn stream_timeout_allows_active_response_past_idle_budget() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut request = [0u8; 4096];
+            socket.read(&mut request).unwrap();
+            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 6\r\nConnection: close\r\n\r\n").unwrap();
+            socket.flush().unwrap();
+            for _ in 0..6 {
+                socket.write_all(b"x").unwrap();
+                socket.flush().unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+        });
+        let response = post_stream_response_with_provider(&format!("http://{address}"), json!({}), None, 1000, 700, &[], None).unwrap();
+        let started = std::time::Instant::now();
+        let mut bytes = Vec::new();
+        response.into_reader().read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, b"xxxxxx");
+        assert!(started.elapsed() > std::time::Duration::from_millis(700));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn stream_timeout_stops_a_stalled_response() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut request = [0u8; 4096];
+            socket.read(&mut request).unwrap();
+            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nx").unwrap();
+            socket.flush().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(900));
+        });
+        let response = post_stream_response_with_provider(&format!("http://{address}"), json!({}), None, 1000, 250, &[], None).unwrap();
+        let mut bytes = Vec::new();
+        let error = response.into_reader().read_to_end(&mut bytes).unwrap_err();
+        assert!(matches!(error.kind(), std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn minimax_flash_respects_explicit_output_limits() {
+        let opts = ChatRequestOptions { max_tokens: Some(4096), ..ChatRequestOptions::default() };
+        assert_eq!(minimax_flash_max_completion_tokens(&opts), 4096);
+        let opts = ChatRequestOptions { max_tokens: Some(4096), minimax_max_completion_tokens: Some(8192), ..ChatRequestOptions::default() };
+        assert_eq!(minimax_flash_max_completion_tokens(&opts), 8192);
+        assert_eq!(minimax_flash_max_completion_tokens(&ChatRequestOptions::default()), 32768);
+    }
+
+    #[test]
+    fn normal_tool_calls_are_not_reported_as_truncated() {
+        assert!(!incomplete_finish_reason("tool_calls"));
+        assert!(!incomplete_finish_reason("stop"));
+        assert!(incomplete_finish_reason("length"));
+        assert!(incomplete_finish_reason("content_filter"));
     }
 }

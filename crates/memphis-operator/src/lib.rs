@@ -26,8 +26,9 @@ pub use chat::{ChatExchange, ChatSessionView, ChatTranscriptEntry, JournalWriteR
 pub use chat_basal_prompt::BasalPromptClassification;
 pub use config::OperatorConfig;
 pub use provider::{
-    ChatMessage, ChatRequestOptions, ChatStreamEvent, ChatToolCall, ChatToolDefinition,
-    ModelCapabilitySummary, ProviderStatus, TokenUsageSummary,
+    normalize_minimax_reasoning_effort, ChatMessage, ChatRequestOptions, ChatStreamEvent,
+    ChatToolCall, ChatToolDefinition, ModelCapabilitySummary, ProviderStatus, TokenUsageSummary,
+    MINIMAX_DEFAULT_REASONING_EFFORT, MINIMAX_REASONING_EFFORT_LEVELS,
 };
 pub use runtime::{
     CaseItem, CaseSummary, ExactSearchHit, MatrixReadinessSummary, MemoryQueryResult,
