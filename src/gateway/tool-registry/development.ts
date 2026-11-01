@@ -7,7 +7,7 @@ export const DEVELOPMENT_TOOLS: Record<string, ToolMeta> = {
     name: 'memphis_code_read',
     tier: 2,
     capabilities: ['read'],
-    description: 'Read files inside ~/memphis/ (whitelisted, read-only)',
+    description: 'Read any file on the host (read-only; vault material refused)',
     inputSchema: z
       .object({
         path: z.string().min(1),
@@ -18,11 +18,11 @@ export const DEVELOPMENT_TOOLS: Record<string, ToolMeta> = {
       })
       .strict(),
     helpText:
-      'Read a file inside the Memphis install root or operator data dir. Path is normalized + path-traversal-checked against the whitelist (`/home/memphis/memphis/`, `~/.memphis/`); never escapes that boundary even with relative segments. Supports line-ranged reads (`startLine`/`endLine`) so the LLM can pull a specific block of source without dragging the whole file into context. Read-only — pair with memphis_fs_write for edits, memphis_grep for search.',
+      "Read any file on this computer. The scope is the tier (tier 2, vault passphrase), not a directory whitelist — memphis_exec at the same tier could cat any file anyway, so a whitelist protected nothing. Vault material (`.env`, `.env.*`, `vault-state.json`, `vault-entries.json`) is refused: this tool's output is indexed, so a secret read here becomes a plaintext copy outside the encrypted vault. Set MEMPHIS_CODE_READ_ROOTS to narrow the scope back down to a list of roots. Supports line-ranged reads (`startLine`/`endLine`) so the LLM can pull a specific block of source without dragging the whole file into context. Read-only — pair with memphis_fs_write for edits, memphis_grep for search.",
     cliFlags: [
       {
         name: '--path',
-        description: 'Whitelisted path to read. Required.',
+        description: 'Path to read (absolute, ~-relative, or relative to ~/memphis). Required.',
         takesValue: true,
         required: true,
       },

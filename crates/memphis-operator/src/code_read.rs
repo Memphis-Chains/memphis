@@ -1,34 +1,62 @@
-//! The path rules of `memphis_code_read`, on the native surface.
+//! The path rules of the read tools, on the native surface.
 //!
-//! The TypeScript arm has had these rules since the tool landed. The
-//! native arm checked only that the path sat under `~/memphis/`, so a
-//! symlink inside the workspace could read any file on the host, and
-//! `~/` was expanded everywhere rather than at the front. This module
-//! is the native arm's copy of the rules the other arm already had.
+//! The scope is the TIER (2, vault passphrase), not a whitelist of
+//! directories: `memphis_exec` at the same tier could `cat` any file on
+//! the host, so a directory whitelist protected nothing — it only made the
+//! tool refuse work the operator asked for. The operator asked for
+//! "Memphis must be able to read everything on this computer", so the
+//! whitelist is gone and `MEMPHIS_CODE_READ_ROOTS` is the way to narrow it
+//! back down.
+//!
+//! Vault material (`.env`, `.env.*`, `vault-state.json`,
+//! `vault-entries.json`) is still refused on the READ path, because the
+//! output of these tools is indexed: it lands in the journal and in the
+//! semantic embed index, i.e. a plaintext copy of a secret outside the
+//! encrypted vault.
+//!
+//! The WRITE path is stricter: it refuses vault material, `.git/` and
+//! `node_modules/`, and stays inside `~/memphis/`. Writing into a `.git`
+//! directory corrupts the source of truth; reading it does not.
 //!
 //! The order is the same on both sides: resolve, block, contain, read.
 
 use std::path::{Component, Path, PathBuf};
 
+/// The path segments whose CONTENT is vault material.
+fn secret_material_segment(segment: &str) -> Option<&'static str> {
+    match segment {
+        ".env" => Some(".env"),
+        "vault-state.json" => Some("vault-state.json"),
+        "vault-entries.json" => Some("vault-entries.json"),
+        _ if segment.starts_with(".env.") => Some(".env.*"),
+        _ => None,
+    }
+}
+
+/// The path segments the WRITE path additionally refuses.
+fn write_blocked_segment(segment: &str) -> Option<&'static str> {
+    match segment {
+        ".git" => Some(".git"),
+        "node_modules" => Some("node_modules"),
+        _ => secret_material_segment(segment),
+    }
+}
+
 /// The hard cap on the size of the returned content, in characters.
 pub const CODE_READ_MAX_CONTENT_CHARS: usize = 500_000;
 
-/// The label of a path segment that is never readable or writable, if
-/// it is one.
+/// The label of a path segment that is never readable, if it is one.
 ///
 /// The list lives here so the read path and the write path cannot
 /// drift apart: the write path used to carry its own copy, whose
 /// `node_modules/` pattern never matched a path segment.
 pub(crate) fn blocked_segment(segment: &str) -> Option<&'static str> {
-    match segment {
-        ".env" => Some(".env"),
-        "vault-state.json" => Some("vault-state.json"),
-        "vault-entries.json" => Some("vault-entries.json"),
-        ".git" => Some(".git"),
-        "node_modules" => Some("node_modules"),
-        _ if segment.starts_with(".env.") => Some(".env.*"),
-        _ => None,
-    }
+    secret_material_segment(segment)
+}
+
+/// The label of a path segment the WRITE path refuses, if it is one.
+pub(crate) fn write_blocked_segment_label(segment: &str) -> Option<&'static str> {
+    write_blocked_segment(segment)
 }
 
 /// Resolve a caller-supplied path.
@@ -83,55 +111,89 @@ pub fn assert_not_blocked(resolved: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Resolve a path through symlinks; when it does not exist, resolve
-/// the nearest existing ancestor and re-append the rest.
-fn realpath_nearest(path: &Path) -> PathBuf {
-    if let Ok(real) = std::fs::canonicalize(path) {
-        return real;
-    }
-    let mut suffix: Vec<std::ffi::OsString> = Vec::new();
-    let mut current = path.to_path_buf();
-    loop {
-        let name = match current.file_name() {
-            Some(name) => name.to_os_string(),
-            None => break,
-        };
-        let parent = match current.parent() {
-            Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
-            _ => break,
-        };
-        suffix.push(name);
-        if let Ok(real) = std::fs::canonicalize(&parent) {
-            let mut out = real;
-            for part in suffix.iter().rev() {
-                out.push(part);
-            }
-            return out;
-        }
-        current = parent;
-    }
-    path.to_path_buf()
+/// The roots the read tools may look at.
+///
+/// Empty by default: the whole host is readable. `MEMPHIS_CODE_READ_ROOTS`
+/// is a comma-separated list and becomes the complete allowlist — the way
+/// back to a narrower setup.
+pub fn read_roots() -> Vec<PathBuf> {
+    let raw = std::env::var("MEMPHIS_CODE_READ_ROOTS").unwrap_or_default();
+    raw.split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(|item| {
+            let expanded = match item.strip_prefix("~/") {
+                Some(rest) => {
+                    let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
+                    Path::new(&home).join(rest)
+                }
+                None => PathBuf::from(item),
+            };
+            expanded
+        })
+        .collect()
 }
 
-/// The roots the tool may read from.
-fn allowed_roots(home: &Path) -> Vec<PathBuf> {
-    vec![home.join("memphis"), home.join(".memphis"), home.join("projects")]
+/// Refuse a path outside the configured read roots.
+///
+/// With no roots configured (the default) every path on the host is
+/// readable, so this never refuses. It exists so an operator who sets
+/// `MEMPHIS_CODE_READ_ROOTS` gets a real boundary, and so both arms
+/// refuse the same paths in the same words.
+pub fn assert_within_read_roots(resolved: &Path) -> Result<(), String> {
+    assert_within_roots(resolved, &read_roots())
 }
 
-/// Refuse a path that leaves the allowed roots, following symlinks to
-/// find out where it really points.
-pub fn assert_contained(resolved: &Path, home: &Path) -> Result<(), String> {
-    let real_target = realpath_nearest(resolved);
-    for root in allowed_roots(home) {
-        let real_root = std::fs::canonicalize(&root).unwrap_or(root);
-        if real_target == real_root || real_target.starts_with(&real_root) {
+/// The pure form: the roots are passed in, so the check can be tested
+/// without touching the process environment.
+///
+/// The process environment is global and the tests of one binary run in
+/// parallel: a test that set `MEMPHIS_CODE_READ_ROOTS` would change the
+/// behaviour of every other test running at that moment.
+pub fn assert_within_roots(resolved: &Path, roots: &[PathBuf]) -> Result<(), String> {
+    if roots.is_empty() {
+        return Ok(());
+    }
+    let normalized = resolved.to_string_lossy().to_string();
+    for root in roots {
+        let root_str = root.to_string_lossy().to_string();
+        if normalized == root_str
+            || normalized
+                .strip_prefix(&root_str)
+                .is_some_and(|rest| rest.starts_with('/'))
+        {
             return Ok(());
         }
     }
     Err(format!(
-        "Path '{}' is outside the allowed read roots: ~/memphis, ~/.memphis, ~/projects",
-        resolved.to_string_lossy()
+        "Path '{}' is outside the allowed read roots: {}",
+        resolved.to_string_lossy(),
+        roots
+            .iter()
+            .map(|root| root.to_string_lossy().to_string())
+            .collect::<Vec<String>>()
+            .join(", ")
     ))
+}
+
+/// Refuse a path that names vault material OR a segment the write path
+/// refuses (`.git/`, `node_modules/`).
+///
+/// The read path and the write path used to share one list, which meant
+/// reading `.git/` was refused too — a directory whitelist protecting
+/// nothing while making the tool refuse work the operator asked for. The
+/// two lists are separate now: reading `.git/` is fine, writing into it
+/// is not.
+pub fn assert_not_write_blocked(resolved: &Path) -> Result<(), String> {
+    for segment in resolved.to_string_lossy().split('/') {
+        if segment.is_empty() || segment == "." {
+            continue;
+        }
+        if let Some(label) = write_blocked_segment_label(segment) {
+            return Err(blocked_path_message(&resolved.to_string_lossy(), label));
+        }
+    }
+    Ok(())
 }
 
 /// The write path may only touch files inside ~/memphis/.
@@ -157,10 +219,10 @@ pub fn assert_write_contained(resolved: &Path, home: &Path) -> Result<(), String
 /// Resolve a path through symlinks even when the target does not exist.
 ///
 /// `std::fs::canonicalize` fails when the last component does not exist,
-/// and `realpath_nearest` resolves the nearest EXISTING ancestor -- so a
-/// symlink to a file that is about to be written (the create-new case)
-/// resolved to ITSELF. A link out of the workspace was therefore
-/// invisible to the write path, and the write went through it.
+/// and resolving the nearest EXISTING ancestor -- so a symlink to a file
+/// that is about to be written (the create-new case) resolved to ITSELF.
+/// A link out of the workspace was therefore invisible to the write path,
+/// and the write went through it.
 ///
 /// The walk follows every component that is a link, at any depth, and
 /// stops at 40 hops like the kernel does for a link loop.
@@ -240,10 +302,53 @@ mod tests {
     }
 
     #[test]
-    fn node_modules_is_refused() {
+    fn vault_material_is_refused_on_the_read_path() {
+        for name in [".env", ".env.production", "vault-state.json", "vault-entries.json"] {
+            let path = Path::new("/home/memphis/somewhere").join(name);
+            let error = assert_not_blocked(&path).expect_err("must be refused");
+            assert!(error.contains("blocked because it matches"), "got: {error}");
+        }
+    }
+
+    #[test]
+    fn node_modules_is_readable_but_not_writable() {
+        // Generated state, not a secret: reading it is harmless, writing
+        // into it is not.
         let path = Path::new("/home/memphis/memphis/node_modules/pkg/index.js");
-        let error = assert_not_blocked(path).expect_err("must be refused");
+        assert!(assert_not_blocked(path).is_ok(), "the read path must allow it");
+        let error = assert_not_write_blocked(path).expect_err("the write path must refuse it");
         assert!(error.contains("matches node_modules"), "got: {error}");
+    }
+
+    #[test]
+    fn the_git_directory_is_readable_but_not_writable() {
+        let path = Path::new("/home/memphis/memphis/.git/config");
+        assert!(assert_not_blocked(path).is_ok(), "the read path must allow it");
+        let error = assert_not_write_blocked(path).expect_err("the write path must refuse it");
+        assert!(error.contains("matches .git"), "got: {error}");
+    }
+
+    #[test]
+    fn every_path_on_the_host_is_readable_when_no_roots_are_configured() {
+        // The scope is the tier, not a whitelist: `memphis_exec` at the
+        // same tier could read any file anyway.
+        let path = Path::new("/etc/hostname");
+        assert!(assert_within_roots(path, &[]).is_ok());
+    }
+
+    #[test]
+    fn a_path_outside_the_configured_roots_is_refused() {
+        let path = Path::new("/etc/hostname");
+        let roots = vec![PathBuf::from("/home/memphis/memphis")];
+        let error = assert_within_roots(path, &roots).expect_err("must be refused");
+        assert!(error.contains("outside the allowed read roots"), "got: {error}");
+    }
+
+    #[test]
+    fn a_path_inside_a_configured_root_is_readable() {
+        let path = Path::new("/home/memphis/memphis/src/index.ts");
+        let roots = vec![PathBuf::from("/home/memphis/memphis")];
+        assert!(assert_within_roots(path, &roots).is_ok());
     }
 
     #[test]
