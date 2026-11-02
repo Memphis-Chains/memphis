@@ -27,13 +27,19 @@ It is blind to most of the evidence.
 
 |                                                    |                                                                  |
 | -------------------------------------------------- | ---------------------------------------------------------------- |
-| messages in `operator_chat_messages`               | **17 071**                                                       |
+| messages in `operator_chat_messages`               | **17 132**                                                       |
 | sessions                                           | **45**                                                           |
 | span                                               | 2026-09-29 → 2026-11-02                                          |
-| user turns                                         | 592                                                              |
-| assistant turns                                    | 8 077 (median content 81 chars)                                  |
-| tool results                                       | 8 402                                                            |
-| tool calls with full arguments (`tool_calls_json`) | **8 402** — a perfect 1:1 join to the results via `tool_call_id` |
+| user turns                                         | 593                                                              |
+| assistant turns                                    | 8 102 (median content 81 chars)                                  |
+| tool results                                       | 8 437                                                            |
+| tool calls with full arguments (`tool_calls_json`) | **8 437** — a perfect 1:1 join to the results via `tool_call_id` |
+
+Re-measured 2026-11-02 20:45 CET against the live database. The corpus
+keeps growing, so these are a dated snapshot, not a live total:
+`npm run -s ops:dream-falsifier` prints the current numbers next to the
+invariants that hold regardless of growth (the 1:1 join, the wrapper
+split, the parse rate).
 
 So the richest signal we own — _what the agent actually tried, with which
 arguments, and what came back_ — is completely outside the loop that is
@@ -162,12 +168,12 @@ Two requirements that only measurement would have produced:
 - **Strip the wrappers.** Every user turn is `<user_input>…</user_input>`;
   every tool result is `<tool_output tool="…">…</tool_output>`. A text
   detector that does not strip them is matching the wrapper, not the
-  speech. (Measured: 592/592 user turns wrapped, 8 402/8 402 tool results
-  wrapped, 0/8 077 assistant turns wrapped.)
+  speech. (Measured: 593/593 user turns wrapped, 8 437/8 437 tool results
+  wrapped, 0/8 102 assistant turns wrapped.)
 - **Join calls to results by `tool_call_id`.** The call's name and
   arguments live on the _assistant_ row (`tool_calls_json`); the outcome
-  lives on the _tool_ row. There is exactly one of each id — 8 402 to
-  8 402.
+  lives on the _tool_ row. There is exactly one of each id — 8 437 to
+  8 437.
 
 The corpus builder is a pure function over a repository. It is
 deterministic and costs no tokens; it can run on every reflection tick.
@@ -194,18 +200,33 @@ Detectors worth building first, in order:
   outcome is a _structured_ failure. The detector must parse the JSON
   envelope, never grep the text.
 
-  Measured on the real corpus (7 339 `memphis_exec` results):
+  Measured on the real corpus (7 370 `memphis_exec` results, re-measured
+  2026-11-02 20:45 CET):
 
-  | detector                                                 | hits    | share                      |
-  | -------------------------------------------------------- | ------- | -------------------------- |
-  | naive substring scan (`"error"`, `"ok":false`, `error:`) | 670     | 9.1 %                      |
-  | structural (`exitCode != 0`)                             | 255     | 3.5 %                      |
-  | **false positives**                                      | **415** | **62 % of the naive hits** |
+  | detector                                                        | flagged | true failures | false positives |
+  | --------------------------------------------------------------- | ------- | ------------- | --------------- |
+  | naive substring scan, `error` anywhere in the result            | 1 286   | 67            | 1 219 (95 %)    |
+  | naive substring scan (`"error"`, `"ok":false`, `error:`)        | 299     | 44            | 255 (85 %)      |
+  | structural (`exitCode != 0` / `error` / `ok:false` / `blocked`) | —       | **257**       | 0               |
+
+  The structural row is the truth: 257 of the 7 370 exec results are
+  real failures. The naive scans are wrong in **both** directions —
+  they flag 1 219 results that are perfectly fine, and they miss 190
+  real failures.
 
   The word "error" is usually in the **command** (`grep -i error …`),
-  not in the outcome. And the envelopes parse cleanly: **8 402 of
-  8 402** tool results are valid JSON, so the structural detector
-  applies to every single one — there is no fallback path to get wrong.
+  not in the outcome. Every exec envelope carries the command it ran,
+  so a text scan reads the command back as an error.
+
+  The earlier draft of this table said 670 naive hits, 255 structural
+  and 415 false positives (62 %). The naive count and the share could
+  not be reproduced from the population as documented, so they are
+  replaced by the measurement above rather than left as a claim nobody
+  can rebuild.
+
+  And the envelopes parse cleanly: **8 437 of 8 437** tool results are
+  valid JSON, so the structural detector applies to every single one —
+  there is no fallback path to get wrong.
 
   The correct implementation already exists:
   `classifyToolOutput` in `src/infra/observability/instrument.ts` reads
@@ -216,20 +237,23 @@ Detectors worth building first, in order:
   failing repeatedly. Cheap, precise, and it is exactly the shape of the
   failures we have actually had.
 - **S3 · correction** — the operator expressing dissatisfaction. Measured
-  honestly: only **15 of 592** user turns match even a generous keyword
-  set (`nie rozumiem`, `co wisi`, `nietrzeba`, `co to`). The operator
-  writes short Polish with no marker. **This signal is too sparse for
-  keyword detection and is the strongest argument for the LLM tier.**
+  honestly, and the measurement is worse than the earlier draft claimed:
+  the documented keyword set (`nie rozumiem`, `co wisi`, `nietrzeba`,
+  `co to`) matches **7 of 593** user turns, and most of those are
+  questions, not corrections (`Co to jest?`). A wider set reaches
+  10/593. The operator writes short Polish with no marker — the median
+  user turn is 14 characters. **This signal is too sparse for keyword
+  detection and is the strongest argument for the LLM tier.**
 - **S4 · no-progress** — sessions where tool calls vastly outnumber
   assistant answers: the agent is working and not concluding.
 
 #### What S1 already finds on the real corpus
 
-Running the structural detector over all 8 402 tool results today:
+Running the structural detector over all 8 437 tool results today:
 
 | tool                                              | real failures |
 | ------------------------------------------------- | ------------- |
-| `memphis_exec`                                    | 255           |
+| `memphis_exec`                                    | 257           |
 | **`mephis_exec`** (sic)                           | **42**        |
 | `memphis_code_read`                               | 34            |
 | `memphis_self_modify`                             | 24            |
@@ -402,14 +426,14 @@ problem with a different gate.
 Six stages. Each is independently valuable, independently mergeable, and
 none of them is dead code — nothing is built that a later stage removes.
 
-| stage  | PR            | delivers                                                                      | falsifier                                                                                                                                               |
-| ------ | ------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D1** | corpus        | `dreaming/corpus.ts` + repository; wrappers stripped; calls joined to results | corpus over the real DB reproduces 17 071 / 45 / 8 402 and the 1:1 join                                                                                 |
-| **D2** | signals       | S1–S4 detectors, always on                                                    | finds the 56 calls to non-existent tools (`mephis_exec` &c., 51 of them in one session) — a real agent bug that is invisible to a chain-only reflection |
-| **D3** | proposals     | `proposals` chain, lifecycle, `memphis dream list/show`                       | running it on the real corpus yields proposals that each carry evidence and prevalence                                                                  |
-| **D4** | gate + apply  | operator accept/reject, apply with provenance, rollback                       | end-to-end on this runtime: an applied proposal lands in the target with provenance; rollback restores the prior state                                  |
-| **D5** | analyzer      | budgeted, steered LLM review producing the same proposal shape                | on the real corpus it produces at least one proposal a human would accept — and the human says so                                                       |
-| **D6** | permissioning | runtime write policy by scope                                                 | mutation: an agent-initiated write to an operator-only scope is refused, and the refusal is in the audit chain                                          |
+| stage  | PR            | delivers                                                                      | falsifier                                                                                                                                                                                        |
+| ------ | ------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **D1** | corpus        | `dreaming/corpus.ts` + repository; wrappers stripped; calls joined to results | corpus over the real DB reproduces the 1:1 join, the wrapper split and the parse rate, and the counts it prints match the live database (`npm run -s ops:dream-falsifier`) — **shipped in #730** |
+| **D2** | signals       | S1–S4 detectors, always on                                                    | finds the 56 calls to non-existent tools (`mephis_exec` &c., 51 of them in one session) — a real agent bug that is invisible to a chain-only reflection                                          |
+| **D3** | proposals     | `proposals` chain, lifecycle, `memphis dream list/show`                       | running it on the real corpus yields proposals that each carry evidence and prevalence                                                                                                           |
+| **D4** | gate + apply  | operator accept/reject, apply with provenance, rollback                       | end-to-end on this runtime: an applied proposal lands in the target with provenance; rollback restores the prior state                                                                           |
+| **D5** | analyzer      | budgeted, steered LLM review producing the same proposal shape                | on the real corpus it produces at least one proposal a human would accept — and the human says so                                                                                                |
+| **D6** | permissioning | runtime write policy by scope                                                 | mutation: an agent-initiated write to an operator-only scope is refused, and the refusal is in the audit chain                                                                                   |
 
 D5 depends on D3 and D4. D6 is independent and can ship any time after
 D3.
