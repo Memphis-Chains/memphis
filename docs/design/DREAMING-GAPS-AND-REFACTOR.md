@@ -530,6 +530,72 @@ runtime-internal writes (bootstrap, heartbeat, scheduler) are unaffected. The
 existing VITEST-only guards stay as they are: they are test isolation, not a
 production policy, and the design says so.
 
+### 3.4 R2 as built
+
+R2 is the `proposals` chain, the proposal lifecycle, and `memphis dream`.
+Three decisions were the operator's (2026-11-03), and each one was made
+against a measurement rather than a preference:
+
+| decision                          | what was chosen                                    | what it replaces                                         |
+| --------------------------------- | -------------------------------------------------- | -------------------------------------------------------- |
+| how many proposals per bug        | **one per bug — 21**                               | one per signal — 26                                      |
+| what `memphis dream propose` does | **scans the corpus and writes every new proposal** | writing one proposal by hand                             |
+| what `memphis dream list` shows   | **only the proposals in the chain**                | the live signals, which change under the operator's feet |
+
+**Why 21 and not 26.** Six of the 26 signals are one bug: the agent calls
+tool names the runtime does not know (`mephis_exec` instead of
+`memphis_exec`), which is 56 failed calls. Six proposals would have said the
+same thing six times. The root cause is never guessed — it is read off the
+evidence, because the runtime names the tool it did not know:
+
+```
+proposal:unknown-tool
+  kind: org.directive | scope: org | confidence: 0.9
+  prevalence: 56 occurrence(s), 5 session(s), 29 day(s), denominator 56
+  patch: Do not call tool names this runtime does not know:
+         mephis_code_read, mephis_exec, mephis_grep, mephis_web_fetch.
+```
+
+The other 20 signals keep their own proposals. A broken tool and a repeat
+loop over the same tool are different facts, and both are true.
+
+**A correction the exact recount forced.** The signal evidence is capped at
+three items per signal, so counting sessions in the evidence says the
+unknown-tool class touched **3** sessions. Counting the calls themselves
+says **5**. The proposals carry the exact number, because a proposal that
+understates its own spread is worth less than one that does not.
+
+**The block shape** is the one §3.1 measured against the Rust core: `type =
+system_event`, `kind = dreaming.proposal`, the whole payload in `content`
+so that it is covered by the block hash.
+
+**What was built**
+
+| file                                                            | what it does                                                                                                                                                                         |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/cognitive/dreaming/proposal-lifecycle.ts`                  | the proposal type, the legal transitions, and the rule that a proposal without evidence is invalid — enforced in `createProposal` and `assertValidProposal`, not left to the callers |
+| `src/cognitive/dreaming/proposals.ts`                           | the generator: signals decide which patterns exist, the corpus is counted for the exact numbers, one proposal per root cause                                                         |
+| `src/cognitive/dreaming/proposal-chain.ts`                      | the chain: append, read, and the append-only status transition                                                                                                                       |
+| `src/infra/cli/commands/dream.ts` + `handlers/dream.handler.ts` | `memphis dream list/show/propose`                                                                                                                                                    |
+| `src/infra/cli/registry.ts`                                     | the command registration and the completion entries                                                                                                                                  |
+| `src/memory/chain-catalog.ts`                                   | `proposals` in the taxonomy — 12 chains become 13, and the catalog test says so                                                                                                      |
+| `src/infra/storage/chain-adapter.ts`                            | `proposals` in the allowlist, so the integrity scanner scans it                                                                                                                      |
+| `scripts/dream-proposals.mts`                                   | the falsifier                                                                                                                                                                        |
+
+**Falsifier, as run:** `npm run -s ops:dream-proposals` over the live corpus
+(8 437 tool results, 45 sessions, 17 132 turns) — **26 signals → 21
+proposals**, 0 proposals without evidence, 0 without prevalence, 0 duplicate
+ids, and the unknown-tool class collapsing from 6 signals to 1 proposal. The
+CLI was exercised end to end in an isolated home: the first `dream propose`
+wrote 21 blocks, the second wrote 0 (the ids are stable, so a scan never
+duplicates), and `dream list` / `dream show` read the proposals back with
+their evidence.
+
+**What R2 does NOT do.** It does not accept, reject, apply or roll back —
+that is R3's gate, on tier 2. It carries no `basedOn` chain hashes yet (R4)
+and it does not write to a scope (R5). A proposal in this state is a
+candidate with its evidence, and nothing else.
+
 ---
 
 ## 4. Risks, and what would kill this
