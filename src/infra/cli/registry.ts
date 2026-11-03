@@ -292,6 +292,11 @@ export const CLI_COMMAND_REGISTRY = [
       'kartografCommandHandler',
     ),
   ),
+  createCommandRegistration(
+    'dream',
+    ['dream'],
+    createLazyHandlerLoader(() => import('./handlers/dream.handler.js'), 'dreamCommandHandler'),
+  ),
 ] as const;
 
 export const CLI_COMPLETION_COMMANDS = [
@@ -309,6 +314,7 @@ export const CLI_COMPLETION_COMMANDS = [
   'connections',
   'suggest',
   'knowledge',
+  'dream',
   'serve',
   'service',
   'deploy',
