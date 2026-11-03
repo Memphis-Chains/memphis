@@ -103,7 +103,13 @@ export interface AppendBlockResult {
 }
 
 const GENESIS_PREV_HASH = '0'.repeat(64);
-const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+/**
+ * Exported for the runtime audit (src/infra/audit/), which has to
+ * reproduce the verifier's own view of which chain directories are
+ * openable — a second copy of this pattern would be the very drift
+ * the audit exists to catch.
+ */
+export const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 // Allowlist of chain directories under ~/.memphis/chains/ that
 // verifyChainIntegrity is permitted to scan. Anything outside this
@@ -134,7 +140,14 @@ const DEFAULT_CHAIN_ALLOWLIST: ReadonlySet<string> = new Set([
   'system.backup-1782897312539',
 ]);
 
-function getChainAllowlist(rawEnv: NodeJS.ProcessEnv = process.env): ReadonlySet<string> {
+/**
+ * The allowlist in force. Exported for the runtime audit: it has to
+ * compare the code's default against the live override, and the whole
+ * point is that it must not keep its own copy of either.
+ */
+export function getChainAllowlist(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): ReadonlySet<string> {
   const explicit = rawEnv.MEMPHIS_CHAINS_ALLOWLIST;
   if (explicit !== undefined && explicit !== '') {
     return new Set(
