@@ -116,7 +116,7 @@ const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 //
 // Override via env var MEMPHIS_CHAINS_ALLOWLIST (comma-separated).
 const DEFAULT_CHAIN_ALLOWLIST: ReadonlySet<string> = new Set([
-  // 10 active core chains
+  // 11 active core chains
   'autonom_archive',
   'cases',
   'collective',
@@ -124,6 +124,7 @@ const DEFAULT_CHAIN_ALLOWLIST: ReadonlySet<string> = new Set([
   'insights',
   'journal',
   'patterns',
+  'proposals',
   'reflections',
   'soul',
   'system',
