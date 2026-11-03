@@ -1,0 +1,781 @@
+# Memphis — the holes, measured, and the refactor that closes them
+
+**Status:** design, measured 2026-11-03 on this host.
+**Predecessors:** `docs/design/DREAMING.md` (the mechanism),
+`docs/design/DREAMING-GAPS-AND-REFACTOR.md` (the Dreaming tier's own gaps),
+#733–#739 (D1–D2, R1, R2).
+
+---
+
+## 0. Why this document exists
+
+The Dreaming refactor (`DREAMING-GAPS-AND-REFACTOR.md`) closed the holes **in
+one mechanism**: one classifier for failure, one proposal chain, one command
+that fills it. It measured them and it shipped them.
+
+The runtime around that mechanism has the same kind of holes, and they are
+bigger. This document measures those, and designs the refactor that closes them
+— including the part of the Dreaming plan that is still open (R3, R4, R5).
+
+Three things this document is not:
+
+- **It is not a wish list.** Every number below was measured on this host on
+  2026-11-03. §7 carries the commands, so every number can be re-derived and
+  argued with.
+- **It is not another layer of guards.** §2 shows why the last eleven
+  postmortems did not stop the recurrence: every fix added a guard at a door,
+  and the next writer found another door. The plan below closes doors by making
+  one door the only door.
+- **It is not scoped to Dreaming.** The user's brief was "completely". The
+  Dreaming remainder is S6; everything before it is the runtime that carries it.
+
+The single most important claim in this document is measurable, and it is
+measured first, because everything else depends on it:
+
+> **The failure mode that repeats in this repo is a new writer that does not
+> go through an existing boundary.** Five independent instances, measured below.
+> The boundary exists. It is just not the only way in.
+
+---
+
+## 1. The inventory, measured
+
+Nine holes. Each one carries the measurement that proves it and the cost it
+has already paid.
+
+### H1 · Two definitions of a valid chain block
+
+`memphis chain verify` and the native Rust core do not agree on what a valid
+block is, and only one of them is the one that writes.
+
+Measured today:
+
+```
+$ memphis chain verify
+[chain-adapter] skipping 1 non-allowlisted chain dir(s) under /home/memphis/.memphis/chains: _quarantine.
+ok: true
+chainsChecked: 11
+blockCount: 22618
+```
+
+The native core, asked about the same blocks:
+
+```
+$ node -e "require('./crates/memphis-napi/index.node').chain_validate(blockJson, null)"
+journal              -> {"ok":true,"data":{"errors":["hash mismatch"],"valid":false},"error":null}
+decision             -> {"ok":true,"data":{"errors":["hash mismatch"],"valid":false},"error":null}
+system_event         -> {"ok":true,"data":{"errors":["hash mismatch"],"valid":false},"error":null}
+proposal             -> {"ok":false,"data":null,"error":"invalid_block_json: unknown variant `proposal`"}
+autonom_publication  -> {"ok":false,"data":null,"error":"invalid_block_json: unknown variant `autonom_publication`"}
+autonom_archive      -> {"ok":false,"data":null,"error":"invalid_block_json: unknown variant `autonom_archive`"}
+```
+
+And the block that makes the two disagree is on disk, not hypothetical:
+
+```
+$ python3 -c "import json;print(json.load(open('/home/memphis/.memphis/chains/autonom_archive/000001.json'))['data']['type'])"
+autonom_publication
+```
+
+So: the `autonom_archive` chain holds one block whose type the Rust core
+cannot deserialize at all, and `memphis chain verify` reports the whole system
+as `ok: true`. `BlockType` (`crates/memphis-core/src/block.rs:5`) is a **closed
+serde enum** — the variant list is `journal`, `ask`, `decision`, `system`,
+`system_event`, `insight`, `tool_call`, `tool_result`, `error`, `case`, and the
+wallet transaction types, plus read-side aliases for legacy names.
+
+**Cost.** `chain_append` parses the whole chain before appending, so the next
+append to `autonom_archive` fails. The chain is readable by the tool that
+reports on it and unwritable by the core that writes it.
+
+### H2 · The chain registry lives in four places, and one of them wins silently
+
+| registry                                           | count | what it holds                                                       |
+| -------------------------------------------------- | ----- | ------------------------------------------------------------------- |
+| `src/memory/chain-catalog.ts` (the taxonomy)       | 13    | `proactive` and `messages` have no directory and no allowlist entry |
+| `src/infra/storage/chain-adapter.ts:118` (code)    | 14    | 11 active + 3 frozen backup snapshots                               |
+| `.env:63` `MEMPHIS_CHAINS_ALLOWLIST` (live config) | 14    | **replaces** the code default (`chain-adapter.ts:138`)              |
+| `/home/memphis/.memphis/chains/` (disk)            | 14    | 11 active + 3 backup snapshots, plus `_quarantine`                  |
+
+Four lists, no gate that compares them. The gap is not cosmetic: two names in
+the taxonomy (`proactive`, `messages`) exist in no other list.
+
+**The silent part is the expensive part.** The live config overrides the code
+default, and the override is a git-ignored file that only the operator edits.
+A chain added to the code is therefore invisible to the live scanner until
+somebody also edits `.env` — with no warning, because the scanner _prints_ the
+skip and still returns success:
+
+```
+[chain-adapter] skipping 1 non-allowlisted chain dir(s) under /home/memphis/.memphis/chains: _quarantine.
+ok: true
+```
+
+This is not hypothetical. R2 added the `proposals` chain and needed exactly one
+operator edit in `.env` to make the scanner see it. Had that line been
+forgotten, `memphis chain verify` would have reported `ok: true` over 10
+chains while quietly ignoring the new one.
+
+### H3 · The SLO reports "passing" on four metrics that have no data
+
+```
+$ memphis slo status --days 7
+SLO status: passing
+window: 7d (2026-10-27T19:08:35.995Z - 2026-11-03T19:08:35.995Z)
+samples: 1408; span files: 7
+  - p99_turn_latency_ms: unavailable; value=n/a; threshold=90000 ms; samples=0 (no turn.dispatch spans with latency in window - last turn.dispatch span 28h ago)
+  - confabulation_rate: unavailable; value=n/a; threshold=0.001 ratio; samples=0 (no turn.dispatch spans in window - last turn.dispatch span 28h ago)
+  - provider_error_rate: unavailable; value=n/a; threshold=0.01 ratio; samples=0 (no provider.completion spans in window - last provider.completion span 28h ago)
+  - tool_error_rate: unavailable; value=n/a; threshold=0.05 ratio; samples=0 (no tool.call spans in window - last tool.call span 28h ago)
+```
+
+**Every** metric is `unavailable` — zero samples each, the last span 28 hours
+old — and the verdict is `passing`.
+
+The cause is one line (`src/mcp/tools/slo-status.ts:32`):
+
+```ts
+allSlosPassing: failingSlos.length === 0,
+```
+
+`unavailable` is a third status (`src/observability/slo-evaluator.ts:7`) and is
+neither `pass` nor `fail`, so a metric with no data cannot fail, and an empty
+window passes. The same false green is printed by the scheduler
+(`src/infra/runtime/scheduler-builtins.ts:238`): `SLO 7d: OK`.
+
+### H4 · `memphis health` says "status: ok" while a check inside it says "fail"
+
+```
+$ memphis health
+status: ok
+service: memphis
+version: 1.13.5
+nodeEnv: development
+runtimeStatus: healthy
+repairable: false
+recommendedAction: none
+checks: {
+  ...
+  "embed_index_dimension": {
+    "status": "fail",
+    "message": "dim mismatch: config=768 index=32",
+    "fixAction": "RUST_EMBED_DIM=768 but /home/memphis/.memphis/embed/index-v1.json holds dim=32. Queries embed to a different width than the stored vectors, so cosine similarity scores 0 and recall matches nothing meaningful. ..."
+  }
+```
+
+The check is correct, detailed, and has a fix action. It is also **invisible
+in the verdict**, because the top line is computed from two checks
+(`src/infra/http/health.ts:456`):
+
+```ts
+const requiredHealthy = checks.database.status === 'ok' && checks.data_dir.status === 'ok';
+```
+
+Every other check — including this one — is informational. The measured state
+is: queries embed to 768 dimensions, the index holds 32-dimensional vectors,
+and recall matches nothing meaningful. The host reports itself as healthy.
+
+### H5 · The deployed artifact is not the repository
+
+The operator's `memphis` is a link into the repo, and the repo's build output
+is 11 commits behind `main`.
+
+```
+$ ls -la /home/memphis/.local/share/npm-global/lib/node_modules/@memphis-chains/
+memphis -> ../../../../../../memphis
+
+$ ls -la dist/ | head -2
+drwxr-xr-x 28 memphis memphis  4096 Oct 29 13:25 .
+$ find dist -type f -printf '%T+\n' | sort | tail -1
+2026-11-02+00:46:28
+```
+
+So: `dist/` files were last written **2026-11-02 00:46:28**, and the service
+has been up since **00:46:31** with `NRestarts=0` — it has never restarted
+since. Measured against the build timestamp:
+
+| what                                        | count  |
+| ------------------------------------------- | ------ |
+| commits on `main` since the build           | **11** |
+| `src/` files changed since the build        | **17** |
+| new `src/` files since the build            | **10** |
+| tracked files changed since the build (all) | 35     |
+
+The runtime the operator talks to is the runtime from before R1, R2 and the
+proposals chain existed. It shows:
+
+```
+$ memphis dream list     → Unknown command: dream
+$ memphis journal append → Unknown command: journal
+$ memphis recall         → Unknown command: recall
+```
+
+Two aggravating details:
+
+- **The live unit never builds.** `/home/memphis/.config/systemd/user/memphis.service`
+  is `ExecStart=/usr/bin/node /home/memphis/memphis/dist/infra/cli/index.js serve`
+  with **no build step**. The repo's `ops/memphis.service` — a _different unit_
+  (`WorkingDirectory=/opt/memphis`, `ExecStart=/usr/bin/node dist/index.js`,
+  `NODE_ENV=production`, `ExecStartPre=/usr/bin/npm run build:rust`) — is not
+  the unit that runs, and no gate compares them.
+- **Nothing measures the drift.** No script and no workflow checks whether
+  `dist/` matches `main`. The only mentions of staleness in the repo are
+  `scripts/pre-demo-smoke.sh` (`'--skip-build set; dist/ may be stale'`) — a
+  warning on a demo script.
+
+### H6 · A writer that pushes to `main` without checking what branch it is on
+
+`crons/tuesday-code.sh:152-155`:
+
+```bash
+cd "$REPO" && git add -A docs/roadmap/current-priorities.md 2>/dev/null
+if ! git diff --cached --quiet 2>/dev/null; then
+  git commit -q -m "chore(priorities): auto-generowana lista na wtorek $(date -I)" 2>/dev/null
+  git push -q origin HEAD:refs/heads/main 2>&1 | tail -1
+fi
+```
+
+`git push origin HEAD:refs/heads/main` pushes **whatever HEAD is** to `main`.
+On a feature branch, that is a push of that branch's commits into `main`.
+
+It is not supposed to be possible, and it was caught — but by luck and by
+GitHub, not by this project. Measured on 2026-11-03: the cron committed
+`c06adfca` on a feature branch and tried to push `9a34adc5` to `main`; the
+push was rejected (journalctl, 13:13:31, "failed to push some refs").
+
+What protects `main` today:
+
+```
+$ gh api repos/Memphis-Chains/memphis/rulesets/14186283 --jq '.rules[].type'
+deletion
+non_fast_forward
+required_status_checks
+
+$ gh api repos/Memphis-Chains/memphis/branches/main/protection
+{"message":"Branch not protected"}   (HTTP 404)
+```
+
+The ruleset requires four status checks and forbids deletions and force-pushes.
+**It has no "required pull request" rule**, and classic branch protection is
+not enabled at all. A direct push to `main` is structurally allowed; only the
+required checks stand in the way, and the cron pushes `HEAD` — which on a
+clean checkout of `main` _does_ carry the checks.
+
+### H7 · Six gates measure the wrong thing, and a seventh does not exist
+
+| #   | gate                                                                            | what it actually measures                            | measured evidence                                                                                                                                                                          |
+| --- | ------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | `.github/workflows/chain-invariant.yml`                                         | the **fixture** in `tests/fixtures/chain-invariant/` | the workflow runs `tests/integration/chain-invariant.test.ts`; the live sweep exists only as a local systemd timer (`memphis-chain-integrity-sweep.timer`, `enabled`, last fired 20:03:42) |
+| 2   | `scripts/check-systemd-units.mts:48` (`UNIT_DIR = scripts/systemd`)             | **13** unit files in one directory                   | `ops/memphis.service` and the live user unit are outside it. CI does run it (`ci.yml:126`) — the scope is the hole, not the invocation                                                     |
+| 3   | `cargo audit` (`scripts/rust-core-safety-check.sh`, npm `ops:rust-core:safety`) | nothing — no workflow invokes it                     | grep over `.github/workflows/` → no reference                                                                                                                                              |
+| 4   | `.github/workflows/backup-restore-drill.yml`                                    | an `echo`                                            | `workflow_dispatch` only; its one job is `disabled-in-public-repo` and prints a notice                                                                                                     |
+| 5   | `scripts/pii-scan.sh:99`                                                        | the working tree only                                | it scans `git ls-files` — never history                                                                                                                                                    |
+| 6   | `scripts/default-secret-scan.sh:126`                                            | source, not tests                                    | `tests/*` and every `*.test.*` are skipped (a deliberate, documented exemption)                                                                                                            |
+| 7   | _no freshness gate exists_                                                      | —                                                    | §H5: `dist/` is 11 commits behind and nothing notices                                                                                                                                      |
+
+Each of these can be green while the class of failure it names is live on this
+host. Gate 1 is the sharpest example: the chain invariant passes on a fixture
+of three directories and seven blocks while the live chain contains a block
+type the core cannot read (H1).
+
+### H8 · The postmortem corpus cannot answer "what is still open?"
+
+There are **11** postmortems in `docs/postmortems/`. The index lists **3** of
+them and is dated `2026-09-26`:
+
+| file                                            | date       | severity | status             |
+| ----------------------------------------------- | ---------- | -------- | ------------------ |
+| `2026-09-22-chains-halt-invalid-block-shape.md` | 2026-09-22 | HIGH     | Resolved (PR #385) |
+| `2026-09-21-soul-append-and-deep-restart.md`    | 2026-09-21 | MEDIUM   | Resolved           |
+| `2026-05-08-zawoja-and-runtime-state.md`        | 2026-05-08 | LOW      | Resolved           |
+
+The status of the other eight documents is prose. Measured across all eleven
+files: the whole corpus contains **1** `DONE` marker and **1** `TODO` marker;
+statuses are written as sentences ("Resolved", "Open", "fixed", "open"). There
+is no field, no front-matter, no table that a tool can read.
+
+**Cost.** The inventory in this section was assembled by reading eleven
+documents by hand, and it cannot be re-derived automatically. A plan whose
+evidence cannot be re-derived will rot exactly the way that index did — which
+is why S0 below is an audit of the _live system_, not of a document.
+
+### H9 · The Dreaming tier is still open where it matters most
+
+From `DREAMING-GAPS-AND-REFACTOR.md` §3, restated against the code as it
+stands after R2:
+
+| stage | state                                                                                                                                                   |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1    | **done** — one shared failure classifier (`src/core/failure-classification.ts`)                                                                         |
+| R2    | **done** — the `proposals` chain, the lifecycle, `memphis dream list/show/propose`                                                                      |
+| R3    | **does not exist** — no accept, no reject, no apply, no rollback                                                                                        |
+| R4    | **half** — the provenance field exists and is always empty: `basedOn: { sessionIds, chainBlockHashes: [] }` (`src/cognitive/dreaming/proposals.ts:388`) |
+| R5    | **does not exist** — no scope policy; any agent-initiated write may target any chain, including `system`                                                |
+
+Twenty-one proposals sit in the `proposals` chain, all `pending` — plus one
+retired test record, `superseded`, because a chain is append-only and a
+retirement is a new block rather than an edit. Measured: `memphis dream list`
+prints 21 `[pending]` and 1 `[superseded]`.
+
+The mechanism can find a problem, write it down with evidence, and then
+nothing can happen next. R3 is the stage that makes the whole tier mean
+anything; it is also the stage that needs the operator's passphrase, so it
+cannot be automated away.
+
+---
+
+## 2. The diagnosis: why the same shape keeps coming back
+
+Five measured instances of one shape:
+
+| #   | the writer                         | the boundary it bypassed              | measured cost                                                  |
+| --- | ---------------------------------- | ------------------------------------- | -------------------------------------------------------------- |
+| 1   | the `autonom_archive` chain writer | the Rust core's block-type vocabulary | a chain the writer can read and the core cannot (H1)           |
+| 2   | the `proposals` registration       | the live scanner's allowlist          | one silent operator edit in `.env` (H2)                        |
+| 3   | `crons/tuesday-code.sh`            | the branch / pull-request boundary    | a push of `HEAD` to `main` (H6)                                |
+| 4   | the deployment path                | the build                             | `dist/` 11 commits behind, the CLI missing three commands (H5) |
+| 5   | the postmortem index               | the corpus it indexes                 | 8 of 11 documents unindexed since 2026-09-26 (H8)              |
+
+In every case the boundary exists, is documented, and is enforced _somewhere_.
+The writer simply does not go through it.
+
+The corpus says how the repo has responded to this so far. Measured vocabulary
+across the eleven postmortems: **12** mentions of "guard", **6** of
+"allowlist", **7** of "refactor"/"restructure". The dominant shape of a fix in
+this repo is a guard — a check at one door — rather than a change to the shape
+of the system that made the door reachable.
+
+That is why H1–H9 will come back if they are answered one by one with more
+guards. Six more guards is six more doors.
+
+**Two conclusions, and the plan is built on them.**
+
+1. **One entry point that measures the live system.** Not a fixture, not a
+   copy, not a document — the live state, with the four-state verdict R1
+   already established (`success` / `failure` / `inconclusive` / `unknown`).
+   Every gate that measures the wrong thing becomes a check inside it, and
+   every existing gate keeps its own entry point but delegates to the audit, so
+   no logic is orphaned and no two gates can disagree.
+2. **Boundaries that cannot be bypassed.** The registry is one list, not four.
+   The block vocabulary is one file, consumed by both implementations. The
+   deployment artifact is produced by the path that runs it. The branch
+   boundary is enforced by the branch, not by a script that hopes to notice.
+
+The anti-hubris constraint follows: each stage below must be falsifiable on
+this host, with a command and an expected output. A stage that cannot be
+falsified does not ship.
+
+---
+
+## 3. The plan
+
+Seven stages. Each is independently mergeable, each carries its own
+falsifier, and none lands before the thing it depends on.
+
+| stage  | delivers                                                                                                                               | closes       | falsifier (summary)                                                                                                                                                                                                     |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **S0** | **one audit entry point** — `npm run -s ops:audit` measures the live system and returns a verdict per check                            | H1–H4, H6–H8 | on this host the audit names every hole in §1 with the numbers in §1, and exits non-zero while any is open                                                                                                              |
+| **S1** | **one registry, one vocabulary** — the chain catalog is the source of truth; the block-type list is one file both implementations read | H1, H2       | adding a chain to the catalog is one edit; a block type the core cannot parse cannot be written, proven on the live blocks                                                                                              |
+| **S2** | **truth in the status surfaces** — `unavailable` is not `pass`; a failing check can flip the top line                                  | H3, H4       | with today's state, `memphis slo status` stops saying "passing" and `memphis health` stops saying "status: ok"; after the embed dim is fixed, health says ok again                                                      |
+| **S3** | **the deployed artifact is the repository** — a freshness gate, one build path, one unit                                               | H5           | `memphis dream list` works in the operator's shell; the freshness check is green; the check fails when `dist/` is one commit behind                                                                                     |
+| **S4** | **writer boundaries** — the cron cannot push to `main`; the branch boundary is enforced by the branch                                  | H6           | a mutation test: a cron run on a feature branch cannot push to `main`; the ruleset rejects a direct push                                                                                                                |
+| **S5** | **the scanners see what matters** — history-inclusive scans, tests/ not exempt, `cargo audit` on a workflow, a drill that drills       | H7, H8       | a secret committed in a test file in history is found; `cargo audit` runs; the drill workflow performs a round trip                                                                                                     |
+| **S6** | **the Dreaming remainder** — R3 (the gate), R4 (real provenance), R5 (scopes)                                                          | H9, G4–G6    | end-to-end on this runtime: a proposal is accepted on tier 2, applied carrying `basedOn` with real block hashes, rolled back; an agent write to an operator-only scope is refused and the refusal is in the audit chain |
+
+### 3.1 S0 · One audit entry point
+
+This is the core of the plan. Everything else is either a thing the audit
+measures or a thing the audit makes impossible to get wrong.
+
+```bash
+npm run -s ops:audit          # or: memphis audit
+```
+
+It reads the **live** system — the live chains, the live `.env`, the live
+`dist/`, the live workflows — and prints one line per check in the four-state
+vocabulary R1 already shipped:
+
+```
+$ npm run -s ops:audit
+chain-registry            FAIL   catalog=13 allowlist=14 disk=14 drift=proactive,messages
+block-vocabulary         FAIL   1 of 22618 live blocks cannot be parsed by the core (autonom_archive/000001.json: autonom_publication)
+slo-reporting            FAIL   4 of 4 metrics unavailable; verdict=passing
+health-reporting         FAIL   checks.embed_index_dimension=fail; top-line=ok
+deployment-freshness     FAIL   dist is 11 commit(s) behind main; 3 cli command(s) missing
+branch-boundary          FAIL   ruleset 14186283 has no required-pull-request rule; cron pushes HEAD to main
+gate-coverage            FAIL   6 gate(s) measure a scope that cannot fail on this host
+postmortem-status        FAIL   8 of 11 postmortems carry no machine-readable status
+overall: FAIL (8 open, 0 inconclusive)
+```
+
+(The numbers above are this document's measurements; the tool is what produces
+them once S0 ships.)
+
+**The four states are not decoration.** `unknown` is a state the repo already
+uses in `src/core/failure-classification.ts`, and it is the honest answer for
+"the check could not reach the live system" — which is exactly what every
+mis-scoped gate does today. A gate that cannot see the live system must say
+`unknown`, never `success`.
+
+**Every existing gate delegates.** `ops:dream-signals`, `ops:dream-proposals`,
+the chain sweep, the systemd gate, the PII and secret scans keep their entry
+points and their exit codes, but they call the audit's checks rather than
+re-implementing them. Two gates that disagree is H1's shape; the audit is the
+one place they can disagree in.
+
+**Falsifier, to run:** on this host, `npm run -s ops:audit` prints the eight
+failures above with the numbers in §1, exits non-zero, and — the part that
+matters — **the audit itself is wrong when the system changes**: touch a
+single thing (write a block with an unknown type, add a chain to the catalog
+without adding it to disk) and the corresponding line changes. A check that
+cannot change its verdict is not a check.
+
+### 3.2 S1 · One registry, one vocabulary
+
+**The chain registry becomes one list.** `src/memory/chain-catalog.ts` is the
+taxonomy; the allowlist and the disk are derived from it. The live config may
+only _narrow_ the list, and the difference between "narrowed" and "forgotten"
+is a report, not a silent skip:
+
+- `.env` may remove a chain from scanning — that is a legitimate operator
+  choice (it must be, for the frozen backups).
+- `.env` may **not** add a chain that the catalog does not name, and it may
+  not remove a chain that the catalog names and the disk has — that is a
+  drift, and the audit says so.
+
+Today the direction of the override is exactly backwards: the config _replaces_
+the code default (`chain-adapter.ts:138`), which is why R2 needed an operator
+edit and why forgetting it would have been silent.
+
+**The block vocabulary becomes one file.** `crates/memphis-core/src/block.rs:5`
+is a closed serde enum; the TypeScript side has its own notion of a legal
+block. One JSON Schema file, generated into both, replaces the two. The
+generator writes the Rust enum and the TypeScript union from the same source,
+and CI checks that the generated files match the source — so the enum cannot
+drift again.
+
+**Falsifier, to run:** add a chain to the catalog; the audit reports the
+missing directory and the missing config entry, and nothing else changes
+mechanically. Write a block whose type is not in the vocabulary and the write
+is refused with the same error the native core gives today — and the live
+`autonom_archive` block is reported as unreadable by the core, which is the
+truth of H1 made visible.
+
+### 3.3 S2 · Truth in the status surfaces
+
+**SLO.** `allSlosPassing` becomes three-valued, not two-valued:
+
+| metric state  | what it means                    | verdict contribution                          |
+| ------------- | -------------------------------- | --------------------------------------------- |
+| `pass`        | samples present, under threshold | counts as passing                             |
+| `fail`        | samples present, over threshold  | counts as failing                             |
+| `unavailable` | no samples in window             | **does not pass** — reported as `unavailable` |
+
+The policy question — _does an empty window fail the report, or is it a third
+verdict?_ — is the operator's, and S2 implements whichever is chosen. The
+current behaviour (an empty window passing) is not one of the options.
+
+**Health.** The required-check set becomes a policy list rather than the
+hardcoded pair at `src/infra/http/health.ts:456`. `embed_index_dimension`
+is a candidate for "required", because the check's own `fixAction` says
+queries "match nothing meaningful" — a system that cannot recall is not
+healthy. This is again the operator's call: the audit reports which checks are
+failing and what the top line says, and the policy decides which failures may
+hide below it.
+
+**Falsifier, to run:** with the state measured today (four `unavailable`
+metrics, an embed dimension mismatch), `memphis slo status` no longer says
+`passing` and `memphis health` no longer says `status: ok`. Then fix the
+dimension (one `.env` line) and the health verdict returns to ok — which
+proves the signal is real and not a permanently-red gate.
+
+### 3.4 S3 · The deployed artifact is the repository
+
+Three changes, one falsifier:
+
+1. **A freshness gate.** `dist/` records the commit it was built from (a
+   build stamp file), and a check compares it with `main`. Drift ≥ 1 commit is
+   a failure, not a warning. This is the gate that does not exist today
+   (H7 row 7) and the one that would have caught the 11-commit gap in §H5.
+2. **One build path.** The live unit builds what it runs, or the deploy is a
+   single documented command that the unit depends on. The live unit currently
+   has no build step at all — that is why a repo 11 commits ahead is running a
+   5-day-old build.
+3. **One unit.** `ops/memphis.service` and the live user unit are reconciled
+   into one source with an explicit "local override" file, and the audit
+   compares them (path, entrypoint, env file, build step). The repo's unit
+   says `/opt/memphis` and `NODE_ENV=production`; the live unit says
+   `/home/memphis/memphis` and `NODE_ENV=development`. Both are correct for
+   their context; the hole is that nothing says they differ.
+
+**Falsifier, to run:** `memphis dream list` prints the 21 pending proposals in
+the operator's shell — the command R2 shipped, missing from the installed CLI
+today. The freshness check is green. Then commit anything to `main` and the
+check goes red, which is what proves it measures.
+
+### 3.5 S4 · Writer boundaries
+
+- **The cron stops pushing to `main`.** It commits to a branch
+  (`automation/priorities`) and opens a pull request, or it stops committing
+  to the repository at all and writes the file somewhere the operator reads.
+  What it must not do is push `HEAD` to `refs/heads/main` — that is a
+  statement about the branch, and the script does not know which branch it is
+  on.
+- **The ruleset gains a required pull request**, or the operator records an
+  explicit decision that direct pushes to `main` are allowed and accepts the
+  consequences. Today the repository is half-protected: four required status
+  checks, no required review, no classic branch protection. Which of those
+  two is intended is the operator's decision; the hole is that nobody made it.
+- **One write path for chains.** Every chain append goes through one function
+  that the audit also uses to validate. A writer that does not use it cannot
+  produce a block the core cannot read.
+
+**Falsifier, to run:** a mutation test — point the cron at a feature branch
+and assert that no push to `main` is attempted (or that the push is refused
+by the branch, not by the script's own check); and a ruleset test that a
+direct push to `main` is rejected.
+
+### 3.6 S5 · The scanners see what matters
+
+- **History-inclusive scanning.** `pii-scan.sh` scans `git ls-files` — the
+  working tree. A secret that was committed and later removed is still in the
+  history, and it is still reachable by anyone who clones. The scan must walk
+  the history (or the audit must scan the history) — the cost is stated in the
+  design so it is a decision, not an accident.
+- **Tests are not exempt by path.** `default-secret-scan.sh` skips `tests/*`
+  and every `*.test.*`. The script documents why (fixtures quote example
+  values), and the reasoning is sound — but the exemption is by path, so a
+  real secret in a test file is invisible. A positive rule (known fake values
+  are allowlisted by value, not by directory) keeps the intent and closes the
+  hole.
+- **`cargo audit` runs.** `scripts/rust-core-safety-check.sh` runs it and no
+  workflow invokes the script. Either a workflow calls it or the audit runs
+  it; "exists but is never called" is the third option and it is the current
+  one.
+- **The drill drills.** `backup-restore-drill.yml` is `workflow_dispatch` plus
+  an `echo`. The drill it names — backup → wipe → restore with chain and
+  vault state — runs locally by hand, where it cannot run on every change.
+  In a public repository the drill can run against a scratch copy, not
+  against the live home.
+
+### 3.7 S6 · The Dreaming remainder
+
+S6 is `DREAMING-GAPS-AND-REFACTOR.md`'s R3, R4 and R5, unchanged in content
+and repeated here so the plan is complete:
+
+| stage | delivers                                                                          | falsifier                                                                                                                                |
+| ----- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| R3    | the operator gate: accept / reject / apply / rollback, on tier 2                  | end-to-end on this runtime: a proposal is accepted with the operator's passphrase, applied, and rolled back; the agent cannot accept one |
+| R4    | provenance on memory writes — `basedOn` carries real chain block hashes, not `[]` | a memory write made from a session records the session id and the hash of the block it was based on; a write outside any session says so |
+| R5    | runtime write policy by scope: `org` / `shared` / `personal` / `session`          | mutation: an agent-initiated write to an operator-only scope is refused, and the refusal lands in the audit chain                        |
+
+**Order.** R4 first among these, because R3's accept writes the decision and
+R4 is what makes that decision say what it was based on — a gate that records
+no provenance reproduces G6, the gap the Dreaming design names as principle
+#1. R5 alongside R3: the scope policy is what decides where an applied
+proposal lands, so the two are one mechanism. R3 is tier 2 and needs the
+operator's passphrase — it is the one stage that cannot be prepared in
+advance and merged without the operator.
+
+**What S6 needs from S0.** The gate in R3 must be visible in the audit: an
+agent-initiated accept attempt, a refused scope write, and a rollback must all
+land in the audit chain and be visible in `ops:audit`. A gate that cannot be
+observed is a guard, and §2 says what guards buy.
+
+### 3.8 Order, and why
+
+| order | stage  | dependency                                                                |
+| ----- | ------ | ------------------------------------------------------------------------- |
+| 1     | **S0** | nothing — it measures, so it can land first and show the rest of the work |
+| 2     | **S1** | S0 (the audit is what reports registry drift)                             |
+| 3     | **S2** | S0 (the audit is what proves the verdict changed)                         |
+| 4     | **S3** | S0 (the freshness check is an audit check)                                |
+| 5     | **S4** | S1 (the branch boundary and the write boundary are the same shape)        |
+| 6     | **S5** | S0                                                                        |
+| 7     | **S6** | S0 (the gate must be observable), and the operator's tier 2 passphrase    |
+
+S0 first is not a formality. Every later stage's falsifier is "the audit says
+something different now" — which only works if the audit exists and is
+honest. A plan that started with S6 would add a gate nobody can see.
+
+---
+
+## 4. Risks, and what would kill this
+
+| risk                                                    | mitigation                                                                                                                       |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| the audit becomes its own form of fixture               | it reads the live system by construction, and its falsifier is that its verdict **changes** when the system changes              |
+| S0 is a fifth parallel gate instead of a hub            | every existing gate must delegate to it; a gate that keeps its own logic is a gate that can disagree with the audit              |
+| the registry collapses to "whatever the config says"    | the catalog is the source; the config may only narrow it, and the narrowing must be reported (H2 is the record of the opposite)  |
+| "unavailable" becomes a permanent red                   | the policy is the operator's, and S2's falsifier includes the recovery path: fix the dimension, get ok back                      |
+| the operator's CLI breaks on a rebuild                  | S3's freshness gate makes the drift visible before it is experienced; the rebuild is one command, not a ritual                   |
+| the ruleset change blocks the operator's own automation | the operator chooses between "required pull request" and "direct pushes allowed, deliberately"; S4's falsifier covers the choice |
+| history-inclusive scanning is slow or noisy             | the scan runs in the audit (scheduled), not on every commit; the cost is measured before it is required                          |
+| S6 needs a passphrase and therefore waits               | R4 and the scope table are prepared first; the accept action is the only part that needs the operator, and that is by design     |
+| the plan is over-built for one host                     | each stage is independently mergeable and independently falsifiable; S0 alone already reports the eight open holes on this host  |
+
+**What would say this plan is bad.**
+
+- If S0's verdict does not change when the system changes, the audit is a
+  fixture wearing a hat, and the whole plan collapses into "add more gates".
+- If S1 ends with the registry in three places instead of one, the plan has
+  reproduced the disease it was written for.
+- If S2 produces a permanently-red SLO, the operator learns to ignore the
+  report — which is the failure this document opened with.
+- If S6's gate cannot be observed in the audit, it is a guard, and the
+  eleventh postmortem will be written about it.
+
+---
+
+## 5. What this document does not decide
+
+- **The policy questions S2 raises.** Whether an empty SLO window fails the
+  report, and which health checks are allowed to stay below the top line, are
+  operator decisions with real consequences in both directions. The document
+  names them and implements the current behaviour as the one option that is
+  _not_ on the table.
+- **The Rust enum's shape.** S1 replaces the hand-written enum with a
+  generated one from a shared schema. Whether the schema is JSON Schema,
+  TypeScript-first, or Rust-first is an implementation choice for the stage.
+- **Multi-host.** Everything here is measured on one host. A second host
+  changes the freshness and registry problems materially, and the plan does
+  not pretend to cover it.
+- **The LLM tier (D5).** Unchanged from `DREAMING-GAPS-AND-REFACTOR.md` §5: it
+  waits for R2 and R3 to be on the runtime and to have produced proposals a
+  human accepted.
+- **Anything in `crates/**` beyond the generated vocabulary.\*\* Tier 2, and it
+  needs the operator's acceptance before it is touched.
+
+---
+
+## 6. The stages that are already done
+
+For completeness, because a plan that only lists what is open misleads:
+
+| stage | what it closed                                                                                               | shipped in                          |
+| ----- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
+| R1    | one shared failure classifier — 308 failures, 126 inconclusive, 0 unknown over 8 437 tool results            | #737 (`d7f6b352`)                   |
+| R2    | the `proposals` chain, the proposal lifecycle, `memphis dream list/show/propose` — 26 signals → 21 proposals | #738, #739 (`7d2d2012`, `7edd0644`) |
+| —     | the S2 blind spot: a loop is a call that did not succeed (4 → 7 loops)                                       | #738 (`7d2d2012`)                   |
+
+---
+
+## 7. Measurement appendix
+
+Every number in this document, and the command that produces it. Run from the
+repository root (`/home/memphis/memphis`).
+
+**H1 · two definitions of a valid block**
+
+```bash
+memphis chain verify
+node -e "
+const b = require('./crates/memphis-napi/index.node');
+const mk = (t) => JSON.stringify({ index:0, timestamp:new Date().toISOString(), chain:'x',
+  data:{ type:t, content:'c', tags:[] }, prev_hash:'0'.repeat(64), hash:'0'.repeat(64) });
+for (const t of ['journal','system_event','proposal','autonom_publication','autonom_archive'])
+  console.log(t, '->', b.chain_validate(mk(t), null));
+"
+python3 -c "import json;print(json.load(open('/home/memphis/.memphis/chains/autonom_archive/000001.json'))['data']['type'])"
+```
+
+**H2 · the chain registry in four places**
+
+```bash
+node --import tsx -e "
+import fs from 'node:fs';
+import { CHAIN_CATALOG } from './src/memory/chain-catalog.js';
+const names = Array.isArray(CHAIN_CATALOG) ? CHAIN_CATALOG.map(c => c.name) : Object.keys(CHAIN_CATALOG);
+const src = fs.readFileSync('src/infra/storage/chain-adapter.ts', 'utf8');
+const block = src.slice(src.indexOf('const DEFAULT_CHAIN_ALLOWLIST'));
+const arr = block.slice(block.indexOf('['), block.indexOf(']') + 1);
+const entries = [...arr.matchAll(/'([^']+)'/g)].map(m => m[1]);
+console.log('catalog:', names.length);
+console.log('code allowlist:', entries.length, '| active:', entries.filter(e => !e.includes('backup')).length);
+console.log('env:', fs.readFileSync('.env', 'utf8').split('\n')
+  .find(l => l.startsWith('MEMPHIS_CHAINS_ALLOWLIST=')).split('=')[1].split(',').length);
+console.log('disk:', fs.readdirSync('/home/memphis/.memphis/chains').filter(d => !d.startsWith('_')).length);
+console.log('catalog - code active:', names.filter(n => !entries.includes(n)).join(', '));
+"
+```
+
+**H3 · the SLO's false green**
+
+```bash
+memphis slo status --days 7
+sed -n '25,35p' src/mcp/tools/slo-status.ts
+sed -n '5,10p' src/observability/slo-evaluator.ts
+```
+
+**H4 · health's false green**
+
+```bash
+memphis health | head -30
+sed -n '450,460p' src/infra/http/health.ts
+grep -n '^RUST_EMBED_DIM' .env
+python3 -c "import json;print(json.load(open('/home/memphis/.memphis/embed/index-v1.json'))['dim'])"
+```
+
+**H5 · the deployment drift**
+
+```bash
+find dist -type f -printf '%T+\n' | sort | tail -1
+git rev-list --count --since='2026-11-02 00:46:28' HEAD
+git log --since='2026-11-02 00:46:28' --name-only --pretty=format: -- src/ | sort -u | grep -c .
+git log --since='2026-11-02 00:46:28' --diff-filter=A --name-only --pretty=format: -- src/ | sort -u | grep -c .
+ls -la /home/memphis/.local/share/npm-global/lib/node_modules/@memphis-chains/
+systemctl --user show memphis.service -p ExecMainStartTimestamp -p NRestarts
+memphis dream list
+```
+
+**H6 · the writer that bypasses the branch boundary**
+
+```bash
+sed -n '150,158p' crons/tuesday-code.sh
+gh api repos/Memphis-Chains/memphis/rulesets/14186283 --jq '.rules[].type'
+gh api repos/Memphis-Chains/memphis/branches/main/protection
+journalctl --user -u memphis-tuesday-code.service --since '2026-11-03 12:55' --no-pager
+```
+
+**H7 · the mis-scoped gates**
+
+```bash
+grep -n 'fixtures\|vitest' .github/workflows/chain-invariant.yml
+grep -n 'UNIT_DIR' scripts/check-systemd-units.mts
+grep -rn 'safety-check\|rust-core-safety' .github/workflows/    # no hit
+cat .github/workflows/backup-restore-drill.yml
+grep -n 'ls-files' scripts/pii-scan.sh
+grep -n 'tests/\*' scripts/default-secret-scan.sh
+```
+
+**H8 · the postmortem corpus**
+
+```bash
+ls -1 docs/postmortems/2*.md | wc -l
+grep -c '^| \[' docs/postmortems/README.md
+grep -r -o 'DONE\|TODO' docs/postmortems/*.md | wc -l
+```
+
+**H9 · the Dreaming remainder**
+
+```bash
+grep -rn 'chainBlockHashes' src/cognitive/dreaming/proposals.ts
+memphis dream list
+```
+
+---
+
+## 8. The short version
+
+The runtime has nine measured holes. Eight of them are the same hole wearing
+different clothes: **a boundary exists, and a writer went around it.** The
+ninth is the Dreaming tier standing at its own gate with nothing on the other
+side.
+
+The plan is not nine fixes. It is one audit that measures the live system
+(S0), four stages that make the boundaries un-bypassable (S1–S4), one that
+makes the scanners see (S5), and the Dreaming gate that gives the mechanism
+its point (S6).
+
+Every stage carries a command and an expected output. If a stage cannot be
+falsified on this host, it does not ship.
