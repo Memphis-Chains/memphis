@@ -234,8 +234,13 @@ Detectors worth building first, in order:
   rather than writing a third opinion about what an error is.
 
 - **S2 · repeat-loop** — the same tool with the same normalized arguments
-  failing repeatedly. Cheap, precise, and it is exactly the shape of the
-  failures we have actually had.
+  not succeeding repeatedly. Cheap, precise, and it is exactly the shape of
+  the failures we have actually had. "Not succeeding" counts a loud failure
+  and a silent non-zero exit alike: the agent repeated itself and learned
+  nothing either way. Measured over the live corpus, counting only loud
+  failures reported 4 loops and missed 3 that were real waste — an agent
+  that polled a PR queue 55 times per call, four times over. The two kinds
+  stay apart in the count, so the signal can still say which is which.
 - **S3 · correction** — the operator expressing dissatisfaction. Measured
   honestly, and the measurement is worse than the earlier draft claimed:
   the documented keyword set (`nie rozumiem`, `co wisi`, `nietrzeba`,
