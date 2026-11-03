@@ -99,31 +99,28 @@ permissions:
 
 jobs:
   automerge:
-    # Two ways in.
+    # Three ways in.
     #
     #   pull_request_target  a verdict the moment the PR opens or is updated.
     #                        The checks are still running then, so this normally
     #                        reports `missing` and refuses. Cheap, and it refuses
     #                        loudly rather than by accident.
-    #   schedule             every five minutes, asks which open pull request is
-    #                        the newest non-draft one and whether its checks are
-    #                        green. This is the run that can actually merge.
+    #   workflow_run         wakes the job up when the required checks finish.
+    #                        Measured 2026-10-30 on the ci runs of PR #722 and
+    #                        #723, the payload carries the pull request HEAD —
+    #                        that is the whole difference between this trigger
+    #                        working and not (see the `on:` block). Measured
+    #                        again 2026-11-03: PR #733 landed 13 s after the
+    #                        workflow_run event, PR #734 16 s after.
+    #   schedule             the fallback. About every 3.6 h to 9.8 h on this
+    #                        repository (measured 2026-11-03 over the last 60
+    #                        runs), asking which open pull request is the newest
+    #                        non-draft one and whether its checks are green.
     #
-    # `schedule` exists because both event-driven alternatives were measured and
-    # neither works on this repository:
-    #
-    #   check_run    never fires. Zero such runs in the repository's history.
-    #                GitHub does not emit it for check suites it created itself,
-    #                which every check here is. (PR #670 switched to it.)
-    #   workflow_run fires, but its payload carries the commit on `main` — the
-    #                merge, not the pull request head. "Which open pull requests
-    #                contain this commit" therefore answers correctly and
-    #                uselessly: no open PR contains a merge commit. It ran four
-    #                times on PR #669 and stopped with "nothing to merge" each
-    #                time while a green, mergeable PR sat open.
-    #
-    # A schedule has no payload to be wrong about, so the job asks for the PR it
-    # should act on instead of inferring it.
+    # `schedule` is the fallback because it needs no payload at all: it asks for
+    # the PR it should act on instead of inferring it. `check_run` is not an
+    # option — GitHub does not emit it for check suites it created itself, which
+    # every check here is (PR #670 switched to it, and it never fired).
     #
     # The `if` is a conjunction because GitHub's expression parser rejects the
     # ternary form in a job-level `if`. Adding that ternary to the previous
