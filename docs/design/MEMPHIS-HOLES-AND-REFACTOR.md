@@ -84,9 +84,20 @@ serde enum** — the variant list is `journal`, `ask`, `decision`, `system`,
 `system_event`, `insight`, `tool_call`, `tool_result`, `error`, `case`, and the
 wallet transaction types, plus read-side aliases for legacy names.
 
-**Cost.** `chain_append` parses the whole chain before appending, so the next
-append to `autonom_archive` fails. The chain is readable by the tool that
-reports on it and unwritable by the core that writes it.
+**Cost.** `chain_append` parses the whole chain before appending — and the
+parse of that one block fails. Measured today, against the live chain's shape,
+without writing anything:
+
+```
+$ node -e "…chain_append(<the chain as a JSON array>, <a new system_event block>)"
+append into the live chain shape -> {"ok":false,"data":null,"error":"invalid_chain_json: unknown variant `autonom_publication`, expected one of `journal`, …"}
+append into an empty chain        -> {"ok":true,"data":{"appended":false,"errors":["hash mismatch"]},"error":null}
+```
+
+The chain is readable by the tool that reports on it and **unwritable by the
+core that writes it**. The second line is the control: the same new block
+appends cleanly into an empty chain, so the failure is the chain's history, not
+the block.
 
 ### H2 · The chain registry lives in four places, and one of them wins silently
 
@@ -677,6 +688,15 @@ for (const t of ['journal','system_event','proposal','autonom_publication','auto
   console.log(t, '->', b.chain_validate(mk(t), null));
 "
 python3 -c "import json;print(json.load(open('/home/memphis/.memphis/chains/autonom_archive/000001.json'))['data']['type'])"
+# and the append that fails because of it (no write happens — the call errors out)
+node -e "
+const fs=require('fs');
+const b=require('./crates/memphis-napi/index.node');
+const chain=JSON.stringify([JSON.parse(fs.readFileSync('/home/memphis/.memphis/chains/autonom_archive/000001.json','utf8'))]);
+const next=JSON.stringify({index:1,timestamp:new Date().toISOString(),chain:'autonom_archive',data:{type:'system_event',content:'probe',tags:[]},prev_hash:'0'.repeat(64),hash:'0'.repeat(64)});
+console.log('live chain ->', b.chain_append(chain, next));
+console.log('empty chain ->', b.chain_append('[]', next));
+"
 ```
 
 **H2 · the chain registry in four places**
