@@ -10,13 +10,14 @@ import {
 } from '../../src/memory/chain-catalog.js';
 
 describe('chain catalog (Sprint 0.5 G2)', () => {
-  it('lists all 12 canonical Memphis chains', () => {
+  it('lists all 13 canonical Memphis chains', () => {
     const names = getChainNames();
-    // Twelve chains as of 2026-09-29:
+    // Thirteen chains as of 2026-11-03:
     // journal, decisions, cases, patterns, reflections, system, collective,
     // proactive, insights, soul, messages (MP v0 envelope layer),
-    // autonom_archive (operator-imported archive — autonom.edu.pl/publications).
-    expect(names).toHaveLength(12);
+    // autonom_archive (operator-imported archive — autonom.edu.pl/publications),
+    // proposals (the Dreaming proposal chain — R2).
+    expect(names).toHaveLength(13);
     expect(names).toContain('journal');
     expect(names).toContain('decisions');
     expect(names).toContain('cases');
@@ -29,6 +30,7 @@ describe('chain catalog (Sprint 0.5 G2)', () => {
     expect(names).toContain('soul');
     expect(names).toContain('messages');
     expect(names).toContain('autonom_archive');
+    expect(names).toContain('proposals');
   });
 
   it('every chain has a populated purpose + non-empty blockTypes', () => {

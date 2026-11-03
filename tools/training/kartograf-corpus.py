@@ -62,7 +62,14 @@ from kartograf_train.corpus_contract import ZONE_LABELS, scan_secrets
 # Runtime chain additions do not rename the frozen classifier's output slots.
 ZONES = list(ZONE_LABELS)
 LIVE_CHAINS = ZONES[:10]
-CATALOG_CHAINS = [*LIVE_CHAINS, "messages", "autonom_archive"]
+# The runtime catalog holds chains that are not zone classes: `messages` (the
+# MP v0 envelope layer), `autonom_archive` (an imported archive) and
+# `proposals` (the Dreaming proposal chain, R2). A chain takes a reserved
+# slot only when it has to be reachable by QUERY ROUTING — that needs a
+# zone-head fine-tune, which is a training operation, not a code change.
+# `proposals` is read by name (`memphis dream list`) and is not searchable, so
+# it joins the other two and the two reserved slots stay free.
+CATALOG_CHAINS = [*LIVE_CHAINS, "messages", "autonom_archive", "proposals"]
 
 
 

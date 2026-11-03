@@ -67,6 +67,18 @@ One forward pass → two output tensors:
 
 - **Chain additions without full retrain:** a new chain takes one reserved slot — zone-classifier head is fine-tuned on the added label while encoder + embedding head stay frozen. After 2 additions (reserved slots exhausted), next chain addition requires full zone-head retrain (not full-model retrain — still cheap).
 - **Schema alignment is mandatory.** Implementation reads canonical chain list from `src/memory/chain-catalog.ts` at corpus build time and asserts first 10 zone classes equal that list. Catalog drift between spec + code fails corpus build, not silently.
+- **A runtime chain does not have to be a zone class.** The catalog and the
+  taxonomy are two different things: `messages` (MP v0 envelope layer),
+  `autonom_archive` (imported archive) and `proposals` (the Dreaming
+  proposal chain, R2) are runtime chains that no zone class points at, and
+  the corpus builder does not walk them. A chain takes a reserved slot only
+  when it must be reachable by **query routing** — that costs a zone-head
+  fine-tune, which is a training operation and not a code change. `proposals`
+  is read by name (`memphis dream list`), is not searchable, and its blocks
+  hold operator quotes, so it does not take a slot: the two reserved slots
+  stay free for a chain that does need routing. The drift check still
+  covers it: the catalog keys must equal the expected catalog exactly, so a
+  new chain that nobody accounted for fails the corpus build.
 - Trained via cross-entropy on auto-labeled corpus.
 
 ### Deferred heads (Y2, NOT v1)

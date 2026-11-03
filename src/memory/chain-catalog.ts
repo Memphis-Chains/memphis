@@ -122,6 +122,21 @@ export const CHAIN_CATALOG = {
     consentDefault: 'exportable',
     searchable: true,
   },
+  proposals: {
+    name: 'proposals',
+    purpose:
+      'Dreaming proposals — deterministic findings from the corpus, each carrying evidence and prevalence, waiting for the operator gate.',
+    blockTypes: ['system_event'],
+    writeFrequency: 'low',
+    // Local-only: a proposal carries quotes from the operator's own
+    // transcripts (the correction signal quotes user turns), so it is
+    // not export material by default.
+    consentDefault: 'local-only',
+    // Not searchable: a proposal is not knowledge yet. It is a candidate,
+    // and `memphis dream list` is where candidates live until the gate
+    // accepts one.
+    searchable: false,
+  },
 
   system: {
     name: 'system',
