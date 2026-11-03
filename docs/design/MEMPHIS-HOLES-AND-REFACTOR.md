@@ -316,9 +316,39 @@ $ gh api repos/Memphis-Chains/memphis/branches/main/protection
 
 The ruleset requires four status checks and forbids deletions and force-pushes.
 **It has no "required pull request" rule**, and classic branch protection is
-not enabled at all. A direct push to `main` is structurally allowed; only the
-required checks stand in the way, and the cron pushes `HEAD` — which on a
-clean checkout of `main` _does_ carry the checks.
+not enabled at all.
+
+**Correction, 2026-11-03, measured on my own push.** The paragraph above
+first draft said "a direct push to `main` is structurally allowed; only the
+required checks stand in the way". The second half is stronger than that: the
+ruleset sets `strict_required_status_checks_policy: true`, and the strict
+policy requires the commit to have **passed** the required checks before it may
+be pushed. Measured by trying it — a one-line documentation commit, pushed
+straight to `main`:
+
+```
+$ git push origin main
+ ! [remote rejected]       main -> main (push declined due to repository rule violations)
+error: failed to push some refs to 'https://github.com/Memphis-Chains/memphis.git'
+```
+
+So the strict policy blocks **every** direct push that carries a commit the
+checks have never seen — which is every direct push that carries anything at
+all. The 2026-11-03 13:13 rejection was this rule, not luck: the cron pushed a
+commit that had never been through CI.
+
+**What that changes.** The cron's push does not "land code on `main`" — it
+cannot. What it does is **fail quietly**: the push's stderr is piped through
+`| tail -1`, so the rejection is one line in a log nobody reads, and the
+operator's weekly priority list silently stops being updated. The hole is not
+"the boundary is missing"; the boundary holds. The hole is that the writer
+tries, fails, and pretends otherwise.
+
+**And the asymmetry that makes the repo work.** A pull request merged through
+GitHub's API is _not_ a push, so the strict policy does not apply to it — that
+is why the automerge workflow lands merges while direct pushes are refused.
+The repository's real entry point is the pull request; the cron is written as
+if it were a second one.
 
 ### H7 · Six gates measure the wrong thing, and a seventh does not exist
 
@@ -582,6 +612,30 @@ generator writes the Rust enum and the TypeScript union from the same source,
 and CI checks that the generated files match the source — so the enum cannot
 drift again.
 
+**What is actually there, measured 2026-11-03** (the design above is written
+against facts, not against an assumption about them):
+
+| measurement                                      | value                                                                                                                                                                                                                      |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| consumers of the allowlist in the whole codebase | **one** — `verifyChainIntegrity`                                                                                                                                                                                           |
+| consumers of the catalog's `blockTypes`          | **none** — it is documentation today, which is why it drifted unnoticed                                                                                                                                                    |
+| types the core knows                             | 15 variants + 14 read-side aliases                                                                                                                                                                                         |
+| types the catalog declares                       | 13                                                                                                                                                                                                                         |
+| **declared types the core cannot deserialize**   | **3** — `autonom_publication`, `mp_v0.envelope_sent`, `mp_v0.envelope_received`                                                                                                                                            |
+| block types actually on disk                     | `system_event` 11 613 · `insight` 2 137 · `case` 2 137 · `tool_call` 1 811 · `journal` 1 167 · `decision` 490 · `security_event` 47 (a documented alias) · `system` 2 · **`autonom_publication` 1** · **no type at all 1** |
+
+So the vocabulary drift is **three declared names**, of which exactly one
+exists on disk (`autonom_publication`, in `autonom_archive`) and two belong to
+the federation chain that is not installed here (`messages`). Every other type
+on disk is already a variant or a documented read-side alias — the core is not
+behind the data, it is behind the _catalog_.
+
+**Two catalog entries are not "drift" at all.** `proactive` is called a
+"phantom" in the catalog's own header ("on some installs exists but isn't
+universal"), and `messages` belongs to the federation feature, which is off
+here. A host that does not have them is healthy. The catalog has to say so
+explicitly, or every future audit of a fresh install reports a permanent red.
+
 **Falsifier, to run:** add a chain to the catalog; the audit reports the
 missing directory and the missing config entry, and nothing else changes
 mechanically. Write a block whose type is not in the vocabulary and the write
@@ -643,25 +697,32 @@ check goes red, which is what proves it measures.
 
 ### 3.5 S4 · Writer boundaries
 
+**Operator decision, 2026-11-03: only the cron is blocked.** The repository's
+rules stay as they are — four required status checks, no required review, no
+classic branch protection. What changes is the writer that ignores them.
+
 - **The cron stops pushing to `main`.** It commits to a branch
   (`automation/priorities`) and opens a pull request, or it stops committing
   to the repository at all and writes the file somewhere the operator reads.
   What it must not do is push `HEAD` to `refs/heads/main` — that is a
   statement about the branch, and the script does not know which branch it is
-  on.
-- **The ruleset gains a required pull request**, or the operator records an
-  explicit decision that direct pushes to `main` are allowed and accepts the
-  consequences. Today the repository is half-protected: four required status
-  checks, no required review, no classic branch protection. Which of those
-  two is intended is the operator's decision; the hole is that nobody made it.
+  on. **And it must not swallow the failure**: the push's stderr is piped
+  through `| tail -1`, so a rejection becomes one line in a log nobody reads,
+  and the operator's weekly priority list silently stops being updated.
+- **The ruleset does not change.** The strict status-check policy already
+  refuses every direct push carrying an unchecked commit — measured, see H6.
+  The boundary holds; the writer was the problem.
 - **One write path for chains.** Every chain append goes through one function
   that the audit also uses to validate. A writer that does not use it cannot
   produce a block the core cannot read.
 
-**Falsifier, to run:** a mutation test — point the cron at a feature branch
-and assert that no push to `main` is attempted (or that the push is refused
-by the branch, not by the script's own check); and a ruleset test that a
-direct push to `main` is rejected.
+**Falsifier, to run:** (a) the cron no longer attempts a push to `main`, and
+a run of it leaves the priority list where the operator reads it — proven by
+running the script on a branch and asserting that no `refs/heads/main`
+refspec appears in the command; (b) the rejection is no longer silent: a
+failed push exits non-zero and says why; (c) the audit's `branch-boundary`
+check — which today reports `crons/tuesday-code.sh:155 pushes main` — turns
+`SUCCESS`.
 
 ### 3.6 S5 · The scanners see what matters
 
