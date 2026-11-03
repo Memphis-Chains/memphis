@@ -43,6 +43,11 @@
  * a 1:1 join with no orphans.
  */
 
+import {
+  classifyToolResult,
+  type FailureClassification,
+} from '../../core/failure-classification.js';
+
 export type DreamingRole = 'user' | 'assistant' | 'tool';
 
 export interface DreamingCall {
@@ -63,10 +68,27 @@ export interface DreamingCall {
 }
 
 export interface DreamingOutcome {
-  /** True = success, false = failure, null = outcome cannot be established. */
+  /**
+   * The four-state answer, from the one shared classifier
+   * (`src/core/failure-classification.ts`).
+   *
+   * `inconclusive` is the state that did not exist before: the process
+   * exited non-zero and said nothing about why. It is neither a success
+   * nor a failure, and the corpus used to count it as a failure — 133
+   * results that are fine.
+   */
+  classification: FailureClassification;
+  /**
+   * True = success, false = failure, null = neither.
+   *
+   * `null` covers both `inconclusive` and `unknown`; `classification` is
+   * what tells them apart.
+   */
   ok: boolean | null;
   /** The failure reason, when the envelope carries one. */
   error?: string;
+  /** A one-line reason: the envelope's error, else the process's own diagnostic, else the exit code. */
+  reason?: string;
   /** The process exit code, for tools that run commands. */
   exitCode?: number;
   /** The parsed envelope, when it parsed. */
@@ -178,52 +200,46 @@ function stripAfterOpenTag(raw: string, tag: 'user_input' | 'tool_output'): stri
 /**
  * Decide, structurally, whether a tool result is a failure.
  *
- * WHY STRUCTURAL
- * --------------
- * Measured on this host: a naive substring scan (`"error"`, `"ok":false`,
- * `error:`) over 7 339 `memphis_exec` results produced 670 hits, while
- * the structural check (`exitCode != 0`) produced 255. Counts alone do
- * not establish false positives: compare the two classifiers per result.
+ * WHY THIS IS NOT A SECOND OPINION
+ * --------------------------------
+ * This used to be a copy of the runtime's classifier with one extra rule
+ * (`exitCode != 0`). Two copies of the same question is what the design
+ * warned against, and the copy here was the stricter one — which meant the
+ * runtime's telemetry saw 167 failures where the corpus saw 434, and the
+ * difference was 267 real failures nobody was counting.
  *
- * Earlier measurements reported 8 402 parseable envelopes; future or
- * damaged rows may differ and are treated as unknown rather than success.
+ * It is now a thin adapter over the one shared classifier
+ * (`src/core/failure-classification.ts`), so the corpus and the runtime
+ * cannot drift apart again.
+ *
+ * WHAT THE RULE COUNTS
+ * ---------------------
+ * A non-zero exit code alone is NOT a failure: `grep` returns 1 when it
+ * finds nothing, `diff` returns 1 when the files match, `ls` returns 2 for
+ * a path that does not exist. Measured over the live corpus, the naive rule
+ * scores 5.14 % and would flip the tool-error SLO on the strength of
+ * results that are fine.
+ *
+ * So the answer is four-valued — `failure`, `inconclusive`, `success`,
+ * `unknown` — and the corpus keeps the two apart. `inconclusive` is a
+ * non-zero exit with nothing on stderr and a code that CAN mean "nothing
+ * matched"; it is not a success and not a failure, and the old two-valued
+ * rule had nowhere to put it.
  */
 export function classifyOutcome(text: string): DreamingOutcome {
-  const trimmed = (text ?? '').trim();
-  if (trimmed.length === 0) {
-    return { ok: null };
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    // A missing or malformed structure is not evidence of success.
-    return { ok: null };
-  }
-
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { ok: null };
-  }
-
-  const payload = parsed as Record<string, unknown>;
-  const exitCode = typeof payload.exitCode === 'number' ? payload.exitCode : undefined;
-  const errorValue = payload.error;
-  const error =
-    typeof errorValue === 'string' && errorValue.trim().length > 0 ? errorValue.trim() : undefined;
-
-  const failed =
-    (exitCode !== undefined && exitCode !== 0) ||
-    error !== undefined ||
-    payload.ok === false ||
-    payload.blocked === true ||
-    payload.status === 'error';
-
+  const verdict = classifyToolResult(text);
   return {
-    ok: !failed,
-    error,
-    exitCode,
-    payload,
+    classification: verdict.classification,
+    ok:
+      verdict.classification === 'success'
+        ? true
+        : verdict.classification === 'failure'
+          ? false
+          : null,
+    error: verdict.error,
+    reason: verdict.reason,
+    exitCode: verdict.exitCode,
+    payload: verdict.payload,
   };
 }
 
@@ -350,8 +366,15 @@ export interface CorpusStats {
   toolTurns: number;
   calls: number;
   callsWithOutcome: number;
+  /** Tool results the shared classifier calls a failure. */
   failures: number;
-  /** Tool results whose success/failure cannot be established. */
+  /**
+   * Tool results that exited non-zero and said nothing about why: the
+   * shell's "no match". Not a failure, not a success — the state the
+   * two-valued rule had nowhere to put.
+   */
+  inconclusiveOutcomes: number;
+  /** Tool results whose envelope did not parse at all. */
   unknownOutcomes: number;
   wrapped: number;
   /** Rows whose envelope did not parse as JSON. */
@@ -366,6 +389,7 @@ export function corpusStats(turns: DreamingTurn[], rows: CorpusRow[]): CorpusSta
   let calls = 0;
   let callsWithOutcome = 0;
   let failures = 0;
+  let inconclusiveOutcomes = 0;
   let unknownOutcomes = 0;
   let wrapped = 0;
   let unparsed = 0;
@@ -376,8 +400,9 @@ export function corpusStats(turns: DreamingTurn[], rows: CorpusRow[]): CorpusSta
     if (turn.role === 'assistant') assistantTurns += 1;
     if (turn.role === 'tool') {
       toolTurns += 1;
-      if (turn.outcome?.ok === false) failures += 1;
-      if (!turn.outcome || turn.outcome.ok === null) unknownOutcomes += 1;
+      if (turn.outcome?.classification === 'failure') failures += 1;
+      if (turn.outcome?.classification === 'inconclusive') inconclusiveOutcomes += 1;
+      if (!turn.outcome || turn.outcome.classification === 'unknown') unknownOutcomes += 1;
       if (turn.outcome?.payload === undefined && turn.text.trim().length > 0) unparsed += 1;
     }
     for (const call of turn.calls ?? []) {
@@ -399,6 +424,7 @@ export function corpusStats(turns: DreamingTurn[], rows: CorpusRow[]): CorpusSta
     calls,
     callsWithOutcome,
     failures,
+    inconclusiveOutcomes,
     unknownOutcomes,
     wrapped,
     unparsed,

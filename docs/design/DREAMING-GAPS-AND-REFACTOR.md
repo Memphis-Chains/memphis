@@ -35,6 +35,7 @@ before the thing it depends on.
 | `instrument` (today)      | 167      | 1.98 % | no                            |
 | `exitCode` (what D2 uses) | 434      | 5.14 % | **yes**                       |
 | `noisy` (proposed)        | 301      | 3.57 % | no                            |
+| the rule as implemented   | 308      | 3.65 % | no                            |
 
 The two classifiers disagree on **267** results. The `exitCode` rule is not
 merely stricter — it is **wrong**, and the corpus says why. Of those 267:
@@ -57,17 +58,26 @@ So the corpus contains two genuine mistakes inside the 133: `exit 127`
 stderr. The rest of the silent non-zero exits are a third category: the shell
 said no, and said nothing about why.
 
+**The last row of the table is the one R1 implements.** The `noisy` row was
+the rule measured on its own — envelope OR (non-zero exit AND stderr) — and
+it does not catch the `exit 127` and `exit 124` cases. The rule in §2.1 does,
+so it produces **308**, and `126` of the silent non-zero exits stay
+`inconclusive` rather than being counted as failures.
+
+**Closed by R1.** The classifier now lives in
+`src/core/failure-classification.ts`, and both consumers read it.
+
 ### G2 · The runtime does not tell the agent about its own failed commands
 
-`src/gateway/agent-runtime.ts:479` builds the "these tool calls failed, do not
+`src/gateway/agent-runtime.ts:288` builds the "these tool calls failed, do not
 claim success" summary that is pushed into the model's context before the
-next turn. It counts errors with `classifyToolOutput`. Today that summary
-omits every `exitCode != 0` failure — so **134 real failures never reach the
-agent**, and the agent is told nothing about a command that crashed with a
-traceback.
+next turn. It counts errors with `classifyToolOutput`. Before R1 that summary
+omitted every `exitCode != 0` failure — so **134 real failures never reached
+the agent**, and the agent was told nothing about a command that crashed with
+a traceback.
 
 The same classifier is the confabulation detector's eye
-(`src/infra/observability/confabulation-detector.ts:125`): an agent that
+(`src/infra/observability/confabulation-detector.ts:131`): an agent that
 claims success after a tool error is only flagged if the tool result is an
 error by `classifyToolOutput`. Measured over the 45 sessions: **1** success
 claim follows a failure the detector cannot see, against 0 that it can. The
@@ -82,13 +92,21 @@ against a 5 % threshold — `pass`, but only because the classifier is blind.
 Adopting the `exitCode` rule as-is would put the rate at **5.14 %** and flip
 the SLO to `fail` on the strength of 133 non-errors.
 
+**Closed by R1.** The summary now names the exit code when the envelope
+carries no error of its own, so `exit 127 (command not found)` and
+`exit 124 (timeout)` reach the model. The confabulation detector is unchanged
+on purpose: an `inconclusive` result is not a failure and not a
+confabulation.
+
 ### G3 · A signal has nowhere to live
 
 There is no `proposals` chain, no proposal lifecycle, no `memphis dream`
-command. The D2 signals (`src/cognitive/dreaming/signals.ts`) produce 26
-signals over the live corpus — 15 tool-failure clusters, 7 repeat loops, 1
+command. The D2 signals (`src/cognitive/dreaming/signals.ts`) produce 23
+signals over the live corpus — 15 tool-failure clusters, 4 repeat loops, 1
 correction, 3 no-progress — and every one of them ends at the process
-boundary.
+boundary. (The repeat loops were 7 before R1 changed what counts as a
+failure; see §2.2 for which three left and why, and why that is a D2
+decision rather than an R1 one.)
 
 ### G4 · The reflection loop cannot consume signals without an ungated write
 
@@ -172,57 +190,93 @@ minute on 2026-10-11, and the comment was never updated.
 
 ### 2.1 The rule
 
-One module owns the question "did this tool result fail?", and both callers
-import it. It answers in three values, because the corpus shows two of the
-three cases exist:
+One module owns the question "did this tool result fail?", and every caller
+imports it. It answers in four values, because the corpus shows all four
+cases exist:
 
 ```ts
 type FailureClassification = 'success' | 'failure' | 'inconclusive' | 'unknown';
 ```
 
-| the result is  | when                                                                                                                                                                                                                                                                                                                 |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `failure`      | the envelope says so — `error` present, `ok:false`, `blocked:true`, `status:'error'` — **or** the process exited non-zero **and** wrote to stderr, **or** it exited with a code that cannot mean "nothing matched": `124` (timeout), `126` (not executable), `127` (command not found), `128+N` (killed by a signal) |
-| `inconclusive` | the process exited non-zero and said nothing — the shell's "no match"                                                                                                                                                                                                                                                |
-| `success`      | exited zero, or the envelope says it worked                                                                                                                                                                                                                                                                          |
-| `unknown`      | the envelope did not parse — never counted as success                                                                                                                                                                                                                                                                |
+| the result is  | when                                                                                                                                                                                                                                                                                                                             |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `failure`      | the envelope says so — `error` present, `ok:false`, `blocked:true`, `status:'error'` — **or** the process exited non-zero **and** wrote to stderr, **or** it exited with a code that cannot mean "nothing matched": `124` (timeout), `126` (not executable), `127` (command not found), `128+N` for a signal death (`129`–`192`) |
+| `inconclusive` | the process exited non-zero and said nothing — the shell's "no match"                                                                                                                                                                                                                                                            |
+| `success`      | exited zero, or the envelope says it worked                                                                                                                                                                                                                                                                                      |
+| `unknown`      | the envelope did not parse — never counted as success                                                                                                                                                                                                                                                                            |
 
-Measured on the live corpus this classifies **301 failures** (3.57 %),
-keeps **133** silent non-zero exits out of the failure count, and still
-catches the `exit 127` and `exit 124` cases that a pure "noisy" rule would
-have dropped.
+**Measured on the live corpus (2026-11-03, 8 437 results): 308 failures
+(3.65 %), 126 inconclusive, 8 003 success, 0 unknown.** The 308 break down as
+167 envelope failures + 134 non-zero exits with a diagnostic on stderr + six
+`exit 127` + one `exit 124`. The 126 inconclusive are the silent non-zero
+exits that CAN mean "nothing matched": 106 `exit 1`, 16 `exit 2`, and one each
+of `exit 3`, `exit 7`, `exit 60` and `exit 255`.
+
+Two corrections to this section, made by measurement rather than by argument:
+
+- **The earlier text said 301 and 3.57 %.** That was the "noisy" rule
+  measured on its own — envelope OR (non-zero exit AND stderr) — and it does
+  not catch `exit 127` or `exit 124`. The rule in the table above catches
+  them, so the number the rule produces is **308**, and the number the rule
+  did not produce was 301. Both numbers were in this document, one sentence
+  apart, describing the same thing.
+- **`exit 255` is not a signal death.** The shell reports a signal as
+  `128+N`, so the range is `129`–`192`; `128` is the shell's usage error and
+  `255` is `ssh`'s own error code. One `exit 255` in this corpus IS a real
+  failure (an `ssh` timeout whose diagnostic sits in stdout), and it stays
+  `inconclusive`: the code alone cannot tell it apart from a generic
+  non-zero exit. That is what the state is for — saying "the shell said no
+  and gave no reason" instead of guessing.
+
+One measured detail that changed the implementation: at `exit 127` the
+shell's "command not found" lands in **stdout**, not stderr. A rule that
+looked only at stderr would have called those six results inconclusive too.
 
 ### 2.2 Where it lives, and what moves
 
 Not in `instrument.ts` and not in the corpus — a third copy is what the design
 warned against. One module, imported by:
 
-| call site                                                 | today                         | after                                                                              |
-| --------------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------- |
-| `instrument.ts:36` `classifyToolOutput`                   | 2-valued                      | delegates to the shared module; gains `inconclusive`                               |
-| `agent-runtime.ts:447` span attribute `tool.output.shape` | `success`/`error`/`unknown`   | gains `inconclusive` — the span can now say "the shell said no and gave no reason" |
-| `agent-runtime.ts:452` span status                        | `error` when classified error | unchanged                                                                          |
-| `agent-runtime.ts:479` the agent's error summary          | 167 failures today            | 301 — the agent finally hears about its 134 real diagnostics                       |
-| `confabulation-detector.ts:125`                           | `=== 'error'`                 | unchanged: `inconclusive` is not a failure and is not a confabulation              |
+| call site                                                 | today                         | after                                                                                  |
+| --------------------------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------- |
+| `instrument.ts:50` `classifyToolOutput`                   | 2-valued                      | delegates to the shared module; gains `inconclusive`                                   |
+| `agent-runtime.ts:492` span attribute `tool.output.shape` | `success`/`error`/`unknown`   | gains `inconclusive` — the span can now say "the shell said no and gave no reason"     |
+| `agent-runtime.ts:497` span status                        | `error` when classified error | unchanged                                                                              |
+| `agent-runtime.ts:288` the agent's error summary          | 167 failures today            | 308 — the agent finally hears about its 134 real diagnostics and the `127`/`124` cases |
+| `confabulation-detector.ts:131`                           | `=== 'error'`                 | unchanged: `inconclusive` is not a failure and is not a confabulation                  |
 
 **Nothing else changes**, and that is the point of listing it:
 
-- **The SLO threshold stays at 5 %.** The rate moves from 0.85 % to a
-  measured 3.57 % — inside the threshold, with the failures that are real now
-  counted.
+- **The SLO threshold stays at 5 %.** Measured over the live corpus: the new
+  rule gives **308 failures in 8 437 tool results (3.65 %)**, against 434
+  (5.14 %) for the naive `exitCode` rule — which would flip the SLO on the
+  strength of results that are fine. Over the last 24 h of the same corpus
+  (644 results) it gives **8 failures (1.24 %)**, against 10 (1.55 %) under
+  the naive rule. The live SLO report reads 0.85 % today because the running
+  runtime still has the old classifier and recorded its spans with it; the
+  live number moves when the runtime picks up this build.
 - **The halt budget does not move, because it never depended on this
   classifier.** Measured: `crates/memphis-operator/src/chat.rs:783` increments
   the error counter **only in the `Err` branch** — a tool execution that
   threw. `exitCode` does not appear in `chat.rs` at all (0 hits). The Rust
   core counts exceptions; the TypeScript classifier counts envelopes. They
   were never connected, and this refactor does not connect them.
-- **The D2 signals do not change shape.** Measured over the same corpus: all
-  three rules produce the same **15** tool-failure clusters, because the
+- **The D2 clusters do not change: still 15.** Measured over the same corpus:
+  all three rules produce the same **15** tool-failure clusters, because the
   difference is volume on `memphis_exec` (124 under `noisy`, 257 under
   `exitCode`, 167 under `instrument`) and 3 % and 2 % are both "low" severity.
-  What changes is the wording of the prevalence numbers, so the D2 module
-  should read the same shared classifier for one reason only: one answer,
-  not two.
+  The D2 module reads the same shared classifier for one reason only: one
+  answer, not two.
+- **The D2 repeat-loops DO change: 7 → 4, and the reason is the point.**
+  The three that disappear are the "no match" family — `pkill` with nothing
+  to kill, a `grep -c pending` that finds no pending PR, `ls` on a path that
+  does not exist. They are no longer failures, so they are no longer
+  _failure_ loops. Two of them are real waste — an agent polling a queue 55
+  times per call, four times over — so the detector now has a blind spot it
+  did not have. **This is a D2 decision, not an R1 one:** the fix is to count
+  "the same call, not succeeding again and again" instead of "failing again
+  and again", which changes what a repeat-loop signal means and belongs to
+  the operator. R1 changes the classifier, not the detectors.
 
 ### 2.3 Migration
 
@@ -235,10 +289,12 @@ warned against. One module, imported by:
 3. Re-run the SLO report and the D2 runner; both must stay green, and the
    tool-error rate must land inside 5 %.
 
-**Falsifier:** over the live corpus, the shared classifier yields 301
-failures, the rate is below 5 %, and the agent's error summary mentions the
-`exit 127` and `exit 124` cases — the two the previous rules disagreed
-about.
+**Falsifier, as run:** over the live corpus, the shared classifier yields
+**308 failures** (3.65 %, inside the 5 % threshold) and **126 inconclusive**;
+the agent's error summary names the `exit 127` and `exit 124` cases — the two
+the previous rules disagreed about; the D2 tool-failure-cluster count is
+**unchanged at 15**; and the D1 invariants hold (every envelope parsed, the
+wrapper split holds, the join is 1:1).
 
 ---
 
@@ -247,13 +303,13 @@ about.
 Five stages. Each one is independently mergeable, none is dead code, and
 each carries its own falsifier.
 
-| stage  | delivers                                                                                     | closes | falsifier                                                                                                                                               |
-| ------ | -------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **R1** | one shared failure classifier; `instrument.ts` delegates to it                               | G1, G2 | over the live corpus: 301 failures, rate < 5 %, the agent summary names the `127`/`124` cases, the D2 cluster count is unchanged at 15                  |
-| **R2** | `proposals` chain + proposal lifecycle + `memphis dream list/show` + `memphis dream propose` | G3     | the real corpus yields proposals that each carry evidence and prevalence; `memphis dream list` shows them with their evidence                           |
-| **R3** | the operator gate: accept / reject on tier 2, apply with provenance, rollback                | G3, G6 | end-to-end on this runtime: an accepted proposal lands in its target carrying `basedOn`; rollback restores the prior state; the agent cannot accept one |
-| **R4** | provenance on memory writes (`basedOn`: session ids + base block hashes)                     | G6     | a memory write made from a session records the session id and the hash of the block it was based on; a write made outside any session says so           |
-| **R5** | runtime write policy by scope: `org` / `shared` / `personal` / `session`                     | G5     | mutation: an agent-initiated write to an operator-only scope is refused, and the refusal lands in the audit chain                                       |
+| stage  | delivers                                                                                     | closes | falsifier                                                                                                                                                   |
+| ------ | -------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **R1** | one shared failure classifier; `instrument.ts` delegates to it                               | G1, G2 | over the live corpus: 308 failures and 126 inconclusive, rate < 5 %, the agent summary names the `127`/`124` cases, the D2 cluster count is unchanged at 15 |
+| **R2** | `proposals` chain + proposal lifecycle + `memphis dream list/show` + `memphis dream propose` | G3     | the real corpus yields proposals that each carry evidence and prevalence; `memphis dream list` shows them with their evidence                               |
+| **R3** | the operator gate: accept / reject on tier 2, apply with provenance, rollback                | G3, G6 | end-to-end on this runtime: an accepted proposal lands in its target carrying `basedOn`; rollback restores the prior state; the agent cannot accept one     |
+| **R4** | provenance on memory writes (`basedOn`: session ids + base block hashes)                     | G6     | a memory write made from a session records the session id and the hash of the block it was based on; a write made outside any session says so               |
+| **R5** | runtime write policy by scope: `org` / `shared` / `personal` / `session`                     | G5     | mutation: an agent-initiated write to an operator-only scope is refused, and the refusal lands in the audit chain                                           |
 
 **Order and why.** R1 comes first because it is the only stage that changes
 what the runtime already measures, and every later stage inherits its answer
@@ -405,14 +461,14 @@ production policy, and the design says so.
 
 ## 4. Risks, and what would kill this
 
-| risk                                                                 | mitigation                                                                                                                       |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| the shared classifier changes what the SLO reports                   | the rate is measured, not assumed: 0.85 % → 3.57 %, inside the 5 % threshold; the threshold itself is not touched                |
-| an agent writes to a scope it should not                             | R5's falsifier is a mutation test: the refusal is observable in the audit chain                                                  |
-| proposals pile up unaccepted                                         | `expired` exists in the lifecycle for exactly this; the count is visible in `memphis dream list`                                 |
-| the mechanism becomes a machine that rewrites memory on a hunch      | a proposal without evidence is invalid, and the accept action is tier 2                                                          |
-| the whole thing is over-built for one host                           | each stage is independently mergeable and independently falsifiable; D1 and D2 already ship value with no operator action at all |
-| the analyzer tier is funded before the deterministic tier is trusted | D5 stays out of scope until R2 and R3 are on the runtime and have produced proposals a human accepted                            |
+| risk                                                                 | mitigation                                                                                                                                                                                                  |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the shared classifier changes what the SLO reports                   | the rate is measured, not assumed: 0.85 % live today, 3.65 % over the whole corpus and 1.24 % over its last 24 h under the new rule — all inside the 5 % threshold, and the threshold itself is not touched |
+| an agent writes to a scope it should not                             | R5's falsifier is a mutation test: the refusal is observable in the audit chain                                                                                                                             |
+| proposals pile up unaccepted                                         | `expired` exists in the lifecycle for exactly this; the count is visible in `memphis dream list`                                                                                                            |
+| the mechanism becomes a machine that rewrites memory on a hunch      | a proposal without evidence is invalid, and the accept action is tier 2                                                                                                                                     |
+| the whole thing is over-built for one host                           | each stage is independently mergeable and independently falsifiable; D1 and D2 already ship value with no operator action at all                                                                            |
+| the analyzer tier is funded before the deterministic tier is trusted | D5 stays out of scope until R2 and R3 are on the runtime and have produced proposals a human accepted                                                                                                       |
 
 **The falsification test for the whole design.** Run the deterministic tier
 over the real corpus, turn the signals into proposals, and hand them to the
