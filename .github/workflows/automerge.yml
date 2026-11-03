@@ -34,6 +34,11 @@ on:
   # any shape tried — a 12-value minute list or a single minute. That is
   # correlation, not proof, but it is the only structural difference left
   # and a manual trigger costs nothing.
+  #
+  # (Measured later, 2026-11-03: the schedule DOES fire — 15 runs among the
+  # last 60, every 3.6 h to 9.8 h. The premise above is no longer true. The
+  # trigger stays, because a manual merge is still the fastest path, but it
+  # is a convenience now, not the only door.)
   workflow_dispatch:
   # ONE trigger, and it is the one GitHub actually emits for this repository.
   #
@@ -72,14 +77,20 @@ on:
   #
   # Why it matters: the schedule is the fallback, and the schedule fires
   # every four to seven hours on this repository (measured over 24 runs,
-  # 2026-10-24 to 2026-10-30, whatever the cron says). A pull request that is
-  # green therefore waited hours for the next scheduled attempt.
+  # 2026-10-24 to 2026-10-30, whatever the cron says), and every 3.6 h to
+  # 9.8 h as the run volume grew (15 schedule runs among the last 60,
+  # measured 2026-11-03). A pull request that is green therefore waits hours
+  # for the next scheduled attempt.
   workflow_run:
     workflows: ['ci', 'chain-invariant']
     types: [completed]
   schedule:
-    # Every 5 minutes. The first entry is off-peak so the repository is not hit
-    # on the hour by every workflow at once.
+    # Hourly, at minute 7, off the hour so the repository is not hit by every
+    # workflow at once. The cron is a request, not a promise: GitHub queues
+    # scheduled workflows and starts them when a runner is free. Measured on
+    # this repository over the last 60 runs (2026-10-30 14:08 -> 2026-11-03
+    # 08:09 UTC): 15 schedule runs, gaps of 3.6 h to 9.8 h, mean 5.95 h, and
+    # 0 of 15 started at minute 7.
     - cron: '7 * * * *'
 
 permissions:
@@ -266,8 +277,10 @@ jobs:
       #
       # Measured on PR #708, 2026-10-30: its head lives in a fork that this
       # token can only read, so nothing here could update it. The scheduled run
-      # failed on exactly that from 00:49 onwards, every five minutes, and the
-      # pull request sat green and open for days.
+      # failed on exactly that from 00:49 onwards -- and again at 06:59, the
+      # next scheduled attempt -- and the pull request sat green and open for
+      # days. (Every ~6 h, which is what the schedule actually does here; see
+      # the note on the `schedule:` block.)
       #
       # When the head IS in this repository, the API can update it without
       # checking out anything -- no code from the pull request is executed, so

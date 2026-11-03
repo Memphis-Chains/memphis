@@ -117,13 +117,54 @@ mechanism to fix it already exists (`extraData` on
 `recordDecisionHistoryEntry`), so this is an additive change, not a schema
 break.
 
-### G7 · The automerge schedule does not fire
+### G7 · The merge fallback fires — hours late, not every 5 minutes
 
-`automerge.yml` declares `cron: '7 * * * *'` (every 5 minutes). Measured over
-the last hours of run history: **zero** runs with `event=schedule`. PRs sat
-in `OPEN CLEAN` until the workflow was triggered by hand
-(`gh workflow run automerge.yml --ref main`). Operational, not architectural,
-and recorded in the journal — but it is why merges land late.
+> **Correction, 2026-11-03.** The first version of this gap said the schedule
+> never fires. It does. The correction is stated here rather than made quietly,
+> because the original measurement and its error are both part of the record.
+
+`automerge.yml` declares `cron: '7 * * * *'` — that is **hourly at minute 7**,
+not "every 5 minutes", which is what a comment next to it claims. The schedule
+does fire. Measured over the last 60 runs of the workflow (2026-10-30 14:08 →
+2026-11-03 08:09 UTC):
+
+| measurement                                | value           |
+| ------------------------------------------ | --------------- |
+| runs with `event=schedule`                 | **15**          |
+| gaps between consecutive schedule runs     | 3.58 h – 9.76 h |
+| mean / median gap                          | 5.95 h / 6.05 h |
+| schedule runs that started at minute `:07` | **0 of 15**     |
+
+The cron minute is never honoured — those runs started at minutes 14, 39, 24,
+12, 39, 25, 00, 25, 58, 32, 30, 51, 36, 26, 35. GitHub queues scheduled
+workflows and starts them when a runner is free, so a cron expression is a
+request, not a promise. The cadence also degrades with the repository's own
+load: the ten earliest gaps average 5.23 h, the four most recent average
+7.77 h, and they follow the two heaviest run days in the window (24 runs on
+2026-11-01, 20 on 2026-11-02).
+
+**What actually merges a pull request** is the `workflow_run` trigger on `ci`
+and `chain-invariant`: PR #733's merge commit landed at 08:09:22Z, **13
+seconds** after the `workflow_run` event that woke the job at 08:09:09Z. The
+schedule is the fallback that re-checks a green PR, and it now runs about
+every six hours. `pull_request_target` fires on open and on every push, but
+usually refuses because the required checks are still running.
+
+**The operational consequence** is narrow and real: a pull request that goes
+green without a `workflow_run` wake-up waits up to about ten hours for the
+next scheduled attempt, and the manual trigger
+(`gh workflow run automerge.yml --ref main`) stays as the on-demand fence.
+Operational, not architectural — no stage of R1–R5 depends on it, and none is
+delayed by it.
+
+**How the original measurement went wrong.** It was
+`gh run list --workflow automerge.yml --limit 6`, whose six rows covered
+2026-11-02 19:46 → 20:28 — a window that fell entirely inside the 7 h 50 m
+gap between the 15:36 and the 23:26 schedule runs. Six rows, no schedule run,
+and the absence was written down as a property of the workflow. The stale
+"every 5 minutes" in `automerge.yml` is where the claim came from: it
+described a cron with twelve minute values, which #674 replaced with a single
+minute on 2026-10-11, and the comment was never updated.
 
 ---
 
