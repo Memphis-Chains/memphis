@@ -6,6 +6,12 @@
  * not exist — a real agent bug that no chain-only reflection can see.
  * This script prints the signals and checks that verdict.
  *
+ * It checks a second verdict, added with the S2 fix: the repeat-loop
+ * detector must report exactly the loops the corpus contains. The recount
+ * is independent — it starts from the rows, groups by tool + normalized
+ * arguments and never asks the detector anything — so a detector that
+ * drops a loop or invents one fails here.
+ *
  * USAGE
  * -----
  *   npm run -s ops:dream-signals
@@ -13,7 +19,7 @@
  */
 
 import { loadDreamingCorpus } from '../src/cognitive/dreaming/load.js';
-import { detectSignals } from '../src/cognitive/dreaming/signals.js';
+import { detectSignals, normalizeArgs } from '../src/cognitive/dreaming/signals.js';
 
 const databaseUrl = process.env.DATABASE_URL?.trim() || 'file:./data/memphis.db';
 
@@ -81,4 +87,55 @@ console.log(
 );
 const found = detectedUnknown === unknownCalls && unknownCalls > 0;
 console.log(found ? 'VERDICT: the detector finds every unknown-tool call' : 'VERDICT: MISMATCH');
-process.exit(found ? 0 : 1);
+
+// ---- the second falsifier: the loops themselves ----
+// A loop is a group of identical calls that did not succeed at least twice.
+// The detector groups by tool + normalized arguments; this recount groups the
+// same way, but it starts from the corpus rows and never asks the detector
+// anything. If the two disagree, the detector is dropping a loop or inventing
+// one — which is exactly what happened when the detector counted only loud
+// failures: three real loops of silent non-zero exits were invisible.
+const expectedLoops = new Map<string, { notSucceeding: number; occurrences: number }>();
+for (const turn of corpus.turns) {
+  for (const call of turn.calls ?? []) {
+    const key = `${call.name}|${normalizeArgs(call.args)}`;
+    const entry = expectedLoops.get(key) ?? { notSucceeding: 0, occurrences: 0 };
+    entry.occurrences += 1;
+    const classification = call.outcome?.classification;
+    if (classification === 'failure' || classification === 'inconclusive') {
+      entry.notSucceeding += 1;
+    }
+    expectedLoops.set(key, entry);
+  }
+}
+const expectedLoopKeys = new Set(
+  [...expectedLoops.entries()].filter(([, entry]) => entry.notSucceeding >= 2).map(([key]) => key),
+);
+const reportedLoops = signals.filter((signal) => signal.kind === 'repeat-loop');
+const reportedLoopKeys = new Set(
+  reportedLoops.map((signal) => signal.id.slice('repeat-loop:'.length)),
+);
+
+const missed = [...expectedLoopKeys].filter((key) => !reportedLoopKeys.has(key));
+const invented = [...reportedLoopKeys].filter((key) => !expectedLoopKeys.has(key));
+const miscounted = reportedLoops.filter((signal) => {
+  const key = signal.id.slice('repeat-loop:'.length);
+  const expected = expectedLoops.get(key);
+  return expected !== undefined && expected.notSucceeding !== signal.prevalence.occurrences;
+});
+
+console.log('\n=== S2 loop falsifier ===');
+console.log(`loops the corpus contains:          ${expectedLoopKeys.size}`);
+console.log(`loops the detector reports:         ${reportedLoopKeys.size}`);
+console.log(`missed:                             ${missed.length}`);
+console.log(`invented:                           ${invented.length}`);
+console.log(`reported with the wrong count:      ${miscounted.length}`);
+const loopsAgree = missed.length === 0 && invented.length === 0 && miscounted.length === 0;
+console.log(
+  loopsAgree ? 'VERDICT: the detector reports every loop the corpus contains' : 'VERDICT: MISMATCH',
+);
+for (const key of missed) console.log(`  missed:   ${key}`);
+for (const key of invented) console.log(`  invented: ${key}`);
+for (const signal of miscounted) console.log(`  miscounted: ${signal.id}`);
+
+process.exit(found && loopsAgree ? 0 : 1);

@@ -80,6 +80,8 @@ function toolRow(
 const OK = { ok: true };
 const FAIL = { error: 'boom' };
 const UNKNOWN_TOOL = { error: 'unsupported native rust chat tool: mephis_exec' };
+/** A non-zero exit with nothing on stderr: the shell said no and said nothing. */
+const SILENT = { exitCode: 1 };
 
 describe('S1 · tool-failure-cluster', () => {
   it('reports a tool that keeps failing, with the population it was measured against', () => {
@@ -203,6 +205,57 @@ describe('S2 · repeat-loop', () => {
     const signal = detectRepeatLoops(turns)[0];
     expect(signal?.prevalence.occurrences).toBe(2);
     expect(signal?.prevalence.denominator).toBe(3);
+  });
+
+  it('reports the same call that exited non-zero without saying why', () => {
+    const turns = buildCorpus([
+      assistantRow(1, [{ id: 'c1', name: 'memphis_exec', args: { command: 'pkill -f x' } }]),
+      toolRow(2, 'c1', 'memphis_exec', SILENT),
+      assistantRow(3, [{ id: 'c2', name: 'memphis_exec', args: { command: 'pkill -f x' } }]),
+      toolRow(4, 'c2', 'memphis_exec', SILENT),
+    ]);
+
+    const signals = detectRepeatLoops(turns);
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.prevalence.occurrences).toBe(2);
+    expect(signals[0]?.prevalence.denominator).toBe(2);
+    expect(signals[0]?.summary).toContain('without saying why');
+  });
+
+  it('does not report a call that exited non-zero once', () => {
+    const turns = buildCorpus([
+      assistantRow(1, [{ id: 'c1', name: 'memphis_exec', args: { command: 'ls' } }]),
+      toolRow(2, 'c1', 'memphis_exec', SILENT),
+    ]);
+    expect(detectRepeatLoops(turns)).toHaveLength(0);
+  });
+
+  it('does not count successes toward the loop threshold', () => {
+    const turns = buildCorpus([
+      assistantRow(1, [{ id: 'c1', name: 'memphis_exec', args: { command: 'ls' } }]),
+      toolRow(2, 'c1', 'memphis_exec', OK),
+      assistantRow(3, [{ id: 'c2', name: 'memphis_exec', args: { command: 'ls' } }]),
+      toolRow(4, 'c2', 'memphis_exec', OK),
+      assistantRow(5, [{ id: 'c3', name: 'memphis_exec', args: { command: 'ls' } }]),
+      toolRow(6, 'c3', 'memphis_exec', SILENT),
+    ]);
+    expect(detectRepeatLoops(turns)).toHaveLength(0);
+  });
+
+  it('counts a loud failure and a silent exit as one loop, and says which is which', () => {
+    const turns = buildCorpus([
+      assistantRow(1, [{ id: 'c1', name: 'memphis_exec', args: { command: 'ls' } }]),
+      toolRow(2, 'c1', 'memphis_exec', FAIL),
+      assistantRow(3, [{ id: 'c2', name: 'memphis_exec', args: { command: 'ls' } }]),
+      toolRow(4, 'c2', 'memphis_exec', SILENT),
+    ]);
+
+    const signals = detectRepeatLoops(turns);
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.prevalence.occurrences).toBe(2);
+    expect(signals[0]?.summary).toContain('did not succeed 2 times');
+    expect(signals[0]?.summary).toContain('1 failed loudly');
+    expect(signals[0]?.summary).toContain('1 exited non-zero without saying why');
   });
 });
 
