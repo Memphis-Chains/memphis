@@ -9,7 +9,7 @@
  * worked, not about how it says it worked.
  *
  *   S1 · tool-failure-cluster — a tool that keeps failing
- *   S2 · repeat-loop           — the same call, failing again
+ *   S2 · repeat-loop           — the same call, not succeeding again
  *   S3 · correction            — the operator saying it went wrong
  *   S4 · no-progress           — the agent working without concluding
  *
@@ -23,9 +23,15 @@
  *    results that are fine and misses 190 real failures.
  *
  *    A non-zero exit code alone is not a failure: `grep` returns 1 when
- *    it finds nothing. The classifier therefore has four answers, and this
- *    module counts only `failure`. Measured over the live corpus: 308
- *    failures (3.65 %), 126 inconclusive, 0 unknown.
+ *    it finds nothing. The classifier therefore has four answers.
+ *    Measured over the live corpus: 308 failures (3.65 %), 126
+ *    inconclusive, 0 unknown.
+ *
+ *    S1 counts only `failure` — a cluster is a broken tool. S2 counts
+ *    everything that did NOT succeed: a loud failure and a silent non-zero
+ *    exit are both a repeated call that learned nothing, and the loop is
+ *    waste either way. The two kinds stay apart in the count, so the
+ *    summary can still name which is which.
  *
  * 2. An unknown tool is a STRUCTURED fact too, and it is the exact
  *    inverse of a guess about which tool names exist: the runtime says
@@ -108,6 +114,18 @@ const MAX_QUOTE = 220;
  * One failure is an accident; a handful is a pattern.
  */
 export const MIN_CLUSTER_FAILURES = 2;
+
+/**
+ * How many times the same call must not succeed before it is a loop.
+ *
+ * The count is over everything that did NOT succeed — a loud failure and a
+ * silent non-zero exit alike. Measured on the live corpus (2026-11-03):
+ * counting only loud failures reported 4 loops and missed 3 that were real
+ * waste, among them an agent that polled a PR queue 55 times per call, four
+ * times over. Counting every non-success reports 7, and adds no group whose
+ * successes outnumber its non-successes.
+ */
+export const MIN_LOOP_NOT_SUCCEEDING = 2;
 
 /**
  * The share of a session's assistant turns that may be tool calls
@@ -265,16 +283,38 @@ export function detectToolFailureClusters(turns: DreamingTurn[]): DreamingSignal
 }
 
 /**
- * S2 — the same call, failing again and again.
+ * S2 — the same call, not succeeding again and again.
  *
  * The key is the tool plus its NORMALIZED arguments, so that the same
  * command with different whitespace or key order is one pattern, not
  * many.
+ *
+ * WHAT COUNTS AS "NOT SUCCEEDING", AND WHY
+ * ----------------------------------------
+ * A loop is a pattern of waste, and waste does not need a diagnostic to be
+ * waste. Two calls with the same arguments that both failed are a loop; two
+ * calls with the same arguments that both came back with a non-zero exit and
+ * no explanation are the same loop — the agent repeated itself and learned
+ * nothing either way.
+ *
+ * Measured on the live corpus (2026-11-03, 8 437 tool results): counting
+ * only loud failures reported **4** loops and lost **3** that were real
+ * waste — `pkill -f basal_cpu` repeated 5 times, a PR-queue poll that ran up
+ * to 55 iterations per call and was started 4 times over, and a conversion
+ * script re-run twice. All three exit non-zero WITHOUT saying why, so the
+ * old rule called them "not failures" and the detector never saw them.
+ *
+ * The two kinds are still counted apart, so the summary can say which is
+ * which: a call that failed loudly and a call that exited silently are not
+ * the same fact. What they share is that neither succeeded. On this corpus
+ * no group contains both kinds (0 of 8 232 groups), so the rule does not
+ * blur two different things here — it only stops throwing away loops.
  */
 export function detectRepeatLoops(turns: DreamingTurn[]): DreamingSignal[] {
   interface Group {
     occurrences: number;
     failures: number;
+    inconclusive: number;
     sessions: Set<string>;
     times: number[];
     evidence: DreamingSignalEvidence[];
@@ -288,14 +328,17 @@ export function detectRepeatLoops(turns: DreamingTurn[]): DreamingSignal[] {
       const entry = groups.get(key) ?? {
         occurrences: 0,
         failures: 0,
+        inconclusive: 0,
         sessions: new Set<string>(),
         times: [],
         evidence: [],
         arguments: normalizeArgs(call.args),
       };
       entry.occurrences += 1;
-      if (call.outcome?.classification === 'failure') {
-        entry.failures += 1;
+      const classification = call.outcome?.classification;
+      if (classification === 'failure' || classification === 'inconclusive') {
+        if (classification === 'failure') entry.failures += 1;
+        else entry.inconclusive += 1;
         entry.sessions.add(turn.sessionId);
         const at = Date.parse(turn.at);
         if (!Number.isNaN(at)) entry.times.push(at);
@@ -314,17 +357,18 @@ export function detectRepeatLoops(turns: DreamingTurn[]): DreamingSignal[] {
 
   const signals: DreamingSignal[] = [];
   for (const [key, entry] of groups) {
-    if (entry.failures < 2) continue;
+    const notSucceeding = entry.failures + entry.inconclusive;
+    if (notSucceeding < MIN_LOOP_NOT_SUCCEEDING) continue;
     const severity: DreamingSeverity =
-      entry.failures >= 5 ? 'high' : entry.failures >= 3 ? 'medium' : 'low';
+      notSucceeding >= 5 ? 'high' : notSucceeding >= 3 ? 'medium' : 'low';
     signals.push({
       id: `repeat-loop:${key}`,
       kind: 'repeat-loop',
       severity,
-      summary: `The same "${key.split('|')[0]}" call failed ${entry.failures} times across ${entry.sessions.size} session(s) (${entry.occurrences} identical calls in total).`,
+      summary: loopSummary(key.split('|')[0], entry),
       evidence: entry.evidence,
       prevalence: {
-        occurrences: entry.failures,
+        occurrences: notSucceeding,
         sessions: entry.sessions.size,
         spanDays: spanDays(entry.times),
         denominator: entry.occurrences,
@@ -332,6 +376,24 @@ export function detectRepeatLoops(turns: DreamingTurn[]): DreamingSignal[] {
     });
   }
   return signals.sort((a, b) => b.prevalence.occurrences - a.prevalence.occurrences);
+}
+
+/**
+ * Say what the loop is, without pretending that two different facts are one.
+ */
+function loopSummary(
+  tool: string,
+  entry: { failures: number; inconclusive: number; sessions: Set<string>; occurrences: number },
+): string {
+  const total = entry.failures + entry.inconclusive;
+  const where = `across ${entry.sessions.size} session(s) (${entry.occurrences} identical calls in total).`;
+  if (entry.inconclusive === 0) {
+    return `The same "${tool}" call failed ${entry.failures} times ${where}`;
+  }
+  if (entry.failures === 0) {
+    return `The same "${tool}" call exited non-zero ${entry.inconclusive} times without saying why ${where}`;
+  }
+  return `The same "${tool}" call did not succeed ${total} times ${where} (${entry.failures} failed loudly, ${entry.inconclusive} exited non-zero without saying why).`;
 }
 
 /**

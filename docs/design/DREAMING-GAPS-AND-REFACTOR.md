@@ -101,12 +101,12 @@ confabulation.
 ### G3 · A signal has nowhere to live
 
 There is no `proposals` chain, no proposal lifecycle, no `memphis dream`
-command. The D2 signals (`src/cognitive/dreaming/signals.ts`) produce 23
-signals over the live corpus — 15 tool-failure clusters, 4 repeat loops, 1
+command. The D2 signals (`src/cognitive/dreaming/signals.ts`) produce 26
+signals over the live corpus — 15 tool-failure clusters, 7 repeat loops, 1
 correction, 3 no-progress — and every one of them ends at the process
-boundary. (The repeat loops were 7 before R1 changed what counts as a
-failure; see §2.2 for which three left and why, and why that is a D2
-decision rather than an R1 one.)
+boundary. (The repeat loops read 4 for one round: R1 changed what counts as
+a failure, and the detector counted only loud failures until the operator
+closed that blind spot — see §2.4.)
 
 ### G4 · The reflection loop cannot consume signals without an ungated write
 
@@ -277,6 +277,8 @@ warned against. One module, imported by:
   "the same call, not succeeding again and again" instead of "failing again
   and again", which changes what a repeat-loop signal means and belongs to
   the operator. R1 changes the classifier, not the detectors.
+  **The operator has made that decision** — §2.4 records it, the rule it
+  chose, and the measurement that closed the blind spot.
 
 ### 2.3 Migration
 
@@ -296,6 +298,77 @@ the previous rules disagreed about; the D2 tool-failure-cluster count is
 **unchanged at 15**; and the D1 invariants hold (every envelope parsed, the
 wrapper split holds, the join is 1:1).
 
+### 2.4 The blind spot R1 left, and what the operator decided about it
+
+R1 changed what a failure is. The S2 detector counted failures, so the
+three loops that are silent rather than loud stopped being loops — and two
+of them were waste worth naming: an agent that polled a PR queue 55 times
+per call, four times over, and an agent that killed a process that kept
+coming back.
+
+**The decision (operator, 2026-11-03): variant A.** A loop is a pattern of
+waste, and waste does not need a diagnostic to be waste. The detector counts
+everything that did NOT succeed — a loud failure and a silent non-zero exit
+alike — while still counting the two kinds apart, so the summary can say
+which one it was.
+
+| variant         | rule                                   | loops on the live corpus |
+| --------------- | -------------------------------------- | ------------------------ |
+| C — leave it    | `failure >= 2`                         | 4                        |
+| **A — chosen**  | `failure + inconclusive >= 2`          | **7**                    |
+| B — two classes | `failure >= 2` and `inconclusive >= 2` | 4 + 3                    |
+
+**Measured before the code was written** (live corpus, 8 437 tool results,
+45 sessions, 17 132 turns; the grouping key is tool + normalized arguments,
+the same key the detector uses):
+
+| measurement                                                  | value                    |
+| ------------------------------------------------------------ | ------------------------ |
+| loops before → after                                         | 4 → **7**                |
+| groups holding both kinds (a loud failure and a silent exit) | **0 of 8 232**           |
+| calls the new rule adds                                      | 11 (of 126 inconclusive) |
+| added groups whose successes outnumber their non-successes   | 0                        |
+| tool-failure clusters                                        | unchanged at 15          |
+
+The zero in row two is what makes A and B the same measurement today: no
+group on this corpus mixes a loud failure with a silent exit, so A and B
+report the identical set of seven loops and differ only in what they call
+them. A was chosen because it is one rule and one signal kind, where B
+would add a second kind, a second severity scale, and a second variant of
+the proposal payload that R2 has to carry.
+
+**The three loops that came back** (all silent — a non-zero exit with
+nothing on stderr):
+
+| loop                                             | occurrences | severity | what it was                                                          |
+| ------------------------------------------------ | ----------- | -------- | -------------------------------------------------------------------- |
+| `pkill -f basal_cpu 2>/dev/null; true`           | 5           | high     | the agent killed a process that kept coming back                     |
+| `gh pr checks 682` polled in a loop of 55 rounds | 4           | medium   | the agent polled a queue 55 times per call, four times over          |
+| `python3 svg2png.py ... ; ls -l /tmp/w*.png`     | 2           | low      | a conversion script re-run after an error — the weakest of the three |
+
+**What changed in the code**
+
+- `src/cognitive/dreaming/signals.ts` — the threshold counts everything that
+  did not succeed; `failures` and `inconclusive` are counted apart, and the
+  summary names which one it was ("failed loudly" / "without saying why").
+- `tests/unit/dreaming-signals.test.ts` — four cases: two silent exits are a
+  loop, one is not, successes do not count toward the threshold, and a loud
+  failure plus a silent exit is one loop that names both kinds.
+- `scripts/dream-signals.mts` — a **second verdict**. The loops the corpus
+  contains are recounted from the raw rows, without asking the detector
+  anything, and the two must agree on every loop and every count. Under the
+  old rule this verdict fails: 7 in the corpus, 4 reported.
+- `docs/design/DREAMING.md` — S2 described as "the same call, not succeeding
+  again".
+
+**Falsifier, as run:** `npm run -s ops:dream-signals` prints 15
+tool-failure clusters, **7** repeat loops, 1 correction, 3 no-progress; the
+independent recount finds 7 loops in the corpus, the detector reports 7, and
+none is missed, invented or miscounted. The unit suite is 21/21 for
+`dreaming-signals`; the full pool is 4 626 passed / 4 skipped across 669
+files, with `tsc`, `eslint`, `prettier`, `knip`, `pii-scan`, `secret-scan`
+and `default-secret-scan` clean.
+
 ---
 
 ## 3. The build
@@ -303,13 +376,13 @@ wrapper split holds, the join is 1:1).
 Five stages. Each one is independently mergeable, none is dead code, and
 each carries its own falsifier.
 
-| stage  | delivers                                                                                     | closes | falsifier                                                                                                                                                   |
-| ------ | -------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **R1** | one shared failure classifier; `instrument.ts` delegates to it                               | G1, G2 | over the live corpus: 308 failures and 126 inconclusive, rate < 5 %, the agent summary names the `127`/`124` cases, the D2 cluster count is unchanged at 15 |
-| **R2** | `proposals` chain + proposal lifecycle + `memphis dream list/show` + `memphis dream propose` | G3     | the real corpus yields proposals that each carry evidence and prevalence; `memphis dream list` shows them with their evidence                               |
-| **R3** | the operator gate: accept / reject on tier 2, apply with provenance, rollback                | G3, G6 | end-to-end on this runtime: an accepted proposal lands in its target carrying `basedOn`; rollback restores the prior state; the agent cannot accept one     |
-| **R4** | provenance on memory writes (`basedOn`: session ids + base block hashes)                     | G6     | a memory write made from a session records the session id and the hash of the block it was based on; a write made outside any session says so               |
-| **R5** | runtime write policy by scope: `org` / `shared` / `personal` / `session`                     | G5     | mutation: an agent-initiated write to an operator-only scope is refused, and the refusal lands in the audit chain                                           |
+| stage  | delivers                                                                                                   | closes | falsifier                                                                                                                                                                                                                                     |
+| ------ | ---------------------------------------------------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **R1** | one shared failure classifier; `instrument.ts` delegates to it; the S2 loop rule the operator chose (§2.4) | G1, G2 | over the live corpus: 308 failures and 126 inconclusive, rate < 5 %, the agent summary names the `127`/`124` cases, the D2 cluster count is unchanged at 15, and the repeat-loop count is 7 with an independent recount of the corpus's loops |
+| **R2** | `proposals` chain + proposal lifecycle + `memphis dream list/show` + `memphis dream propose`               | G3     | the real corpus yields proposals that each carry evidence and prevalence; `memphis dream list` shows them with their evidence                                                                                                                 |
+| **R3** | the operator gate: accept / reject on tier 2, apply with provenance, rollback                              | G3, G6 | end-to-end on this runtime: an accepted proposal lands in its target carrying `basedOn`; rollback restores the prior state; the agent cannot accept one                                                                                       |
+| **R4** | provenance on memory writes (`basedOn`: session ids + base block hashes)                                   | G6     | a memory write made from a session records the session id and the hash of the block it was based on; a write made outside any session says so                                                                                                 |
+| **R5** | runtime write policy by scope: `org` / `shared` / `personal` / `session`                                   | G5     | mutation: an agent-initiated write to an operator-only scope is refused, and the refusal lands in the audit chain                                                                                                                             |
 
 **Order and why.** R1 comes first because it is the only stage that changes
 what the runtime already measures, and every later stage inherits its answer
