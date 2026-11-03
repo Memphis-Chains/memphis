@@ -33,6 +33,16 @@ export interface ChainDefinition {
    * taxonomy, not enforcement — the Rust block validator accepts any
    * `data.type` string that isn't empty. Downstream consumers (auto-gen
    * docs, migration tooling) treat this as hints, not constraints.
+   *
+   * The RUST CORE is stricter than that sentence suggests. `BlockType`
+   * (crates/memphis-core/src/block.rs:5) is a closed serde enum, and a
+   * block whose `data.type` is not one of its variants fails to
+   * deserialize — measured on this host: `chain_validate` on a block of
+   * type `autonom_publication` returns `invalid_block_json: unknown
+   * variant`. The validator is permissive; the deserializer runs first and
+   * is not. A new chain therefore has to use a type the enum knows, which
+   * is what `block.rs:19` prescribes: `system_event` with the semantic
+   * name in `kind`. See docs/design/DREAMING-GAPS-AND-REFACTOR.md §3.1.
    */
   blockTypes: string[];
   /**

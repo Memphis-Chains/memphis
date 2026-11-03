@@ -301,16 +301,61 @@ mechanism from becoming a machine that rewrites memory on a hunch, and R2's
 falsifier is exactly that: every proposal the real corpus yields carries
 evidence and prevalence.
 
-Two rules that the chain mechanics force, measured rather than assumed:
+Four rules that the chain mechanics force, measured rather than assumed:
 
 - **The chain needs two registrations.** `CHAIN_CATALOG`
   (`src/memory/chain-catalog.ts:63`) for the taxonomy, and
   `DEFAULT_CHAIN_ALLOWLIST` (`src/infra/storage/chain-adapter.ts:118`) —
   a chain outside that list is skipped by the integrity scanner, which is
   the guard that keeps a sidecar writer from crashing memphis at boot with
-  `invalid block shape`. The Rust side has no parallel list (measured: 0
-  hits for the other chain names in `crates/`), and chain directories are
-  created on demand (`chain-adapter.ts:302`).
+  `invalid block shape`. Chain directories are created on demand
+  (`chain-adapter.ts:302`).
+- **The Rust core adds a third constraint, and it is the hard one.**
+  `crates/memphis-core/src/block.rs:5` defines `BlockType` as a **closed**
+  serde enum: a block whose `data.type` is not one of its variants does not
+  deserialize at all. Measured on this host, where `RUST_CHAIN_ENABLED=true`
+  makes every append go through the Rust core:
+
+  ```
+  chain_validate(<block with type autonom_publication>)
+    → invalid_block_json: unknown variant `autonom_publication`
+  chain_validate(<block with type proposal>)
+    → invalid_block_json: unknown variant `proposal`
+  chain_validate(<block with type system_event>)
+    → parses (only the hash differs — the type was changed after signing)
+  ```
+
+  This is not hypothetical: `autonom_archive` on this disk holds exactly one
+  block, of type `autonom_publication`, and the native `chain_query` over it
+  fails with `invalid_chain_json` — while `memphis chain verify` reports
+  `ok: true, chainsChecked: 10, blockCount: 22477`, because
+  `verifyChainIntegrity` (`chain-adapter.ts:906`) reads the blocks itself and
+  never asks the Rust core. The two verifiers disagree about what a valid
+  block is, and only one of them is the one that writes.
+
+  The consequence for R2 is concrete: `chain_append` parses the **whole
+  chain** before appending, so a chain holding one block with an unknown type
+  refuses the next append. A `proposals` block therefore has to carry a type
+  the Rust core knows, and the repo's own convention is already written down
+  (`block.rs:19`): _"New writes use `system_event` with the original semantic
+  name in the `kind` field of the data payload."_ So a proposal block is
+  `data.type = "system_event"` with `data.kind = "dreaming.proposal"` — not a
+  new `"proposal"` variant. Extending the enum instead is a `crates/**`
+  change: Tier 2, and out of R2's scope.
+
+- **The payload has to live in `content`, not in sibling fields.** The block
+  hash covers `type`, `content` and `tags` only — on the Rust side
+  (`compute_hash`, `crates/memphis-core/src/hash.rs:5`) and on the TypeScript
+  side (`toCanonicalHashData`,
+  `src/infra/storage/rust-chain-adapter.ts:181`). Extra `data` fields are
+  persisted — the adapter merges the TypeScript payload back over the
+  Rust-serialized block (`rust-chain-adapter.ts:340`) — but they sit **outside
+  the hash**: change them and the chain still verifies. A proposal's evidence,
+  prevalence and `basedOn` would be mutable without detection if they lived
+  in sibling fields. `normalizeData` (`rust-chain-adapter.ts:160`) already
+  does the right thing: with no `content` string passed, it sets
+  `content = JSON.stringify(data)`, so the whole payload is hash-covered. R2
+  writes proposals that way.
 - **The catalog test asserts the count.** `tests/unit/chain-catalog.test.ts:19`
   expects 12 chain names. Adding `proposals` makes it 13, and the test has
   to say so — the count is the contract, not an accident.
