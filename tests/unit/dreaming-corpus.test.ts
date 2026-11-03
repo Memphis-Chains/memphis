@@ -8,6 +8,8 @@ import {
   stripEnvelope,
   type CorpusRow,
 } from '../../src/cognitive/dreaming/corpus.js';
+import { classifyToolResult } from '../../src/core/failure-classification.js';
+import { classifyToolOutput } from '../../src/infra/observability/instrument.js';
 
 /**
  * D1 — the corpus builder is pure, so every rule it claims can be
@@ -83,14 +85,35 @@ describe('stripEnvelope', () => {
 });
 
 describe('classifyOutcome', () => {
-  it('reads a non-zero exit code as a failure', () => {
-    const outcome = classifyOutcome('{"exitCode":1}');
+  it('reads a non-zero exit with a diagnostic as a failure', () => {
+    const outcome = classifyOutcome(
+      JSON.stringify({ exitCode: 1, stderr: 'Error: ENOTDIR: not a directory' }),
+    );
+    expect(outcome.classification).toBe('failure');
     expect(outcome.ok).toBe(false);
     expect(outcome.exitCode).toBe(1);
   });
 
+  it('reads a silent non-zero exit as inconclusive, not as a failure', () => {
+    // `grep` with no hit returns 1 and says nothing. The old rule called
+    // that a failure — 133 results in the live corpus that are fine.
+    const outcome = classifyOutcome(JSON.stringify({ exitCode: 1, stderr: '', stdout: '' }));
+    expect(outcome.classification).toBe('inconclusive');
+    expect(outcome.ok).toBeNull();
+    expect(outcome.exitCode).toBe(1);
+  });
+
+  it('reads a command that was not found as a failure', () => {
+    // 127 cannot mean "nothing matched", so it is a failure on its own.
+    const outcome = classifyOutcome(JSON.stringify({ exitCode: 127, stderr: '' }));
+    expect(outcome.classification).toBe('failure');
+    expect(outcome.ok).toBe(false);
+    expect(outcome.reason).toBe('exit 127 (command not found)');
+  });
+
   it('reads an error field as a failure', () => {
     expect(classifyOutcome('{"error":"boom"}').ok).toBe(false);
+    expect(classifyOutcome('{"error":"boom"}').classification).toBe('failure');
   });
 
   it('reads ok:false, blocked:true and status:error as failures', () => {
@@ -102,6 +125,7 @@ describe('classifyOutcome', () => {
   it('reads a clean envelope as a success', () => {
     const outcome = classifyOutcome('{"exitCode":0,"ok":true}');
     expect(outcome.ok).toBe(true);
+    expect(outcome.classification).toBe('success');
     expect(outcome.exitCode).toBe(0);
     expect(outcome.payload).toEqual({ exitCode: 0, ok: true });
   });
@@ -116,9 +140,30 @@ describe('classifyOutcome', () => {
 
   it('treats an unparseable result as unknown, never as success', () => {
     expect(classifyOutcome('not json').ok).toBeNull();
+    expect(classifyOutcome('not json').classification).toBe('unknown');
     expect(classifyOutcome('').ok).toBeNull();
     expect(classifyOutcome('[]').ok).toBeNull();
     expect(classifyOutcome('null').ok).toBeNull();
+  });
+
+  it('agrees with the runtime classifier on every shape', () => {
+    // One answer, two consumers. The corpus and the runtime used to
+    // disagree on 267 of 8 437 results.
+    for (const output of [
+      '{"error":"boom"}',
+      '{"ok":false}',
+      '{"exitCode":1,"stderr":"Error: ENOTDIR"}',
+      '{"exitCode":1,"stderr":""}',
+      '{"exitCode":127,"stderr":""}',
+      '{"exitCode":0}',
+      'not json',
+    ]) {
+      const shared = classifyToolResult(output);
+      expect(classifyOutcome(output).classification).toBe(shared.classification);
+      expect(classifyToolOutput(output)).toBe(
+        shared.classification === 'failure' ? 'error' : shared.classification,
+      );
+    }
   });
 });
 

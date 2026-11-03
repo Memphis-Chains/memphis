@@ -21,10 +21,7 @@ import {
   __resetLocalSinkForTests,
   getSpansFilePath,
 } from '../../src/infra/observability/console-exporter.js';
-import {
-  classifyToolOutput,
-  instrument,
-} from '../../src/infra/observability/instrument.js';
+import { classifyToolOutput, instrument } from '../../src/infra/observability/instrument.js';
 
 interface SpanLine {
   ts: string;
@@ -54,7 +51,6 @@ describe('classifyToolOutput', () => {
   it.each([
     ['{"foo":"bar"}', 'success'],
     ['{"results":[1,2,3]}', 'success'],
-    ['[]', 'success'],
     ['{"error":"permission denied"}', 'error'],
     ['{"ok":false,"reason":"x"}', 'error'],
     ['{"blocked":true,"tool":"x"}', 'error'],
@@ -64,12 +60,33 @@ describe('classifyToolOutput', () => {
     expect(classifyToolOutput(input)).toBe(expected);
   });
 
+  it('treats a bare array as unknown, not as success', () => {
+    // One answer, two consumers: the corpus has always treated a
+    // non-object result as "cannot be established", and a bare array
+    // establishes nothing. It is not counted as a success either way.
+    expect(classifyToolOutput('[]')).toBe('unknown');
+  });
+
   it('treats blocked:false as success', () => {
     expect(classifyToolOutput('{"blocked":false}')).toBe('success');
   });
 
   it('treats ok:true as success', () => {
     expect(classifyToolOutput('{"ok":true}')).toBe('success');
+  });
+
+  it('names the exit code when the process failed with a diagnostic', () => {
+    // The case the runtime used to be blind to: a non-zero exit with a
+    // diagnostic on stderr. Measured 134 of these in the live corpus, all
+    // invisible to the runtime before.
+    expect(classifyToolOutput('{"exitCode":1,"stderr":"Error: ENOTDIR"}')).toBe('error');
+    expect(classifyToolOutput('{"exitCode":127,"stderr":""}')).toBe('error');
+  });
+
+  it('says inconclusive when the shell said no and gave no reason', () => {
+    // `grep` with no hit returns 1. That is not a success and not a
+    // failure, and the span can now say so.
+    expect(classifyToolOutput('{"exitCode":1,"stderr":""}')).toBe('inconclusive');
   });
 });
 
@@ -95,11 +112,7 @@ describe('instrument() + local JSONL sink', () => {
   });
 
   it('writes one JSONL line per successful instrument call', async () => {
-    const result = await instrument(
-      'test.span',
-      { 'test.id': 'abc', count: 1 },
-      async () => 42,
-    );
+    const result = await instrument('test.span', { 'test.id': 'abc', count: 1 }, async () => 42);
     expect(result).toBe(42);
 
     const spans = readSpans(tmpDir);
@@ -225,14 +238,9 @@ describe('instrument() + local JSONL sink', () => {
         { 'provider.name': 'anthropic', 'provider.model': 'claude-opus-4-7' },
         async () => 'response',
       );
-      await instrument(
-        'tool.call',
-        { 'tool.name': 'memphis_journal' },
-        async () => '{"ok":true}',
-        {
-          postAttributes: (o) => ({ 'tool.output.shape': classifyToolOutput(o as string) }),
-        },
-      );
+      await instrument('tool.call', { 'tool.name': 'memphis_journal' }, async () => '{"ok":true}', {
+        postAttributes: (o) => ({ 'tool.output.shape': classifyToolOutput(o as string) }),
+      });
       await instrument(
         'tool.call',
         { 'tool.name': 'memphis_exec' },

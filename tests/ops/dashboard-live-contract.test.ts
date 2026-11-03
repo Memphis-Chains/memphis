@@ -52,6 +52,30 @@ afterAll(() => {
   if (workspace) rmSync(workspace, { recursive: true, force: true });
 });
 
+/**
+ * The operator's commercial terms, and where they must not appear.
+ *
+ * Measured 2026-10-29: filtering the decision log by project keywords still
+ * carried the operator's commercial terms inside it — "13% prowizja + 100
+ * PLN/mies flat", "$280 P&L". A status page for a project does not need
+ * the operator's side of the deal.
+ */
+const COMMERCIAL_TERMS = ['13%', '100 PLN', '280', 'prowizj', 'P&L', 'Wodzu'];
+
+/**
+ * The commercial terms that leaked into a client page.
+ *
+ * The measured latencies are removed first. They are live numbers, and a
+ * number can contain any digit string: on 2026-11-03 the CI run failed
+ * here twice in a row because a probe of dsmxshop.com took 1280 ms, and
+ * "1280" contains "280". The check is about the operator's commercial terms
+ * leaking out of the chain content, not about the latency column.
+ */
+function commercialLeaks(html: string): string[] {
+  const withoutLatencies = html.replace(/<td class='muted'>\d+ ms<\/td>/g, '');
+  return COMMERCIAL_TERMS.filter((term) => withoutLatencies.includes(term));
+}
+
 describe('dashboard generation', () => {
   it('produces a dashboard file', () => {
     expect(existsSync(generated)).toBe(true);
@@ -174,16 +198,32 @@ describe('audience split', () => {
     const clientHtml = readFileSync(join(workspace, 'client.html'), 'utf8');
     const internalHtml = readFileSync(generated, 'utf8');
     expect(internalHtml).toContain('Ostatnie decyzje');
-    // Measured 2026-10-29: filtering the decision log by project
-    // keywords still carried the operator's commercial terms inside it
-    // — "13% prowizja + 100 PLN/mies flat", "$280 P&L". A status page
-    // for a project does not need the operator's side of the deal.
-    for (const commercial of ['13%', '100 PLN', '280', 'prowizj', 'P&L', 'Wodzu']) {
-      expect(clientHtml).not.toContain(commercial);
-    }
+    expect(commercialLeaks(clientHtml)).toEqual([]);
+    // The check must not become vacuous: the shop facts are still there
+    // after the latency column is gone.
+    expect(clientHtml.replace(/<td class='muted'>\d+ ms<\/td>/g, '')).toContain(
+      'Produktów w sklepie',
+    );
     // Other projects' work must not surface either.
     expect(clientHtml).not.toContain('LUMIX');
     expect(clientHtml).not.toContain('Kinocut');
+  });
+
+  it('does not read a measured latency as a commercial term', () => {
+    // The regression that blocked two CI runs on 2026-11-03: a live probe
+    // of dsmxshop.com took 1280 ms, and "1280" contains "280".
+    const page = [
+      "<td class='muted'>DSMX</td><td class='muted'>1280 ms</td>",
+      "<td class='muted'>— ms</td>",
+    ].join('');
+    expect(commercialLeaks(page)).toEqual([]);
+    // And a real leak is still a leak.
+    expect(commercialLeaks(`${page}<div>13% prowizja, 100 PLN, 280 PLN</div>`)).toEqual([
+      '13%',
+      '100 PLN',
+      '280',
+      'prowizj',
+    ]);
   });
 });
 

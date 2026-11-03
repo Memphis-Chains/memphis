@@ -18,34 +18,37 @@
 
 import { recordLocalSpan, type SpanStatus } from './console-exporter.js';
 import { withSpan } from './otel.js';
+import {
+  classifyToolResult,
+  toolOutputShape,
+  type ToolOutputShape,
+} from '../../core/failure-classification.js';
 
 export type SpanAttributes = Record<string, string | number | boolean>;
 
 /**
- * Classify a tool's stringified JSON output as success / error / unknown.
+ * Classify a tool's stringified JSON output as success / error / inconclusive
+ * / unknown.
  *
  * Foundation for Sprint 1.3 (anti-confabulation guard) — the agent loop will
  * use the same classifier to decide whether to inject a "do not claim
  * success" system message before the next LLM turn.
  *
- * Rules:
- *  - parsed object with `error` key, or `blocked: true`, or `ok: false` → error
- *  - any other parsed object/array → success
- *  - parse failure → unknown (raw string output, e.g. plain text)
+ * This used to be a second, weaker opinion about the same fact: it read the
+ * envelope only (`error` / `blocked:true` / `ok:false`), and it therefore
+ * missed every failure that arrived as a non-zero exit code with a
+ * diagnostic on stderr. Measured over the live corpus it disagreed with the
+ * corpus classifier on 267 of 8 437 results, and it was wrong about most of
+ * them.
+ *
+ * It is now a thin adapter over the one shared classifier
+ * (`src/core/failure-classification.ts`). The name and the meaning of
+ * `'error'` are unchanged — a caller that tests `=== 'error'` still means
+ * "this failed" — and the new `'inconclusive'` is the case the old rule
+ * could not express: the shell exited non-zero and said nothing about why.
  */
-export function classifyToolOutput(output: string): 'success' | 'error' | 'unknown' {
-  try {
-    const parsed: unknown = JSON.parse(output);
-    if (parsed !== null && typeof parsed === 'object') {
-      const obj = parsed as Record<string, unknown>;
-      if ('error' in obj) return 'error';
-      if (obj.blocked === true) return 'error';
-      if (obj.ok === false) return 'error';
-    }
-    return 'success';
-  } catch {
-    return 'unknown';
-  }
+export function classifyToolOutput(output: string): ToolOutputShape {
+  return toolOutputShape(classifyToolResult(output));
 }
 
 export interface InstrumentOptions {

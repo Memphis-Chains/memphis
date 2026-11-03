@@ -122,6 +122,12 @@ function claimContainsSuccess(modelClaim: string): RegExpMatchArray | null {
 }
 
 function toolOutputIsError(output: string): boolean {
+  // Only a `failure` counts here, and `classifyToolOutput` still calls a
+  // failure 'error'. An `inconclusive` result — the shell exited non-zero
+  // and said nothing about why — is not a failure and not a confabulation:
+  // the agent claiming success after `grep` found nothing is not lying
+  // about a crash. It is also not evidence that it did NOT crash, so the
+  // detector simply has nothing to say about it.
   return classifyToolOutput(output) === 'error';
 }
 
@@ -237,7 +243,11 @@ function extractVerifiableQuotes(parsed: unknown): string[] {
     }
     if (typeof node === 'object') {
       for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
-        if (STRING_FIELDS.has(k.toLowerCase()) && typeof v === 'string' && v.length >= MIN_STRING_LEN) {
+        if (
+          STRING_FIELDS.has(k.toLowerCase()) &&
+          typeof v === 'string' &&
+          v.length >= MIN_STRING_LEN
+        ) {
           quotes.add(v);
         }
         if (k === 'count' && typeof v === 'number' && v > 0) {
@@ -469,11 +479,7 @@ function levenshtein(left: string, right: string): number {
     curr[0] = i;
     for (let j = 1; j <= right.length; j += 1) {
       const cost = left[i - 1] === right[j - 1] ? 0 : 1;
-      curr[j] = Math.min(
-        (curr[j - 1] ?? 0) + 1,
-        (prev[j] ?? 0) + 1,
-        (prev[j - 1] ?? 0) + cost,
-      );
+      curr[j] = Math.min((curr[j - 1] ?? 0) + 1, (prev[j] ?? 0) + 1, (prev[j - 1] ?? 0) + cost);
     }
     prev = curr;
   }
@@ -592,9 +598,10 @@ export function countConfabulationEventsInWindow(
   // the DAY of the file to the cutoff DAY so we don't open files that
   // can't possibly contain in-window records — keeps health calls cheap.
   const cutoffDay = new Date(cutoffMs);
-  const cutoffStamp = `${cutoffDay.getUTCFullYear()}-${String(
-    cutoffDay.getUTCMonth() + 1,
-  ).padStart(2, '0')}-${String(cutoffDay.getUTCDate()).padStart(2, '0')}`;
+  const cutoffStamp = `${cutoffDay.getUTCFullYear()}-${String(cutoffDay.getUTCMonth() + 1).padStart(
+    2,
+    '0',
+  )}-${String(cutoffDay.getUTCDate()).padStart(2, '0')}`;
 
   const candidates = files.filter((f) => {
     const match = f.match(SPANS_FILE_PATTERN);

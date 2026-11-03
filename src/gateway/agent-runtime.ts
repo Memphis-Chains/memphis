@@ -6,10 +6,11 @@ import {
   buildCognitiveContextFragment,
   buildRecalledMemoryFragment,
 } from './system-prompt.js';
-import { executeToolCalls } from './tool-orchestration.js';
+import { executeToolCalls, type ToolExecutionResult } from './tool-orchestration.js';
 import type { ToolTier } from './tool-registry.js';
 import { LOG_LEVEL } from '../config/env-registry.js';
 import { getDataDir } from '../config/paths.js';
+import { classifyToolResult } from '../core/failure-classification.js';
 import type { TokenUsage } from '../core/types.js';
 import { resolveAgentProfile } from '../infra/agent-profile.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
@@ -267,6 +268,50 @@ export type AgentLoopResult = {
   effectiveContextWindow?: number;
 };
 
+/**
+ * The "do NOT claim success" summary the agent is handed before its next
+ * turn.
+ *
+ * It is built from the shared classifier (`src/core/failure-classification.ts`),
+ * so a failure the runtime can see is a failure the agent hears about.
+ * Before that, the summary was built from the envelope only, and 134 real
+ * failures on the live corpus — a node crash, a shell syntax error, a Python
+ * traceback — never reached the model that had just caused them.
+ *
+ * The reason names the exit code when the envelope carries no error of its
+ * own: `exit 127 (command not found)` and `exit 124 (timeout)` are failures
+ * with an empty stderr, and without the code they are invisible.
+ *
+ * Returns `undefined` when nothing failed, so the caller does not push an
+ * empty "errors" message into the model's context.
+ */
+export function buildToolErrorSummary(results: ToolExecutionResult[]): string | undefined {
+  const failures = results.filter((tr) => classifyToolOutput(tr.output) === 'error');
+  if (failures.length === 0) return undefined;
+
+  return failures
+    .map((tr) => {
+      let reason = classifyToolResult(tr.output).reason ?? '';
+      if (reason.length === 0) {
+        try {
+          const parsed = JSON.parse(tr.output) as Record<string, unknown>;
+          const errVal = parsed.error ?? parsed.reason ?? parsed.message;
+          if (typeof errVal === 'string') {
+            reason = errVal;
+          } else if (errVal !== undefined) {
+            reason = JSON.stringify(errVal);
+          } else {
+            reason = tr.output.slice(0, 200);
+          }
+        } catch {
+          reason = tr.output.slice(0, 200);
+        }
+      }
+      return `- ${tr.call.name}: ${(reason || 'unspecified error').slice(0, 200)}`;
+    })
+    .join('\n');
+}
+
 function mergeTokenUsage(
   current: TokenUsage | undefined,
   next: TokenUsage | undefined,
@@ -476,31 +521,12 @@ export async function runAgentLoop(options: {
     // outputs in its next turn. Belt-and-suspenders with the prompt
     // rule in TOOL_DISCIPLINE_PREAMBLE; both target the same failure
     // mode (rationalising 403/permission-denied as success).
-    const errorOutputs = toolResults.filter((tr) => classifyToolOutput(tr.output) === 'error');
-    if (errorOutputs.length > 0) {
-      const summary = errorOutputs
-        .map((tr) => {
-          let reason = '';
-          try {
-            const parsed = JSON.parse(tr.output) as Record<string, unknown>;
-            const errVal = parsed.error ?? parsed.reason ?? parsed.message;
-            if (typeof errVal === 'string') {
-              reason = errVal;
-            } else if (errVal !== undefined) {
-              reason = JSON.stringify(errVal);
-            } else {
-              reason = tr.output.slice(0, 200);
-            }
-          } catch {
-            reason = tr.output.slice(0, 200);
-          }
-          return `- ${tr.call.name}: ${(reason ?? 'unspecified error').slice(0, 200)}`;
-        })
-        .join('\n');
+    const errorSummary = buildToolErrorSummary(toolResults);
+    if (errorSummary !== undefined) {
       workingMessages.push({
         role: 'system',
         content:
-          `Tool execution surfaced errors (do NOT claim success in your reply):\n${summary}\n\n` +
+          `Tool execution surfaced errors (do NOT claim success in your reply):\n${errorSummary}\n\n` +
           `If the user asked for one of these actions, report the failure honestly with the error text. ` +
           `Do not rationalise the denial by inventing config flags, env vars, or runtime modes that don't exist.`,
       });

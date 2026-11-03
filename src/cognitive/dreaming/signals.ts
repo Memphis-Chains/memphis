@@ -15,10 +15,17 @@
  *
  * THE RULES THE MEASUREMENT FORCED
  * --------------------------------
- * 1. A failure is a STRUCTURED fact. The envelope decides
- *    (`exitCode`, `error`, `ok:false`, `blocked:true`, `status:error`),
- *    never the text. On the live corpus a substring scan for "error"
- *    flags 1 219 results that are fine and misses 190 real failures.
+ * 1. A failure is a STRUCTURED fact, and there is now ONE classifier for
+ *    it (`src/core/failure-classification.ts`). The envelope decides
+ *    (`error`, `ok:false`, `blocked:true`, `status:error`), plus the
+ *    process exit code and what the process wrote to stderr — never the
+ *    text. On the live corpus a substring scan for "error" flags 1 219
+ *    results that are fine and misses 190 real failures.
+ *
+ *    A non-zero exit code alone is not a failure: `grep` returns 1 when
+ *    it finds nothing. The classifier therefore has four answers, and this
+ *    module counts only `failure`. Measured over the live corpus: 308
+ *    failures (3.65 %), 126 inconclusive, 0 unknown.
  *
  * 2. An unknown tool is a STRUCTURED fact too, and it is the exact
  *    inverse of a guess about which tool names exist: the runtime says
@@ -209,7 +216,7 @@ export function detectToolFailureClusters(turns: DreamingTurn[]): DreamingSignal
         unknownTool: false,
       };
       entry.calls += 1;
-      if (call.outcome?.ok === false) {
+      if (call.outcome?.classification === 'failure') {
         entry.failures += 1;
         entry.sessions.add(turn.sessionId);
         const at = Date.parse(turn.at);
@@ -219,7 +226,7 @@ export function detectToolFailureClusters(turns: DreamingTurn[]): DreamingSignal
           entry.evidence.push({
             sessionId: turn.sessionId,
             sequence: turn.sequence,
-            quote: quote(call.outcome?.error ?? call.name),
+            quote: quote(call.outcome?.error ?? call.outcome?.reason ?? call.name),
             toolName: call.name,
           });
         }
@@ -287,7 +294,7 @@ export function detectRepeatLoops(turns: DreamingTurn[]): DreamingSignal[] {
         arguments: normalizeArgs(call.args),
       };
       entry.occurrences += 1;
-      if (call.outcome?.ok === false) {
+      if (call.outcome?.classification === 'failure') {
         entry.failures += 1;
         entry.sessions.add(turn.sessionId);
         const at = Date.parse(turn.at);
@@ -296,7 +303,7 @@ export function detectRepeatLoops(turns: DreamingTurn[]): DreamingSignal[] {
           entry.evidence.push({
             sessionId: turn.sessionId,
             sequence: turn.sequence,
-            quote: quote(call.outcome?.error ?? call.name),
+            quote: quote(call.outcome?.error ?? call.outcome?.reason ?? call.name),
             toolName: call.name,
           });
         }
