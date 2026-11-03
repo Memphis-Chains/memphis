@@ -297,6 +297,14 @@ export const CLI_COMMAND_REGISTRY = [
     ['dream'],
     createLazyHandlerLoader(() => import('./handlers/dream.handler.js'), 'dreamCommandHandler'),
   ),
+  createCommandRegistration(
+    'audit-runtime',
+    ['audit-runtime'],
+    createLazyHandlerLoader(
+      () => import('./handlers/audit-runtime.handler.js'),
+      'auditRuntimeCommandHandler',
+    ),
+  ),
 ] as const;
 
 export const CLI_COMPLETION_COMMANDS = [
@@ -315,6 +323,7 @@ export const CLI_COMPLETION_COMMANDS = [
   'suggest',
   'knowledge',
   'dream',
+  'audit-runtime',
   'serve',
   'service',
   'deploy',

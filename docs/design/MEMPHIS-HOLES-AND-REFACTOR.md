@@ -84,6 +84,20 @@ serde enum** — the variant list is `journal`, `ask`, `decision`, `system`,
 `system_event`, `insight`, `tool_call`, `tool_result`, `error`, `case`, and the
 wallet transaction types, plus read-side aliases for legacy names.
 
+**Correction, 2026-11-03, found by the S0 audit: it is two blocks, not one.**
+Validating **every** live block against the native core (23 388 blocks) finds a
+second one the verifier never reported:
+
+| chain                          | block    | the core says                                         |
+| ------------------------------ | -------- | ----------------------------------------------------- |
+| `autonom_archive`              | `000001` | `unknown variant 'autonom_publication'`               |
+| `journal.backup-1784913076785` | `000210` | `missing field 'type'` — the block has no type at all |
+
+The second one is a different defect wearing the same symptom: not an unknown
+type, but a block written **without** the required field. It sits in a backup
+snapshot, which is exactly where nobody looks — and it is in the allowlist, so
+the verifier _promises_ to scan it (see H2).
+
 **Cost.** `chain_append` parses the whole chain before appending — and the
 parse of that one block fails. Measured today, against the live chain's shape,
 without writing anything:
@@ -110,6 +124,25 @@ the block.
 
 Four lists, no gate that compares them. The gap is not cosmetic: two names in
 the taxonomy (`proactive`, `messages`) exist in no other list.
+
+**And the allowlist promises chains the scanner cannot reach.** The code's
+allowlist holds **14** entries — 11 active chains and 3 frozen backup
+snapshots, with the comment "these are valid chain blocks too". But
+`verifyChainIntegrity` filters directories through `SAFE_CHAIN_NAME`
+(`/^[A-Za-z0-9_-]{1,64}$/`), and a backup snapshot's name contains a dot
+(`journal.backup-1784913076785`). The dot fails the pattern, so:
+
+| what                                        | count  |
+| ------------------------------------------- | ------ |
+| entries in the allowlist                    | 14     |
+| chains the verifier actually opens          | **11** |
+| allowlisted chains the name pattern rejects | 3      |
+
+The three unreachable ones are exactly the frozen backup snapshots — and one of
+them (`journal.backup-1784913076785`) holds the second unreadable block from
+H1. So the list says "these are valid chain blocks too", the verifier cannot
+open them, and one of them is not valid. Measured by the S0 audit, which reads
+the allowlist, the disk and the name pattern as three separate facts.
 
 **The silent part is the expensive part.** The live config overrides the code
 default, and the override is a git-ignored file that only the operator edits.
@@ -189,7 +222,7 @@ and recall matches nothing meaningful. The host reports itself as healthy.
 ### H5 · The deployed artifact is not the repository
 
 The operator's `memphis` is a link into the repo, and the repo's build output
-is 11 commits behind `main`.
+is behind `main`.
 
 ```
 $ ls -la /home/memphis/.local/share/npm-global/lib/node_modules/@memphis-chains/
@@ -217,9 +250,24 @@ proposals chain existed. It shows:
 
 ```
 $ memphis dream list     → Unknown command: dream
-$ memphis journal append → Unknown command: journal
-$ memphis recall         → Unknown command: recall
 ```
+
+**Correction, 2026-11-03, from the S0 audit: one command, not three.** The
+first draft of this section also listed `memphis journal append` and
+`memphis recall` as missing commands. They are not: **`journal` and `recall`
+were never CLI verbs in this repository** — the journal is written through the
+`memphis_journal` MCP tool, and recall is a route, not a command. Comparing the
+source registry with the built one gives the truth:
+
+```
+$ node -e "…CLI_COMMAND_REGISTRY…"      # source: 39 commands
+$ node -e "…dist/…/registry.js…"        # build:  38 commands
+missing from the build: dream
+```
+
+One command, and it is the one R2 shipped three days ago. The audit measures
+this as a **difference between two lists**, not as a timestamp, because a
+timestamp says "old" while a list says "missing what, exactly".
 
 Two aggravating details:
 
@@ -383,15 +431,15 @@ falsified does not ship.
 Seven stages. Each is independently mergeable, each carries its own
 falsifier, and none lands before the thing it depends on.
 
-| stage  | delivers                                                                                                                               | closes       | falsifier (summary)                                                                                                                                                                                                     |
-| ------ | -------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **S0** | **one audit entry point** — `npm run -s ops:audit` measures the live system and returns a verdict per check                            | H1–H4, H6–H8 | on this host the audit names every hole in §1 with the numbers in §1, and exits non-zero while any is open                                                                                                              |
-| **S1** | **one registry, one vocabulary** — the chain catalog is the source of truth; the block-type list is one file both implementations read | H1, H2       | adding a chain to the catalog is one edit; a block type the core cannot parse cannot be written, proven on the live blocks                                                                                              |
-| **S2** | **truth in the status surfaces** — `unavailable` is not `pass`; a failing check can flip the top line                                  | H3, H4       | with today's state, `memphis slo status` stops saying "passing" and `memphis health` stops saying "status: ok"; after the embed dim is fixed, health says ok again                                                      |
-| **S3** | **the deployed artifact is the repository** — a freshness gate, one build path, one unit                                               | H5           | `memphis dream list` works in the operator's shell; the freshness check is green; the check fails when `dist/` is one commit behind                                                                                     |
-| **S4** | **writer boundaries** — the cron cannot push to `main`; the branch boundary is enforced by the branch                                  | H6           | a mutation test: a cron run on a feature branch cannot push to `main`; the ruleset rejects a direct push                                                                                                                |
-| **S5** | **the scanners see what matters** — history-inclusive scans, tests/ not exempt, `cargo audit` on a workflow, a drill that drills       | H7, H8       | a secret committed in a test file in history is found; `cargo audit` runs; the drill workflow performs a round trip                                                                                                     |
-| **S6** | **the Dreaming remainder** — R3 (the gate), R4 (real provenance), R5 (scopes)                                                          | H9, G4–G6    | end-to-end on this runtime: a proposal is accepted on tier 2, applied carrying `basedOn` with real block hashes, rolled back; an agent write to an operator-only scope is refused and the refusal is in the audit chain |
+| stage  | delivers                                                                                                                               | closes                                                            | falsifier (summary)                                                                                                                                                                                                     |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **S0** | **one audit entry point** — `npm run -s ops:audit` measures the live system and returns a verdict per check                            | **none yet** — it _measures_ H1–H4 and H6–H8; they close in S1–S6 | on this host the audit names every hole in §1 with the numbers in §1, and exits non-zero while any is open                                                                                                              |
+| **S1** | **one registry, one vocabulary** — the chain catalog is the source of truth; the block-type list is one file both implementations read | H1, H2                                                            | adding a chain to the catalog is one edit; a block type the core cannot parse cannot be written, proven on the live blocks                                                                                              |
+| **S2** | **truth in the status surfaces** — `unavailable` is not `pass`; a failing check can flip the top line                                  | H3, H4                                                            | with today's state, `memphis slo status` stops saying "passing" and `memphis health` stops saying "status: ok"; after the embed dim is fixed, health says ok again                                                      |
+| **S3** | **the deployed artifact is the repository** — a freshness gate, one build path, one unit                                               | H5                                                                | `memphis dream list` works in the operator's shell; the freshness check is green; the check fails when `dist/` is one commit behind                                                                                     |
+| **S4** | **writer boundaries** — the cron cannot push to `main`; the branch boundary is enforced by the branch                                  | H6                                                                | a mutation test: a cron run on a feature branch cannot push to `main`; the ruleset rejects a direct push                                                                                                                |
+| **S5** | **the scanners see what matters** — history-inclusive scans, tests/ not exempt, `cargo audit` on a workflow, a drill that drills       | H7, H8                                                            | a secret committed in a test file in history is found; `cargo audit` runs; the drill workflow performs a round trip                                                                                                     |
+| **S6** | **the Dreaming remainder** — R3 (the gate), R4 (real provenance), R5 (scopes)                                                          | H9, G4–G6                                                         | end-to-end on this runtime: a proposal is accepted on tier 2, applied carrying `basedOn` with real block hashes, rolled back; an agent write to an operator-only scope is refused and the refusal is in the audit chain |
 
 ### 3.1 S0 · One audit entry point
 
@@ -399,28 +447,55 @@ This is the core of the plan. Everything else is either a thing the audit
 measures or a thing the audit makes impossible to get wrong.
 
 ```bash
-npm run -s ops:audit          # or: memphis audit
+npm run -s ops:audit          # or: memphis audit-runtime
 ```
 
+**The command is `audit-runtime`, not `audit`.** `memphis audit` already
+exists and is the governance chain's search (`audit search --since …`). Two
+commands must not answer to one word — and the confusion between "search the
+audit chain" and "measure the runtime" is exactly what this plan removes.
+
 It reads the **live** system — the live chains, the live `.env`, the live
-`dist/`, the live workflows — and prints one line per check in the four-state
-vocabulary R1 already shipped:
+`dist/`, the live repository, the live workflows — and prints one line per
+check in the four-state vocabulary R1 already shipped.
+
+**As built, on this host, 2026-11-03:**
 
 ```
 $ npm run -s ops:audit
-chain-registry            FAIL   catalog=13 allowlist=14 disk=14 drift=proactive,messages
-block-vocabulary         FAIL   1 of 22618 live blocks cannot be parsed by the core (autonom_archive/000001.json: autonom_publication)
-slo-reporting            FAIL   4 of 4 metrics unavailable; verdict=passing
-health-reporting         FAIL   checks.embed_index_dimension=fail; top-line=ok
-deployment-freshness     FAIL   dist is 11 commit(s) behind main; 3 cli command(s) missing
-branch-boundary          FAIL   ruleset 14186283 has no required-pull-request rule; cron pushes HEAD to main
-gate-coverage            FAIL   6 gate(s) measure a scope that cannot fail on this host
-postmortem-status        FAIL   8 of 11 postmortems carry no machine-readable status
-overall: FAIL (8 open, 0 inconclusive)
+chain-registry        FAILURE  catalog=13 allowlist=14 disk=15 drift=proactive,messages
+                      in the taxonomy only: proactive, messages
+                      on disk but never scanned: _quarantine
+                      in the allowlist but unreachable by the scanner (the name is not safe):
+                        cases.backup-2026-07-07T15-07-23-108Z, journal.backup-1784913076785,
+                        system.backup-1782897312539
+block-vocabulary      FAILURE  2 of 23388 live blocks cannot be parsed by the core
+                      autonom_archive/000001.json: type=autonom_publication invalid_block_json: unknown variant `autonom_publication` …
+                      journal.backup-1784913076785/000210.json: invalid_block_json: missing field `type` …
+slo-reporting         FAILURE  4 of 4 metrics unavailable; verdict=passing
+health-reporting      FAILURE  1 failing check(s); top-line=healthy
+                      checks.embed_index_dimension=fail
+deployment-freshness  FAILURE  dist is 13 commit(s) behind main; 2 cli command(s) missing
+                      newest built file: 2026-11-01T23:46:28.476Z
+                      main head: 91049d2ee369e62b7e4847ae5b4c0bc3da38e222
+                      missing from the build: dream, audit-runtime
+branch-boundary       FAILURE  1 script(s) push HEAD to a protected branch
+                      crons/tuesday-code.sh:155 pushes main
+gate-coverage         FAILURE  6 gate(s) measure a scope that cannot fail on this host
+                      chain-invariant: scans the committed fixture, never the live chains
+                      check-systemd-units: reads scripts/systemd/ only; never checks ops/memphis.service
+                      cargo audit: the script exists, no workflow invokes it
+                      backup-restore-drill: the workflow prints a notice instead of drilling
+                      pii-scan: scans the working tree only, never the history
+                      default-secret-scan: exempts tests/ and every *.test.* by path
+postmortem-status     FAILURE  indexed=3/11 machine-readable status=0/11
+overall: FAILURE (8 open, 0 inconclusive, 0 unknown)
 ```
 
-(The numbers above are this document's measurements; the tool is what produces
-them once S0 ships.)
+Exit code **1** when a check failed, **2** when nothing failed but something
+could not be measured, **0** when everything measured and was right. `--json`
+prints the same report as JSON on stdout (the config loader writes to stderr,
+so the JSON stays parseable).
 
 **The four states are not decoration.** `unknown` is a state the repo already
 uses in `src/core/failure-classification.ts`, and it is the honest answer for
@@ -428,18 +503,60 @@ uses in `src/core/failure-classification.ts`, and it is the honest answer for
 mis-scoped gate does today. A gate that cannot see the live system must say
 `unknown`, never `success`.
 
-**Every existing gate delegates.** `ops:dream-signals`, `ops:dream-proposals`,
-the chain sweep, the systemd gate, the PII and secret scans keep their entry
-points and their exit codes, but they call the audit's checks rather than
-re-implementing them. Two gates that disagree is H1's shape; the audit is the
-one place they can disagree in.
+**Which gates delegate, and which do not.** The audit owns the eight opinions
+it measures. A gate that overlaps one of them must call the audit rather than
+keep its own copy — two gates that disagree is H1's shape. The gates that do
+**not** overlap (the Dreaming falsifiers, the PII and secret scans) keep their
+own logic; the audit _reports on their scope_ (`gate-coverage`) instead of
+re-implementing them.
 
-**Falsifier, to run:** on this host, `npm run -s ops:audit` prints the eight
-failures above with the numbers in §1, exits non-zero, and — the part that
-matters — **the audit itself is wrong when the system changes**: touch a
-single thing (write a block with an unknown type, add a chain to the catalog
-without adding it to disk) and the corresponding line changes. A check that
-cannot change its verdict is not a check.
+**What S0 deliberately does NOT do.** The live chain sweep
+(`scripts/chain-integrity-sweep.mjs`) keeps its own oracle for now, and that
+oracle is the weakest of the three in this repository: it accepts a block if
+the file parses as JSON and carries `index` and `hash`. It never asks the core,
+so the sweep reports `ok: true` over 66 blocks while two of them cannot be
+deserialized at all — measured today, side by side: the sweep says ok, the
+audit says two failures. Rewiring it means changing the sweep's fixtures (they
+are deliberately minimal) and the order of the CI steps that build the bridge
+— both of which belong to **S1**, the stage that owns the vocabulary. The
+audit covers the same ground today, on demand, with the core as the oracle.
+
+**Falsifier, as run:** on this host, `npm run -s ops:audit` prints the eight
+failures above with the numbers in §1 and exits 1. The part that matters is the
+second half — **the audit's verdict moves when the system moves**:
+
+| the system                                | the audit says                                         |
+| ----------------------------------------- | ------------------------------------------------------ |
+| this host, live                           | 8 failures, 0 unknown                                  |
+| an isolated home with no chains, no repo  | 2 unknown, 1 failure (the empty SLO window), 5 unknown |
+| a chain whose block the core cannot parse | `block-vocabulary` FAILURE, naming the block           |
+| the same chain with a readable block      | `block-vocabulary` SUCCESS                             |
+| the native core not loadable              | `block-vocabulary` UNKNOWN, never SUCCESS              |
+| 0 live blocks to check                    | `block-vocabulary` UNKNOWN, never SUCCESS              |
+
+The last three rows are unit tests (`tests/unit/runtime-audit.test.ts`), and
+they are the point of the whole stage: a check that cannot change its answer
+is not a check.
+
+**What was built**
+
+| file                                              | what it does                                                                                                           |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `src/infra/audit/types.ts`                        | the four-state verdict, borrowed from `src/core/failure-classification.ts` — one vocabulary, not a second one          |
+| `src/infra/audit/checks.ts`                       | the eight checks, each a **pure** function over measured numbers; the verdict is computed here and nowhere else        |
+| `src/infra/audit/runtime-audit.ts`                | the collector: reads the live chains, `.env`, `dist/`, the repository, the workflows and the postmortems; never writes |
+| `src/infra/cli/commands/audit-runtime.ts`         | `memphis audit-runtime`                                                                                                |
+| `src/infra/cli/handlers/audit-runtime.handler.ts` | the handler                                                                                                            |
+| `scripts/audit-runtime.mts`                       | `npm run -s ops:audit`, with `--json`                                                                                  |
+| `tests/unit/runtime-audit.test.ts`                | 35 cases, including the mutation property                                                                              |
+
+Two small exports were added so the audit does not keep its own copy:
+`getChainAllowlist` and `SAFE_CHAIN_NAME` from `src/infra/storage/chain-adapter.ts`.
+
+**The oracle is the core.** The vocabulary check does not keep a list of legal
+block types — it asks the native core to parse every live block, because a
+second list in TypeScript is the very drift H1 is about. The audit's own
+counts came from the same call the writer uses.
 
 ### 3.2 S1 · One registry, one vocabulary
 
@@ -663,11 +780,26 @@ honest. A plan that started with S6 would add a gate nobody can see.
 
 For completeness, because a plan that only lists what is open misleads:
 
-| stage | what it closed                                                                                               | shipped in                          |
-| ----- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
-| R1    | one shared failure classifier — 308 failures, 126 inconclusive, 0 unknown over 8 437 tool results            | #737 (`d7f6b352`)                   |
-| R2    | the `proposals` chain, the proposal lifecycle, `memphis dream list/show/propose` — 26 signals → 21 proposals | #738, #739 (`7d2d2012`, `7edd0644`) |
-| —     | the S2 blind spot: a loop is a call that did not succeed (4 → 7 loops)                                       | #738 (`7d2d2012`)                   |
+| stage  | what it closed                                                                                               | shipped in                          |
+| ------ | ------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
+| R1     | one shared failure classifier — 308 failures, 126 inconclusive, 0 unknown over 8 437 tool results            | #737 (`d7f6b352`)                   |
+| R2     | the `proposals` chain, the proposal lifecycle, `memphis dream list/show/propose` — 26 signals → 21 proposals | #738, #739 (`7d2d2012`, `7edd0644`) |
+| —      | the S2 blind spot: a loop is a call that did not succeed (4 → 7 loops)                                       | #738 (`7d2d2012`)                   |
+| **S0** | **one audit entry point** — `npm run -s ops:audit` measures the live system, one verdict per check           | #741 (`5196cdc2a`)                  |
+
+**What S0 changed in the measurements of this document.** Two numbers were
+wrong before the audit existed, and both were found by it, not by argument:
+
+- H1 is **two** unreadable blocks, not one — the second one is in a backup
+  snapshot and has no `type` field at all.
+- H5 is **one** missing command, not three — `journal` and `recall` were
+  never CLI verbs in this repository.
+- H2 gained a fifth fact: the allowlist promises 14 chains and the verifier
+  opens 11, because a backup snapshot's name contains a dot.
+
+That is the point of S0 in one paragraph: a measurement that cannot be
+re-derived drifts, and the drift is invisible until a tool measures the live
+system again.
 
 ---
 
@@ -675,6 +807,13 @@ For completeness, because a plan that only lists what is open misleads:
 
 Every number in this document, and the command that produces it. Run from the
 repository root (`/home/memphis/memphis`).
+
+**The whole inventory, in one command (S0):**
+
+```bash
+npm run -s ops:audit           # the eight checks, one line each
+npm run -s ops:audit -- --json # the same, as JSON on stdout
+```
 
 **H1 · two definitions of a valid block**
 
@@ -716,6 +855,8 @@ console.log('env:', fs.readFileSync('.env', 'utf8').split('\n')
   .find(l => l.startsWith('MEMPHIS_CHAINS_ALLOWLIST=')).split('=')[1].split(',').length);
 console.log('disk:', fs.readdirSync('/home/memphis/.memphis/chains').filter(d => !d.startsWith('_')).length);
 console.log('catalog - code active:', names.filter(n => !entries.includes(n)).join(', '));
+const safe = /^[A-Za-z0-9_-]{1,64}\$/;
+console.log('allowlisted but unreachable:', entries.filter(e => e.includes('backup') && !safe.test(e)).join(', '));
 "
 ```
 
@@ -746,6 +887,12 @@ git log --since='2026-11-02 00:46:28' --diff-filter=A --name-only --pretty=forma
 ls -la /home/memphis/.local/share/npm-global/lib/node_modules/@memphis-chains/
 systemctl --user show memphis.service -p ExecMainStartTimestamp -p NRestarts
 memphis dream list
+# what the build is missing, as a difference between two lists:
+node --import tsx -e "
+import { CLI_COMMAND_REGISTRY } from './src/infra/cli/registry.js';
+const built = (await import('./dist/infra/cli/registry.js')).CLI_COMMAND_REGISTRY.map(r => r.name);
+console.log('missing from the build:', CLI_COMMAND_REGISTRY.map(r => r.name).filter(n => !built.includes(n)).join(', '));
+"
 ```
 
 **H6 · the writer that bypasses the branch boundary**
