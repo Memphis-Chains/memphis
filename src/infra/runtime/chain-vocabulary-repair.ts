@@ -57,6 +57,7 @@ import { getBackupPath, getChainPath, getDataDir } from '../../config/paths.js';
 import { logicalChainNameForDirectory } from '../../memory/chain-catalog.js';
 import { BlockVocabularyOracle, type BlockVocabulary } from '../storage/block-vocabulary.js';
 import { deriveChainRegistry } from '../storage/chain-adapter.js';
+import { withChainWriteLock } from '../storage/chain-write-lock.js';
 
 export interface VocabularyScan {
   /** False when the native core could not be reached — nothing was measured. */
@@ -227,9 +228,12 @@ export async function repairChainVocabulary(
   for (const directory of directories) {
     const chainDir = join(chainsDir, directory);
     const logical = logicalChainNameForDirectory(directory);
-    const outcome = repairChainDirectoryVocabulary(logical, chainDir, applied, warnings, {
-      vocabulary,
-    });
+    // The same lock the writers take (shared with the native
+    // `chain_write_lock.rs`). A rewrite that interleaved with an append
+    // would produce a chain that is neither the old one nor the new one.
+    const outcome = await withChainWriteLock(chainDir, async () =>
+      repairChainDirectoryVocabulary(logical, chainDir, applied, warnings, { vocabulary }),
+    );
     if (outcome.blocksRewritten > 0) {
       rewrittenDirectories.push(directory);
       blocksRewritten += outcome.blocksRewritten;
