@@ -53,36 +53,73 @@ describe('runtime audit · the verdict vocabulary', () => {
 
 describe('runtime audit · chain registry (H2)', () => {
   const clean = {
-    catalogNames: ['journal', 'decisions'],
-    codeAllowlist: ['journal', 'decisions'],
+    catalogNames: ['journal', 'decisions', 'proactive', 'messages'],
+    standardChainNames: ['journal', 'decisions'],
+    conditionalChainNames: ['proactive', 'messages'],
+    registryNames: ['journal', 'decisions'],
+    registryArchiveNames: [],
     effectiveAllowlist: ['journal', 'decisions'],
     configAllowlist: ['journal', 'decisions'],
     diskDirs: ['journal', 'decisions'],
     scannableDirs: ['journal', 'decisions'],
   };
 
-  it('passes when the four lists agree', () => {
+  it('passes when the registry, the config and the disk agree', () => {
     expect(checkChainRegistry(clean).verdict).toBe('success');
   });
 
-  it('fails on a name the taxonomy has and nothing else does', () => {
-    const result = checkChainRegistry({
-      ...clean,
-      catalogNames: ['journal', 'decisions', 'proactive'],
-    });
-    expect(result.verdict).toBe('failure');
-    expect(result.summary).toContain('proactive');
+  it('does not call a planned chain drift when it is not installed', () => {
+    // `proactive` and `messages` belong to features that may be off. A
+    // host without them is healthy — measured on this host: the audit
+    // used to report them as registry drift on every run.
+    const result = checkChainRegistry(clean);
+    expect(result.verdict).toBe('success');
+    expect(result.details.join(' ')).toContain('planned, not installed');
+    expect(result.details.join(' ')).toContain('proactive');
   });
 
-  it('fails on a directory nothing scans', () => {
-    const result = checkChainRegistry({ ...clean, diskDirs: [...clean.diskDirs, '_quarantine'] });
+  it('fails when the config narrows a chain away', () => {
+    const result = checkChainRegistry({
+      ...clean,
+      registryNames: ['journal', 'decisions'],
+      effectiveAllowlist: ['journal'],
+      configAllowlist: ['journal'],
+    });
     expect(result.verdict).toBe('failure');
-    expect(result.details.join(' ')).toContain('_quarantine');
+    expect(result.details.join(' ')).toContain('not scanned');
+    expect(result.details.join(' ')).toContain('decisions');
+  });
+
+  it('reports an archive the config narrowed away without failing', () => {
+    // Narrowing a FROZEN BACKUP out of the scan is the operator's
+    // choice — the config exists for exactly that. It is reported, not
+    // failed.
+    const result = checkChainRegistry({
+      ...clean,
+      registryNames: ['journal', 'decisions', 'journal.backup-1784913076785'],
+      registryArchiveNames: ['journal.backup-1784913076785'],
+      diskDirs: [...clean.diskDirs, 'journal.backup-1784913076785'],
+      scannableDirs: [...clean.scannableDirs, 'journal.backup-1784913076785'],
+      configAllowlist: ['journal', 'decisions'],
+    });
+    expect(result.verdict).toBe('success');
+    expect(result.details.join(' ')).toContain('archives narrowed out of the scan');
+  });
+
+  it('fails when the config names a chain the registry does not know', () => {
+    const result = checkChainRegistry({
+      ...clean,
+      configAllowlist: ['journal', 'decisions', 'ghost'],
+    });
+    expect(result.verdict).toBe('failure');
+    expect(result.details.join(' ')).toContain('may only narrow');
+    expect(result.details.join(' ')).toContain('ghost');
   });
 
   it('fails on an allowlisted chain the scanner cannot open', () => {
     const result = checkChainRegistry({
       ...clean,
+      registryNames: [...clean.registryNames, 'journal.backup-1'],
       effectiveAllowlist: [...clean.effectiveAllowlist, 'journal.backup-1'],
       diskDirs: [...clean.diskDirs, 'journal.backup-1'],
       scannableDirs: [...clean.scannableDirs],
@@ -91,10 +128,12 @@ describe('runtime audit · chain registry (H2)', () => {
     expect(result.details.join(' ')).toContain('journal.backup-1');
   });
 
-  it('fails when the live config overrides the code silently', () => {
-    const result = checkChainRegistry({ ...clean, configAllowlist: ['journal'] });
-    expect(result.verdict).toBe('failure');
-    expect(result.details.join(' ')).toContain('differs from the code default');
+  it('reports a directory that is not a chain without failing', () => {
+    // The quarantine container and sidecar writers' dumps live under
+    // chains/ — they are not chains, and the verifier must not open them.
+    const result = checkChainRegistry({ ...clean, diskDirs: [...clean.diskDirs, '_quarantine'] });
+    expect(result.verdict).toBe('success');
+    expect(result.details.join(' ')).toContain('_quarantine');
   });
 
   it('says unknown when it cannot read the taxonomy or the disk', () => {

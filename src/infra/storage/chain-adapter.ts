@@ -6,7 +6,7 @@
 // disable instead of accessor-bloat.
 //
 import * as chainCrypto from 'node:crypto';
-import { lstatSync } from 'node:fs';
+import { lstatSync, readdirSync } from 'node:fs';
 
 import { assertChainWriteAllowed } from './chain-write-guard.js';
 import { withChainWriteLock } from './chain-write-lock.js';
@@ -20,7 +20,12 @@ import { NapiChainAdapter } from './rust-chain-adapter.js';
 import { getChainPath, normalizeChainName } from '../../config/paths.js';
 import { parseBool } from '../../core/env.js';
 import { stableStringify } from '../../core/stable-stringify.js';
-import { isChainBackupDirectory } from '../../memory/chain-catalog.js';
+import {
+  isChainBackupDirectory,
+  isKnownChainName,
+  logicalChainNameForDirectory,
+  SAFE_CHAIN_NAME,
+} from '../../memory/chain-catalog.js';
 import { assertAuditWriteAllowed } from '../logging/audit-write-guard.js';
 import { resolveRustBridgePath } from '../runtime/install-root.js';
 
@@ -104,60 +109,100 @@ export interface AppendBlockResult {
 
 const GENESIS_PREV_HASH = '0'.repeat(64);
 /**
- * Exported for the runtime audit (src/infra/audit/), which has to
- * reproduce the verifier's own view of which chain directories are
- * openable — a second copy of this pattern would be the very drift
- * the audit exists to catch.
+ * The shape of a chain directory name.
+ *
+ * Re-exported from the registry (src/memory/chain-catalog.ts), which
+ * owns it — this module used to carry a copy of its own, and the two
+ * copies disagreed about the archives (see `isScannableChainDirectoryName`).
  */
-export const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
-
-// Allowlist of chain directories under ~/.memphis/chains/ that
-// verifyChainIntegrity is permitted to scan. Anything outside this
-// list is treated as a sidecar audit / non-chain storage and skipped.
-// Prevents the class of bugs where a sidecar writer (e.g.
-// halt-aware-destructive-ops) drops non-conforming blocks under
-// chains/ and crashes memphis at next BOOT with `invalid block shape`.
-// See postmortem docs/postmortems/2026-09-22-chains-halt-invalid-block-shape.md,
-// action A2.
-//
-// Override via env var MEMPHIS_CHAINS_ALLOWLIST (comma-separated).
-const DEFAULT_CHAIN_ALLOWLIST: ReadonlySet<string> = new Set([
-  // 11 active core chains
-  'autonom_archive',
-  'cases',
-  'collective',
-  'decisions',
-  'insights',
-  'journal',
-  'patterns',
-  'proposals',
-  'reflections',
-  'soul',
-  'system',
-  // 3 frozen backup snapshots — these are valid chain blocks too
-  'cases.backup-2026-07-07T15-07-23-108Z',
-  'journal.backup-1784913076785',
-  'system.backup-1782897312539',
-]);
+export { SAFE_CHAIN_NAME };
 
 /**
- * The allowlist in force. Exported for the runtime audit: it has to
- * compare the code's default against the live override, and the whole
- * point is that it must not keep its own copy of either.
+ * A chain directory the verifier may open.
+ *
+ * A plain chain (`journal`) OR an archive of one (`journal.backup-…`).
+ *
+ * The archive shape used to be unreachable: the allowlist carried three
+ * frozen backup directories, but `SAFE_CHAIN_NAME` has no dot in it, so
+ * the scanner filtered them out and `chain verify --chain
+ * journal.backup-1784913076785` answered `ok: true` after checking
+ * NOTHING. Measured on this host: three allowlisted archives, zero of
+ * them openable, and a backup the operator had explicitly listed.
+ *
+ * The rule that decides it is the catalog's, not a second list here:
+ * a directory is a chain when the chain it holds is named by the
+ * taxonomy (see `deriveChainRegistry`).
  */
-export function getChainAllowlist(
-  rawEnv: NodeJS.ProcessEnv = process.env,
-): ReadonlySet<string> {
-  const explicit = rawEnv.MEMPHIS_CHAINS_ALLOWLIST;
-  if (explicit !== undefined && explicit !== '') {
-    return new Set(
-      explicit
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean),
-    );
+export function isScannableChainDirectoryName(name: string): boolean {
+  return SAFE_CHAIN_NAME.test(name) || isChainBackupDirectory(name);
+}
+
+/**
+ * The registry: every chain directory on disk that holds a chain the
+ * taxonomy names.
+ *
+ * This is the ONE place the chain list is decided. It used to be a
+ * hand-maintained constant (`DEFAULT_CHAIN_ALLOWLIST`) that had to be
+ * edited every time a chain appeared — and that was edited wrong: it
+ * carried three archives the scanner could not open, and it said nothing
+ * about the chains that were actually on the disk.
+ *
+ * Derivation, in order:
+ *   1. a directory whose name is a chain the taxonomy names;
+ *   2. an archive of such a chain (`journal.backup-…` → `journal`).
+ *
+ * A directory that is not a chain — the quarantine container, a
+ * sidecar writer's dump — is not in the registry. It is reported by
+ * the audit, but it is not a chain and the verifier must not open it.
+ */
+export function deriveChainRegistry(rawEnv: NodeJS.ProcessEnv = process.env): ReadonlySet<string> {
+  const chainsDir = getChainPath(undefined, rawEnv);
+  const registry = new Set<string>();
+  let entries: { name: string; isDirectory: boolean }[] = [];
+  try {
+    entries = readdirSync(chainsDir, { withFileTypes: true }).map((entry) => ({
+      name: entry.name,
+      isDirectory: entry.isDirectory(),
+    }));
+  } catch {
+    return registry;
   }
-  return DEFAULT_CHAIN_ALLOWLIST;
+
+  for (const entry of entries) {
+    if (!entry.isDirectory) continue;
+    if (!isScannableChainDirectoryName(entry.name)) continue;
+    const logical = logicalChainNameForDirectory(entry.name);
+    if (!isKnownChainName(logical)) continue;
+    registry.add(entry.name);
+  }
+  return registry;
+}
+
+/**
+ * The allowlist in force: the registry, narrowed by the live config.
+ *
+ * The config may only NARROW the registry. It may not invent a chain
+ * the registry does not name — that was the old behaviour (the config
+ * REPLACED the code default), which is how a forgotten chain became a
+ * silent skip and why an operator had to hand-edit the list at all.
+ *
+ * Exported for the runtime audit: it has to compare the registry, the
+ * config and what is actually scanned, and the whole point is that it
+ * must not keep its own copy of any of them.
+ */
+export function getChainAllowlist(rawEnv: NodeJS.ProcessEnv = process.env): ReadonlySet<string> {
+  const registry = deriveChainRegistry(rawEnv);
+  const explicit = rawEnv.MEMPHIS_CHAINS_ALLOWLIST;
+  if (explicit === undefined || explicit === '') return registry;
+
+  const narrowed = new Set<string>();
+  for (const name of explicit
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)) {
+    if (registry.has(name)) narrowed.add(name);
+  }
+  return narrowed;
 }
 
 export interface ChainBlock {
@@ -929,7 +974,7 @@ export async function verifyChainIntegrity(
   const baseDir = path.resolve(getChainPath(undefined, rawEnv));
   const allowlist = getChainAllowlist(rawEnv);
   const allDirs = (await fs.readdir(baseDir).catch(() => [])).filter((name) =>
-    SAFE_CHAIN_NAME.test(name),
+    isScannableChainDirectoryName(name),
   );
   const selectedChains = chainName
     ? [normalizeChainName(chainName) ?? chainName]
@@ -940,13 +985,19 @@ export async function verifyChainIntegrity(
   // are skipped instead of aborting the whole verification. Throwing here
   // made every scheduled backup report "restore-drill FAILED — invalid
   // chain name" while the archive itself was complete and correct.
-  const unsafeChains = selectedChains.filter((name) => !SAFE_CHAIN_NAME.test(name));
+  //
+  // An archive IS scannable: it holds the same blocks a chain holds, and
+  // the operator listed those archives in the allowlist precisely because
+  // they want them verified. Skipping them is what made
+  // `chain verify --chain journal.backup-…` answer `ok: true` after
+  // checking nothing at all.
+  const unsafeChains = selectedChains.filter((name) => !isScannableChainDirectoryName(name));
   // Only recognized recovery directories are optional. Invalid explicit chain
   // names must still fail instead of reporting success after checking nothing.
   if (unsafeChains.some((name) => !isChainBackupDirectory(name))) {
     throw new Error('invalid chain name');
   }
-  const safeChains = selectedChains.filter((name) => SAFE_CHAIN_NAME.test(name));
+  const safeChains = selectedChains.filter((name) => isScannableChainDirectoryName(name));
   if (unsafeChains.length > 0) {
     console.warn(
       `[chain-adapter] skipping ${unsafeChains.length} chain dir(s) with unsafe names under ${baseDir}: ${unsafeChains.join(', ')}.`,
@@ -967,12 +1018,20 @@ export async function verifyChainIntegrity(
 
   for (const chain of safeChains) {
     const normalizedChain = normalizeChainName(chain) ?? chain;
-    if (!SAFE_CHAIN_NAME.test(normalizedChain)) {
+    if (!isScannableChainDirectoryName(normalizedChain)) {
       throw new Error('invalid chain name');
     }
     const chainsDir = path.resolve(getChainPath(normalizedChain, rawEnv));
     if (chainsDir !== baseDir && !chainsDir.startsWith(`${baseDir}${path.sep}`)) {
       throw new Error('invalid chain name');
+    }
+
+    // A named chain that is not there is a chain that was not checked.
+    // Saying "ok: true" for it is the shape of lie this stage removes:
+    // the verifier used to answer exactly that for every archive it
+    // could not open.
+    if (!(await fs.stat(chainsDir).catch(() => null))) {
+      throw new Error(`chain not found: ${chain}`);
     }
 
     const blocks = await readAndValidateChainBlocks(chainsDir, fs, crypto, rawEnv);
