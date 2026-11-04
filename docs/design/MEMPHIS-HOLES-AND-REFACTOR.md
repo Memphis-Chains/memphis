@@ -745,6 +745,20 @@ operator's own mechanism first (`memphis backup restore` is the way back),
 and rewriting chain history needs the operator's passphrase — asked once,
 interactively, in the terminal, never written to a file.
 
+Measured on this host, 2026-11-04, on a copy with the real bad block: the
+archive `before-chain-vocabulary-repair-*.tar.gz` carries the chain, the
+`.sha256` sidecar and a manifest entry are written beside it, and extracting
+the archived block gives **bytes identical** to the file the repair replaced.
+The repair does not touch the vault and does not snapshot SQLite on this path
+— it passes the data root explicitly, so the runtime database is out of it.
+
+A claim like that decays into a promise unless something holds the runtime to
+it, so a test does: it takes the real path (the real backup command, a real
+tar archive) and asserts the archived copy is byte-identical to the file the
+repair replaced — and that the repair really happened, so the backup cannot
+prove itself against a no-op. With the repair's backup disabled, the test
+fails on the missing archive.
+
 **One more drift, found while measuring: the two implementations disagreed
 about the hash.** The native core falls back `type` → `block_type` →
 `journal` when it reduces a block's data for hashing
