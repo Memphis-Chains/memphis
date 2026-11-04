@@ -754,6 +754,32 @@ about the hash.** The native core falls back `type` → `block_type` →
 exists on this host today (measured), but the disagreement is exactly what
 this stage exists to remove, so the TS projection now mirrors the core's.
 
+**And one that is bigger, found by the sweep (S1c): the core and the writer
+disagree about the hash of a READ-SIDE ALIAS.** The core deserializes
+`data.type` into its enum before hashing it, so a block whose type is an
+alias is hashed as the VARIANT (`security_event` → `system_event`). The
+TypeScript writer hashed the raw string. Measured on this host:
+
+| measurement                                       | value                                                                                  |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| blocks whose type is a read-side alias            | **47** — 45 in the live `system` chain, 2 in `system.backup-1782897312539`             |
+| the core's verdict on them                        | `hash mismatch`                                                                        |
+| the TypeScript verifier's verdict on them         | valid — and it checks the whole chain's linkage, so the chain is internally consistent |
+| can the core still PARSE the live `system` chain? | **yes** — `chain_append` on the live chain returns `appended: true`                    |
+
+So the chain is not corrupt: the two implementations disagree about what
+the hash of 47 legacy blocks is. Which one wins is an **operator decision**,
+and it is not this stage's: making the two agree means rewriting the hashes
+of the live, actively-written `system` chain (12 970 blocks, 45 of them
+alias-typed) — a tier-2 history rewrite, and the only one in this plan
+that touches the chain the service writes to every minute.
+
+Until that decision is made, the sweep asks the core only the question it
+can answer unambiguously — **can you deserialize this block?** — and the
+hash verdict stays `verifyChainIntegrity`'s. That is why the sweep's
+`oracle` line says which oracle answered: a green line from the structural
+oracle must not be mistaken for one from the core.
+
 #### The falsifier, as run
 
 The stage's claim is: _the registry is one list, and the vocabulary is the
@@ -768,6 +794,29 @@ if it stops reporting drift it should.
 | a config naming a chain the catalog does not | `chain-registry` FAILURE — the config may only narrow                                        |
 | a conditional chain (`proactive`) absent     | `chain-registry` SUCCESS, reported as "planned, not installed"                               |
 | an archive narrowed out of the config        | `chain-registry` SUCCESS, reported as the operator's choice                                  |
+
+#### S1c · the sweep asks the core too
+
+The hourly sweep (`scripts/chain-integrity-sweep.mjs`) was the weakest of the
+three oracles in this repository: it accepted a block if the file parsed as
+JSON and carried `index` and `hash`. It never asked the core, so it reported
+`ok: true` over blocks the core cannot deserialize at all.
+
+It asks now — and says in its summary which oracle answered
+(`oracle: "native-core"` or `oracle: "structural"`), because the structural
+fallback exists for a host without a built bridge, and a green line from the
+weaker oracle must not be mistaken for the stronger one.
+
+The sweep's fixtures were written by hand with placeholder hashes and a
+block type the core does not know (`soul`). They are generated now
+(`npm run -s ops:chain-fixture`), with real hashes and real types — the CI
+workflow builds the Rust bridge **before** the sweep tests, so the vocabulary
+case cannot pass vacuously.
+
+The sweep runs from the repository, on the operator's host, every hour. That
+is why the sweep's change lands in its own PR, **after** the repair: the
+hourly gate would otherwise go red on the two blocks before anything could
+fix them.
 
 ### 3.3 S2 · Truth in the status surfaces
 

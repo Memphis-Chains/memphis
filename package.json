@@ -52,6 +52,7 @@
     "ops:dream-signals": "tsx scripts/dream-signals.mts",
     "ops:dream-proposals": "tsx scripts/dream-proposals.mts",
     "ops:audit": "tsx scripts/audit-runtime.mts",
+    "ops:chain-fixture": "tsx scripts/regenerate-chain-invariant-fixture.mts",
     "prepack": "npm run build:release",
     "pack:dry-run": "npm pack --dry-run",
     "predev": "node -e \"try{require('fs').accessSync('crates/memphis-napi/index.node')}catch{console.log('\\n  .node binary missing — building Rust crates...\\n');require('child_process').execSync('npm run build:rust',{stdio:'inherit'})}\"",

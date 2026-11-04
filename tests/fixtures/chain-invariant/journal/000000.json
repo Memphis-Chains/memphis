@@ -1,11 +1,14 @@
 {
   "index": 0,
-  "hash": "sha256-journal-000000",
-  "chain": "journal",
   "timestamp": "2026-01-01T00:00:00.000Z",
-  "prev_hash": "sha256-genesis",
+  "chain": "journal",
   "data": {
     "type": "journal",
-    "content": "golden-fixture-block-0"
-  }
+    "content": "golden-fixture-block-0",
+    "tags": [
+      "fixture"
+    ]
+  },
+  "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "hash": "27623d258072ea616e29a4edd5147e7280f8cef20218376111519de3924dc0f8"
 }
