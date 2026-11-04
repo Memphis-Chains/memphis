@@ -306,6 +306,34 @@ Two aggravating details:
   `scripts/pre-demo-smoke.sh` (`'--skip-build set; dist/ may be stale'`) — a
   warning on a demo script.
 
+**Correction, 2026-11-04, found by the audit measuring the very drift it was
+built to catch: the freshness window was read in the wrong timezone.**
+
+The S0 check compares the newest built file with the commits on `main`, so it
+needs a timestamp. It built one by cutting the zone off a UTC ISO string:
+`2026-11-04T10:39:01.352Z` → `2026-11-04 10:39:01`. But `git rev-list --since`
+parses a **naive** timestamp in the **local** zone, so the window was read one
+offset off — on this host (CET, UTC+1), an hour into the past.
+
+Measured on this host, right after the S1 merge:
+
+| what                                                    | count |
+| ------------------------------------------------------- | ----- |
+| commits on `main` newer than the build (the truth)      | **0** |
+| what the audit reported                                 | **1** |
+
+The commit it counted was the S1 merge itself — **61 seconds older than the
+build**. The check that exists to catch a stale deployment was reporting a
+stale deployment that was not there: the mirror image of the false green it was
+built to replace, and worse for the operator, because a false red on the
+operator's own repair is a repair that never happens.
+
+The stamp now carries its zone, and a test pins it. A temporary repository
+with one commit dated a minute before the build and a `dist/` dated a minute
+after it, measured in CET, must report **0**; the mirror case — the commit
+after the build — must report **1**. The first case fails against the old
+code with the exact symptom above.
+
 ### H6 · A writer that pushes to `main` without checking what branch it is on
 
 `crons/tuesday-code.sh:152-155`:
@@ -1058,6 +1086,13 @@ import { CLI_COMMAND_REGISTRY } from './src/infra/cli/registry.js';
 const built = (await import('./dist/infra/cli/registry.js')).CLI_COMMAND_REGISTRY.map(r => r.name);
 console.log('missing from the build:', CLI_COMMAND_REGISTRY.map(r => r.name).filter(n => !built.includes(n)).join(', '));
 "
+# the audit's own verdict, and the window it measured:
+npm run -s ops:audit | grep -A2 '^deployment-freshness'
+# the zone matters — git reads a NAIVE timestamp in the LOCAL zone, so a
+# UTC stamp without its zone is read one offset off (this host: CET):
+dist_newest=$(find dist -type f -printf '%T@\n' | sort -n | tail -1 | cut -d. -f1)
+git rev-list --count --since="$(date -u -d "@${dist_newest}" +%Y-%m-%dT%H:%M:%SZ)" main  # zone kept
+git rev-list --count --since="$(date -u -d "@${dist_newest}" +%Y-%m-%d\ %H:%M:%S)" main    # zone dropped
 ```
 
 **H6 · the writer that bypasses the branch boundary**
