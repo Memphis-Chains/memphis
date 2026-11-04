@@ -68,6 +68,7 @@ function runSweep(chainsDir: string): ExecResult {
 
 function readSummary(stdout: string): {
   ok: boolean;
+  oracle: string;
   chains_scanned: number;
   blocks_checked: number;
   blocks_ok: number;
@@ -111,6 +112,45 @@ describe('chain-invariant offline gate', () => {
     expect(summary.blocks_failed).toBe(0);
     expect(summary.blocks_ok).toBe(summary.blocks_checked);
     expect(summary.blocks_checked).toBeGreaterThanOrEqual(3);
+  });
+
+  it('says which oracle answered', () => {
+    // The sweep used to be the weakest oracle in the repository: it read
+    // the file and never asked the core, so it reported `ok: true` over
+    // blocks the core cannot deserialize at all. It now asks the core —
+    // and it says in its summary whether the core was there to answer.
+    const result = runSweep(SANDBOX_DIR);
+    const summary = readSummary(result.stdout);
+    expect(['native-core', 'structural']).toContain(summary.oracle);
+  });
+
+  it('rejects a block the native core cannot deserialize (exit 1)', () => {
+    const result = runSweep(SANDBOX_DIR);
+    const summary = readSummary(result.stdout);
+    if (summary.oracle !== 'native-core') {
+      // The bridge is not built here, so the sweep fell back to the
+      // structural oracle and this case cannot be exercised. The CI
+      // workflow builds the bridge BEFORE these tests (S1), so it runs
+      // there; locally it says so instead of passing vacuously.
+      expect(summary.oracle).toBe('structural');
+      return;
+    }
+
+    const file = resolve(SANDBOX_DIR, 'journal/000000.json');
+    const parsed = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    const data = parsed.data as Record<string, unknown>;
+    data.type = 'autonom_publication';
+    writeFileSync(file, JSON.stringify(parsed), 'utf8');
+
+    const swept = runSweep(SANDBOX_DIR);
+    expect(swept.status).toBe(1);
+    expect(swept.stderr).toContain('journal');
+    expect(swept.stderr).toContain('000000.json');
+    expect(swept.stderr).toContain('unknown variant');
+
+    const after = readSummary(swept.stdout);
+    expect(after.ok).toBe(false);
+    expect(after.blocks_failed).toBeGreaterThanOrEqual(1);
   });
 
   it('rejects a block whose required field is removed (exit 1, stderr names the chain)', () => {
