@@ -19,6 +19,7 @@
  * types, and the disk by a temp directory.
  */
 
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -32,7 +33,10 @@ import {
   parseRawChainBlock,
   repairChainDirectoryVocabulary,
 } from '../../src/infra/runtime/chain-canonical.js';
-import { scanChainVocabulary } from '../../src/infra/runtime/chain-vocabulary-repair.js';
+import {
+  scanChainVocabulary,
+  repairChainVocabulary,
+} from '../../src/infra/runtime/chain-vocabulary-repair.js';
 import type {
   BlockTypeVerdict,
   BlockVocabulary,
@@ -465,5 +469,85 @@ describe('S1 · the repair rewrites only what the core refuses', () => {
       }),
     );
     expect(block?.index).toBe(1);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* the way back                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Rewriting chain history is a tier-2 operation, and the only thing that
+ * makes it acceptable is a way back. The plan promises the repair backs
+ * up through the operator's own backup mechanism BEFORE it writes — and
+ * this is the test that holds it to that promise.
+ *
+ * Measured on this host, 2026-11-04, on a copy: the archive
+ * `before-chain-vocabulary-repair-*.tar.gz` carries the chain, and
+ * extracting it gives bytes identical to the file the repair replaced.
+ */
+describe('S1 · the repair leaves a way back', () => {
+  let dataDir: string;
+
+  beforeEach(() => {
+    dataDir = mkdtempSync(join(tmpdir(), 'memphis-s1-wayback-'));
+    mkdirSync(join(dataDir, 'chains', 'journal'), { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  const env = () => ({ MEMPHIS_DATA_DIR: dataDir, NODE_ENV: 'test' }) as NodeJS.ProcessEnv;
+
+  it('backs up the chain before it rewrites it, byte for byte', async () => {
+    const vocabulary = fakeVocabulary();
+    const good = {
+      index: 0,
+      timestamp: '2026-01-01T00:00:00.000Z',
+      chain: 'journal',
+      data: { type: 'journal', content: 'first', tags: [] },
+      prev_hash: '0'.repeat(64),
+    };
+    const bad = {
+      index: 1,
+      timestamp: '2026-01-01T00:01:00.000Z',
+      chain: 'journal',
+      data: { type: 'autonom_publication', content: 'second', tags: [] },
+      prev_hash: canonicalHash(good),
+    };
+    writeFileSync(
+      join(dataDir, 'chains', 'journal', '000000.json'),
+      `${JSON.stringify({ ...good, hash: canonicalHash(good) }, null, 2)}\n`,
+      'utf8',
+    );
+    const badPath = join(dataDir, 'chains', 'journal', '000001.json');
+    writeFileSync(
+      badPath,
+      `${JSON.stringify({ ...bad, hash: canonicalHash(bad) }, null, 2)}\n`,
+      'utf8',
+    );
+    const originalBytes = readFileSync(badPath);
+
+    const scan = scanChainVocabulary(env(), vocabulary);
+    expect(scan.unreadable).toHaveLength(1);
+
+    const result = await repairChainVocabulary({ rawEnv: env(), scan, vocabulary });
+
+    // The repair happened — otherwise the backup below would prove nothing.
+    expect(result.blocksRewritten).toBe(1);
+    expect(readFileSync(badPath).equals(originalBytes)).toBe(false);
+
+    // And there is an archive to go back to.
+    expect(result.backupFile).toBeTruthy();
+    expect(result.backupFile).toMatch(/before-chain-vocabulary-repair-.*\.tar\.gz$/);
+
+    const archive = join(dataDir, 'backups', result.backupFile!);
+    const extracted = execFileSync('tar', ['xzOf', archive, './chains/journal/000001.json'], {
+      encoding: 'utf8',
+    });
+
+    // The archived copy is the ORIGINAL block, byte for byte.
+    expect(Buffer.from(extracted, 'utf8').equals(originalBytes)).toBe(true);
   });
 });
