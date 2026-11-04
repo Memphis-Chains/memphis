@@ -1042,13 +1042,24 @@ honest. A plan that started with S6 would add a gate nobody can see.
 
 For completeness, because a plan that only lists what is open misleads:
 
-| stage  | what it closed                                                                                                                       | shipped in                          |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
-| R1     | one shared failure classifier — 308 failures, 126 inconclusive, 0 unknown over 8 437 tool results                                    | #737 (`d7f6b352`)                   |
-| R2     | the `proposals` chain, the proposal lifecycle, `memphis dream list/show/propose` — 26 signals → 21 proposals                         | #738, #739 (`7d2d2012`, `7edd0644`) |
-| —      | the S2 blind spot: a loop is a call that did not succeed (4 → 7 loops)                                                               | #738 (`7d2d2012`)                   |
-| **S0** | **one audit entry point** — `npm run -s ops:audit` measures the live system, one verdict per check                                   | #741 (`f7baece2f3`)                 |
-| **S1** | **one registry, one vocabulary** — the registry is derived from the taxonomy and the disk; the native core owns the block vocabulary | #743                                |
+| stage  | what it closed                                                                                                                           | shipped in                          |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| R1     | one shared failure classifier — 308 failures, 126 inconclusive, 0 unknown over 8 437 tool results                                        | #737 (`d7f6b352`)                   |
+| R2     | the `proposals` chain, the proposal lifecycle, `memphis dream list/show/propose` — 26 signals → 21 proposals                             | #738, #739 (`7d2d2012`, `7edd0644`) |
+| —      | the S2 blind spot: a loop is a call that did not succeed (4 → 7 loops)                                                                   | #738 (`7d2d2012`)                   |
+| **S0** | **one audit entry point** — `npm run -s ops:audit` measures the live system, one verdict per check                                       | #741 (`f7baece2f3`)                 |
+| **S1** | **one registry, one vocabulary** — the registry is derived from the taxonomy and the disk; the native core owns the block vocabulary     | #743 (`90f720a95`)                  |
+| **S1** | …and the sweep that asks the core instead of guessing — 624 blocks checked hourly, 622 readable, **2** not                               | #745 (`9cf233a91`)                  |
+| —      | the audit's own freshness window, which read a UTC timestamp as local time and counted a commit 61 seconds OLDER than the build as newer | #744 (`ee4af5352`)                  |
+
+**What is still open in S1: one step, and it is the operator's.** The code for
+S1 is on `main` and the falsifier is in place, but `block-vocabulary` stays
+FAILURE until `memphis repair runtime` has run on the live data — that is the
+step that rewrites the two blocks the core cannot read, and it asks for the
+operator's passphrase once, interactively, because it rewrites history. The
+way back is measured and now pinned by a test: the archive the repair takes
+first carries the chain, and extracting it gives bytes identical to the file
+the repair replaced.
 
 **What S0 changed in the measurements of this document.** Two numbers were
 wrong before the audit existed, and both were found by it, not by argument:
