@@ -15,9 +15,11 @@
  *    case is paired with the state that makes it pass.
  */
 
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -464,5 +466,82 @@ describe('runtime audit · the mutation property', () => {
     expect(vocabulary?.verdict).toBe('failure');
     expect(vocabulary?.summary).toContain('1 of 1');
     expect(vocabulary?.details.join(' ')).toContain('autonom_publication');
+  });
+});
+
+describe('runtime audit · the freshness window carries its timezone', () => {
+  const execFileAsync = promisify(execFile);
+  let home: string;
+  let repo: string;
+  const originalTz = process.env.TZ;
+
+  beforeEach(async () => {
+    home = await mkdtemp(path.join(tmpdir(), 'memphis-freshness-'));
+    repo = path.join(home, 'repo');
+    await mkdir(repo, { recursive: true });
+    // CET: one hour ahead of UTC in November. The bug only shows in a
+    // zone that is not UTC, so the test pins one.
+    process.env.TZ = 'Europe/Warsaw';
+  });
+
+  afterEach(async () => {
+    if (originalTz === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTz;
+    await rm(home, { recursive: true, force: true });
+  });
+
+  /** A repository whose single commit carries the given date. */
+  const commitAt = async (iso: string): Promise<void> => {
+    const env = {
+      ...process.env,
+      GIT_AUTHOR_DATE: iso,
+      GIT_COMMITTER_DATE: iso,
+    };
+    await execFileAsync('git', ['init', '-q', '-b', 'main'], { cwd: repo });
+    await execFileAsync('git', ['config', 'user.email', 'audit@memphis.local'], { cwd: repo });
+    await execFileAsync('git', ['config', 'user.name', 'audit'], { cwd: repo });
+    await execFileAsync('git', ['commit', '-q', '--allow-empty', '-m', 'merge'], {
+      cwd: repo,
+      env,
+    });
+  };
+
+  /** A dist/ whose newest file carries the given mtime. */
+  const buildAt = async (iso: string): Promise<void> => {
+    const dist = path.join(repo, 'dist');
+    await mkdir(dist, { recursive: true });
+    const file = path.join(dist, 'index.js');
+    await writeFile(file, '// build\n', 'utf8');
+    const seconds = Date.parse(iso) / 1000;
+    await utimes(file, seconds, seconds);
+  };
+
+  const commitsBehind = async (): Promise<string> => {
+    const report = await runRuntimeAudit({
+      rawEnv: { ...process.env, MEMPHIS_DATA_DIR: home },
+      repoRoot: repo,
+      config: null,
+    });
+    const check = report.checks.find((entry) => entry.id === 'deployment-freshness');
+    return check?.summary ?? '';
+  };
+
+  it('does not count a commit that landed before the build', async () => {
+    // The commit is 61 seconds OLDER than the build, one hour apart in
+    // wall-clock terms from the naive stamp the old code produced.
+    await commitAt('2026-11-04T10:38:00Z');
+    await buildAt('2026-11-04T10:39:01Z');
+
+    expect(await commitsBehind()).toContain('0 commit(s) behind');
+  });
+
+  it('counts a commit that landed after the build', async () => {
+    // The mirror image: the commit is NEWER than the build, so the
+    // check has to fail — otherwise the fix would have broken the thing
+    // the check exists for.
+    await commitAt('2026-11-04T10:40:00Z');
+    await buildAt('2026-11-04T10:39:01Z');
+
+    expect(await commitsBehind()).toContain('1 commit(s) behind');
   });
 });

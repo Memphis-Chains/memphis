@@ -47,7 +47,8 @@ import {
   getChainNames,
   getConditionalChainNames,
   getStandardChainNames,
- isChainBackupDirectory } from '../../memory/chain-catalog.js';
+  isChainBackupDirectory,
+} from '../../memory/chain-catalog.js';
 import { CLI_COMMAND_REGISTRY } from '../cli/registry.js';
 import { loadConfig } from '../config/env.js';
 import type { AppConfig } from '../config/schema.js';
@@ -318,8 +319,25 @@ async function collectDeploymentFreshness(repoRoot: string | null): Promise<Depl
   let commitsBehind: number | null = null;
   let mainHead: string | null = null;
   if (distNewestIso) {
-    const localStamp = new Date(newest as number).toISOString().replace('T', ' ').slice(0, 19);
-    const count = await git(['rev-list', '--count', `--since=${localStamp}`, 'main'], repoRoot);
+    // The stamp must carry its own timezone.
+    //
+    // `git rev-list --since` parses a NAIVE timestamp in the LOCAL zone.
+    // The old code stripped the zone off a UTC ISO string, so the window
+    // was read one offset off — on this host (CET, UTC+1) an hour into the
+    // past, and every commit that landed in that hour counted as newer
+    // than the build.
+    //
+    // Measured 2026-11-04 on this host: the S1 merge commit (11:38:00
+    // CET) against a build from 11:39:01 CET reported "dist is 1
+    // commit(s) behind main" — the commit was 61 seconds OLDER than the
+    // build and the build was current. The check that exists to catch a
+    // stale deployment was reporting a stale deployment that was not
+    // there.
+    //
+    // The ISO form keeps the zone, so git reads the instant the stamp
+    // names rather than the instant it looks like.
+    const stamp = new Date(newest as number).toISOString();
+    const count = await git(['rev-list', '--count', `--since=${stamp}`, 'main'], repoRoot);
     if (count !== null && /^\d+$/.test(count)) commitsBehind = Number(count);
     mainHead = await git(['log', '-1', '--format=%H', 'main'], repoRoot);
   }
