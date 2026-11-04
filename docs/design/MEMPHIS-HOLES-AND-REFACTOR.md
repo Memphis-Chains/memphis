@@ -766,6 +766,13 @@ TypeScript writer hashed the raw string. Measured on this host:
 | the core's verdict on them                        | `hash mismatch`                                                                        |
 | the TypeScript verifier's verdict on them         | valid — and it checks the whole chain's linkage, so the chain is internally consistent |
 | can the core still PARSE the live `system` chain? | **yes** — `chain_append` on the live chain returns `appended: true`                    |
+| blocks a history rewrite would have to re-hash    | **12 732** — 12 728 in the live `system` (every block from index 257 to its end) and 4 in the archive |
+
+The last row is the price of the decision, measured rather than estimated: the
+first alias block in `system` sits at index **257**, so a rewrite that starts
+there re-hashes everything after it. The alias blocks are all
+`security_event`; none of them carries a `kind` yet, so the canonical shape
+(`system_event` + `kind: security_event`) is still available to them.
 
 So the chain is not corrupt: the two implementations disagree about what
 the hash of 47 legacy blocks is. Which one wins is an **operator decision**,
@@ -1078,6 +1085,48 @@ const next=JSON.stringify({index:1,timestamp:new Date().toISOString(),chain:'aut
 console.log('live chain ->', b.chain_append(chain, next));
 console.log('empty chain ->', b.chain_append('[]', next));
 "
+```
+
+**The read-side aliases, and what a history rewrite would cost**
+
+```bash
+node --import tsx -e "
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { deriveChainRegistry } from './src/infra/storage/chain-adapter.js';
+
+const ALIASES = new Set([
+  'security_event','boot','health_state_change','memory.action','memory.burn',
+  'model-d-proposal','mode_change','consent.annotation','scheduler_task',
+  'chain.repair','config','reflection_report','categorize_report',
+]);
+const chainsDir = '/home/memphis/.memphis/chains';
+let total = 0;
+for (const dir of deriveChainRegistry()) {
+  const chainDir = join(chainsDir, dir);
+  if (!existsSync(chainDir)) continue;
+  const files = readdirSync(chainDir).filter((f) => /^\\d+\\.json\$/.test(f)).sort();
+  const idx = [];
+  for (let i = 0; i < files.length; i += 1) {
+    let b; try { b = JSON.parse(readFileSync(join(chainDir, files[i]), 'utf8')); } catch { continue; }
+    const t = b?.data?.type;
+    if (typeof t === 'string' && ALIASES.has(t)) idx.push(i);
+  }
+  if (idx.length === 0) continue;
+  const cascade = files.length - idx[0];
+  total += cascade;
+  console.log(dir + ': blocks=' + files.length + ' alias=' + idx.length +
+    ' first=' + idx[0] + ' last=' + idx[idx.length-1] + ' rehash=' + cascade);
+}
+console.log('blocks a history rewrite would re-hash:', total);
+"
+# and the two verdicts on the same blocks:
+memphis chain verify --chain system                  # the writer's verdict: ok
+node -e "const fs=require('fs');
+const b=require('./crates/memphis-napi/index.node');
+const blk=JSON.parse(fs.readFileSync('/home/memphis/.memphis/chains/system/000258.json','utf8'));
+const prev=JSON.parse(fs.readFileSync('/home/memphis/.memphis/chains/system/000257.json','utf8'));
+console.log('the core says:', b.chain_validate(JSON.stringify(blk), JSON.stringify(prev)));"
 ```
 
 **H2 · the chain registry, before and after S1**
