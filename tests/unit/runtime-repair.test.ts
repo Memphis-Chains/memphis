@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -6,6 +14,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { searchExactMemory } from '../../src/infra/memory/exact-search.js';
 import { repairRuntimeState } from '../../src/infra/runtime/runtime-repair.js';
+import type {
+  BlockTypeVerdict,
+  BlockVocabulary,
+} from '../../src/infra/storage/block-vocabulary.js';
 import { createSqliteClient, runMigrations } from '../../src/infra/storage/sqlite/client.js';
 import { SqliteGenerationEventRepository } from '../../src/infra/storage/sqlite/repositories/generation-event-repository.js';
 import { SqliteOperatorChatSessionRepository } from '../../src/infra/storage/sqlite/repositories/operator-chat-session-repository.js';
@@ -36,6 +48,41 @@ function writeChainBlock(
     ),
     'utf8',
   );
+}
+
+/**
+ * A vocabulary that answers without a native bridge: the core's variants
+ * and nothing else, so `autonom_publication` is the one type it refuses.
+ *
+ * The repair must behave the same against the real core and against this
+ * stand-in — that is why the vocabulary is injectable at all.
+ */
+function fakeVocabulary(): BlockVocabulary {
+  const known = new Set([
+    'journal',
+    'ask',
+    'decision',
+    'system',
+    'system_event',
+    'insight',
+    'tool_call',
+    'tool_result',
+    'error',
+    'case',
+  ]);
+  return {
+    available: () => true,
+    isKnown: (type) => known.has(type),
+    verdict: (type): BlockTypeVerdict =>
+      known.has(type)
+        ? { type, known: true }
+        : { type, known: false, error: `invalid_block_json: unknown variant \`${type}\`` },
+    complaint: (block) => {
+      const type = block.data.type;
+      if (typeof type !== 'string') return 'invalid_block_json: missing field `type`';
+      return known.has(type) ? null : `invalid_block_json: unknown variant \`${type}\``;
+    },
+  };
 }
 
 describe('runtime repair', { timeout: 30_000 }, () => {
@@ -221,5 +268,56 @@ describe('runtime repair', { timeout: 30_000 }, () => {
     } finally {
       verifyDb.close();
     }
+  });
+
+  it('a dry run asks for no passphrase and writes nothing', async () => {
+    const runtimeDir = mkdtempSync(join(tmpdir(), 'memphis-runtime-dryrun-'));
+    tempDirs.push(runtimeDir);
+    const env = {
+      ...process.env,
+      NODE_ENV: 'test',
+      MEMPHIS_DATA_DIR: runtimeDir,
+      DATABASE_URL: `file:${join(runtimeDir, 'memphis.db')}`,
+      RUST_CHAIN_ENABLED: 'false',
+      LOCAL_FALLBACK_ENABLED: 'true',
+    };
+
+    writeChainBlock(runtimeDir, 'journal', 1, {
+      type: 'autonom_publication',
+      content: 'a type the core cannot deserialize',
+      tags: ['repair'],
+    });
+    const blockPath = join(runtimeDir, 'chains', 'journal', '000001.json');
+    const before = readFileSync(blockPath, 'utf8');
+
+    let askedForPassphrase = false;
+    const result = await repairRuntimeState({
+      rawEnv: env,
+      dryRun: true,
+      vocabulary: fakeVocabulary(),
+      authorizeHistoryRewrite: async () => {
+        askedForPassphrase = true;
+        return true;
+      },
+    });
+
+    // The operator is asked for a passphrase ONCE, and only for a repair
+    // that rewrites history. A dry run rewrites nothing, so it must not
+    // ask -- otherwise "let me look first" would cost a tier-2 prompt.
+    expect(askedForPassphrase).toBe(false);
+
+    // And it wrote nothing at all: no block changed, no database created,
+    // no backup archive taken. The runtime layout may already exist; the
+    // ARCHIVE and the DATABASE must not be created by a dry run.
+    expect(readFileSync(blockPath, 'utf8')).toBe(before);
+    expect(existsSync(join(runtimeDir, 'memphis.db'))).toBe(false);
+    const archives = existsSync(join(runtimeDir, 'backups'))
+      ? readdirSync(join(runtimeDir, 'backups')).filter((name) => name.endsWith('.tar.gz'))
+      : [];
+    expect(archives).toEqual([]);
+
+    // But it says what WOULD change, and names the block.
+    expect(result.applied.some((item) => item.includes('would be rewritten'))).toBe(true);
+    expect(result.applied.join(' ')).toContain('autonom_publication');
   });
 });

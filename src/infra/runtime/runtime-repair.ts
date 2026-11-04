@@ -5,14 +5,7 @@
 // known (operator config under inspection), so typed accessors aren't
 // applicable. File-level disable.
 //
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  statSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import type Database from 'better-sqlite3';
@@ -45,6 +38,7 @@ import type { AppConfig } from '../config/schema.js';
 import { envSchema } from '../config/schema.js';
 import { rebuildDerivedEmbeddings } from '../memory/embed-reindex.js';
 import { rebuildExactSearchIndex } from '../memory/exact-search.js';
+import type { BlockVocabulary } from '../storage/block-vocabulary.js';
 import { createSqliteClient, runMigrations } from '../storage/sqlite/client.js';
 
 const APPEND_LOCK_STALE_MS = 30_000;
@@ -64,6 +58,22 @@ export type RuntimeRepairResult = {
 export type RuntimeRepairOptions = {
   rawEnv?: NodeJS.ProcessEnv;
   force?: boolean;
+  /**
+   * Report what WOULD change, and write nothing.
+   *
+   * A dry run answers the question the operator asks before consenting:
+   * what exactly would this change? It needs no passphrase, because it
+   * rewrites nothing.
+   */
+  dryRun?: boolean;
+  /**
+   * The vocabulary to ask. Defaults to the native core.
+   *
+   * Injectable so a test can ask a question without the bridge — the
+   * core is the oracle in production and a stand-in in a test, and the
+   * repair must behave the same either way.
+   */
+  vocabulary?: BlockVocabulary;
   /**
    * Asked for when the repair would REWRITE CHAIN HISTORY.
    *
@@ -618,6 +628,48 @@ export async function repairRuntimeState(
 
   const before = await buildRuntimeHealthSnapshot(config, rawEnv);
 
+  if (options.dryRun) {
+    // A dry run writes NOTHING -- not a directory, not an index, not a
+    // block. It answers one question: what would the history rewrite
+    // change? And it answers it without asking for a passphrase, because
+    // it rewrites nothing.
+    //
+    // The "after" snapshot IS the "before" snapshot: nothing was written,
+    // so there is nothing new to measure.
+    const vocabularyScan = scanChainVocabulary(rawEnv, options.vocabulary);
+    if (!vocabularyScan.oracleAvailable) {
+      skipped.push(
+        'the native core could not be loaded, so no block could be checked and no chain history was rewritten',
+      );
+    } else if (vocabularyScan.unreadable.length === 0) {
+      applied.push(
+        `chain vocabulary: every one of the ${vocabularyScan.blocksScanned} live blocks is in the core's vocabulary`,
+      );
+    } else {
+      const preview = await repairChainVocabulary({
+        rawEnv,
+        scan: vocabularyScan,
+        dryRun: true,
+        vocabulary: options.vocabulary,
+      });
+      applied.push(...preview.applied);
+      skipped.push(...preview.skipped);
+      warnings.push(...preview.warnings);
+    }
+    applied.push('dry run: nothing was written');
+    return {
+      ok: before.repair.status !== 'degraded-manual',
+      status: before.repair.status,
+      repairable: before.repair.repairable,
+      recommendedAction: before.repair.recommendedAction,
+      applied,
+      skipped,
+      warnings,
+      before,
+      after: before,
+    };
+  }
+
   ensureRuntimeLayout(rawEnv, config, applied);
   removeStaleRuntimeArtifacts(rawEnv, applied);
   initializeSqlite(config, applied, skipped);
@@ -628,7 +680,7 @@ export async function repairRuntimeState(
   // operator's consent. Ungated, the repair would rewrite the blocks the
   // native core cannot read — exactly the kind of "fix" that erases the
   // evidence of what went wrong.
-  const vocabularyScan = scanChainVocabulary(rawEnv);
+  const vocabularyScan = scanChainVocabulary(rawEnv, options.vocabulary);
   if (!vocabularyScan.oracleAvailable) {
     skipped.push(
       'the native core could not be loaded, so no block could be checked and no chain history was rewritten',
@@ -650,7 +702,11 @@ export async function repairRuntimeState(
         `chain history was not rewritten: ${vocabularyScan.unreadable.length} block(s) cannot be read by the native core (${named}), and rewriting them needs the operator passphrase`,
       );
     } else {
-      const vocabulary = await repairChainVocabulary({ rawEnv, scan: vocabularyScan });
+      const vocabulary = await repairChainVocabulary({
+        rawEnv,
+        scan: vocabularyScan,
+        vocabulary: options.vocabulary,
+      });
       applied.push(...vocabulary.applied);
       skipped.push(...vocabulary.skipped);
       warnings.push(...vocabulary.warnings);
