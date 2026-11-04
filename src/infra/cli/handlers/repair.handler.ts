@@ -22,7 +22,7 @@ const REPAIR_COMMANDS = ['repair'] as const;
 export async function handleRepairCommand(context: CliContext): Promise<boolean> {
   if (context.args.subcommand !== 'runtime') {
     throw new Error(
-      'repair currently supports only: memphis repair runtime [--force] [--operator-passphrase <secret>] [--json]',
+      'repair currently supports only: memphis repair runtime [--force] [--dry-run] [--operator-passphrase <secret>] [--json]',
     );
   }
 
@@ -33,9 +33,14 @@ export async function handleRepairCommand(context: CliContext): Promise<boolean>
   //
   // The passphrase is never stored: it is asked for once, in this
   // terminal, and lives only in the session cache.
+  //
+  // `--dry-run` answers the question the operator asks BEFORE consenting:
+  // what exactly would this change? It writes nothing, so it asks for no
+  // passphrase.
   const result = await repairRuntimeState({
     rawEnv: process.env,
     force: context.args.force,
+    dryRun: context.args.dryRun,
     authorizeHistoryRewrite: async () => {
       const { requireOperatorAuth } = await import('../../auth/operator-gate.js');
       return requireOperatorAuth(undefined, process.env, context.args.operatorPassphrase);
@@ -66,9 +71,7 @@ export const repairCommandHandler: CommandHandler = {
   name: 'repair',
   commands: REPAIR_COMMANDS,
   canHandle(context: CliContext): boolean {
-    return REPAIR_COMMANDS.includes(
-      context.args.command as (typeof REPAIR_COMMANDS)[number],
-    );
+    return REPAIR_COMMANDS.includes(context.args.command as (typeof REPAIR_COMMANDS)[number]);
   },
   handle(context: CliContext): Promise<boolean> {
     return handleRepairCommand(context);
