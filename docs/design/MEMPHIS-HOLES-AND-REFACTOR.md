@@ -935,7 +935,7 @@ honest. A plan that started with S6 would add a gate nobody can see.
 - **The LLM tier (D5).** Unchanged from `DREAMING-GAPS-AND-REFACTOR.md` §5: it
   waits for R2 and R3 to be on the runtime and to have produced proposals a
   human accepted.
-- **Anything in `crates/**` at all.** Tier 2, and the operator has ruled that
+- **Anything in `crates/**` at all.\*\* Tier 2, and the operator has ruled that
   this plan does not touch it (2026-11-04).
 
 ---
@@ -944,12 +944,13 @@ honest. A plan that started with S6 would add a gate nobody can see.
 
 For completeness, because a plan that only lists what is open misleads:
 
-| stage  | what it closed                                                                                               | shipped in                          |
-| ------ | ------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
-| R1     | one shared failure classifier — 308 failures, 126 inconclusive, 0 unknown over 8 437 tool results            | #737 (`d7f6b352`)                   |
-| R2     | the `proposals` chain, the proposal lifecycle, `memphis dream list/show/propose` — 26 signals → 21 proposals | #738, #739 (`7d2d2012`, `7edd0644`) |
-| —      | the S2 blind spot: a loop is a call that did not succeed (4 → 7 loops)                                       | #738 (`7d2d2012`)                   |
-| **S0** | **one audit entry point** — `npm run -s ops:audit` measures the live system, one verdict per check           | #741 (`f7baece2f3`)                 |
+| stage  | what it closed                                                                                                                       | shipped in                          |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
+| R1     | one shared failure classifier — 308 failures, 126 inconclusive, 0 unknown over 8 437 tool results                                    | #737 (`d7f6b352`)                   |
+| R2     | the `proposals` chain, the proposal lifecycle, `memphis dream list/show/propose` — 26 signals → 21 proposals                         | #738, #739 (`7d2d2012`, `7edd0644`) |
+| —      | the S2 blind spot: a loop is a call that did not succeed (4 → 7 loops)                                                               | #738 (`7d2d2012`)                   |
+| **S0** | **one audit entry point** — `npm run -s ops:audit` measures the live system, one verdict per check                                   | #741 (`f7baece2f3`)                 |
+| **S1** | **one registry, one vocabulary** — the registry is derived from the taxonomy and the disk; the native core owns the block vocabulary | #743                                |
 
 **What S0 changed in the measurements of this document.** Two numbers were
 wrong before the audit existed, and both were found by it, not by argument:
