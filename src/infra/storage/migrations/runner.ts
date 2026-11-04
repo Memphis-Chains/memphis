@@ -25,10 +25,9 @@ import type {
   PerChainMigrationReport,
 } from './types.js';
 import { getChainPath } from '../../../config/paths.js';
+import { SAFE_CHAIN_NAME } from '../../../memory/chain-catalog.js';
 import { writeSecurityAudit } from '../../logging/security-audit.js';
 import { hashBlock } from '../chain-adapter.js';
-
-const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 function detectVersion(block: MigratableBlock): number {
   if (typeof block.schemaVersion === 'number' && block.schemaVersion >= 1) {

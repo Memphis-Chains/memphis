@@ -1,13 +1,12 @@
 import { getChainPath } from '../../../config/paths.js';
 import { resolveSurfacePolicy } from '../../../gateway/surface-policy.js';
 import { runMemphisRecall, type RecallMode } from '../../../mcp/tools/recall.js';
+import { SAFE_CHAIN_NAME } from '../../../memory/chain-catalog.js';
 import { writeSecurityAudit, type SecurityAuditEvent } from '../../logging/security-audit.js';
 import { storeDurableMemory, type DurableMemoryStoreResult } from '../../memory/durable-memory.js';
 import { searchExactMemory, type ExactSearchOutput } from '../../memory/exact-search.js';
 import { embedSearch } from '../../storage/rust-embed-adapter.js';
 import { resolveSafeChildPath } from '../path-validation.js';
-
-const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 type MemoryRouteRequest = {
   body: unknown;

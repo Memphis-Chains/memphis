@@ -87,7 +87,11 @@ import {
   setStartupTrustRootStatus,
 } from '../infra/runtime/startup-state.js';
 import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
-import { appendBlock, verifyChainIntegrity } from '../infra/storage/chain-adapter.js';
+import {
+  appendBlock,
+  deriveChainRegistry,
+  verifyChainIntegrity,
+} from '../infra/storage/chain-adapter.js';
 import { assessRustBridgeManifestStatus } from '../infra/storage/rust-bridge-manifest.js';
 import { embedSearch, getRustEmbedAdapterStatus } from '../infra/storage/rust-embed-adapter.js';
 import type {
@@ -99,6 +103,7 @@ import type {
 import { buildChatDispatchWorkItem, type HttpChatRuntimeDeps } from '../infra/work/chat-work.js';
 import { LocalWorkerRunner } from '../infra/work/local-worker-runner.js';
 import { DEFAULT_LOCAL_WORKER_CAPABILITY_SCOPE } from '../infra/work/work-capabilities.js';
+import { isChainBackupDirectory } from '../memory/chain-catalog.js';
 import { resolveModelCapabilitySnapshot } from '../providers/model-capabilities.js';
 import { getCognitiveMode, ensureIskra, ensureSoulManifest } from '../soul/manifest.js';
 import { loadSoulMemory } from '../soul/memory.js';
@@ -793,15 +798,12 @@ async function startChannelGateway(container?: {
         );
       },
       onChains: async () => {
-        const CHAINS = [
-          'journal',
-          'decisions',
-          'system',
-          'reflections',
-          'cases',
-          'collective',
-          'patterns',
-        ];
+        // Derived from the registry (the taxonomy + the disk), not a
+        // hand-written list: a fourth copy of the chain names was here,
+        // and it named chains a host may not have.
+        const CHAINS = [...deriveChainRegistry(process.env)]
+          .filter((name) => !isChainBackupDirectory(name))
+          .sort((left, right) => left.localeCompare(right));
         const lines: string[] = ['Chains (Rust NAPI):'];
         for (const chain of CHAINS) {
           try {

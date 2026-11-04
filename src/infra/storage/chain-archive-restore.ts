@@ -31,8 +31,7 @@ import { createGunzip } from 'node:zlib';
 
 import { hashBlock, type ChainBlock } from './chain-adapter.js';
 import { getChainPath } from '../../config/paths.js';
-
-const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+import { SAFE_CHAIN_NAME } from '../../memory/chain-catalog.js';
 
 export interface ChainArchiveRestoreResult {
   chain: string;

@@ -124,11 +124,16 @@ describe('backup content drill', () => {
   // safe chain-name shape (a rebuild-hashes backup). It happened on this
   // host: every scheduled backup reported "restore-drill FAILED — invalid
   // chain name" while the archive itself was complete and correct.
-  it('skips chain directories whose name is not a safe chain name', async () => {
+  //
+  // S1 (2026-11-04): a RECOGNIZED recovery directory is no longer skipped —
+  // it is verified. The drill used to check one chain and ignore the
+  // archived copy next to it, which is how a backup with an unreadable
+  // block could sit in the archive for months.
+  it('verifies a recognized recovery directory instead of skipping it', async () => {
     const { archive } = backupChainFixture();
     const result = await drillBackup(archive);
-    // The real chain is still verified.
-    expect(result.chainsChecked).toBe(1);
+    // The real chain AND its recovery copy are both verified.
+    expect(result.chainsChecked).toBe(2);
     expect(result.blocksChecked).toBeGreaterThan(0);
   });
 });

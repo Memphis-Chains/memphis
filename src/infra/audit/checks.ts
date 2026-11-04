@@ -27,18 +27,45 @@ const UNKNOWN: AuditCheckResult['verdict'] = 'unknown';
 export interface ChainRegistryInput {
   /** Names in the taxonomy (`src/memory/chain-catalog.ts`). */
   readonly catalogNames: readonly string[];
-  /** The code's default allowlist, with no env override applied. */
-  readonly codeAllowlist: readonly string[];
-  /** The allowlist in force right now (the env override wins). */
+  /** Catalog names that are expected on a live host. */
+  readonly standardChainNames: readonly string[];
+  /** Catalog names whose absence is not drift (`proactive`, `messages`). */
+  readonly conditionalChainNames: readonly string[];
+  /** The registry derived from the taxonomy and the disk. */
+  readonly registryNames: readonly string[];
+  /** The registry entries that are archives of a chain (`journal.backup-…`). */
+  readonly registryArchiveNames: readonly string[];
+  /** The allowlist in force right now (the registry, narrowed by the config). */
   readonly effectiveAllowlist: readonly string[];
   /** The allowlist as written in the live `.env`, if the file was found. */
   readonly configAllowlist: readonly string[] | null;
   /** Every chain directory on disk. */
   readonly diskDirs: readonly string[];
-  /** The directories the verifier will actually open (safe-name filter applied). */
+  /** The directories the verifier will actually open. */
   readonly scannableDirs: readonly string[];
 }
 
+/**
+ * The registry is one list — and the list knows the difference between
+ * "planned" and "drifted".
+ *
+ * What is drift:
+ *   - a chain the registry names is not effectively scanned (the config
+ *     narrowed it away, or its name is not safe). This is the hole the
+ *     operator named: the allowlist carried three archives the scanner
+ *     could not open, so a backup he had explicitly listed was never
+ *     read.
+ *   - the config names a chain the registry does not know. The config
+ *     may only narrow; it may not invent.
+ *
+ * What is NOT drift:
+ *   - a conditional chain (`proactive`, `messages`) with no directory.
+ *     The taxonomy is not a promise about the disk, and a host without
+ *     the federation chain is healthy.
+ *   - a directory under `chains/` that is not a chain (the quarantine
+ *     container, a sidecar writer's dump). It is reported for
+ *     visibility, and the verifier must not open it.
+ */
 export function checkChainRegistry(input: ChainRegistryInput): AuditCheckResult {
   const title = 'the chain registry is one list';
   if (input.catalogNames.length === 0 || input.diskDirs.length === 0) {
@@ -52,46 +79,72 @@ export function checkChainRegistry(input: ChainRegistryInput): AuditCheckResult 
   }
 
   const effective = new Set(input.effectiveAllowlist);
+  const registry = new Set(input.registryNames);
   const disk = new Set(input.diskDirs);
   const scannable = new Set(input.scannableDirs);
+  const archives = new Set(input.registryArchiveNames);
 
-  const catalogOnly = input.catalogNames.filter((name) => !effective.has(name));
-  const allowlistOnly = input.effectiveAllowlist.filter((name) => !disk.has(name));
-  const unscanned = input.diskDirs.filter((name) => !effective.has(name));
+  const registryNotScanned = input.registryNames.filter((name) => !effective.has(name));
+  // Narrowing a CHAIN away is drift: it is a directory Memphis writes to.
+  // Narrowing an ARCHIVE away is the operator's explicit choice — the
+  // config exists precisely so the operator can decide which frozen
+  // copies are read — so it is reported, not failed.
+  const chainsNotScanned = registryNotScanned.filter((name) => !archives.has(name));
+  const archivesNotScanned = registryNotScanned.filter((name) => archives.has(name));
+  const unreachable = registryNotScanned.filter((name) => disk.has(name) && !scannable.has(name));
+  const configOnly = (input.configAllowlist ?? []).filter((name) => !registry.has(name));
   const allowlistedButUnscanned = input.effectiveAllowlist.filter(
     (name) => disk.has(name) && !scannable.has(name),
   );
-  const configDiffersFromCode =
-    input.configAllowlist !== null && !sameSet(input.configAllowlist, input.codeAllowlist);
+  const conditionalAbsent = input.conditionalChainNames.filter(
+    (name) => !disk.has(name) && !effective.has(name),
+  );
+  const standardAbsent = input.standardChainNames.filter(
+    (name) => !disk.has(name) && !effective.has(name),
+  );
+  const notAChain = input.diskDirs.filter((name) => !registry.has(name));
 
   const details: string[] = [];
-  if (catalogOnly.length > 0) {
-    details.push(`in the taxonomy only: ${catalogOnly.join(', ')}`);
+  if (chainsNotScanned.length > 0) {
+    details.push(
+      `in the registry but not scanned: ${chainsNotScanned.join(', ')} — the config narrowed them away`,
+    );
   }
-  if (allowlistOnly.length > 0) {
-    details.push(`in the allowlist but no directory: ${allowlistOnly.join(', ')}`);
+  if (archivesNotScanned.length > 0) {
+    details.push(
+      `archives narrowed out of the scan by the config (the operator's choice): ${archivesNotScanned.join(', ')}`,
+    );
   }
-  if (unscanned.length > 0) {
-    details.push(`on disk but never scanned: ${unscanned.join(', ')}`);
+  if (unreachable.length > 0) {
+    details.push(
+      `in the registry but unreachable by the scanner (the name is not safe): ${unreachable.join(', ')}`,
+    );
+  }
+  if (configOnly.length > 0) {
+    details.push(
+      `named by the config but not by the registry (the config may only narrow): ${configOnly.join(', ')}`,
+    );
   }
   if (allowlistedButUnscanned.length > 0) {
     details.push(
       `in the allowlist but unreachable by the scanner (the name is not safe): ${allowlistedButUnscanned.join(', ')}`,
     );
   }
-  if (configDiffersFromCode) {
+  if (conditionalAbsent.length > 0) {
     details.push(
-      'the live .env allowlist differs from the code default — the config overrides the code silently',
+      `planned, not installed — their absence is not drift: ${conditionalAbsent.join(', ')}`,
     );
   }
+  if (standardAbsent.length > 0) {
+    details.push(`in the taxonomy, no directory yet: ${standardAbsent.join(', ')}`);
+  }
+  if (notAChain.length > 0) {
+    details.push(`on disk, not a chain: ${notAChain.join(', ')}`);
+  }
 
-  const drift = catalogOnly.length > 0 ? catalogOnly.join(',') : 'none';
+  const drift = chainsNotScanned.length > 0 ? chainsNotScanned.join(',') : 'none';
   const verdict =
-    catalogOnly.length > 0 ||
-    allowlistOnly.length > 0 ||
-    unscanned.length > 0 ||
-    allowlistedButUnscanned.length > 0 ||
-    configDiffersFromCode
+    chainsNotScanned.length > 0 || configOnly.length > 0 || allowlistedButUnscanned.length > 0
       ? FAIL
       : PASS;
 
@@ -99,15 +152,9 @@ export function checkChainRegistry(input: ChainRegistryInput): AuditCheckResult 
     id: 'chain-registry',
     title,
     verdict,
-    summary: `catalog=${input.catalogNames.length} allowlist=${input.effectiveAllowlist.length} disk=${input.diskDirs.length} drift=${drift}`,
+    summary: `catalog=${input.catalogNames.length} registry=${input.registryNames.length} scanned=${input.effectiveAllowlist.length} disk=${input.diskDirs.length} drift=${drift}`,
     details,
   };
-}
-
-function sameSet(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length !== b.length) return false;
-  const left = new Set(a);
-  return b.every((value) => left.has(value));
 }
 
 /* ------------------------------------------------------------------ */

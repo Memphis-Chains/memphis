@@ -108,18 +108,21 @@ export interface SystemPromptContext {
 // about chains it never got to see. Canonical list now comes from
 // `src/memory/chain-catalog.ts` so every chain (10 currently) gets its purpose
 // string in the prompt, every consumer sees the same list.
-
-const BLOCK_TYPES = [
-  'journal',
-  'ask',
-  'decision',
-  'system',
-  'system_event',
-  'insight',
-  'tool_call',
-  'tool_result',
-  'error',
-] as const;
+//
+// The block types follow the same rule (S1, 2026-11-04). This used to be a
+// hand-written list of nine names — a SECOND list of block types in
+// TypeScript, which is the drift H1 is about: the prompt told the model
+// about a vocabulary the code did not enforce, and it had already fallen
+// behind the native core's enum (it never mentioned `case`, and the core
+// knows sixteen variants plus fourteen aliases). It is now derived from the
+// catalog, whose `blockTypes` are the core-legal types each chain uses.
+function formatBlockTypes(): string {
+  const types = new Set<string>();
+  for (const name of getChainNames()) {
+    for (const type of CHAIN_CATALOG[name].blockTypes) types.add(type);
+  }
+  return [...types].join(', ');
+}
 
 function escapePromptFragmentText(value: string): string {
   return value.replace(
@@ -132,10 +135,6 @@ function formatChainReference(): string {
   return getChainNames()
     .map((name) => `  - ${name}: ${CHAIN_CATALOG[name].purpose}`)
     .join('\n');
-}
-
-function formatBlockTypes(): string {
-  return BLOCK_TYPES.map((t) => t).join(', ');
 }
 
 // ── Tool-Use Instructions ────────────────────────────────────────────────────

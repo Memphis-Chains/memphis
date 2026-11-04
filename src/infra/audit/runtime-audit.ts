@@ -43,13 +43,21 @@ import {
 import { worstVerdict, type AuditCheckResult, type RuntimeAuditReport } from './types.js';
 import { getChainPath } from '../../config/paths.js';
 import { runMemphisSloStatus } from '../../mcp/tools/slo-status.js';
-import { getChainNames } from '../../memory/chain-catalog.js';
+import {
+  getChainNames,
+  getConditionalChainNames,
+  getStandardChainNames,
+ isChainBackupDirectory } from '../../memory/chain-catalog.js';
 import { CLI_COMMAND_REGISTRY } from '../cli/registry.js';
 import { loadConfig } from '../config/env.js';
 import type { AppConfig } from '../config/schema.js';
 import { buildHealthPayload } from '../http/health.js';
-import { getChainAllowlist, SAFE_CHAIN_NAME } from '../storage/chain-adapter.js';
-import { NapiChainAdapter } from '../storage/rust-chain-adapter.js';
+import { BlockVocabularyOracle } from '../storage/block-vocabulary.js';
+import {
+  deriveChainRegistry,
+  getChainAllowlist,
+  isScannableChainDirectoryName,
+} from '../storage/chain-adapter.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -129,7 +137,10 @@ async function readTextIfExists(file: string): Promise<string | null> {
 
 interface ChainRegistryFacts {
   catalogNames: string[];
-  codeAllowlist: string[];
+  standardChainNames: string[];
+  conditionalChainNames: string[];
+  registryNames: string[];
+  registryArchiveNames: string[];
   effectiveAllowlist: string[];
   configAllowlist: string[] | null;
   diskDirs: string[];
@@ -161,13 +172,24 @@ async function collectChainRegistry(
     }
   }
 
+  // The registry is the ONE list: what the taxonomy names and the disk
+  // holds. The collector reads it from the code that owns it rather
+  // than re-deriving it — a second derivation here is the drift the
+  // audit exists to catch.
+  const registry = deriveChainRegistry(rawEnv);
+  const registryNames = [...registry];
+  const registryArchiveNames = registryNames.filter((name) => isChainBackupDirectory(name));
+
   return {
     catalogNames: getChainNames(),
-    codeAllowlist: [...getChainAllowlist({})],
+    standardChainNames: getStandardChainNames(),
+    conditionalChainNames: getConditionalChainNames(),
+    registryNames,
+    registryArchiveNames,
     effectiveAllowlist: [...getChainAllowlist(rawEnv)],
     configAllowlist,
     diskDirs,
-    scannableDirs: diskDirs.filter((name) => SAFE_CHAIN_NAME.test(name)),
+    scannableDirs: diskDirs.filter((name) => isScannableChainDirectoryName(name)),
   };
 }
 
@@ -183,24 +205,14 @@ async function collectBlockVocabulary(
   effectiveAllowlist: readonly string[],
 ): Promise<BlockVocabularyFacts> {
   const chainsDir = getChainPath(undefined, rawEnv);
-  const adapter = new NapiChainAdapter(rawEnv);
+  // The oracle is the ONE way this codebase asks the native core whether
+  // a block is readable. The audit uses the same implementation the repair
+  // uses, so "the audit says unreadable" and "the repair fixed it" cannot
+  // come to mean two different things.
+  const oracle = new BlockVocabularyOracle(rawEnv);
 
-  let oracleAvailable = true;
-  try {
-    adapter.validateBlock({
-      index: 0,
-      timestamp: new Date().toISOString(),
-      chain: 'system',
-      data: { type: 'system_event', content: 'probe', tags: [] },
-      prev_hash: '0'.repeat(64),
-      hash: '0'.repeat(64),
-    });
-  } catch {
-    oracleAvailable = false;
-  }
-
-  if (!oracleAvailable) {
-    return { oracleAvailable, totalBlocks: 0, unreadable: [], chainsScanned: 0 };
+  if (!oracle.available()) {
+    return { oracleAvailable: false, totalBlocks: 0, unreadable: [], chainsScanned: 0 };
   }
 
   let totalBlocks = 0;
@@ -228,21 +240,19 @@ async function collectBlockVocabulary(
         continue;
       }
       totalBlocks += 1;
-      try {
-        adapter.validateBlock(block as never);
-      } catch (error) {
-        const data = (block.data ?? {}) as Record<string, unknown>;
-        unreadable.push({
-          chain,
-          file,
-          type: typeof data.type === 'string' ? data.type : undefined,
-          error: String((error as Error).message).replace(/^chain_validate:\s*/, ''),
-        });
-      }
+      const complaint = oracle.complaint(block as never);
+      if (complaint === null) continue;
+      const data = (block.data ?? {}) as Record<string, unknown>;
+      unreadable.push({
+        chain,
+        file,
+        type: typeof data.type === 'string' ? data.type : undefined,
+        error: complaint,
+      });
     }
   }
 
-  return { oracleAvailable, totalBlocks, unreadable, chainsScanned };
+  return { oracleAvailable: true, totalBlocks, unreadable, chainsScanned };
 }
 
 async function collectSloReporting(

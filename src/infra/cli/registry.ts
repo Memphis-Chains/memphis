@@ -86,7 +86,6 @@ export const CLI_COMMAND_REGISTRY = [
       'context',
       'service',
       'reset',
-      'repair',
       'slo',
       'kill-zombies',
       'readiness',
@@ -304,6 +303,16 @@ export const CLI_COMMAND_REGISTRY = [
       () => import('./handlers/audit-runtime.handler.js'),
       'auditRuntimeCommandHandler',
     ),
+  ),
+  // `repair` has its own handler file: it enforces the operator gate
+  // when it rewrites chain history, and the auth audit reads enforcement
+  // at file granularity. A gate inside `system.handler.ts` would mark
+  // every command that file dispatches — help, doctor, models, ascii —
+  // as gated, which is false for all of them.
+  createCommandRegistration(
+    'repair',
+    ['repair'],
+    createLazyHandlerLoader(() => import('./handlers/repair.handler.js'), 'repairCommandHandler'),
   ),
 ] as const;
 

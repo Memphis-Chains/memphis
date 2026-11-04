@@ -1,10 +1,16 @@
+import * as crypto from 'node:crypto';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { appendBlock, verifyChainIntegrity } from '../../src/infra/storage/chain-adapter.js';
+
+import {
+  appendBlock,
+  hashBlock,
+  verifyChainIntegrity,
+} from '../../src/infra/storage/chain-adapter.js';
 import {
   archiveGC,
   rotateChain,
@@ -77,14 +83,41 @@ describe('verifyChainIntegrity — tampering detection', () => {
   );
 
   it.each(['journal.backup-1792925651264', 'cases.backup-2026-07-07T15-07-23-108Z'])(
-    'skips the recognized recovery directory %s',
+    'verifies the recognized recovery directory %s',
     async (name) => {
+      // The hole this stage closes: the allowlist carried three frozen
+      // backups, the scanner's name pattern had no dot in it, and
+      // `chain verify --chain journal.backup-…` answered `ok: true` after
+      // checking NOTHING. A recovery directory is a chain now, so it is
+      // opened — and a recovery directory that is not there is an error,
+      // not a silent pass.
+      const chainDir = join(env.dataDir, 'chains', name);
+      mkdirSync(chainDir, { recursive: true });
+      const block = {
+        index: 0,
+        timestamp: new Date().toISOString(),
+        chain: 'journal',
+        data: { type: 'journal', content: 'recovered', tags: [] },
+        prev_hash: '0'.repeat(64),
+      };
+      writeFileSync(
+        join(chainDir, '000000.json'),
+        JSON.stringify({ ...block, hash: hashBlock(block, crypto) }),
+      );
+
       await expect(verifyChainIntegrity(name)).resolves.toMatchObject({
         ok: true,
-        chainsChecked: 0,
+        chainsChecked: 1,
+        blockCount: 1,
       });
     },
   );
+
+  it('says so when a named recovery directory is not there', async () => {
+    await expect(verifyChainIntegrity('journal.backup-1792925651264')).rejects.toThrow(
+      'chain not found',
+    );
+  });
 
   it('detects when a block file has been tampered with (hash mismatch)', async () => {
     const chain = 'tamper-test';
