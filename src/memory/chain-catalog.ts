@@ -19,6 +19,16 @@
  * render docs (system-prompt), gate search indexing (embed-reindex), and
  * drive readiness checks (runtime-health, doctor) without needing to
  * hand-code their own knowledge of what each chain is for.
+ *
+ * THE CATALOG IS NOT A PROMISE ABOUT THE DISK
+ *
+ * Chains are created by their first writer, so a fresh install has fewer
+ * directories than the catalog names — and two entries (`proactive`,
+ * `messages`) belong to features that may be off entirely. The
+ * `availability` flag says which absences are drift and which are health.
+ * Without it, every audit of a fresh install reports a permanent red
+ * (measured: the audit named `proactive, messages` as registry drift on
+ * a host where both absences were correct).
  */
 
 export type ConsentDefault = 'exportable' | 'local-only' | 'anonymized';
@@ -68,6 +78,22 @@ export interface ChainDefinition {
    * via dedicated soul tools, not chain search.
    */
   searchable: boolean;
+  /**
+   * Whether the chain is expected to be present on a live host.
+   *
+   * - `standard` — part of the ordinary install. Its absence on the disk
+   *   is worth a report; the registry counts it.
+   * - `conditional` — belongs to a feature that may legitimately be off
+   *   (`messages`: federation) or is written only opportunistically
+   *   (`proactive`: the assistant's nudges). A host that does not have
+   *   it is HEALTHY, and the audit must say so instead of reporting a
+   *   permanent red.
+   *
+   * This flag exists because the taxonomy is not a promise about the
+   * disk: the chains are created by their first writer, so a fresh
+   * install legitimately has fewer directories than the catalog names.
+   */
+  availability: 'standard' | 'conditional';
 }
 
 export const CHAIN_CATALOG = {
@@ -78,6 +104,7 @@ export const CHAIN_CATALOG = {
     writeFrequency: 'high',
     consentDefault: 'local-only',
     searchable: true,
+    availability: 'standard',
   },
   decisions: {
     name: 'decisions',
@@ -86,6 +113,7 @@ export const CHAIN_CATALOG = {
     writeFrequency: 'medium',
     consentDefault: 'exportable',
     searchable: true,
+    availability: 'standard',
   },
   reflections: {
     name: 'reflections',
@@ -95,6 +123,7 @@ export const CHAIN_CATALOG = {
     writeFrequency: 'low',
     consentDefault: 'exportable',
     searchable: true,
+    availability: 'standard',
   },
   cases: {
     name: 'cases',
@@ -104,6 +133,7 @@ export const CHAIN_CATALOG = {
     writeFrequency: 'medium',
     consentDefault: 'local-only',
     searchable: true,
+    availability: 'standard',
   },
   patterns: {
     name: 'patterns',
@@ -112,15 +142,22 @@ export const CHAIN_CATALOG = {
     writeFrequency: 'low',
     consentDefault: 'exportable',
     searchable: true,
+    availability: 'standard',
   },
   autonom_archive: {
     name: 'autonom_archive',
     purpose:
       'Operator-imported archive — autonom.edu.pl/publications (Mazur, Kossecki, Wegrzyn et al. Polska Szkola Cybernetyczna).',
-    blockTypes: ['autonom_publication'],
+    // `autonom_publication` is NOT a variant of the native core's
+    // `BlockType` enum (crates/memphis-core/src/block.rs:5) — measured:
+    // the core answers "unknown variant `autonom_publication`" for it.
+    // The catalog may not declare a type the core cannot read; the
+    // canonical shape is `system_event` with the semantic name in `kind`.
+    blockTypes: ['system_event'],
     writeFrequency: 'low',
     consentDefault: 'exportable',
     searchable: true,
+    availability: 'standard',
   },
   proposals: {
     name: 'proposals',
@@ -136,6 +173,7 @@ export const CHAIN_CATALOG = {
     // and `memphis dream list` is where candidates live until the gate
     // accepts one.
     searchable: false,
+    availability: 'standard',
   },
 
   system: {
@@ -146,6 +184,7 @@ export const CHAIN_CATALOG = {
     writeFrequency: 'high',
     consentDefault: 'exportable',
     searchable: false,
+    availability: 'standard',
   },
   collective: {
     name: 'collective',
@@ -155,15 +194,17 @@ export const CHAIN_CATALOG = {
     writeFrequency: 'medium',
     consentDefault: 'exportable',
     searchable: true,
+    availability: 'standard',
   },
   proactive: {
     name: 'proactive',
     purpose:
-      'Proactive-assistant suggestions — Memphis-initiated nudges the operator may act on or dismiss.',
+      "Memphis-initiated suggestions — including what the runtime itself could change to work better (operator-stated intent, 2026-11-04). Written opportunistically, so the chain's absence is not drift.",
     blockTypes: ['system_event', 'insight'],
     writeFrequency: 'low',
     consentDefault: 'local-only',
     searchable: true,
+    availability: 'conditional',
   },
   insights: {
     name: 'insights',
@@ -172,6 +213,7 @@ export const CHAIN_CATALOG = {
     writeFrequency: 'low',
     consentDefault: 'exportable',
     searchable: true,
+    availability: 'standard',
   },
   soul: {
     name: 'soul',
@@ -181,15 +223,21 @@ export const CHAIN_CATALOG = {
     writeFrequency: 'medium',
     consentDefault: 'local-only',
     searchable: false,
+    availability: 'standard',
   },
   messages: {
     name: 'messages',
     purpose:
       'MP v0 federation envelope log — every signed inbound/outbound peer-to-peer message. Tamper-evident transcript of what this Memphis sent and received.',
-    blockTypes: ['mp_v0.envelope_sent', 'mp_v0.envelope_received'],
+    // The federation feature is off unless MP v0 is enabled, so the chain
+    // is absent on most hosts — and `mp_v0.envelope_sent` /
+    // `mp_v0.envelope_received` are not variants of the native core's
+    // `BlockType` enum either (measured: "unknown variant").
+    blockTypes: ['system_event'],
     writeFrequency: 'high',
     consentDefault: 'local-only',
     searchable: false,
+    availability: 'conditional',
   },
 } as const satisfies Record<string, ChainDefinition>;
 
@@ -232,7 +280,52 @@ export function isKnownChainName(value: string): value is ChainName {
   return Object.hasOwn(CHAIN_CATALOG, value);
 }
 
+/**
+ * The shape of a chain directory name.
+ *
+ * This constant lived in five places — `chain-adapter.ts`,
+ * `chain-rotation.ts`, `chain-archive-restore.ts`,
+ * `migrations/runner.ts` and `http/routes/memory.ts` — each with its own
+ * copy of the same regex. Five copies of the rule that decides what
+ * Memphis will open is five chances to disagree, and they did: the
+ * verifier's copy had no dot in it, so the three archives the operator
+ * had explicitly allowlisted could not be opened by it.
+ *
+ * One definition, imported by every consumer. It lives here, in the
+ * registry, because this is the module that owns the answer to "what is
+ * a chain".
+ */
+export const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+
 /** Recovery copies use either epoch milliseconds or the legacy ISO filename stamp. */
 export function isChainBackupDirectory(name: string): boolean {
   return /^[a-zA-Z0-9_-]+\.backup-(?:\d+|\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)$/.test(name);
+}
+
+/**
+ * The logical chain a directory holds.
+ *
+ * `journal` → `journal`; `journal.backup-1784913076785` → `journal`.
+ * The archive suffix is a COPY marker, not part of the chain's identity:
+ * the blocks inside it carry `chain: "journal"`, and that is what the
+ * hash chain was built over. Reading the directory name as the chain
+ * name is how a repair would rewrite every archived block's `chain`
+ * field and invalidate the archive's hashes.
+ */
+export function logicalChainNameForDirectory(name: string): string {
+  const match = /^(.+?)\.backup-(?:\d+|\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)$/.exec(name);
+  return match?.[1] ?? name;
+}
+
+/** Chains that are expected on a live host. */
+export function getStandardChainNames(): ChainName[] {
+  return getChainNames().filter((name) => CHAIN_CATALOG[name].availability === 'standard');
+}
+
+/**
+ * Chains that belong to a feature that may be off, or that are written
+ * only opportunistically. Their absence on a host is NOT drift.
+ */
+export function getConditionalChainNames(): ChainName[] {
+  return getChainNames().filter((name) => CHAIN_CATALOG[name].availability === 'conditional');
 }

@@ -160,6 +160,30 @@ operator edit in `.env` to make the scanner see it. Had that line been
 forgotten, `memphis chain verify` would have reported `ok: true` over 10
 chains while quietly ignoring the new one.
 
+**Correction, 2026-11-04, found while building S1: the name pattern was in five
+places, and they did not all say the same thing.**
+
+| file                                         | what it decided                          |
+| -------------------------------------------- | ---------------------------------------- |
+| `src/infra/storage/chain-adapter.ts`         | the verifier's filter                    |
+| `src/infra/storage/chain-rotation.ts`        | which directories the rotation may touch |
+| `src/infra/storage/chain-archive-restore.ts` | which archives may be restored           |
+| `src/infra/storage/migrations/runner.ts`     | which chains a migration may rewrite     |
+| `src/infra/http/routes/memory.ts`            | what the HTTP surface may address        |
+
+Five copies of the rule that decides what Memphis is willing to open. The
+copies were identical — until S1 had to change one of them (the verifier's,
+to let an archive through), which is the only way to find out how many
+places the rule really lived in. The pattern now lives in
+`src/memory/chain-catalog.ts`, the module that owns the answer to "what is
+a chain", and the other four import it.
+
+**Correction, 2026-11-04: the operator's answer to "which chains may be
+scanned" is narrower than "whatever the config says".** The live config
+**replaced** the code default; it may now only narrow it. A name the
+registry does not know is not added to the scan by the config — the config
+asks for a chain that is not there, and the audit says so.
+
 ### H3 · The SLO reports "passing" on four metrics that have no data
 
 ```
@@ -461,15 +485,15 @@ falsified does not ship.
 Seven stages. Each is independently mergeable, each carries its own
 falsifier, and none lands before the thing it depends on.
 
-| stage  | delivers                                                                                                                               | closes                                                            | falsifier (summary)                                                                                                                                                                                                     |
-| ------ | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **S0** | **one audit entry point** — `npm run -s ops:audit` measures the live system and returns a verdict per check                            | **none yet** — it _measures_ H1–H4 and H6–H8; they close in S1–S6 | on this host the audit names every hole in §1 with the numbers in §1, and exits non-zero while any is open                                                                                                              |
-| **S1** | **one registry, one vocabulary** — the chain catalog is the source of truth; the block-type list is one file both implementations read | H1, H2                                                            | adding a chain to the catalog is one edit; a block type the core cannot parse cannot be written, proven on the live blocks                                                                                              |
-| **S2** | **truth in the status surfaces** — `unavailable` is not `pass`; a failing check can flip the top line                                  | H3, H4                                                            | with today's state, `memphis slo status` stops saying "passing" and `memphis health` stops saying "status: ok"; after the embed dim is fixed, health says ok again                                                      |
-| **S3** | **the deployed artifact is the repository** — a freshness gate, one build path, one unit                                               | H5                                                                | `memphis dream list` works in the operator's shell; the freshness check is green; the check fails when `dist/` is one commit behind                                                                                     |
-| **S4** | **writer boundaries** — the cron cannot push to `main`; the branch boundary is enforced by the branch                                  | H6                                                                | a mutation test: a cron run on a feature branch cannot push to `main`; the ruleset rejects a direct push                                                                                                                |
-| **S5** | **the scanners see what matters** — history-inclusive scans, tests/ not exempt, `cargo audit` on a workflow, a drill that drills       | H7, H8                                                            | a secret committed in a test file in history is found; `cargo audit` runs; the drill workflow performs a round trip                                                                                                     |
-| **S6** | **the Dreaming remainder** — R3 (the gate), R4 (real provenance), R5 (scopes)                                                          | H9, G4–G6                                                         | end-to-end on this runtime: a proposal is accepted on tier 2, applied carrying `basedOn` with real block hashes, rolled back; an agent write to an operator-only scope is refused and the refusal is in the audit chain |
+| stage  | delivers                                                                                                                                  | closes                                                            | falsifier (summary)                                                                                                                                                                                                     |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **S0** | **one audit entry point** — `npm run -s ops:audit` measures the live system and returns a verdict per check                               | **none yet** — it _measures_ H1–H4 and H6–H8; they close in S1–S6 | on this host the audit names every hole in §1 with the numbers in §1, and exits non-zero while any is open                                                                                                              |
+| **S1** | **one registry, one vocabulary** — the registry is derived from the taxonomy and the disk; the native core owns the block-type vocabulary | H1, H2                                                            | after the repair the audit says `block-vocabulary` SUCCESS and `chain-registry` SUCCESS; a chain added to the catalog is reported until the config names it                                                             |
+| **S2** | **truth in the status surfaces** — `unavailable` is not `pass`; a failing check can flip the top line                                     | H3, H4                                                            | with today's state, `memphis slo status` stops saying "passing" and `memphis health` stops saying "status: ok"; after the embed dim is fixed, health says ok again                                                      |
+| **S3** | **the deployed artifact is the repository** — a freshness gate, one build path, one unit                                                  | H5                                                                | `memphis dream list` works in the operator's shell; the freshness check is green; the check fails when `dist/` is one commit behind                                                                                     |
+| **S4** | **writer boundaries** — the cron cannot push to `main`; the branch boundary is enforced by the branch                                     | H6                                                                | a mutation test: a cron run on a feature branch cannot push to `main`; the ruleset rejects a direct push                                                                                                                |
+| **S5** | **the scanners see what matters** — history-inclusive scans, tests/ not exempt, `cargo audit` on a workflow, a drill that drills          | H7, H8                                                            | a secret committed in a test file in history is found; `cargo audit` runs; the drill workflow performs a round trip                                                                                                     |
+| **S6** | **the Dreaming remainder** — R3 (the gate), R4 (real provenance), R5 (scopes)                                                             | H9, G4–G6                                                         | end-to-end on this runtime: a proposal is accepted on tier 2, applied carrying `basedOn` with real block hashes, rolled back; an agent write to an operator-only scope is refused and the refusal is in the audit chain |
 
 ### 3.1 S0 · One audit entry point
 
@@ -590,58 +614,132 @@ counts came from the same call the writer uses.
 
 ### 3.2 S1 · One registry, one vocabulary
 
-**The chain registry becomes one list.** `src/memory/chain-catalog.ts` is the
-taxonomy; the allowlist and the disk are derived from it. The live config may
-only _narrow_ the list, and the difference between "narrowed" and "forgotten"
-is a report, not a silent skip:
+**The operator's answer, 2026-11-04** (questionnaire `ask_f9aac26ffd9c21028bc880c9`):
 
-- `.env` may remove a chain from scanning — that is a legitimate operator
-  choice (it must be, for the frozen backups).
-- `.env` may **not** add a chain that the catalog does not name, and it may
-  not remove a chain that the catalog names and the disk has — that is a
-  drift, and the audit says so.
+| question                              | answer                                                                                                                          |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| may the runtime write to `crates/**`? | **no** — "memphis ma być autonomiczny, bez mcode". The core is not edited; the DATA is brought into the shape the core accepts. |
+| may a chain be removed?               | **no** — "łańcuchy zostają". `proactive` stays, as the place where the runtime proposes how it could improve itself.            |
+| may a backup be unreadable?           | **no** — "backupy powinny być czytelne jak nie są to jest zwykły bug".                                                          |
 
-Today the direction of the override is exactly backwards: the config _replaces_
-the code default (`chain-adapter.ts:138`), which is why R2 needed an operator
-edit and why forgetting it would have been silent.
+**This changes the design of this stage.** The sketch below (written before
+the answer) proposed one JSON Schema file generated into both the Rust enum
+and the TypeScript union. That is impossible under the first answer: it
+writes to `crates/**`. The design that replaces it is better anyway — the
+core cannot enumerate its own variants, but it can answer the only question
+that matters: **is this type legal?** So the core stays the single owner of
+the vocabulary, and the TypeScript side asks it instead of keeping a list.
 
-**The block vocabulary becomes one file.** `crates/memphis-core/src/block.rs:5`
-is a closed serde enum; the TypeScript side has its own notion of a legal
-block. One JSON Schema file, generated into both, replaces the two. The
-generator writes the Rust enum and the TypeScript union from the same source,
-and CI checks that the generated files match the source — so the enum cannot
-drift again.
+#### What the vocabulary actually is, measured
 
-**What is actually there, measured 2026-11-03** (the design above is written
-against facts, not against an assumption about them):
+The core's enum (`crates/memphis-core/src/block.rs:5`) is closed: 16 variants
+plus 14 read-side aliases, 30 legal type strings in all. The core names them
+itself, in its own error message:
 
-| measurement                                      | value                                                                                                                                                                                                                      |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| consumers of the allowlist in the whole codebase | **one** — `verifyChainIntegrity`                                                                                                                                                                                           |
-| consumers of the catalog's `blockTypes`          | **none** — it is documentation today, which is why it drifted unnoticed                                                                                                                                                    |
-| types the core knows                             | 15 variants + 14 read-side aliases                                                                                                                                                                                         |
-| types the catalog declares                       | 13                                                                                                                                                                                                                         |
-| **declared types the core cannot deserialize**   | **3** — `autonom_publication`, `mp_v0.envelope_sent`, `mp_v0.envelope_received`                                                                                                                                            |
-| block types actually on disk                     | `system_event` 11 613 · `insight` 2 137 · `case` 2 137 · `tool_call` 1 811 · `journal` 1 167 · `decision` 490 · `security_event` 47 (a documented alias) · `system` 2 · **`autonom_publication` 1** · **no type at all 1** |
+```
+invalid_block_json: unknown variant `autonom_publication`, expected one of
+`journal`, `ask`, `decision`, `system`, `boot`, `categorize_report`,
+`chain.repair`, `config`, `consent.annotation`, `health_state_change`,
+`memory.action`, `memory.burn`, `mode_change`, `model-d-proposal`,
+`reflection_report`, `scheduler_task`, `security_event`, `system_event`,
+`unknown`, `insight`, `tool_call`, `tool_result`, `error`, `case`,
+`wallet_tx_requested`, `wallet_tx_signed`, `wallet_tx_broadcast`,
+`wallet_tx_confirmed`, `wallet_tx_failed`
+```
 
-So the vocabulary drift is **three declared names**, of which exactly one
-exists on disk (`autonom_publication`, in `autonom_archive`) and two belong to
-the federation chain that is not installed here (`messages`). Every other type
-on disk is already a variant or a documented read-side alias — the core is not
-behind the data, it is behind the _catalog_.
+The live disk, measured the same day — every block, its type and its kind:
 
-**Two catalog entries are not "drift" at all.** `proactive` is called a
-"phantom" in the catalog's own header ("on some installs exists but isn't
-universal"), and `messages` belongs to the federation feature, which is off
-here. A host that does not have them is healthy. The catalog has to say so
-explicitly, or every future audit of a fresh install reports a permanent red.
+| `(type, kind)`                  | count  | legal?                        |
+| ------------------------------- | ------ | ----------------------------- |
+| `system_event`/`scheduler_task` | 10 404 | yes                           |
+| `insight`/`pattern`             | 5 279  | yes                           |
+| `case`                          | 2 137  | yes                           |
+| `tool_call`                     | 1 811  | yes                           |
+| `journal`                       | 1 149  | yes                           |
+| `decision`                      | 487    | yes                           |
+| `system_event` (no kind)        | 376    | yes                           |
+| `insight` (no kind)             | 368    | yes                           |
+| `insight`/`reflection`          | 366    | yes                           |
+| `system_event`/`memory.action`  | 349    | yes                           |
+| … 14 more pairs                 | —      | yes                           |
+| **`autonom_publication`**       | **1**  | **no — unknown variant**      |
+| **no type at all**              | **1**  | **no — missing field `type`** |
 
-**Falsifier, to run:** add a chain to the catalog; the audit reports the
-missing directory and the missing config entry, and nothing else changes
-mechanically. Write a block whose type is not in the vocabulary and the write
-is refused with the same error the native core gives today — and the live
-`autonom_archive` block is reported as unreadable by the core, which is the
-truth of H1 made visible.
+So the drift is exactly **two blocks out of 23 391** — the two the S0 audit
+already named. Every other type on disk is a variant or a documented alias.
+The core is not behind the data; the CATALOG is behind the core (it declared
+three names the core does not know: `autonom_publication`,
+`mp_v0.envelope_sent`, `mp_v0.envelope_received`).
+
+#### What was built
+
+| file                                           | what it does                                                                                                                           |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/infra/storage/block-vocabulary.ts`        | the oracle: asks the core whether a type is legal, and what it says about a whole block. Cached per type. No list of types lives here. |
+| `src/infra/runtime/chain-canonical.ts`         | the canonical block shape, in ONE place: the hash projection, the type inference, the normalisation, and the targeted rewrite          |
+| `src/infra/runtime/chain-vocabulary-repair.ts` | the scan, the backup, the rewrite, the verification — in that order                                                                    |
+| `src/memory/chain-catalog.ts`                  | the registry: `availability` on every chain, `SAFE_CHAIN_NAME` (one copy), the archive rules                                           |
+| `src/infra/storage/chain-adapter.ts`           | the registry derived from the taxonomy and the disk; the config may only narrow it; the verifier opens archives                        |
+
+**The registry is derived, not maintained.** `deriveChainRegistry()` answers
+one question — _which directories under `chains/` hold a chain the taxonomy
+names?_ — and everything else follows from it: the allowlist, the verifier's
+filter, the audit's facts. A hand-maintained constant was the thing this
+stage removes; adding one back would be the hole re-opening.
+
+**The taxonomy is not a promise about the disk.** Chains are created by their
+first writer, so a fresh install has fewer directories than the catalog
+names, and two entries belong to features that may be off. Every chain now
+carries `availability: 'standard' | 'conditional'`, and the audit reports a
+conditional chain's absence as INFORMATION, not as drift. Measured: the
+audit used to say `drift=proactive,messages` on every single run of a
+perfectly healthy host.
+
+**The repair rewrites what the core refuses, and nothing else.** The legacy
+rewrite normalized every block it touched — on this host that would mean
+rewriting 23 391 blocks to fix two. The vocabulary repair instead:
+
+1. screens every block (the type check is cached, so the scan of 23 528
+   blocks over 14 directories takes **964 ms**);
+2. rewrites only the blocks the core refuses, into `system_event` with the
+   original semantic name in `kind` — the convention from `block.rs:19`;
+3. re-links the hash chain from the first rewritten block onward (a block's
+   hash covers `prev_hash`, so the cascade is unavoidable; the bytes before
+   it stay untouched);
+4. verifies by scanning again.
+
+Measured on a copy of the live data: **2 blocks rewritten, 212 blocks
+untouched byte for byte**, and the verifier then opened the archive it had
+never opened before and checked all 210 of its blocks.
+
+**The repair is reversible and it is gated.** It backs up through the
+operator's own mechanism first (`memphis backup restore` is the way back),
+and rewriting chain history needs the operator's passphrase — asked once,
+interactively, in the terminal, never written to a file.
+
+**One more drift, found while measuring: the two implementations disagreed
+about the hash.** The native core falls back `type` → `block_type` →
+`journal` when it reduces a block's data for hashing
+(`crates/memphis-core/src/hash.rs:46`); the TypeScript side skipped
+`block_type` and went straight to `journal`. A block carrying only
+`block_type` would have been hashed differently by the two. No such block
+exists on this host today (measured), but the disagreement is exactly what
+this stage exists to remove, so the TS projection now mirrors the core's.
+
+#### The falsifier, as run
+
+The stage's claim is: _the registry is one list, and the vocabulary is the
+core's_. It is falsified if the audit still reports drift it should not, or
+if it stops reporting drift it should.
+
+| the system                                   | the audit says                                                                               |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| this host, before the repair                 | `chain-registry` FAILURE (`drift=proactive,messages`), `block-vocabulary` FAILURE (2 blocks) |
+| this host, after the repair                  | `chain-registry` SUCCESS, `block-vocabulary` SUCCESS (0 unreadable)                          |
+| a chain added to the catalog, no `.env`      | `chain-registry` FAILURE — the config does not name it                                       |
+| a config naming a chain the catalog does not | `chain-registry` FAILURE — the config may only narrow                                        |
+| a conditional chain (`proactive`) absent     | `chain-registry` SUCCESS, reported as "planned, not installed"                               |
+| an archive narrowed out of the config        | `chain-registry` SUCCESS, reported as the operator's choice                                  |
 
 ### 3.3 S2 · Truth in the status surfaces
 
@@ -823,17 +921,22 @@ honest. A plan that started with S6 would add a gate nobody can see.
   operator decisions with real consequences in both directions. The document
   names them and implements the current behaviour as the one option that is
   _not_ on the table.
-- **The Rust enum's shape.** S1 replaces the hand-written enum with a
-  generated one from a shared schema. Whether the schema is JSON Schema,
-  TypeScript-first, or Rust-first is an implementation choice for the stage.
+- **The Rust enum's shape — decided, 2026-11-04.** S1 does NOT replace the
+  hand-written enum with a generated one. The operator's answer to the S1
+  questionnaire forbids writing to `crates/**`, and the question turned out
+  not to need an answer anyway: the core cannot enumerate its variants, but it
+  can say whether a type is legal, so the core stays the single owner and the
+  DATA is brought into the shape it accepts (`system_event` + `kind`). A
+  generated schema would have been a second source of truth with a build
+  step; this is one question with one owner.
 - **Multi-host.** Everything here is measured on one host. A second host
   changes the freshness and registry problems materially, and the plan does
   not pretend to cover it.
 - **The LLM tier (D5).** Unchanged from `DREAMING-GAPS-AND-REFACTOR.md` §5: it
   waits for R2 and R3 to be on the runtime and to have produced proposals a
   human accepted.
-- **Anything in `crates/**` beyond the generated vocabulary.\*\* Tier 2, and it
-  needs the operator's acceptance before it is touched.
+- **Anything in `crates/**` at all.** Tier 2, and the operator has ruled that
+  this plan does not touch it (2026-11-04).
 
 ---
 

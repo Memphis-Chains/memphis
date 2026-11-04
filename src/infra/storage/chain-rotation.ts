@@ -13,8 +13,7 @@ import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 
 import { getChainPath, getChainSnapshotsPath } from '../../config/paths.js';
-
-const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+import { SAFE_CHAIN_NAME } from '../../memory/chain-catalog.js';
 
 /** Default rotation threshold: 50 MB per chain directory. */
 const DEFAULT_ROTATION_THRESHOLD_BYTES = 50 * 1024 * 1024;

@@ -83,6 +83,11 @@ export const GATED_OPERATIONS: GateRule[] = [
     condition: (a) => a.runtime || a.yes,
     reason: 'wipes runtime state',
   },
+  {
+    command: 'repair',
+    subcommand: 'runtime',
+    reason: 'may rewrite chain history — a hash chain that exists to make history tamper-evident',
+  },
 ];
 
 // ─── Session cache ───────────────────────────────────────────────────
