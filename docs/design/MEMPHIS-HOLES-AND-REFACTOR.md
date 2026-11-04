@@ -317,10 +317,10 @@ offset off — on this host (CET, UTC+1), an hour into the past.
 
 Measured on this host, right after the S1 merge:
 
-| what                                                    | count |
-| ------------------------------------------------------- | ----- |
-| commits on `main` newer than the build (the truth)      | **0** |
-| what the audit reported                                 | **1** |
+| what                                               | count |
+| -------------------------------------------------- | ----- |
+| commits on `main` newer than the build (the truth) | **0** |
+| what the audit reported                            | **1** |
 
 The commit it counted was the S1 merge itself — **61 seconds older than the
 build**. The check that exists to catch a stale deployment was reporting a
@@ -745,6 +745,20 @@ operator's own mechanism first (`memphis backup restore` is the way back),
 and rewriting chain history needs the operator's passphrase — asked once,
 interactively, in the terminal, never written to a file.
 
+Measured on this host, 2026-11-04, on a copy with the real bad block: the
+archive `before-chain-vocabulary-repair-*.tar.gz` carries the chain, the
+`.sha256` sidecar and a manifest entry are written beside it, and extracting
+the archived block gives **bytes identical** to the file the repair replaced.
+The repair does not touch the vault and does not snapshot SQLite on this path
+— it passes the data root explicitly, so the runtime database is out of it.
+
+A claim like that decays into a promise unless something holds the runtime to
+it, so a test does: it takes the real path (the real backup command, a real
+tar archive) and asserts the archived copy is byte-identical to the file the
+repair replaced — and that the repair really happened, so the backup cannot
+prove itself against a no-op. With the repair's backup disabled, the test
+fails on the missing archive.
+
 **One more drift, found while measuring: the two implementations disagreed
 about the hash.** The native core falls back `type` → `block_type` →
 `journal` when it reduces a block's data for hashing
@@ -753,6 +767,39 @@ about the hash.** The native core falls back `type` → `block_type` →
 `block_type` would have been hashed differently by the two. No such block
 exists on this host today (measured), but the disagreement is exactly what
 this stage exists to remove, so the TS projection now mirrors the core's.
+
+**And one that is bigger, found by the sweep (S1c): the core and the writer
+disagree about the hash of a READ-SIDE ALIAS.** The core deserializes
+`data.type` into its enum before hashing it, so a block whose type is an
+alias is hashed as the VARIANT (`security_event` → `system_event`). The
+TypeScript writer hashed the raw string. Measured on this host:
+
+| measurement                                       | value                                                                                                 |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| blocks whose type is a read-side alias            | **47** — 45 in the live `system` chain, 2 in `system.backup-1782897312539`                            |
+| the core's verdict on them                        | `hash mismatch`                                                                                       |
+| the TypeScript verifier's verdict on them         | valid — and it checks the whole chain's linkage, so the chain is internally consistent                |
+| can the core still PARSE the live `system` chain? | **yes** — `chain_append` on the live chain returns `appended: true`                                   |
+| blocks a history rewrite would have to re-hash    | **12 732** — 12 728 in the live `system` (every block from index 257 to its end) and 4 in the archive |
+
+The last row is the price of the decision, measured rather than estimated: the
+first alias block in `system` sits at index **257**, so a rewrite that starts
+there re-hashes everything after it. The alias blocks are all
+`security_event`; none of them carries a `kind` yet, so the canonical shape
+(`system_event` + `kind: security_event`) is still available to them.
+
+So the chain is not corrupt: the two implementations disagree about what
+the hash of 47 legacy blocks is. Which one wins is an **operator decision**,
+and it is not this stage's: making the two agree means rewriting the hashes
+of the live, actively-written `system` chain (12 970 blocks, 45 of them
+alias-typed) — a tier-2 history rewrite, and the only one in this plan
+that touches the chain the service writes to every minute.
+
+Until that decision is made, the sweep asks the core only the question it
+can answer unambiguously — **can you deserialize this block?** — and the
+hash verdict stays `verifyChainIntegrity`'s. That is why the sweep's
+`oracle` line says which oracle answered: a green line from the structural
+oracle must not be mistaken for one from the core.
 
 #### The falsifier, as run
 
@@ -768,6 +815,29 @@ if it stops reporting drift it should.
 | a config naming a chain the catalog does not | `chain-registry` FAILURE — the config may only narrow                                        |
 | a conditional chain (`proactive`) absent     | `chain-registry` SUCCESS, reported as "planned, not installed"                               |
 | an archive narrowed out of the config        | `chain-registry` SUCCESS, reported as the operator's choice                                  |
+
+#### S1c · the sweep asks the core too
+
+The hourly sweep (`scripts/chain-integrity-sweep.mjs`) was the weakest of the
+three oracles in this repository: it accepted a block if the file parsed as
+JSON and carried `index` and `hash`. It never asked the core, so it reported
+`ok: true` over blocks the core cannot deserialize at all.
+
+It asks now — and says in its summary which oracle answered
+(`oracle: "native-core"` or `oracle: "structural"`), because the structural
+fallback exists for a host without a built bridge, and a green line from the
+weaker oracle must not be mistaken for the stronger one.
+
+The sweep's fixtures were written by hand with placeholder hashes and a
+block type the core does not know (`soul`). They are generated now
+(`npm run -s ops:chain-fixture`), with real hashes and real types — the CI
+workflow builds the Rust bridge **before** the sweep tests, so the vocabulary
+case cannot pass vacuously.
+
+The sweep runs from the repository, on the operator's host, every hour. That
+is why the sweep's change lands in its own PR, **after** the repair: the
+hourly gate would otherwise go red on the two blocks before anything could
+fix them.
 
 ### 3.3 S2 · Truth in the status surfaces
 
@@ -1031,7 +1101,51 @@ console.log('empty chain ->', b.chain_append('[]', next));
 "
 ```
 
-**H2 · the chain registry in four places**
+**The read-side aliases, and what a history rewrite would cost**
+
+```bash
+node --import tsx -e "
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { deriveChainRegistry } from './src/infra/storage/chain-adapter.js';
+
+const ALIASES = new Set([
+  'security_event','boot','health_state_change','memory.action','memory.burn',
+  'model-d-proposal','mode_change','consent.annotation','scheduler_task',
+  'chain.repair','config','reflection_report','categorize_report',
+]);
+const chainsDir = '/home/memphis/.memphis/chains';
+let total = 0;
+for (const dir of deriveChainRegistry()) {
+  const chainDir = join(chainsDir, dir);
+  if (!existsSync(chainDir)) continue;
+  const files = readdirSync(chainDir).filter((f) => /^\\d+\\.json\$/.test(f)).sort();
+  const idx = [];
+  for (let i = 0; i < files.length; i += 1) {
+    let b; try { b = JSON.parse(readFileSync(join(chainDir, files[i]), 'utf8')); } catch { continue; }
+    const t = b?.data?.type;
+    if (typeof t === 'string' && ALIASES.has(t)) idx.push(i);
+  }
+  if (idx.length === 0) continue;
+  const cascade = files.length - idx[0];
+  total += cascade;
+  console.log(dir + ': blocks=' + files.length + ' alias=' + idx.length +
+    ' first=' + idx[0] + ' last=' + idx[idx.length-1] + ' rehash=' + cascade);
+}
+console.log('blocks a history rewrite would re-hash:', total);
+"
+# and the two verdicts on the same blocks:
+memphis chain verify --chain system                  # the writer's verdict: ok
+node -e "const fs=require('fs');
+const b=require('./crates/memphis-napi/index.node');
+const blk=JSON.parse(fs.readFileSync('/home/memphis/.memphis/chains/system/000258.json','utf8'));
+const prev=JSON.parse(fs.readFileSync('/home/memphis/.memphis/chains/system/000257.json','utf8'));
+console.log('the core says:', b.chain_validate(JSON.stringify(blk), JSON.stringify(prev)));"
+```
+
+**H2 · the chain registry, before and after S1**
+
+_Before S1 (the hole as found — the code carried its own allowlist):_
 
 ```bash
 node --import tsx -e "
@@ -1051,6 +1165,49 @@ console.log('catalog - code active:', names.filter(n => !entries.includes(n)).jo
 const safe = /^[A-Za-z0-9_-]{1,64}\$/;
 console.log('allowlisted but unreachable:', entries.filter(e => e.includes('backup') && !safe.test(e)).join(', '));
 "
+```
+
+_After S1 (the registry is derived — there is no second list to read):_
+
+```bash
+node --import tsx -e "
+import fs from 'node:fs';
+import { deriveChainRegistry, getChainAllowlist } from './src/infra/storage/chain-adapter.js';
+import { getChainNames, getStandardChainNames, getConditionalChainNames } from './src/memory/chain-catalog.js';
+
+const registry = [...deriveChainRegistry()];
+const allowlist = [...getChainAllowlist()];
+const disk = fs.readdirSync('/home/memphis/.memphis/chains', { withFileTypes: true })
+  .filter((e) => e.isDirectory() && !e.name.startsWith('_'))
+  .map((e) => e.name);
+const envLine = fs.readFileSync('.env', 'utf8').split('\n')
+  .find((l) => l.startsWith('MEMPHIS_CHAINS_ALLOWLIST='));
+const env = envLine
+  ? envLine.split('=')[1].split(',').map((s) => s.trim()).filter(Boolean)
+  : [];
+
+console.log('taxonomy:', getChainNames().length,
+  '| standard:', getStandardChainNames().length,
+  '| conditional:', getConditionalChainNames().length);
+console.log('derived registry:', registry.length);
+console.log('effective allowlist:', allowlist.length);
+console.log('disk directories:', disk.length);
+console.log('config entries:', env.length);
+console.log('config asks for a chain the registry does not name:',
+  env.filter((n) => !registry.includes(n)).join(', ') || '(none)');
+console.log('registry names not on disk:',
+  registry.filter((n) => !disk.includes(n)).join(', ') || '(none)');
+console.log('disk directories that are not chains:',
+  disk.filter((n) => !registry.includes(n)).join(', ') || '(none)');
+"
+```
+
+_And the rule that decides what may be opened now lives in exactly one place:_
+
+```bash
+grep -rn "SAFE_CHAIN_NAME = " src/            # 1 definition
+grep -rn "const DEFAULT_CHAIN_ALLOWLIST" src/   # 0 — the second list is gone
+grep -rln "SAFE_CHAIN_NAME" src/                # 5 importers, 1 owner
 ```
 
 **H3 · the SLO's false green**

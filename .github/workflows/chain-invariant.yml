@@ -55,6 +55,21 @@ jobs:
       - name: Install
         run: npm ci
 
+      # The build comes FIRST (S1, 2026-11-04): the sweep now asks the
+      # native core whether it can deserialize each block, so the tests
+      # below need the compiled bridge — exactly like the ops contracts
+      # further down. Without the build the sweep falls back to the
+      # structural oracle and the vocabulary case would pass vacuously.
+      #
+      # The build is required, not optional: incident-bundle-exporter,
+      # cognitive-report-query and the two napi/package contracts read the
+      # compiled Rust bridge. Without it they fail on `paths bridge
+      # unavailable — crates/memphis-napi ...` while passing on the
+      # operator's machine, where the bridge is already built. ci.yml gets
+      # this for free from its own build step; this workflow has none.
+      - name: Build (Rust bridge for the sweep oracle and ops contracts)
+        run: npm run build
+
       # Both files, in one step: chain-sweep-shape.test.ts covers the
       # exit-3 branch (empty / vanished chain directory) that the 2026-10-07
       # 19:00 sweep reported as `ok: true`. That regression is invisible to
@@ -75,15 +90,6 @@ jobs:
       # (workflowContracts[0].forbiddenSnippets), so adding it would have
       # failed that gate. Running it here keeps it enforced without
       # touching a decision the repo already made deliberately.
-      # The build is required, not optional: incident-bundle-exporter,
-      # cognitive-report-query and the two napi/package contracts read the
-      # compiled Rust bridge. Without it they fail on `paths bridge
-      # unavailable — crates/memphis-napi ...` while passing on the
-      # operator's machine, where the bridge is already built. ci.yml gets
-      # this for free from its own build step; this workflow has none.
-      - name: Build (Rust bridge for ops contracts)
-        run: npm run build
-
       - name: Ops artifact contracts
         run: npm run -s test:ops-artifacts
 

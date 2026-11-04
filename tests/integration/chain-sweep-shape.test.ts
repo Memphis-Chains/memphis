@@ -5,6 +5,8 @@ import { join, resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { canonicalHash } from '../../src/infra/runtime/chain-canonical.js';
+
 /**
  * Chain-shape anomalies — the gap that let 2026-10-07 19:00 look healthy.
  *
@@ -70,12 +72,27 @@ function readSummary(stdout: string): Summary {
   return JSON.parse(stdout) as Summary;
 }
 
-/** Minimal well-formed block: the sweep only checks `index` and `hash`. */
+/**
+ * A block the native core CAN read.
+ *
+ * The sweep asks the core whether it can deserialize each block (S1,
+ * 2026-11-04), so the fixtures of this shape suite have to be readable
+ * by the core — otherwise every block "fails" and the shape assertions
+ * this file exists for are masked by a block failure. The hash is the
+ * real one, computed with the same canonical projection the core uses.
+ */
 function writeBlock(chainDir: string, index: number): void {
   mkdirSync(chainDir, { recursive: true });
+  const block = {
+    index,
+    timestamp: '2026-10-08T00:00:00Z',
+    chain: 'journal',
+    data: { type: 'journal', content: `block-${index}`, tags: [] },
+    prev_hash: '0'.repeat(64),
+  };
   writeFileSync(
     join(chainDir, `00000${index}.json`),
-    JSON.stringify({ index, hash: `h${index}`, timestamp: '2026-10-08T00:00:00Z' }),
+    JSON.stringify({ ...block, hash: canonicalHash(block) }),
   );
 }
 
