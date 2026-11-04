@@ -1080,7 +1080,9 @@ console.log('empty chain ->', b.chain_append('[]', next));
 "
 ```
 
-**H2 · the chain registry in four places**
+**H2 · the chain registry, before and after S1**
+
+*Before S1 (the hole as found — the code carried its own allowlist):*
 
 ```bash
 node --import tsx -e "
@@ -1100,6 +1102,49 @@ console.log('catalog - code active:', names.filter(n => !entries.includes(n)).jo
 const safe = /^[A-Za-z0-9_-]{1,64}\$/;
 console.log('allowlisted but unreachable:', entries.filter(e => e.includes('backup') && !safe.test(e)).join(', '));
 "
+```
+
+*After S1 (the registry is derived — there is no second list to read):*
+
+```bash
+node --import tsx -e "
+import fs from 'node:fs';
+import { deriveChainRegistry, getChainAllowlist } from './src/infra/storage/chain-adapter.js';
+import { getChainNames, getStandardChainNames, getConditionalChainNames } from './src/memory/chain-catalog.js';
+
+const registry = [...deriveChainRegistry()];
+const allowlist = [...getChainAllowlist()];
+const disk = fs.readdirSync('/home/memphis/.memphis/chains', { withFileTypes: true })
+  .filter((e) => e.isDirectory() && !e.name.startsWith('_'))
+  .map((e) => e.name);
+const envLine = fs.readFileSync('.env', 'utf8').split('\n')
+  .find((l) => l.startsWith('MEMPHIS_CHAINS_ALLOWLIST='));
+const env = envLine
+  ? envLine.split('=')[1].split(',').map((s) => s.trim()).filter(Boolean)
+  : [];
+
+console.log('taxonomy:', getChainNames().length,
+  '| standard:', getStandardChainNames().length,
+  '| conditional:', getConditionalChainNames().length);
+console.log('derived registry:', registry.length);
+console.log('effective allowlist:', allowlist.length);
+console.log('disk directories:', disk.length);
+console.log('config entries:', env.length);
+console.log('config asks for a chain the registry does not name:',
+  env.filter((n) => !registry.includes(n)).join(', ') || '(none)');
+console.log('registry names not on disk:',
+  registry.filter((n) => !disk.includes(n)).join(', ') || '(none)');
+console.log('disk directories that are not chains:',
+  disk.filter((n) => !registry.includes(n)).join(', ') || '(none)');
+"
+```
+
+*And the rule that decides what may be opened now lives in exactly one place:*
+
+```bash
+grep -rn "SAFE_CHAIN_NAME = " src/            # 1 definition
+grep -rn "const DEFAULT_CHAIN_ALLOWLIST" src/   # 0 — the second list is gone
+grep -rln "SAFE_CHAIN_NAME" src/                # 5 importers, 1 owner
 ```
 
 **H3 · the SLO's false green**
