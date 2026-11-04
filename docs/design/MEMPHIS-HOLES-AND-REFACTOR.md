@@ -317,10 +317,10 @@ offset off — on this host (CET, UTC+1), an hour into the past.
 
 Measured on this host, right after the S1 merge:
 
-| what                                                    | count |
-| ------------------------------------------------------- | ----- |
-| commits on `main` newer than the build (the truth)      | **0** |
-| what the audit reported                                 | **1** |
+| what                                               | count |
+| -------------------------------------------------- | ----- |
+| commits on `main` newer than the build (the truth) | **0** |
+| what the audit reported                            | **1** |
 
 The commit it counted was the S1 merge itself — **61 seconds older than the
 build**. The check that exists to catch a stale deployment was reporting a
@@ -774,12 +774,12 @@ disagree about the hash of a READ-SIDE ALIAS.** The core deserializes
 alias is hashed as the VARIANT (`security_event` → `system_event`). The
 TypeScript writer hashed the raw string. Measured on this host:
 
-| measurement                                       | value                                                                                  |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| blocks whose type is a read-side alias            | **47** — 45 in the live `system` chain, 2 in `system.backup-1782897312539`             |
-| the core's verdict on them                        | `hash mismatch`                                                                        |
-| the TypeScript verifier's verdict on them         | valid — and it checks the whole chain's linkage, so the chain is internally consistent |
-| can the core still PARSE the live `system` chain? | **yes** — `chain_append` on the live chain returns `appended: true`                    |
+| measurement                                       | value                                                                                                 |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| blocks whose type is a read-side alias            | **47** — 45 in the live `system` chain, 2 in `system.backup-1782897312539`                            |
+| the core's verdict on them                        | `hash mismatch`                                                                                       |
+| the TypeScript verifier's verdict on them         | valid — and it checks the whole chain's linkage, so the chain is internally consistent                |
+| can the core still PARSE the live `system` chain? | **yes** — `chain_append` on the live chain returns `appended: true`                                   |
 | blocks a history rewrite would have to re-hash    | **12 732** — 12 728 in the live `system` (every block from index 257 to its end) and 4 in the archive |
 
 The last row is the price of the decision, measured rather than estimated: the
@@ -1145,7 +1145,7 @@ console.log('the core says:', b.chain_validate(JSON.stringify(blk), JSON.stringi
 
 **H2 · the chain registry, before and after S1**
 
-*Before S1 (the hole as found — the code carried its own allowlist):*
+_Before S1 (the hole as found — the code carried its own allowlist):_
 
 ```bash
 node --import tsx -e "
@@ -1167,7 +1167,7 @@ console.log('allowlisted but unreachable:', entries.filter(e => e.includes('back
 "
 ```
 
-*After S1 (the registry is derived — there is no second list to read):*
+_After S1 (the registry is derived — there is no second list to read):_
 
 ```bash
 node --import tsx -e "
@@ -1202,7 +1202,7 @@ console.log('disk directories that are not chains:',
 "
 ```
 
-*And the rule that decides what may be opened now lives in exactly one place:*
+_And the rule that decides what may be opened now lives in exactly one place:_
 
 ```bash
 grep -rn "SAFE_CHAIN_NAME = " src/            # 1 definition
