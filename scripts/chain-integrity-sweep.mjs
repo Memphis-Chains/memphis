@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Chain integrity sweep — hourly check of last N blocks per chain.
-// Reads each block via JSON.parse, asks the native core whether it can
-// read the block, logs results, exits non-zero on any failure.
+// Chain sweep — check every stored link and the last N block shapes per chain.
+// Links compare the stored prev_hash and hash; this does not recompute block
+// hashes. The summary states that limitation explicitly.
 // Defensive: never modifies any block. Read-only.
 //
 // Usage:
@@ -129,8 +129,8 @@ function coreComplaint(core, block) {
   return null;
 }
 
-async function listBlocks(chainDir, tailN) {
-  // Read directory, filter 000*.json, sort numerically by index, take last N.
+async function listBlocks(chainDir) {
+  // Read all numeric block files in index order; caller selects the tail.
   // A directory removed between the chain list and this read used to throw
   // ENOENT out of the process (exit 1, no summary) — the one case this
   // sweep exists to notice. Return null so the caller can classify it.
@@ -142,9 +142,42 @@ async function listBlocks(chainDir, tailN) {
     return null;
   }
   return all
-    .filter((f) => /^000\d+\.json$/.test(f))
-    .sort((a, b) => Number(a.slice(3, 9)) - Number(b.slice(3, 9)))
-    .slice(-tailN);
+    .filter((f) => /^\d+\.json$/.test(f))
+    .sort((a, b) => Number(a.slice(0, -5)) - Number(b.slice(0, -5)));
+}
+
+/** Check stored linkage over the whole chain, including old blocks. */
+async function checkStoredLinks(chainDir, files) {
+  let previous;
+  let checked = 0;
+  for (const file of files) {
+    let block;
+    try {
+      block = JSON.parse(await readFile(join(chainDir, file), 'utf8'));
+    } catch {
+      return { ok: false, file, error: 'unreadable block while checking links', checked };
+    }
+    if (
+      !Number.isSafeInteger(block.index) ||
+      block.index < 0 ||
+      typeof block.hash !== 'string' ||
+      typeof block.prev_hash !== 'string' ||
+      Number(file.slice(0, -5)) !== block.index
+    ) {
+      return {
+        ok: false,
+        file,
+        error: 'invalid block index, filename or stored hash fields',
+        checked,
+      };
+    }
+    if (previous && (block.index !== previous.index + 1 || block.prev_hash !== previous.hash)) {
+      return { ok: false, file, error: 'stored block linkage mismatch', checked };
+    }
+    previous = block;
+    checked += 1;
+  }
+  return { ok: true, checked };
 }
 
 /**
@@ -152,11 +185,8 @@ async function listBlocks(chainDir, tailN) {
  * quarantine layout (`_quarantine/<reason>/NNN.json`).
  *
  * Deliberately uses a WIDER name pattern than `listBlocks` above: the
- * orphan quarantine holds files like `003592.json` (no `000` prefix),
- * which `listBlocks`' `^000\d+\.json$` rejects. Counting only the narrow
- * shape would report a 403-block quarantine as empty and raise a false
- * data-loss alarm every hour. Broadened here only; the checked path is
- * unchanged so the CI contract stays intact.
+ * orphan quarantine holds numeric block files in nested directories,
+ * not at the top level. Count them without treating the container as empty.
  */
 async function countNestedBlocks(dir) {
   let total = 0;
@@ -211,6 +241,8 @@ async function main() {
 
   const results = [];
   let failures = 0;
+  let linkFailures = 0;
+  let linkBlocksChecked = 0;
 
   const emptyChains = [];
   const vanishedChains = [];
@@ -220,7 +252,7 @@ async function main() {
 
   for (const chain of chains) {
     const chainDir = join(CHAINS_DIR, chain);
-    const blocks = await listBlocks(chainDir, tail);
+    const blocks = await listBlocks(chainDir);
 
     if (blocks === null) {
       vanishedChains.push(chain);
@@ -244,6 +276,15 @@ async function main() {
       else if (!exists) vanishedChains.push(chain);
       else nestedOnly.push(chain);
       continue;
+    }
+
+    const linkCheck = await checkStoredLinks(chainDir, blocks);
+    linkBlocksChecked += linkCheck.checked;
+    if (!linkCheck.ok) {
+      linkFailures += 1;
+      console.error(
+        JSON.stringify({ ok: false, chain, file: linkCheck.file, err: linkCheck.error }),
+      );
     }
 
     const checkedFiles = blocks.slice(-tail);
@@ -274,8 +315,11 @@ async function main() {
   const shapeFailures = emptyChains.length + vanishedChains.length;
 
   const summary = {
-    ok: failures === 0 && shapeFailures === 0,
+    ok: failures === 0 && shapeFailures === 0 && linkFailures === 0,
     oracle,
+    hashes_verified: false,
+    link_blocks_checked: linkBlocksChecked,
+    link_failures: linkFailures,
     chains_scanned: chains.length,
     chains_with_blocks: new Set(results.map((r) => r.chain)).size,
     chains_empty: emptyChains,
@@ -303,7 +347,7 @@ async function main() {
     );
   }
   console.log(JSON.stringify(summary, null, 2));
-  if (failures > 0) process.exit(1);
+  if (failures > 0 || linkFailures > 0) process.exit(1);
   if (shapeFailures > 0) process.exit(3);
   process.exit(0);
 }
