@@ -8,6 +8,7 @@
 import * as chainCrypto from 'node:crypto';
 import { lstatSync, readdirSync } from 'node:fs';
 
+import { writeBlockAtomic } from './chain-file-io.js';
 import { assertChainWriteAllowed } from './chain-write-guard.js';
 import { withChainWriteLock } from './chain-write-lock.js';
 import {
@@ -381,29 +382,9 @@ export async function appendBlock(
       hash: hashBlock(blockWithoutHash, crypto),
     };
 
-    const filename = path.join(chainsDir, `${String(nextIndex).padStart(6, '0')}.json`);
-    const tmpFilename = `${filename}.tmp-${process.pid}-${Date.now()}`;
-    const payload = JSON.stringify(block, null, 2);
-
-    await fs.writeFile(tmpFilename, payload, 'utf8');
-    const staged = await fs.open(tmpFilename, 'r');
-    try {
-      await staged.sync();
-    } finally {
-      await staged.close();
-    }
-    try {
-      await fs.rename(tmpFilename, filename);
-      const directory = await fs.open(chainsDir, 'r');
-      try {
-        await directory.sync();
-      } finally {
-        await directory.close();
-      }
-    } catch (error) {
-      await fs.unlink(tmpFilename).catch(() => undefined);
-      throw error;
-    }
+    // Publish without replacing a committed block, even if index allocation
+    // was wrong or another writer ignored the lock.
+    await writeBlockAtomic(chainsDir, nextIndex, JSON.stringify(block, null, 2));
 
     return {
       index: nextIndex,
@@ -460,17 +441,7 @@ export async function appendPrecomputedBlock(
     ...(block.signature !== undefined ? { signature: block.signature } : {}),
   };
 
-  const filename = path.join(chainsDir, `${String(block.index).padStart(6, '0')}.json`);
-  const tmpFilename = `${filename}.tmp-${process.pid}-${Date.now()}`;
-  const payload = JSON.stringify(chainBlock, null, 2);
-
-  await fs.writeFile(tmpFilename, payload, 'utf8');
-  try {
-    await fs.rename(tmpFilename, filename);
-  } catch (error) {
-    await fs.unlink(tmpFilename).catch(() => undefined);
-    throw error;
-  }
+  await writeBlockAtomic(chainsDir, block.index, JSON.stringify(chainBlock, null, 2));
 
   return {
     index: block.index,

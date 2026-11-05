@@ -19,8 +19,10 @@
 
 use chrono::Utc;
 use std::collections::{BTreeMap, HashSet};
-use std::fs;
-use std::path::Path;
+use std::fs::{self, OpenOptions};
+use std::io::{ErrorKind, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use memphis_case_index::CaseIndex;
 use memphis_core::hash::to_canonical_hash_data;
@@ -357,27 +359,128 @@ pub(crate) fn append_generic_block(
         "prev_hash": prev_hash,
         "hash": hash,
     });
-    let file_path = chain_dir.join(format!("{index:06}.json"));
-    let tmp_path = chain_dir.join(format!("{index:06}.json.tmp-{}", std::process::id()));
-    fs::write(
-        &tmp_path,
-        serde_json::to_vec_pretty(&block)
-            .map_err(|error| OperatorError::Json(error.to_string()))?,
-    )
-    .map_err(|error| OperatorError::Io(error.to_string()))?;
-    fs::File::open(&tmp_path)
-        .and_then(|file| file.sync_all())
-        .map_err(|error| OperatorError::Io(error.to_string()))?;
-    fs::rename(&tmp_path, &file_path).map_err(|error| OperatorError::Io(error.to_string()))?;
-    fs::File::open(&chain_dir)
-        .and_then(|directory| directory.sync_all())
-        .map_err(|error| OperatorError::Io(error.to_string()))?;
+    let payload = serde_json::to_vec_pretty(&block)
+        .map_err(|error| OperatorError::Json(error.to_string()))?;
+    publish_chain_block(&chain_dir, index, &payload)?;
     Ok(GenericAppendResult {
         index,
         hash,
         timestamp,
         prev_hash,
     })
+}
+
+/// Monotonic counter that keeps temp file names unique within one process.
+static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// How many times we retry a temp file name before giving up. The name is
+/// exclusive by construction, so a collision means a leftover from an
+/// earlier crash — never two live writers.
+const TEMP_FILE_ATTEMPTS: u32 = 64;
+
+/// Write `bytes` to a fresh, uniquely named temp file in `chain_dir` and
+/// return its path.
+///
+/// The file is opened with `create_new`, so the name is claimed
+/// atomically: if it is already taken (a leftover from an earlier crash,
+/// or another writer in this process) the open fails instead of
+/// truncating somebody else's file. The bytes are synced to disk before
+/// the caller publishes them.
+fn create_unique_temp_file(
+    chain_dir: &Path,
+    index: u64,
+    bytes: &[u8],
+) -> Result<PathBuf, OperatorError> {
+    for _ in 0..TEMP_FILE_ATTEMPTS {
+        let nonce = TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos())
+            .unwrap_or(0);
+        let tmp_path = chain_dir.join(format!(
+            "{index:06}.json.tmp-{}-{nanos}-{nonce}",
+            std::process::id()
+        ));
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)
+        {
+            Ok(mut file) => {
+                if let Err(error) = file.write_all(bytes) {
+                    let _ = fs::remove_file(&tmp_path);
+                    return Err(OperatorError::Io(error.to_string()));
+                }
+                if let Err(error) = file.sync_all() {
+                    let _ = fs::remove_file(&tmp_path);
+                    return Err(OperatorError::Io(error.to_string()));
+                }
+                return Ok(tmp_path);
+            }
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(OperatorError::Io(error.to_string())),
+        }
+    }
+    Err(OperatorError::Io(format!(
+        "could not create a unique temp file for chain block {index}"
+    )))
+}
+
+/// Publish `bytes` as chain block `index` without ever overwriting a
+/// block that is already committed.
+///
+/// WHY NOT `fs::rename`
+/// --------------------
+/// `fs::rename` replaces the destination on Unix. Two writers that
+/// computed the same index — a stale reader of the chain, a second
+/// process, a retried append — both "succeeded", and the second one
+/// silently replaced the first one's committed block. The chain stayed
+/// readable while its history was rewritten underneath the operator.
+///
+/// `fs::hard_link` fails with EEXIST instead. The link is created
+/// atomically: exactly one writer can put a name on an inode, every
+/// other one is told that the index is taken, and the committed bytes
+/// stay untouched. The temp file is removed after the attempt, whether
+/// it won or lost, so a scratch file never survives to be mistaken for
+/// a chain block.
+fn publish_chain_block(
+    chain_dir: &Path,
+    index: u64,
+    bytes: &[u8],
+) -> Result<(), OperatorError> {
+    let file_path = chain_dir.join(format!("{index:06}.json"));
+    let tmp_path = create_unique_temp_file(chain_dir, index, bytes)?;
+
+    // `hard_link` is the commit point: it either takes the name or it
+    // fails, and it never truncates.
+    let link_result = fs::hard_link(&tmp_path, &file_path);
+
+    // The temp file is scratch space. It must not outlive the attempt:
+    // before the link it is not a block, and after it the same inode is
+    // already reachable under `file_path`.
+    let _ = fs::remove_file(&tmp_path);
+
+    // The directory is synced after the attempt, exactly as before, so
+    // both the new name and the removal of the scratch name are durable.
+    let sync_result = fs::File::open(chain_dir).and_then(|directory| directory.sync_all());
+
+    match link_result {
+        Ok(()) => {
+            sync_result.map_err(|error| OperatorError::Io(error.to_string()))?;
+            Ok(())
+        }
+        Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+            let _ = sync_result;
+            Err(OperatorError::Message(format!(
+                "refusing to overwrite existing chain block {}: target already exists",
+                file_path.display()
+            )))
+        }
+        Err(error) => {
+            let _ = sync_result;
+            Err(OperatorError::Io(error.to_string()))
+        }
+    }
 }
 
 pub(crate) fn read_chain_blocks(chain_dir: &Path) -> Result<Vec<GenericChainBlock>, OperatorError> {
@@ -1291,7 +1394,11 @@ pub(crate) fn recall_result_with_sources(
 
 #[cfg(test)]
 mod tests {
-    use super::summarize_content;
+    use super::{append_generic_block, publish_chain_block, summarize_content};
+    use serde_json::{json, Value};
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     /// The incident of 2026-10-27, verbatim.
     ///
@@ -1361,5 +1468,148 @@ mod tests {
                 summary.len()
             );
         }
+    }
+
+    /// Scratch counter that keeps the synthetic roots of these tests
+    /// apart from each other and from a previous run.
+    static SCRATCH_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    /// A synthetic root for the publication tests: a fresh directory
+    /// under the system temp dir. Never a live data directory, never a
+    /// real chain, never a path that exists before the test runs.
+    fn scratch_root(label: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos())
+            .unwrap_or(0);
+        let nonce = SCRATCH_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "memphis-chat-memory-{label}-{}-{nanos}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("scratch root must be creatable");
+        root
+    }
+
+    /// The scratch file names left behind in a chain directory.
+    fn scratch_leftovers(chain_dir: &Path) -> Vec<String> {
+        fs::read_dir(chain_dir)
+            .expect("chain dir must be readable")
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .filter(|name| name.contains(".tmp-"))
+            .collect()
+    }
+
+    /// The normal path still works: an append into an empty chain
+    /// publishes exactly one block and leaves no scratch file behind.
+    #[test]
+    fn a_normal_append_publishes_a_new_block() {
+        let root = scratch_root("publish");
+        let append = append_generic_block(
+            &root,
+            "journal",
+            json!({ "type": "journal", "content": "hello chain", "tags": [] }),
+        )
+        .expect("a fresh chain must accept an append");
+        assert_eq!(append.index, 1);
+
+        let chain_dir = root.join("chains").join("journal");
+        let block_path = chain_dir.join("000001.json");
+        let raw = fs::read_to_string(&block_path).expect("the block must be published");
+        let block: Value = serde_json::from_str(&raw).expect("the block must be json");
+        assert_eq!(block["index"], json!(1));
+        assert_eq!(block["chain"], json!("journal"));
+        assert_eq!(block["data"]["content"], json!("hello chain"));
+        assert_eq!(block["hash"].as_str(), Some(append.hash.as_str()));
+        assert!(
+            scratch_leftovers(&chain_dir).is_empty(),
+            "the scratch file must not survive a successful append"
+        );
+
+        fs::remove_dir_all(&root).expect("scratch root must be removable");
+    }
+
+    /// A block that is already committed is never replaced: the
+    /// publication fails and the committed bytes are still the ones on
+    /// disk afterwards.
+    #[test]
+    fn an_existing_target_keeps_its_original_bytes() {
+        let root = scratch_root("collision");
+        let chain_dir = root.join("chains").join("journal");
+        fs::create_dir_all(&chain_dir).expect("chain dir must be creatable");
+        let target = chain_dir.join("000001.json");
+        let original = b"{\"committed\":\"original bytes\"}";
+        fs::write(&target, original).expect("the committed block must be writable");
+
+        let error = publish_chain_block(&chain_dir, 1, b"{\"committed\":\"replacement\"}")
+            .expect_err("publishing over a committed block must fail");
+        assert!(
+            format!("{error}").contains("already exists"),
+            "the error must name the collision, got: {error}"
+        );
+        assert_eq!(
+            fs::read(&target).expect("the target must still be readable"),
+            original.to_vec(),
+            "a committed block must keep its original bytes"
+        );
+        assert!(
+            scratch_leftovers(&chain_dir).is_empty(),
+            "the scratch file must not survive a failed publication"
+        );
+
+        fs::remove_dir_all(&root).expect("scratch root must be removable");
+    }
+
+    /// Two writers that computed the same index cannot both win. The
+    /// loser of the race is rejected instead of replacing the winner's
+    /// committed block.
+    #[test]
+    fn a_parallel_collision_cannot_overwrite_the_winner() {
+        let root = scratch_root("parallel");
+        let chain_dir = root.join("chains").join("journal");
+        fs::create_dir_all(&chain_dir).expect("chain dir must be creatable");
+        let target = chain_dir.join("000001.json");
+
+        let payloads: Vec<Vec<u8>> = (0..8)
+            .map(|writer| format!("{{\"writer\":{writer}}}").into_bytes())
+            .collect();
+
+        let mut handles = Vec::new();
+        for payload in payloads.iter().cloned() {
+            let chain_dir = chain_dir.clone();
+            handles.push(std::thread::spawn(move || {
+                publish_chain_block(&chain_dir, 1, &payload)
+            }));
+        }
+
+        let mut published = 0;
+        let mut rejected = 0;
+        for handle in handles {
+            match handle.join().expect("a writer thread must not panic") {
+                Ok(()) => published += 1,
+                Err(_) => rejected += 1,
+            }
+        }
+
+        assert_eq!(published, 1, "exactly one writer may publish the block");
+        assert_eq!(
+            rejected,
+            payloads.len() - 1,
+            "every other writer must be rejected"
+        );
+
+        let final_bytes = fs::read(&target).expect("the published block must be readable");
+        assert!(
+            payloads.iter().any(|payload| *payload == final_bytes),
+            "the published bytes must be exactly one writer's payload, got: {}",
+            String::from_utf8_lossy(&final_bytes)
+        );
+        assert!(
+            scratch_leftovers(&chain_dir).is_empty(),
+            "no scratch file may survive the race"
+        );
+
+        fs::remove_dir_all(&root).expect("scratch root must be removable");
     }
 }

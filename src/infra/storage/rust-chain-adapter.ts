@@ -300,9 +300,12 @@ export class NapiChainAdapter {
   }
 
   async appendBlock(chain: string, data: Record<string, unknown>): Promise<AppendBlockResult> {
+    // Freeze the runtime paths before the first await: test teardown or
+    // config reload must not redirect this append after its guard and lock.
+    const writeEnv = { ...this.rawEnv };
     const normalizedChain = normalizeChainName(chain) ?? chain;
-    const chainsDir = getChainPath(normalizedChain, this.rawEnv);
-    assertChainWriteAllowed(chainsDir, this.rawEnv);
+    const chainsDir = getChainPath(normalizedChain, writeEnv);
+    assertChainWriteAllowed(chainsDir, writeEnv);
     return withNapiAppendLock(chainsDir, async () => {
       const bridge = this.getBridgeOrThrow().resolved as ResolvedChainBridge;
       const appendFn = bridge.chain_append;
@@ -310,7 +313,7 @@ export class NapiChainAdapter {
         throw new Error('chain_append not available in rust bridge');
       }
 
-      const chainBlocks = await readChainBlocks(normalizedChain, this.rawEnv);
+      const chainBlocks = await readChainBlocks(normalizedChain, writeEnv);
       const nextIndex = (chainBlocks.at(-1)?.index ?? 0) + 1;
       const prevHash = chainBlocks.at(-1)?.hash ?? '0'.repeat(64);
       const nextBlock = toNapiBlock(normalizedChain, nextIndex, data, prevHash);
@@ -352,7 +355,7 @@ export class NapiChainAdapter {
         },
       } satisfies NapiBlock;
 
-      await writeBlock(normalizedChain, persisted, this.rawEnv);
+      await writeBlock(normalizedChain, persisted, writeEnv);
 
       return {
         index: appended.index,

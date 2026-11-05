@@ -37,6 +37,36 @@ describe('case-chain integration', () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
+  it('refuses a test case append outside the temporary runtime', async () => {
+    const outside = join(process.cwd(), 'synthetic-non-temp-runtime');
+    const adapter = new CaseChainAdapter({ ...env, VITEST: 'true', MEMPHIS_DATA_DIR: outside });
+    await expect(
+      adapter.appendCaseEntry({
+        case_type: 'nominative',
+        entity: 'synthetic',
+        action: 'created',
+      }),
+    ).rejects.toThrow(/refused chain write/);
+  });
+
+  it('keeps an in-flight case append in its original data directory', async () => {
+    const destination = makeTmpDir();
+    try {
+      const adapter = new CaseChainAdapter(env);
+      const pending = adapter.appendCaseEntry({
+        case_type: 'nominative',
+        entity: 'synthetic',
+        action: 'created',
+      });
+      env.MEMPHIS_DATA_DIR = destination;
+      await pending;
+      expect(readdirSync(join(dataDir, 'chains', 'cases'))).toContain('000001.json');
+      expect(() => readdirSync(join(destination, 'chains', 'cases'))).toThrow();
+    } finally {
+      rmSync(destination, { recursive: true, force: true });
+    }
+  });
+
   it('appends a nominative case entry and writes block file', async () => {
     const adapter = new CaseChainAdapter(env);
     const entry: CaseEntry = {

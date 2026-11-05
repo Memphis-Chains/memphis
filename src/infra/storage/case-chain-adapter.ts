@@ -10,6 +10,7 @@ import {
   type NapiBlock,
   type NapiBlockData,
 } from './chain-file-io.js';
+import { assertChainWriteAllowed } from './chain-write-guard.js';
 import {
   hasRequiredBridgeExports,
   loadPlatformAwareBridge,
@@ -50,10 +51,7 @@ function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
 function resolveCaseBridge(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): BridgeResolution<CaseBridgeKey> {
-  return resolveBridgeContract(
-    loadPlatformAwareBridge(getBridgePath(rawEnv)),
-    CASE_BRIDGE_ALIASES,
-  );
+  return resolveBridgeContract(loadPlatformAwareBridge(getBridgePath(rawEnv)), CASE_BRIDGE_ALIASES);
 }
 
 function getIndexDbPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
@@ -121,10 +119,14 @@ export class CaseChainAdapter {
   }
 
   async appendCaseEntry(entry: CaseEntry): Promise<CaseAppendResult> {
+    // A single append must keep its data directory and index together even
+    // when the caller changes its environment while asynchronous I/O runs.
+    const writeEnv = { ...this.rawEnv };
+    assertChainWriteAllowed(getChainPath(CHAIN_NAME, writeEnv), writeEnv);
     if (this.rustAvailable) {
-      return this.appendViaRust(entry);
+      return this.appendViaRust(entry, writeEnv);
     }
-    return this.appendViaTs(entry);
+    return this.appendViaTs(entry, writeEnv);
   }
 
   async queryCases(query: CaseQuery): Promise<CaseQueryResult> {
@@ -156,19 +158,22 @@ export class CaseChainAdapter {
     return this.rebuildViaRust();
   }
 
-  private async appendViaRust(entry: CaseEntry): Promise<CaseAppendResult> {
+  private async appendViaRust(
+    entry: CaseEntry,
+    writeEnv: NodeJS.ProcessEnv,
+  ): Promise<CaseAppendResult> {
     // Serialize the full read-compute-write cycle under the same lock used by
     // NapiChainAdapter.appendBlock, so concurrent case_append calls cannot race
     // and produce duplicate or out-of-order blocks (see issue #70).
-    const chainsDir = getChainPath(CHAIN_NAME, this.rawEnv);
+    const chainsDir = getChainPath(CHAIN_NAME, writeEnv);
     return withNapiAppendLock(chainsDir, async () => {
       const bridge = this.bridge.resolved as ResolvedCaseBridge;
       const appendFn = bridge.case_append!;
 
-      const chainBlocks = await readChainBlocks(CHAIN_NAME, this.rawEnv);
+      const chainBlocks = await readChainBlocks(CHAIN_NAME, writeEnv);
       const chainJson = JSON.stringify(chainBlocks);
       const entryJson = JSON.stringify(entry);
-      const indexDbPath = getIndexDbPath(this.rawEnv);
+      const indexDbPath = getIndexDbPath(writeEnv);
 
       const raw = appendFn(chainJson, entryJson, indexDbPath);
 
@@ -190,11 +195,11 @@ export class CaseChainAdapter {
       const block = out.chain[out.chain.length - 1];
 
       try {
-        await writeBlock(CHAIN_NAME, block, this.rawEnv);
+        await writeBlock(CHAIN_NAME, block, writeEnv);
       } catch (writeErr) {
         // writeBlock failed after Rust already updated the SQLite index — rebuild to re-sync
         try {
-          await this.rebuildViaRust();
+          await this.rebuildViaRust(writeEnv);
         } catch {
           // best-effort rebuild
         }
@@ -214,12 +219,20 @@ export class CaseChainAdapter {
     });
   }
 
-  private async appendViaTs(entry: CaseEntry): Promise<CaseAppendResult> {
-    return withNapiAppendLock(getChainPath(CHAIN_NAME, this.rawEnv), () => this.appendViaTsLocked(entry));
+  private async appendViaTs(
+    entry: CaseEntry,
+    writeEnv: NodeJS.ProcessEnv,
+  ): Promise<CaseAppendResult> {
+    return withNapiAppendLock(getChainPath(CHAIN_NAME, writeEnv), () =>
+      this.appendViaTsLocked(entry, writeEnv),
+    );
   }
 
-  private async appendViaTsLocked(entry: CaseEntry): Promise<CaseAppendResult> {
-    const chainBlocks = await readChainBlocks(CHAIN_NAME, this.rawEnv);
+  private async appendViaTsLocked(
+    entry: CaseEntry,
+    writeEnv: NodeJS.ProcessEnv,
+  ): Promise<CaseAppendResult> {
+    const chainBlocks = await readChainBlocks(CHAIN_NAME, writeEnv);
     const nextIndex = (chainBlocks.at(-1)?.index ?? 0) + 1;
     const prevHash = chainBlocks.at(-1)?.hash ?? '0'.repeat(64);
 
@@ -231,7 +244,7 @@ export class CaseChainAdapter {
     };
 
     const block = toNapiBlock(CHAIN_NAME, nextIndex, data, prevHash);
-    await writeBlock(CHAIN_NAME, block, this.rawEnv);
+    await writeBlock(CHAIN_NAME, block, writeEnv);
 
     return {
       success: true,
@@ -284,12 +297,14 @@ export class CaseChainAdapter {
     return { count: entries.length, entries };
   }
 
-  private async rebuildViaRust(): Promise<CaseRebuildReport> {
+  private async rebuildViaRust(
+    rawEnv: NodeJS.ProcessEnv = this.rawEnv,
+  ): Promise<CaseRebuildReport> {
     const bridge = this.bridge.resolved as ResolvedCaseBridge;
     const rebuildFn = bridge.case_rebuild!;
 
-    const chainBlocks = await readChainBlocks(CHAIN_NAME, this.rawEnv);
-    const indexDbPath = getIndexDbPath(this.rawEnv);
+    const chainBlocks = await readChainBlocks(CHAIN_NAME, rawEnv);
+    const indexDbPath = getIndexDbPath(rawEnv);
 
     const raw = rebuildFn(JSON.stringify(chainBlocks), indexDbPath);
     return parseEnvelope<CaseRebuildReport>(raw, 'case_rebuild');

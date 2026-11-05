@@ -32,7 +32,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -47,9 +47,9 @@ interface ExecResult {
   stderr: string;
 }
 
-function runSweep(chainsDir: string): ExecResult {
+function runSweep(chainsDir: string, ...extraArgs: string[]): ExecResult {
   try {
-    const stdout = execFileSync('node', [SCRIPT_PATH, '--tail', '50'], {
+    const stdout = execFileSync('node', [SCRIPT_PATH, '--tail', '50', ...extraArgs], {
       cwd: process.cwd(),
       env: { ...process.env, CHAINS_DIR: chainsDir },
       stdio: 'pipe',
@@ -73,6 +73,8 @@ function readSummary(stdout: string): {
   blocks_checked: number;
   blocks_ok: number;
   blocks_failed: number;
+  link_failures: number;
+  hashes_verified: boolean;
 } {
   return JSON.parse(stdout) as ReturnType<typeof readSummary>;
 }
@@ -192,6 +194,47 @@ describe('chain-invariant offline gate', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('soul');
     expect(result.stderr).toContain('000000.json');
+  });
+
+  it('rejects a broken stored link even when both blocks deserialize', () => {
+    const file = resolve(SANDBOX_DIR, 'journal/000001.json');
+    const block = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    block.prev_hash = 'f'.repeat(64);
+    writeFileSync(file, JSON.stringify(block), 'utf8');
+    const result = runSweep(SANDBOX_DIR, '--chain', 'journal');
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('stored block linkage mismatch');
+    expect(readSummary(result.stdout).link_failures).toBe(1);
+    expect(readSummary(result.stdout).hashes_verified).toBe(false);
+  });
+
+  it('includes numeric block filenames beyond index 999', () => {
+    const dir = resolve(SANDBOX_DIR, 'large');
+    mkdirSync(dir, { recursive: true });
+    const block = {
+      index: 999,
+      timestamp: '2026-01-01T00:00:00.000Z',
+      chain: 'large',
+      data: { type: 'journal', content: 'synthetic', tags: [] },
+      prev_hash: '0'.repeat(64),
+      hash: 'a'.repeat(64),
+    };
+    writeFileSync(resolve(dir, '000999.json'), JSON.stringify(block));
+    writeFileSync(
+      resolve(dir, '001000.json'),
+      JSON.stringify({
+        ...block,
+        index: 1000,
+        prev_hash: block.hash,
+        hash: 'b'.repeat(64),
+      }),
+    );
+    const result = runSweep(SANDBOX_DIR, '--chain', 'large');
+    expect(result.status).toBe(0);
+    const summary = readSummary(result.stdout);
+    expect(summary.blocks_checked).toBe(2);
+    expect(summary.link_failures).toBe(0);
+    expect(summary.hashes_verified).toBe(false);
   });
 
   it('exits 2 when CHAINS_DIR points at a missing directory', () => {
