@@ -6,14 +6,14 @@
  * instead of silently treating a corrupted chain as empty.
  */
 
+import { randomUUID } from 'node:crypto';
 import {
   access,
+  link,
   mkdir,
   open,
   readFile,
   readdir,
-  rename,
-  stat,
   unlink,
   writeFile,
 } from 'node:fs/promises';
@@ -112,11 +112,8 @@ export async function readBlockFile<T = NapiBlock>(filePath: string): Promise<T>
 
 /**
  * Atomically write a block payload to `${dir}/${index:06}.json` using a
- * tmp-file + rename. Creates the directory if missing.
- *
- * Refuses to overwrite an existing genesis block (index 0) as defense in depth —
- * if the caller ever miscomputes the next index as 0 (e.g. from a buggy empty-chain
- * path), we must not silently rewrite the real genesis. See issue #70.
+ * synced temporary file and atomic, exclusive publication. Creates the
+ * directory if missing. Existing blocks at ANY index are never replaced.
  *
  * Returns the final file path.
  */
@@ -139,30 +136,25 @@ export async function writeBlockAtomic(
     }
   }
 
-  // Capture previous content (if any) so we can roll back to it if the
-  // post-rename verification discovers the on-disk content does not match
-  // the intended payload. This guards against partial writes, race conditions,
-  // and serializer divergence (e.g. Rust NAPIbridge appending trailing
-  // characters to a JSON object — observed in cases chain 2026-09-07 and
-  // 2026-09-11, decision #98/#146).
-  let previousBytes: string | undefined;
-  try {
-    const prev = await stat(filename).catch(() => undefined);
-    if (prev?.isFile()) {
-      previousBytes = await readFile(filename, 'utf8');
-    }
-  } catch {
-    // best-effort: if stat/read fails, fall through without rollback option
-  }
-
-  const tmpFilename = `${filename}.tmp-${process.pid}-${Date.now()}`;
+  const tmpFilename = `${filename}.tmp-${process.pid}-${randomUUID()}`;
   await writeFile(tmpFilename, payload, 'utf8');
   const staged = await open(tmpFilename, 'r');
-  try { await staged.sync(); } finally { await staged.close(); }
   try {
-    await rename(tmpFilename, filename);
+    await staged.sync();
+  } finally {
+    await staged.close();
+  }
+  try {
+    // link is atomic and fails with EEXIST; rename would replace the target.
+    // A competing writer must never be able to destroy a committed block.
+    await link(tmpFilename, filename);
+    await unlink(tmpFilename).catch(() => undefined);
     const directory = await open(dir, 'r');
-    try { await directory.sync(); } finally { await directory.close(); }
+    try {
+      await directory.sync();
+    } finally {
+      await directory.close();
+    }
   } catch (error) {
     await unlink(tmpFilename).catch(() => undefined);
     throw error;
@@ -175,25 +167,18 @@ export async function writeBlockAtomic(
   try {
     const written = await readFile(filename, 'utf8');
     if (written !== payload) {
-      // Rollback to previous content (if any) before throwing so the chain
-      // does not contain a silently-corrupt block.
-      if (previousBytes !== undefined) {
-        await writeFile(filename, previousBytes, 'utf8');
-      } else {
-        // The block did not exist before; the safest rollback is to remove
-        // it entirely so the next-index computation treats this slot as empty.
-        await unlink(filename).catch(() => undefined);
-      }
+      // Preserve the published file for investigation. Another writer could
+      // have changed it; deleting or restoring bytes here may destroy evidence.
       throw new Error(
         `writeBlockAtomic verification failed for ${filename}: ` +
-        `on-disk content does not match payload (len ${written.length} vs ${payload.length}). ` +
-        `This indicates a partial write, race condition, or serializer divergence. ` +
-        `Block rolled back to previous content. Re-run the originating append.`,
+          `on-disk content does not match payload (len ${written.length} vs ${payload.length}). ` +
+          `This indicates a partial write, race condition, or serializer divergence. ` +
+          `Published block preserved for investigation.`,
       );
     }
   } catch (verificationError) {
     // Rethrow our own verification error; ignore IO errors that would mask the
-    // real failure (the file rename already succeeded).
+    // real failure (the file was already published).
     if (
       verificationError instanceof Error &&
       verificationError.message.startsWith('writeBlockAtomic verification failed')
@@ -203,9 +188,9 @@ export async function writeBlockAtomic(
     // For unexpected IO errors during verification, log and proceed (the
     // rename already happened; do not double-throw which would mask the
     // success path).
-     
+
     console.error(
-      `writeBlockAtomic: post-rename verify IO error (non-fatal): ${String(verificationError)}`,
+      `writeBlockAtomic: post-publication verify IO error (non-fatal): ${String(verificationError)}`,
     );
   }
   return filename;

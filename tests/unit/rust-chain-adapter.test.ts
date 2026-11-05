@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -7,6 +7,48 @@ import { describe, expect, it } from 'vitest';
 import { NapiChainAdapter } from '../../src/infra/storage/rust-chain-adapter.js';
 
 describe('rust chain adapter', () => {
+  it('keeps an append in its guarded directory when the caller mutates its environment', async () => {
+    const source = mkdtempSync(join(tmpdir(), 'memphis-source-'));
+    const destination = mkdtempSync(join(tmpdir(), 'memphis-destination-'));
+    const bridgeDir = mkdtempSync(join(tmpdir(), 'memphis-bridge-'));
+    const bridgePath = join(bridgeDir, 'bridge.cjs');
+    const targetDir = join(destination, 'chains', 'reflections');
+    mkdirSync(targetDir, { recursive: true });
+    const protectedPath = join(targetDir, '000001.json');
+    const previous = JSON.stringify({ index: 1, hash: 'synthetic-existing' });
+    writeFileSync(protectedPath, previous);
+    writeFileSync(
+      bridgePath,
+      `module.exports = {
+      chain_append: (_chain, block) => {
+        globalThis.__memphisSwitchFixture();
+        return JSON.stringify({ok:true,data:{appended:true,chain:[JSON.parse(block)]}});
+      },
+      chain_validate: () => JSON.stringify({ok:true,data:{valid:true}}),
+      chain_query: () => JSON.stringify({ok:true,data:{count:0,blocks:[]}})
+    };`,
+    );
+    const env = {
+      ...process.env,
+      MEMPHIS_DATA_DIR: source,
+      RUST_CHAIN_ENABLED: 'true',
+      RUST_CHAIN_BRIDGE_PATH: bridgePath,
+    };
+    const hook = globalThis as typeof globalThis & { __memphisSwitchFixture?: () => void };
+    hook.__memphisSwitchFixture = () => {
+      env.MEMPHIS_DATA_DIR = destination;
+    };
+    try {
+      const adapter = new NapiChainAdapter(env);
+      await adapter.appendBlock('reflections', { type: 'insight', content: 'synthetic', tags: [] });
+      expect(env.MEMPHIS_DATA_DIR).toBe(destination);
+      expect(readFileSync(protectedPath, 'utf8')).toBe(previous);
+      expect(existsSync(join(source, 'chains', 'reflections', '000001.json'))).toBe(true);
+    } finally {
+      delete hook.__memphisSwitchFixture;
+    }
+  });
+
   it('uses canonical payload hashing compatible with memphis-core', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'mv5-rust-chain-home-'));
     const dir = mkdtempSync(join(tmpdir(), 'mv5-rust-chain-bridge-'));

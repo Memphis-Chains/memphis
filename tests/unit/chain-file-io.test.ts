@@ -1,11 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 // Importing from `node:fs/promises` here (alphabetically before `node:os`
 // per eslint `import/order`) is safe even though the module is mocked
 // further down: vitest hoists `vi.mock(...)` above all imports, so by
@@ -46,9 +39,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // call only. Without `vi.hoisted`, a top-level `let` would sit in TDZ when
 // vitest hoists the factory above it and the test file would fail to load.
 const refs = vi.hoisted(() => ({
-  realFsPromises: undefined as
-    | (typeof import('node:fs/promises'))
-    | undefined,
+  realFsPromises: undefined as typeof import('node:fs/promises') | undefined,
 }));
 
 vi.mock('node:fs/promises', async () => {
@@ -108,11 +99,8 @@ describe('chain file io', () => {
 // The atomic write path was hardened in d4dacc6 (read-after-write verification
 // + rollback for issue #626). These tests pin the contract:
 //   - happy-path writes land exactly the payload that was sent
-//   - overwriting an existing block succeeds without corrupting siblings
-//   - genesis (index 0) is never overwritten, even if a buggy caller asks
-//   - when the post-rename verification read diverges (corruption, race,
-//     trailing garbage), the function rolls back: restore prev bytes, or
-//     unlink the file when no prev exists
+//   - existing blocks at any index cannot be overwritten
+//   - divergent post-publication verification preserves evidence and fails
 
 describe('writeBlockAtomic', () => {
   it('writes a new block to a fresh slot (no previous file)', async () => {
@@ -132,24 +120,14 @@ describe('writeBlockAtomic', () => {
     expect(existsSync(join(dir, '000008.json'))).toBe(false);
   });
 
-  it('overwrites an existing block, replacing previous bytes exactly', async () => {
+  it('refuses to overwrite an existing block at a nonzero index', async () => {
     const dir = freshDir();
     const prev = JSON.stringify({ index: 3, hash: 'p3', data: { v: 1 } });
     writeFileSync(join(dir, '000003.json'), prev, 'utf8');
-
     const next = JSON.stringify({ index: 3, hash: 'p3b', data: { v: 2 } });
-    await writeBlockAtomic(dir, 3, next);
 
-    expect(readFileSync(join(dir, '000003.json'), 'utf8')).toBe(next);
-    // The `data.v` discriminator proves previous bytes were not retained
-    // (prev used v:1, next uses v:2). Asserting on `data.v` is robust
-    // against other field overlap (e.g. shared `index: 3`).
-    expect(readFileSync(join(dir, '000003.json'), 'utf8')).toContain(
-      '"v":2',
-    );
-    expect(readFileSync(join(dir, '000003.json'), 'utf8')).not.toContain(
-      '"v":1',
-    );
+    await expect(writeBlockAtomic(dir, 3, next)).rejects.toMatchObject({ code: 'EEXIST' });
+    expect(readFileSync(join(dir, '000003.json'), 'utf8')).toBe(prev);
   });
 
   it('refuses to overwrite an existing genesis block (index 0)', async () => {
@@ -166,43 +144,24 @@ describe('writeBlockAtomic', () => {
     expect(readFileSync(join(dir, '000000.json'), 'utf8')).toBe(genesis);
   });
 
-  it('rolls back to previous bytes when verification read diverges', async () => {
+  it('allows only one concurrent writer to publish a given index', async () => {
     const dir = freshDir();
-    const prev = JSON.stringify({ index: 5, hash: 'p5', data: { v: 1 } });
-    writeFileSync(join(dir, '000005.json'), prev, 'utf8');
-
-    // readFile is called twice for index 5 inside writeBlockAtomic:
-    //   1st — read previousBytes (must return real previous content)
-    //   2nd — post-rename verification (must diverge to trigger rollback)
-    // Both readFile calls go through the vi.fn; we keep the default real
-    // implementation for the 1st call and queue a divergent response for
-    // the 2nd.
-    vi.mocked(readFile)
-      .mockImplementationOnce(refs.realFsPromises!.readFile)
-      .mockImplementationOnce(
-        async () =>
-          // biome-ignore lint/suspicious/noExplicitAny: mock return type narrowing
-          'TORN-WRITE-GARBAGE-NOT-MATCHING-PAYLOAD' as any,
-      );
-
-    const intended = JSON.stringify({ index: 5, hash: 'p5b', data: { v: 2 } });
-    await expect(writeBlockAtomic(dir, 5, intended)).rejects.toThrow(
-      /verification failed/i,
-    );
-
-    // Previous content restored, not the divergent garbage, not the
-    // intended payload. Operator can re-run the originating append.
-    expect(readFileSync(join(dir, '000005.json'), 'utf8')).toBe(prev);
+    const first = JSON.stringify({ index: 5, hash: 'first' });
+    const second = JSON.stringify({ index: 5, hash: 'second' });
+    const results = await Promise.allSettled([
+      writeBlockAtomic(dir, 5, first),
+      writeBlockAtomic(dir, 5, second),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    const saved = readFileSync(join(dir, '000005.json'), 'utf8');
+    expect([first, second]).toContain(saved);
+    expect(saved).toBe(results[0].status === 'fulfilled' ? first : second);
   });
 
-  it('unlinks the corrupted file when no previous bytes exist', async () => {
+  it('preserves the published file when verification detects a mismatch', async () => {
     const dir = freshDir();
-    // No 000009.json exists before the call → no previousBytes → rollback
-    // removes the file entirely so the next-index computation treats this
-    // slot as empty and the chain integrity sweep can rebuild it.
-
-    // Only one readFile call inside writeBlockAtomic for a fresh slot: the
-    // post-rename verification. Override with garbage so it diverges.
+    // Override the post-publication verification read with divergent bytes.
     vi.mocked(readFile).mockImplementationOnce(
       async () =>
         // biome-ignore lint/suspicious/noExplicitAny: mock return type narrowing
@@ -210,11 +169,9 @@ describe('writeBlockAtomic', () => {
     );
 
     const intended = JSON.stringify({ index: 9, hash: 'h9', data: { v: 1 } });
-    await expect(writeBlockAtomic(dir, 9, intended)).rejects.toThrow(
-      /verification failed/i,
-    );
+    await expect(writeBlockAtomic(dir, 9, intended)).rejects.toThrow(/verification failed/i);
 
-    expect(existsSync(join(dir, '000009.json'))).toBe(false);
+    expect(readFileSync(join(dir, '000009.json'), 'utf8')).toBe(intended);
   });
 });
 
