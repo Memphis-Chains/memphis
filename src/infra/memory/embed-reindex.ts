@@ -8,9 +8,9 @@ import { getSearchableChainNames } from '../../memory/chain-catalog.js';
 import {
   embedFlush,
   embedClearInMemory,
-  embedStore,
+  embedDiscardReplacement,
   embedStoreMany,
-  isEmbedBulkAvailable,
+  isEmbedRebuildSafe,
   type EmbedStoreItem,
 } from '../storage/rust-embed-adapter.js';
 
@@ -83,11 +83,7 @@ export interface EmbedChunk {
   text: string;
 }
 
-export function chunkForEmbed(
-  text: string,
-  maxBytes: number,
-  overlapBytes = 200,
-): EmbedChunk[] {
+export function chunkForEmbed(text: string, maxBytes: number, overlapBytes = 200): EmbedChunk[] {
   if (maxBytes <= 0) return [{ chunkIdx: 0, text }];
   const encoded = Buffer.from(text, 'utf8');
   if (encoded.length <= maxBytes) return [{ chunkIdx: 0, text }];
@@ -242,24 +238,14 @@ export function rebuildDerivedEmbeddings(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): DerivedEmbeddingRebuildResult {
   const chains = collectSearchableChains(rawEnv, options.chain);
-  const shouldReset = options.reset !== false;
-  // Per-block embed failures (e.g. Ollama 500 on a particular content
-  // shape) used to abort the whole rebuild — repair runtime would just
-  // report `embed_store_failed: ollama 500` and 0 vectors land. Keep
-  // going block-by-block so a single bad block doesn't keep the entire
-  // chain corpus un-indexed. Cap detail logging so a chain-wide outage
-  // doesn't flood logs.
-  const MAX_FAILURE_DETAIL_LOGS = 5;
-  const failureSamples: string[] = [];
-
-  if (shouldReset) {
-    // ADR-006 (issue #628): use the in-memory-only clear so a crash
-    // between this call and the materialising `embedFlush` below leaves
-    // the previous on-disk index intact. `embedReset` would commit a
-    // destructive empty write to disk right now — if the rebuild then
-    // fails or is interrupted, the operator's previous embedding history
-    // is gone (decision #156: 4832→0; 2026-09-17: ~205 lost to a race).
-    embedClearInMemory(rawEnv);
+  if (options.chain && options.reset === true) {
+    throw new Error('refusing to replace the entire embedding index with one chain');
+  }
+  const shouldReset = options.reset ?? !options.chain;
+  // Legacy single-item upserts persist immediately, so they cannot safely
+  // replace an index if a later embedding fails. Require the bulk boundary.
+  if (!isEmbedRebuildSafe(rawEnv)) {
+    throw new Error('embedding rebuild requires a Rust bridge with safe bulk and abort support');
   }
 
   // 1. Walk all chains, derive the exact-search entry per block, and
@@ -283,11 +269,9 @@ export function rebuildDerivedEmbeddings(
         skipped += 1;
         continue;
       }
-      const rawMemoryId =
-        typeof block.data.memory_id === 'string' && block.data.memory_id.trim().length > 0
-          ? block.data.memory_id.trim()
-          : undefined;
-      const memoryId = rawMemoryId ?? buildDefaultMemoryId(chain, block.index);
+      // Custom memory IDs are not globally unique. Chain coordinates are
+      // unique and both the Node and native recall resolvers support them.
+      const memoryId = buildDefaultMemoryId(chain, block.index);
       // Rust embed pipeline rejects text > 4096 UTF-8 bytes
       // (crates/memphis-embed/src/pipeline.rs:64). Long content
       // (insight blocks 8-10 KB, future chain types) gets split into
@@ -313,86 +297,38 @@ export function rebuildDerivedEmbeddings(
     }
   }
 
-  // 2. Index. Prefer the bulk + flush path — it amortizes per-item
-  //    persistence into one disk write at the end (a 6326-block rebuild
-  //    historically wrote ~290 GB through the per-item path; bulk
-  //    completes in seconds). Fall back to per-item if the loaded NAPI
-  //    binary predates the bulk surface.
+  // Never replace an existing index with an empty or partial rebuild.
+  if (prepared.length === 0) {
+    throw new Error('embedding rebuild found no indexable entries');
+  }
   let indexed = 0;
-
-  const recordFailure = (chain: string, index: number, content: string, err: unknown) => {
-    skipped += 1;
-    if (failureSamples.length < MAX_FAILURE_DETAIL_LOGS) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const preview = content.slice(0, 120).replace(/\s+/g, ' ');
-      failureSamples.push(
-        `chain=${chain} index=${index} preview="${preview}" err=${msg.slice(0, 200)}`,
-      );
-    }
-  };
-
-  if (isEmbedBulkAvailable(rawEnv) && prepared.length > 0) {
+  try {
+    if (shouldReset) embedClearInMemory(rawEnv);
     for (let i = 0; i < prepared.length; i += BULK_CHUNK_SIZE) {
       const window = prepared.slice(i, i + BULK_CHUNK_SIZE);
-      try {
-        const result = embedStoreMany(
-          window.map((p) => p.item),
-          rawEnv,
-        );
-        indexed += result.inserted;
-      } catch (chunkErr) {
-        // Bulk failed mid-chunk — fall back to per-item for THIS chunk
-        // only so a single bad block doesn't poison the rebuild.
-        for (const prep of window) {
-          try {
-            embedStore(prep.item.id, prep.item.text, rawEnv, prep.item.tags);
-            indexed += 1;
-          } catch (singleErr) {
-            recordFailure(prep.chain, prep.index, prep.item.text, singleErr);
-          }
-        }
-        // Note the chunk-level error in the sample log too — useful when
-        // the cause is structural (provider 500 on every block) rather
-        // than per-block.
-        if (failureSamples.length < MAX_FAILURE_DETAIL_LOGS) {
-          const msg = chunkErr instanceof Error ? chunkErr.message : String(chunkErr);
-          failureSamples.push(
-            `chunk_failed offset=${i} size=${window.length} err=${msg.slice(0, 200)}`,
-          );
-        }
+      // Any failure aborts before flush. Single-item fallback would persist
+      // partial results and could replace the last complete index.
+      const result = embedStoreMany(
+        window.map((p) => p.item),
+        rawEnv,
+      );
+      if (result.inserted !== window.length) {
+        throw new Error(`embedding rebuild inserted an incomplete batch at offset ${i}`);
       }
+      indexed += result.inserted;
     }
-
-    // Single materializing flush at the end — this is the writes-to-disk
-    // moment.
+    const flushed = embedFlush(rawEnv);
+    if (!flushed.flushed) throw new Error('embedding rebuild did not persist the index');
+  } catch (error) {
     try {
-      embedFlush(rawEnv);
-    } catch (flushErr) {
-      const msg = flushErr instanceof Error ? flushErr.message : String(flushErr);
-      process.stderr.write(`[embed-reindex] flush failed: ${msg}\n`);
-      // Don't throw — we still want the caller to see the indexed/skipped
-      // counts; the flush failure is surfaced via stderr.
+      embedDiscardReplacement(rawEnv);
+    } catch (discardError) {
+      throw new AggregateError(
+        [error, discardError],
+        'embedding rebuild failed and its in-memory state could not be discarded',
+      );
     }
-  } else {
-    // Legacy per-item path (older NAPI binary, or empty corpus).
-    for (const prep of prepared) {
-      try {
-        embedStore(prep.item.id, prep.item.text, rawEnv, prep.item.tags);
-        indexed += 1;
-      } catch (err) {
-        recordFailure(prep.chain, prep.index, prep.item.text, err);
-      }
-    }
-  }
-
-  if (failureSamples.length > 0) {
-    // Surface a few samples to aid debugging without spamming. Operators
-    // running `memphis repair runtime --rebuild-embeddings` can grep.
-    process.stderr.write(
-      `[embed-reindex] ${skipped} block(s) skipped due to embed errors; first ${failureSamples.length}:\n` +
-        failureSamples.map((s) => `  ${s}`).join('\n') +
-        '\n',
-    );
+    throw error;
   }
 
   return { chains, total, indexed, skipped, cleared: shouldReset };

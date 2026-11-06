@@ -8,7 +8,7 @@ use memphis_core::signature::{sign_block, verify_block_signature_with_allowlist}
 use memphis_core::soul::{validate_block, validate_block_strict};
 use memphis_embed::{
     set_shutdown_barrier, EmbedConfig, EmbedMode, EmbedPersistenceConfig,
-    EmbedPersistenceLoadState, EmbedPipeline,
+    EmbedPersistenceLoadState, EmbedPipeline, ReplacementState,
 };
 mod vault_bridge;
 
@@ -309,7 +309,8 @@ fn embed_persistence_enabled_from_env() -> bool {
 
 fn embed_persistence_path_from_env() -> PathBuf {
     let env = std::env::vars().collect();
-    let root = std::env::var("MEMPHIS_RUNTIME_ROOT").map(PathBuf::from)
+    let root = std::env::var("MEMPHIS_RUNTIME_ROOT")
+        .map(PathBuf::from)
         .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     memphis_paths::resolve_embed_index_path(&env, &root)
 }
@@ -332,6 +333,14 @@ fn embed_normalized_to_str(provider: &str) -> &'static str {
     }
 }
 
+fn replacement_state_to_str(state: ReplacementState) -> &'static str {
+    match state {
+        ReplacementState::Idle => "idle",
+        ReplacementState::Armed => "armed",
+        ReplacementState::Failed => "failed",
+    }
+}
+
 fn get_embed_pipeline() -> Result<&'static Mutex<EmbedPipeline>, String> {
     if let Some(p) = EMBED_PIPELINE.get() {
         return Ok(p);
@@ -351,7 +360,9 @@ fn get_embed_pipeline() -> Result<&'static Mutex<EmbedPipeline>, String> {
 
 #[napi(js_name = "embed_index_metadata")]
 pub fn embed_index_metadata(path: String) -> String {
-    ok(memphis_embed::metadata::inspect_index(std::path::Path::new(&path)))
+    ok(memphis_embed::metadata::inspect_index(
+        std::path::Path::new(&path),
+    ))
 }
 
 #[napi(js_name = "chain_validate")]
@@ -584,7 +595,7 @@ pub fn embed_flush() -> String {
         Err(e) => return err(e),
     };
 
-    let pipeline = match pipeline.lock() {
+    let mut pipeline = match pipeline.lock() {
         Ok(v) => v,
         Err(_) => return err("embed_pipeline_lock_failed"),
     };
@@ -606,10 +617,16 @@ pub fn embed_search(query: String, top_k: Option<u32>, tags_json: Option<String>
         Err(e) => return err(e),
     };
 
-    let pipeline = match pipeline.lock() {
+    let mut pipeline = match pipeline.lock() {
         Ok(v) => v,
         Err(_) => return err("embed_pipeline_lock_failed"),
     };
+
+    // Observe writes made by another process (operator TUI / daemon)
+    // without discarding pending bulk writes.
+    if let Err(error) = pipeline.refresh_from_disk() {
+        return err(format!("embed_search_failed: {error}"));
+    }
 
     let filter_tags: Option<Vec<String>> = tags_json.and_then(|s| serde_json::from_str(&s).ok());
     let limit = top_k.unwrap_or(5) as usize;
@@ -642,10 +659,16 @@ pub fn embed_search_tuned(query: String, top_k: Option<u32>, tags_json: Option<S
         Err(e) => return err(e),
     };
 
-    let pipeline = match pipeline.lock() {
+    let mut pipeline = match pipeline.lock() {
         Ok(v) => v,
         Err(_) => return err("embed_pipeline_lock_failed"),
     };
+
+    // Observe writes made by another process (operator TUI / daemon)
+    // without discarding pending bulk writes.
+    if let Err(error) = pipeline.refresh_from_disk() {
+        return err(format!("embed_search_tuned_failed: {error}"));
+    }
 
     let filter_tags: Option<Vec<String>> = tags_json.and_then(|s| serde_json::from_str(&s).ok());
     let limit = top_k.unwrap_or(5) as usize;
@@ -682,8 +705,10 @@ pub fn embed_reset() -> String {
         Ok(v) => v,
         Err(_) => return err("embed_pipeline_lock_failed"),
     };
-    pipeline.clear();
-    ok(serde_json::json!({ "cleared": true }))
+    match pipeline.clear() {
+        Ok(()) => ok(serde_json::json!({ "cleared": true })),
+        Err(e) => err(format!("embed_reset_failed: {e}")),
+    }
 }
 
 /// In-memory only destructive clear (ADR-006, issue #628). The on-disk
@@ -708,6 +733,54 @@ pub fn embed_clear_in_memory() -> String {
     };
     pipeline.clear_in_memory_only();
     ok(serde_json::json!({ "cleared": true }))
+}
+
+/// Explicitly abandon an armed or failed index replacement.
+///
+/// The on-disk index is left EXACTLY as it is: a rebuild that was
+/// interrupted between batches must never publish a partial index. The
+/// in-memory contents are reloaded from the persisted index, so the
+/// pipeline continues from the persisted state instead of the
+/// half-finished rebuild.
+///
+/// Returns `{discarded: true, previous_replacement_state, replacement_state,
+/// count, persistence_enabled, persistence_load_state}`. When the pipeline
+/// was never initialized there is nothing to discard and the call
+/// reports `{discarded: false, was_initialized: false}`.
+#[napi(js_name = "embed_discard_replacement")]
+pub fn embed_discard_replacement() -> String {
+    let Some(pipeline_mutex) = EMBED_PIPELINE.get() else {
+        // Nothing was ever initialized: there is no replacement in
+        // flight and nothing to discard. Not an error — the caller
+        // asked for a no-op and got one.
+        return ok(serde_json::json!({
+            "discarded": false,
+            "was_initialized": false,
+            "replacement_state": replacement_state_to_str(ReplacementState::Idle),
+        }));
+    };
+
+    let mut pipeline = match pipeline_mutex.lock() {
+        Ok(v) => v,
+        Err(_) => return err("embed_pipeline_lock_failed"),
+    };
+
+    let previous = pipeline.replacement_state();
+    match pipeline.discard_replacement() {
+        Ok(()) => ok(serde_json::json!({
+            "discarded": true,
+            "was_initialized": true,
+            "previous_replacement_state": replacement_state_to_str(previous),
+            "replacement_state": replacement_state_to_str(ReplacementState::Idle),
+            "count": pipeline.len(),
+            "persistence_enabled": pipeline.persistence_enabled(),
+            "persistence_load_state": load_state_to_str(pipeline.persistence_load_state()),
+        })),
+        // Fail closed: a replacement that cannot be restored from
+        // unreadable storage is still NOT published, but the caller
+        // must see the failure.
+        Err(e) => err(format!("embed_discard_replacement_failed: {e}")),
+    }
 }
 
 /// Release the embed pipeline synchronously before V8 teardown.
@@ -739,10 +812,35 @@ pub fn embed_clear_in_memory() -> String {
 pub fn embed_shutdown() -> String {
     let result = match EMBED_PIPELINE.get() {
         Some(pipeline_mutex) => match pipeline_mutex.lock() {
-            Ok(pipeline) => match pipeline.flush() {
-                Ok(_) => ok(serde_json::json!({ "shutdown": true, "was_initialized": true })),
-                Err(e) => err(format!("embed_shutdown_flush_failed: {e}")),
-            },
+            Ok(mut pipeline) => {
+                // An interrupted rebuild — a replacement that is `Armed` or
+                // `Failed` — must NEVER be published at shutdown: its
+                // in-memory contents may be a partial rebuild, and writing
+                // it would replace a good index with a half-finished copy.
+                // Discard it instead and report that nothing was flushed.
+                let replacement_state = pipeline.replacement_state();
+                match replacement_state {
+                    ReplacementState::Armed | ReplacementState::Failed => {
+                        match pipeline.discard_replacement() {
+                            Ok(()) => ok(serde_json::json!({
+                                "shutdown": true,
+                                "was_initialized": true,
+                                "discarded_replacement": true,
+                                "replacement_state": replacement_state_to_str(replacement_state),
+                            })),
+                            Err(e) => {
+                                err(format!("embed_shutdown_discard_replacement_failed: {e}"))
+                            }
+                        }
+                    }
+                    ReplacementState::Idle => match pipeline.flush() {
+                        Ok(_) => {
+                            ok(serde_json::json!({ "shutdown": true, "was_initialized": true }))
+                        }
+                        Err(e) => err(format!("embed_shutdown_flush_failed: {e}")),
+                    },
+                }
+            }
             Err(_) => err("embed_pipeline_lock_poisoned"),
         },
         None => ok(serde_json::json!({ "shutdown": true, "was_initialized": false })),
@@ -1342,14 +1440,20 @@ mod tests {
         // embed_reset path). Still valid to shutdown — should clear.
         let _ = embed_reset();
         let first = embed_shutdown();
-        assert!(first.contains("\"ok\":true"), "unexpected shutdown response: {first}");
+        assert!(
+            first.contains("\"ok\":true"),
+            "unexpected shutdown response: {first}"
+        );
         assert!(first.contains("\"shutdown\":true"));
 
         // Second call must also succeed (idempotency guarantee for
         // graceful-shutdown.ts which may be invoked twice under racing
         // SIGTERM+SIGINT).
         let second = embed_shutdown();
-        assert!(second.contains("\"ok\":true"), "unexpected shutdown response: {second}");
+        assert!(
+            second.contains("\"ok\":true"),
+            "unexpected shutdown response: {second}"
+        );
         assert!(second.contains("\"shutdown\":true"));
         std::env::remove_var("RUST_EMBED_PERSIST_ENABLED");
     }

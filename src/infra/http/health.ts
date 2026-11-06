@@ -26,6 +26,7 @@ import {
   type SelfGovernanceSnapshot,
 } from '../runtime/self-governance.js';
 import { snapshotTurnTelemetry, type TurnTelemetrySnapshot } from '../runtime/turn-telemetry.js';
+import { readEmbedIndexDimension } from '../storage/embed-index-metadata.js';
 import { assessRustBridgeManifestStatus } from '../storage/rust-bridge-manifest.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 import type { WorkPollingSnapshot } from '../work/work-polling-service.js';
@@ -398,8 +399,7 @@ async function checkEmbedIndexDimension(rawEnv: NodeJS.ProcessEnv): Promise<Chec
 
   let onDiskDim: unknown;
   try {
-    const parsed = JSON.parse(readFileSync(persistPath, 'utf8')) as { dim?: unknown };
-    onDiskDim = parsed.dim;
+    onDiskDim = readEmbedIndexDimension(persistPath);
   } catch {
     // A corrupt index is not a dimension mismatch. Leave it to the
     // dedicated corruption paths rather than mislabel the cause here.

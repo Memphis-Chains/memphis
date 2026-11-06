@@ -5,7 +5,7 @@
 // add registry weight without consumer benefit.
 //
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -38,7 +38,19 @@ function resolveRustTuiBinary(): string | undefined {
     resolve(PROJECT_ROOT, 'target', 'release', `memphis-tui${suffix}`),
   ];
 
-  return candidates.find((candidate) => existsSync(candidate));
+  // Prefer the most recently built binary: an older debug executable must
+  // not hide a freshly built optimized release (or vice versa for devs).
+  return candidates
+    .flatMap((candidate) => {
+      try {
+        if (!existsSync(candidate)) return [];
+        const info = statSync(candidate);
+        return info.isFile() ? [{ path: candidate, modified: info.mtimeMs }] : [];
+      } catch {
+        return [];
+      }
+    })
+    .sort((a, b) => b.modified - a.modified)[0]?.path;
 }
 
 export async function runRustTui(context: CliContext): Promise<void> {

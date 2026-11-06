@@ -17,6 +17,7 @@ const EMBED_BRIDGE_ALIASES = {
   embed_search_tuned: ['embed_search_tuned', 'embedSearchTuned'],
   embed_reset: ['embed_reset', 'embedReset'],
   embed_clear_in_memory: ['embed_clear_in_memory', 'embedClearInMemory'],
+  embed_discard_replacement: ['embed_discard_replacement', 'embedDiscardReplacement'],
   embed_flush: ['embed_flush', 'embedFlush'],
 } satisfies BridgeAliasMap<
   | 'embed_store'
@@ -25,6 +26,7 @@ const EMBED_BRIDGE_ALIASES = {
   | 'embed_search_tuned'
   | 'embed_reset'
   | 'embed_clear_in_memory'
+  | 'embed_discard_replacement'
   | 'embed_flush'
 >;
 
@@ -42,6 +44,7 @@ interface NormalizedEmbedBridge {
   // NAPI crate exports it; legacy builds degrade to `embed_reset()` on
   // the caller side (embed-reindex.ts) if needed.
   embed_clear_in_memory?: () => string;
+  embed_discard_replacement?: () => string;
   embed_flush?: () => string;
 }
 
@@ -308,6 +311,10 @@ function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): NormalizedEm
       | ((query: string, topK?: number, tagsJson?: string) => string)
       | undefined,
     embed_reset: resolution.resolved.embed_reset as () => string,
+    embed_clear_in_memory: resolution.resolved.embed_clear_in_memory as (() => string) | undefined,
+    embed_discard_replacement: resolution.resolved.embed_discard_replacement as
+      | (() => string)
+      | undefined,
     embed_flush: resolution.resolved.embed_flush as (() => string) | undefined,
   };
 }
@@ -405,9 +412,7 @@ export function embedReset(rawEnv: NodeJS.ProcessEnv = process.env): { cleared: 
  * ADR-006 surface. The fallback is unsafe for the rebuilder but keeps
  * single-shot clears working on legacy builds.
  */
-export function embedClearInMemory(
-  rawEnv: NodeJS.ProcessEnv = process.env,
-): { cleared: boolean } {
+export function embedClearInMemory(rawEnv: NodeJS.ProcessEnv = process.env): { cleared: boolean } {
   const bridge = getBridgeOrThrow(rawEnv);
   embedSearchCache.clear();
   if (typeof bridge.embed_clear_in_memory === 'function') {
@@ -444,6 +449,33 @@ export function isEmbedBulkAvailable(rawEnv: NodeJS.ProcessEnv = process.env): b
   } catch {
     return false;
   }
+}
+
+/** Rebuilds need a non-destructive clear and a way to abandon partial work. */
+export function isEmbedRebuildSafe(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
+  try {
+    const bridge = getBridgeOrThrow(rawEnv);
+    return (
+      typeof bridge.embed_store_many === 'function' &&
+      typeof bridge.embed_flush === 'function' &&
+      typeof bridge.embed_clear_in_memory === 'function' &&
+      typeof bridge.embed_discard_replacement === 'function'
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Drop a failed in-memory rebuild and reload the last persisted index. */
+export function embedDiscardReplacement(rawEnv: NodeJS.ProcessEnv = process.env): {
+  discarded: boolean;
+} {
+  const bridge = getBridgeOrThrow(rawEnv);
+  if (typeof bridge.embed_discard_replacement !== 'function') {
+    throw new Error('rust embed bridge does not support discarding a partial rebuild');
+  }
+  embedSearchCache.clear();
+  return parseEnvelope(bridge.embed_discard_replacement());
 }
 
 /**
