@@ -201,6 +201,42 @@ describe('backup exclude policy — one source of truth for every archiver', () 
     expect(listing).not.toContain('embed-index.json.tmp-');
   });
 
+  it('reports nested exclusions consistently with the archive', () => {
+    const root = mkdtempSync(join(tmpdir(), 'memphis-policy-nested-'));
+    const nested = 'embed/bge-m3/model';
+    mkdirSync(join(root, nested), { recursive: true });
+    const kept = `${nested}/index-v1.json`;
+    const excluded = [
+      `${nested}/index-v1.json.tmp-123`,
+      `${nested}/vault-state.json.bak-test`,
+      `${nested}/.env.local`,
+    ];
+    for (const file of [kept, ...excluded]) writeFileSync(join(root, file), 'fixture');
+
+    const preview = JSON.parse(
+      execFileSync('node', [join(process.cwd(), RUNNER), '--data-dir', root, '--dry-run'], {
+        encoding: 'utf8',
+      }),
+    );
+    const archive = join(tmpdir(), `memphis-policy-nested-${process.pid}-${Date.now()}.tar.gz`);
+    execFileSync('tar', [
+      '-czf',
+      archive,
+      ...tarWarningFlags(),
+      ...tarPatternArgs(),
+      '-C',
+      root,
+      '.',
+    ]);
+    const listing = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' }).split('\n');
+    expect(preview.excluded).not.toContain(`./${kept}`);
+    expect(listing).toContain(`./${kept}`);
+    for (const file of excluded) {
+      expect(preview.excluded).toContain(`./${file}`);
+      expect(listing).not.toContain(`./${file}`);
+    }
+  });
+
   it('tar drops a secret stored at the archive root', () => {
     // The macOS runner put `./vault-state.json` inside the archive. The
     // `*/name` glob needs a directory component in front of the name, so it
