@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 
 import { runMemphisExecAnalyze } from './exec-analyze.js';
 import { MEMPHIS_EXEC_TIMEOUT_MS } from '../../config/env-registry.js';
@@ -66,21 +66,18 @@ export interface RunMemphisExecDeps {
  *   - `exec.attempt` + `exec.result` audit events emit on every call,
  *     not just policy denials.
  */
-export function runMemphisExec(
+function prepareMemphisExec(
   input: MemphisExecInput,
-  rawEnv: NodeJS.ProcessEnv = process.env,
-  deps: RunMemphisExecDeps = {},
-): MemphisExecOutput {
+  rawEnv: NodeJS.ProcessEnv,
+  deps: RunMemphisExecDeps,
+): ExecFailureBudgetKey {
   // Codex round-1 N1 (PR #601 review): WARN when production callers
   // forget to thread (surface, actorId). Without identity, the
   // failure budget falls back to a global "unknown::unknown" bucket
   // — one actor's blind-retry loop ends up masked under another
   // actor's budget. The check skips in vitest (deps absent is
   // intentional for unit tests).
-  if (
-    rawEnv.VITEST !== 'true' &&
-    (deps.surface === undefined || deps.actorId === undefined)
-  ) {
+  if (rawEnv.VITEST !== 'true' && (deps.surface === undefined || deps.actorId === undefined)) {
     process.stderr.write(
       `[memphis-exec] WARN: budget-key threading missing — ` +
         `surface=${deps.surface ?? '<undefined>'} actorId=${deps.actorId ?? '<undefined>'}. ` +
@@ -146,13 +143,23 @@ export function runMemphisExec(
   // Enforce allowlist + metachar + argument validation
   enforceGatewayExecPolicy(input.command, policy);
 
-  const result = spawnSync('sh', ['-c', input.command], {
-    encoding: 'utf8',
-    timeout: EXEC_TIMEOUT_MS,
-    stdio: 'pipe',
-    env: { ...rawEnv },
-  });
+  return budgetKey;
+}
 
+type ExecProcessResult = {
+  error?: Error;
+  status: number | null;
+  stdout?: string | null;
+  stderr?: string | null;
+};
+
+function finishMemphisExec(
+  input: MemphisExecInput,
+  rawEnv: NodeJS.ProcessEnv,
+  deps: RunMemphisExecDeps,
+  budgetKey: ExecFailureBudgetKey,
+  result: ExecProcessResult,
+): MemphisExecOutput {
   if (result.error) {
     // Spawn-level failure (not a non-zero exit — process couldn't be
     // started at all). Treat as a failure for budget purposes so a
@@ -205,4 +212,66 @@ export function runMemphisExec(
     stderr: stderr.slice(0, MAX_OUTPUT_CHARS),
     truncated,
   };
+}
+
+export function runMemphisExec(
+  input: MemphisExecInput,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+  deps: RunMemphisExecDeps = {},
+): MemphisExecOutput {
+  const budgetKey = prepareMemphisExec(input, rawEnv, deps);
+  const result = spawnSync('sh', ['-c', input.command], {
+    encoding: 'utf8',
+    timeout: EXEC_TIMEOUT_MS,
+    stdio: 'pipe',
+    env: { ...rawEnv },
+  });
+  return finishMemphisExec(input, rawEnv, deps, budgetKey, result);
+}
+
+// Serialize by actor and surface so concurrent requests cannot pass the
+// failure-budget check before an earlier command records its outcome.
+const asyncExecQueues = new Map<string, Promise<unknown>>();
+
+export async function runMemphisExecAsync(
+  input: MemphisExecInput,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+  deps: RunMemphisExecDeps = {},
+): Promise<MemphisExecOutput> {
+  const queueKey = JSON.stringify([deps.surface ?? 'unknown', deps.actorId ?? 'unknown']);
+  const previous = asyncExecQueues.get(queueKey) ?? Promise.resolve();
+  const current = previous
+    .catch(() => undefined)
+    .then(async () => {
+      const budgetKey = prepareMemphisExec(input, rawEnv, deps);
+      const result = await new Promise<ExecProcessResult>((resolve) => {
+        execFile(
+          'sh',
+          ['-c', input.command],
+          {
+            encoding: 'utf8',
+            timeout: EXEC_TIMEOUT_MS,
+            maxBuffer: 1024 * 1024,
+            env: { ...rawEnv },
+          },
+          (error, stdout, stderr) => {
+            const spawnError =
+              error && (typeof error.code === 'string' || error.killed) ? error : undefined;
+            resolve({
+              error: spawnError,
+              status: error ? (typeof error.code === 'number' ? error.code : null) : 0,
+              stdout,
+              stderr,
+            });
+          },
+        );
+      });
+      return finishMemphisExec(input, rawEnv, deps, budgetKey, result);
+    });
+  asyncExecQueues.set(queueKey, current);
+  try {
+    return await current;
+  } finally {
+    if (asyncExecQueues.get(queueKey) === current) asyncExecQueues.delete(queueKey);
+  }
 }

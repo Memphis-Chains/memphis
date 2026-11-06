@@ -250,6 +250,28 @@ describe('turn runtime', () => {
     });
   });
 
+  it('binds Telegram tool execution to the actor and sets an interactive provider deadline', async () => {
+    const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
+    const bound = { listTools: vi.fn(() => []), execute: vi.fn(async () => '{}') };
+    const withBinding = vi.fn(() => bound);
+    await runTurnRuntime({
+      input: 'hello',
+      messages: [],
+      llm: { complete: vi.fn() },
+      toolExecutor: { ...bound, withBinding },
+      memoryUserId: 'telegram:test',
+      conversationId: 'primary::telegram:test',
+      surface: 'gateway',
+      auditSurface: 'telegram',
+    });
+    expect(withBinding).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'telegram:test' }),
+    );
+    expect(runAgentLoop).toHaveBeenCalledWith(
+      expect.objectContaining({ providerTimeoutMs: 120_000 }),
+    );
+  });
+
   it('retains reasoning only in continuation history, not the sent reply or durable memory', async () => {
     runAgentLoop.mockImplementationOnce(async () => ({
       reply: 'Visible answer',

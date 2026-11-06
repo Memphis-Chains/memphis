@@ -16,6 +16,10 @@ import { assertTelegramAccessConfigured } from './telegram-security.js';
 import { registerTelegramTextTurns } from './telegram-text-turns.js';
 import { subscribeTelegramTierLifecycle } from './telegram-tier-lifecycle.js';
 import { getTelegramSessionTier, type TelegramOperatorContext } from './telegram-tier-session.js';
+import {
+  createTelegramTurnGuard,
+  registerTelegramTurnGuardMiddleware,
+} from './telegram-turn-guard.js';
 import { registerTelegramVoiceAndRestart } from './telegram-voice-handlers.js';
 import type { ChannelAdapter, MessageHandler } from '../chat-types.js';
 import { resolveVoiceConfig, type VoiceConfig } from '../voice/voice-service.js';
@@ -54,6 +58,7 @@ export function createTelegramAdapter(
   let started = false;
   /** chatIds that have already received startup context this session. */
   const seenChatIds = new Set<string>();
+  const turnGuard = createTelegramTurnGuard();
   /** chatIds with pending voice reply — send TTS after text reply. */
   const pendingVoiceReply = new Set<string>();
   /** Cached voice config (resolved once at adapter creation). */
@@ -78,12 +83,13 @@ export function createTelegramAdapter(
       // to slash commands. This middleware runs before any handler so the
       // presence registry sees every interaction.
       registerTelegramPresenceMiddleware(bot, getTelegramSessionTier, process.env);
+      registerTelegramTurnGuardMiddleware(bot, turnGuard);
 
       registerTelegramBasicCommands(bot, options);
       registerTelegramCognitiveCommands(bot);
       registerTelegramConfigCommand(bot);
       registerTelegramOperationalCommands(bot, options, handler);
-      registerTelegramTextTurns(bot, options, handler, seenChatIds);
+      registerTelegramTextTurns(bot, options, handler, seenChatIds, turnGuard);
       registerTelegramVoiceAndRestart(bot, token, handler, pendingVoiceReply);
       registerTelegramMediaHandlers(bot, token, handler);
       subscribeTelegramTierLifecycle(bot);

@@ -11,7 +11,42 @@ import {
   isAllowedTelegramUser,
   type TelegramOperatorContext,
 } from './telegram-tier-session.js';
+import {
+  createTelegramTurnGuard,
+  TELEGRAM_BUSY_REPLY,
+  type TelegramTurnGuard,
+} from './telegram-turn-guard.js';
+import { createLogger } from '../../infra/logging/logger.js';
 import type { MessageHandler } from '../chat-types.js';
+
+const log = createLogger('info', 'json', { component: 'telegram.turn' });
+
+function describeTurnError(error: unknown): { category: string; reply: string } {
+  const message = error instanceof Error ? error.message : String(error);
+  const partial = ' Część działań mogła już zostać wykonana — sprawdź je przed ponowieniem.';
+  if (/rate.?limit|too many requests|\b429\b/i.test(message)) {
+    return {
+      category: 'rate-limit',
+      reply: 'Dostawca ograniczył liczbę żądań. Spróbuj później.' + partial,
+    };
+  }
+  if (/timeout|timed out|deadline|nie odpowiedział.*czas/i.test(message)) {
+    return { category: 'timeout', reply: 'Przekroczono czas oczekiwania na odpowiedź.' + partial };
+  }
+  if (/context.{0,40}(window|length|limit)|too many tokens/i.test(message)) {
+    return {
+      category: 'context',
+      reply: 'Przekroczono limit kontekstu modelu. Spróbuj krótszej prośby.' + partial,
+    };
+  }
+  if (/limit|halt/i.test(message)) {
+    return { category: 'limit', reply: 'Przerwałem pracę po osiągnięciu limitu.' + partial };
+  }
+  return {
+    category: 'other',
+    reply: 'Nie udało mi się zakończyć odpowiedzi. Sprawdź status i spróbuj ponownie.' + partial,
+  };
+}
 
 type TextTurnOptions = {
   onStatus?: () => string;
@@ -25,7 +60,11 @@ export function registerTelegramTextTurns(
   options: TextTurnOptions,
   handler: MessageHandler,
   seenChatIds: Set<string>,
+  guard: TelegramTurnGuard = createTelegramTurnGuard(),
 ): void {
+  // grammY's built-in polling waits for each update handler. Keep polling
+  // responsive while a turn runs, but never run two text turns in one chat
+  // or in two chats that resolve to the same conversation actor.
   bot.on('message:text', async (ctx) => {
     const msg = ctx.message;
     if (!msg.text || msg.from?.is_bot) return;
@@ -62,47 +101,53 @@ export function registerTelegramTextTurns(
       return;
     }
 
-    await ctx.replyWithChatAction('typing');
-    const typingInterval = setInterval(() => {
-      void ctx.replyWithChatAction('typing');
-    }, 4000);
-
-    // (Surface activity already recorded by the global middleware above —
-    // S2.5 Bug 2 fix: every inbound message goes through there now.)
-
-    // Startup context: injected once per chatId per bot session
-    let systemPromptAppend: string | undefined;
-    if (!seenChatIds.has(chatId) && options.onStartupContext) {
-      seenChatIds.add(chatId);
+    if (!guard.acquire(chatId, userId)) {
+      await ctx
+        .reply(TELEGRAM_BUSY_REPLY)
+        .catch(() => log.warn('telegram busy notice delivery failed'));
+      return;
+    }
+    const run = async (): Promise<void> => {
+      let typingInterval: ReturnType<typeof setInterval> | undefined;
       try {
-        systemPromptAppend = await options.onStartupContext(userId, sessionTier);
-      } catch {
-        // non-fatal — continue without startup context
-      }
-    } else {
-      seenChatIds.add(chatId);
-    }
+        // Typing indicators are optional; a network failure must not abort
+        // the turn or create an unhandled interval rejection.
+        void ctx.replyWithChatAction('typing').catch(() => undefined);
+        typingInterval = setInterval(() => {
+          void ctx.replyWithChatAction('typing').catch(() => undefined);
+        }, 4000);
 
-    try {
-      await handler({
-        id: String(msg.message_id),
-        channel: 'telegram',
-        userId,
-        chatId,
-        text: msg.text,
-        timestamp: new Date(msg.date * 1000),
-        rawEnvOverride,
-        systemPromptAppend,
-      });
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      if (errMsg.includes('limit') || errMsg.includes('halt')) {
-        await ctx.reply('Przekroczyłem limit narzędzi w tej odpowiedzi. Zapytaj mnie ponownie.');
-      } else {
-        await ctx.reply(`Wystąpił błąd: ${errMsg.slice(0, 200)}`);
+        let systemPromptAppend: string | undefined;
+        if (!seenChatIds.has(chatId) && options.onStartupContext) {
+          seenChatIds.add(chatId);
+          try {
+            systemPromptAppend = await options.onStartupContext(userId, sessionTier);
+          } catch {
+            // Non-fatal — continue without startup context.
+          }
+        } else {
+          seenChatIds.add(chatId);
+        }
+
+        await handler({
+          id: String(msg.message_id),
+          channel: 'telegram',
+          userId,
+          chatId,
+          text: msg.text!,
+          timestamp: new Date(msg.date * 1000),
+          rawEnvOverride,
+          systemPromptAppend,
+        });
+      } catch (err) {
+        const { category, reply } = describeTurnError(err);
+        log.warn('telegram turn failed', { category });
+        await ctx.reply(reply).catch(() => log.warn('telegram error reply delivery failed'));
+      } finally {
+        if (typingInterval) clearInterval(typingInterval);
+        guard.release(chatId);
       }
-    } finally {
-      clearInterval(typingInterval);
-    }
+    };
+    void run();
   });
 }

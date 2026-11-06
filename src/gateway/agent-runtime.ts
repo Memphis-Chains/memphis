@@ -10,6 +10,7 @@ import { executeToolCalls, type ToolExecutionResult } from './tool-orchestration
 import type { ToolTier } from './tool-registry.js';
 import { LOG_LEVEL } from '../config/env-registry.js';
 import { getDataDir } from '../config/paths.js';
+import { AppError } from '../core/errors.js';
 import { classifyToolResult } from '../core/failure-classification.js';
 import type { TokenUsage } from '../core/types.js';
 import { resolveAgentProfile } from '../infra/agent-profile.js';
@@ -360,6 +361,10 @@ export async function runAgentLoop(options: {
   temperature?: number;
   maxTokens?: number;
   reasoningEffort?: ChatOptions['reasoningEffort'];
+  /** Optional deadline for a single provider call, used by interactive surfaces. */
+  providerTimeoutMs?: number;
+  /** Stop starting new work once this interactive turn has used its time budget. */
+  turnTimeoutMs?: number;
   /**
    * Originating channel surface (telegram | http | cli | mcp | …),
    * forwarded to confabulation events so operators can see WHICH channel
@@ -376,6 +381,14 @@ export async function runAgentLoop(options: {
   let effectiveContextWindow: number | undefined;
 
   const workingMessages = [...options.messages];
+  const deadline =
+    options.turnTimeoutMs === undefined ? undefined : Date.now() + options.turnTimeoutMs;
+  const stopForDeadline = (): AgentLoopResult => {
+    const reply =
+      'Zatrzymałem tę odpowiedź po upływie czasu. Część działań mogła już zostać wykonana; nie zakładam, że zadanie jest skończone. Poproś mnie o sprawdzenie i kontynuację.';
+    workingMessages.push({ role: 'assistant', content: reply });
+    return { reply, messages: workingMessages, haltReason: 'turn_deadline_exceeded', usage };
+  };
   // Sprint 0.2: snapshot of the most recent tool results, used by the
   // confabulation detector to compare the model's eventual claim against
   // tool reality. Reset on each new tool batch so we always check
@@ -383,14 +396,52 @@ export async function runAgentLoop(options: {
   let lastToolResults: ToolResultSnapshot[] = [];
 
   for (;;) {
-    const response = await options.llm.complete({
+    const remaining = deadline === undefined ? undefined : deadline - Date.now();
+    if (remaining !== undefined && remaining <= 0) return stopForDeadline();
+    const request = {
       system: options.systemPrompt,
       messages: workingMessages,
       tools: tools.length > 0 ? tools : undefined,
       temperature: options.temperature,
       maxTokens: options.maxTokens,
       reasoningEffort: options.reasoningEffort,
-    });
+    };
+    let response: Awaited<ReturnType<LlmClient['complete']>>;
+    const waitMs =
+      remaining === undefined
+        ? options.providerTimeoutMs
+        : Math.min(remaining, options.providerTimeoutMs ?? remaining);
+    if (waitMs !== undefined) {
+      const controller = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let turnDeadlineReached = false;
+      try {
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            turnDeadlineReached = remaining !== undefined && waitMs === remaining;
+            reject(
+              new AppError(
+                'PROVIDER_TIMEOUT',
+                'Dostawca odpowiedzi nie odpowiedział w wyznaczonym czasie. Część działań mogła już zostać wykonana; sprawdź je przed ponowieniem.',
+                504,
+              ),
+            );
+            controller.abort();
+          }, waitMs);
+        });
+        response = await Promise.race([
+          options.llm.complete({ ...request, signal: controller.signal }),
+          timeout,
+        ]);
+      } catch (error) {
+        if (turnDeadlineReached) return stopForDeadline();
+        throw error;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    } else {
+      response = await options.llm.complete(request);
+    }
     usage = mergeTokenUsage(usage, response.usage);
     if (
       typeof response.effectiveContextWindow === 'number' &&
@@ -444,6 +495,10 @@ export async function runAgentLoop(options: {
         finishReason: response.finishReason,
       };
     }
+
+    // A provider may finish just as the total budget expires. Do not start
+    // the newly proposed tools after the deadline.
+    if (deadline !== undefined && Date.now() >= deadline) return stopForDeadline();
 
     workingMessages.push({
       role: 'assistant',
@@ -568,8 +623,10 @@ export async function runAgentLoop(options: {
 
     if (halted) {
       const reply =
-        response.content ||
-        `I've reached my tool call limit (${state.halt_reason}). Here's what I gathered so far — please ask me to continue if needed.`;
+        options.surface === 'telegram'
+          ? 'Zatrzymałem tę odpowiedź po osiągnięciu limitu pracy. Część działań mogła już zostać wykonana; nie zakładam, że zadanie jest skończone. Poproś mnie o sprawdzenie i kontynuację.'
+          : response.content ||
+            `I've reached my tool call limit (${state.halt_reason}). Here's what I gathered so far — please ask me to continue if needed.`;
       workingMessages.push({ role: 'assistant', content: reply });
       return {
         reply,

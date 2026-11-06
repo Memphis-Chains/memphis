@@ -1,5 +1,5 @@
 import { runMemphisExecAnalyze } from '../../../mcp/tools/exec-analyze.js';
-import { runMemphisExec } from '../../../mcp/tools/exec.js';
+import { runMemphisExec, runMemphisExecAsync } from '../../../mcp/tools/exec.js';
 import { buildTool, type RuntimeToolDefinition } from '../../tool-runtime.js';
 import { optionalString, requiredString } from '../input-normalization.js';
 
@@ -60,9 +60,10 @@ export function createExecRuntimeTools(deps: ExecRuntimeToolDeps): RuntimeToolDe
           surface_intent: optionalString(args, 'surface_intent'),
         };
       },
-      execute(input) {
+      async execute(input) {
         try {
-          return runMemphisExec(input, deps.rawEnv, {
+          const execute = deps.surface === 'telegram' ? runMemphisExecAsync : runMemphisExec;
+          return await execute(input, deps.rawEnv, {
             surface: deps.surface,
             actorId: deps.sessionId,
           });
