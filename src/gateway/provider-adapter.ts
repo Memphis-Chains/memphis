@@ -33,6 +33,7 @@ export function providerToLlmClient(
       temperature?: number;
       maxTokens?: number;
       reasoningEffort?: ChatOptions['reasoningEffort'];
+      signal?: AbortSignal;
     }): Promise<LlmResponse> {
       const providerName = meta.providerLabel ?? 'unknown';
       const modelName = defaults.model ?? meta.modelLabel ?? 'unknown';
@@ -55,6 +56,7 @@ export function providerToLlmClient(
             reasoningEffort: input.reasoningEffort ?? defaults.reasoningEffort,
             systemPrompt: input.system,
             tools: input.tools,
+            ...(input.signal ? { signal: input.signal } : {}),
           });
 
           return {

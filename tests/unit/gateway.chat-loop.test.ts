@@ -91,6 +91,7 @@ describe('gateway chat loop', () => {
         memoryUserId: 'telegram:1',
         surface: 'gateway',
         auditSurface: 'telegram',
+        loopLimits: expect.objectContaining({ max_tool_calls: 16 }),
       }),
     );
     expect(sessions.get).toHaveBeenCalledWith('primary::telegram:1');

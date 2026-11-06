@@ -128,6 +128,7 @@ export type LlmClient = {
     temperature?: number;
     maxTokens?: number;
     reasoningEffort?: ChatOptions['reasoningEffort'];
+    signal?: AbortSignal;
   }): Promise<LlmResponse>;
 };
 

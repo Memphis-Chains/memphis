@@ -1259,6 +1259,9 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
         ? options.toolExecutor.withBinding({
             turnId,
             conversationId: options.conversationId,
+            // Exec failure budgets are per actor, not a shared Telegram
+            // "unknown" bucket. Gateway callers already pass memoryUserId.
+            sessionId: options.actorId ?? options.memoryUserId,
             // Block 1853 sibling fix (2026-05-12) — pass the
             // tier3-merged env so per-request elevation (Telegram
             // /tier command, etc.) actually reaches runMemphisExec's
@@ -1331,6 +1334,11 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
         'Basal prompt classification',
       );
     }
+    if (auditSurface === 'telegram' && options.loopLimits) {
+      prepared.systemPrompt +=
+        `\n\nThis Telegram turn can run at most ${options.loopLimits.max_tool_calls} tool calls. ` +
+        'Prioritize the requested result and report incomplete work honestly.';
+    }
     const llm = resolveLlm(options, prepared.cognitiveModeContribution);
     // Phase 1.3 production sprint: pre-flight check the provider budget.
     // Throws PROVIDER_RATE_LIMIT (429) if cap is exceeded; the cascade
@@ -1367,6 +1375,10 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
         llm: llm.llm,
         toolExecutor: normalizedToolExecutor,
         loopLimits: options.loopLimits,
+        // A stalled provider must not hold an interactive Telegram turn for
+        // the 30-minute default used by long-running non-chat work.
+        providerTimeoutMs: auditSurface === 'telegram' ? 120_000 : undefined,
+        turnTimeoutMs: auditSurface === 'telegram' ? 240_000 : undefined,
         // Codex P1 fix (PR #81): forward cognitive-mode tuning for both
         // resolveLlm branches. Without this, runs against externally
         // supplied LlmClient instances (chat-loop path → options.llm)
