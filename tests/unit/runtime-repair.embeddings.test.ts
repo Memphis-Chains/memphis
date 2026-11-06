@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const embedReset = vi.fn(() => ({ cleared: true }));
 const embedClearInMemory = vi.fn(() => ({ cleared: true }));
+const embedDiscardReplacement = vi.fn(() => ({ discarded: true }));
 const embedStore = vi.fn(() => ({ id: 'mock', count: 1, dim: 32, provider: 'mock' }));
 const embedStoreMany = vi.fn((items: Array<{ id: string; text: string; tags?: string[] }>) => ({
   inserted: items.length,
@@ -15,7 +16,7 @@ const embedStoreMany = vi.fn((items: Array<{ id: string; text: string; tags?: st
   persistence_enabled: true,
 }));
 const embedFlush = vi.fn(() => ({ flushed: true, dim: 32 }));
-const isEmbedBulkAvailable = vi.fn(() => true);
+const isEmbedRebuildSafe = vi.fn(() => true);
 const getRustEmbedAdapterStatus = vi.fn(() => ({
   rustEnabled: true,
   rustBridgePath: 'mock-bridge',
@@ -27,10 +28,11 @@ const getRustEmbedAdapterStatus = vi.fn(() => ({
 vi.mock('../../src/infra/storage/rust-embed-adapter.js', () => ({
   embedReset,
   embedClearInMemory,
+  embedDiscardReplacement,
   embedStore,
   embedStoreMany,
   embedFlush,
-  isEmbedBulkAvailable,
+  isEmbedRebuildSafe,
   getRustEmbedAdapterStatus,
 }));
 
@@ -88,11 +90,13 @@ describe('runtime repair embeddings', () => {
     writeChainBlock(runtimeDir, 'journal', 1, {
       type: 'journal',
       content: 'journal content',
+      memory_id: 'same-custom-id',
       tags: ['repair', 'journal'],
     });
     writeChainBlock(runtimeDir, 'decisions', 1, {
       type: 'decision',
       content: 'decision content',
+      memory_id: 'same-custom-id',
       tags: ['repair', 'decision'],
     });
 
@@ -107,9 +111,7 @@ describe('runtime repair embeddings', () => {
     // guard for issue #628.
     expect(embedClearInMemory).toHaveBeenCalledTimes(1);
     expect(embedReset).not.toHaveBeenCalled();
-    // Bulk-first path: items batched into a single embedStoreMany call,
-    // then a single embedFlush at the end of the rebuild. The per-item
-    // embedStore is the legacy fallback only when bulk isn't available.
+    // Custom IDs can collide across chains; source coordinates remain unique.
     expect(embedStoreMany).toHaveBeenCalledTimes(1);
     expect(embedStoreMany).toHaveBeenCalledWith(
       expect.arrayContaining([
@@ -135,8 +137,8 @@ describe('runtime repair embeddings', () => {
     ).toBe(true);
   });
 
-  it('falls back to per-item embedStore when bulk surface is missing (legacy NAPI binary)', async () => {
-    isEmbedBulkAvailable.mockReturnValueOnce(false);
+  it('refuses an unsafe rebuild when the bridge lacks bulk support', async () => {
+    isEmbedRebuildSafe.mockReturnValueOnce(false);
     const runtimeDir = mkdtempSync(join(tmpdir(), 'memphis-runtime-embeddings-legacy-'));
     tempDirs.push(runtimeDir);
     const env = {
@@ -158,16 +160,54 @@ describe('runtime repair embeddings', () => {
     const result = await repairRuntimeState({ rawEnv: env });
 
     expect(result.ok).toBe(true);
-    // Legacy path: single-item embedStore called per block, no bulk call,
-    // and no flush (single-item path uses the auto_persist=true default
-    // on the Rust side).
+    expect(result.skipped.some((item) => item.includes('safe bulk and abort support'))).toBe(true);
+    expect(embedClearInMemory).not.toHaveBeenCalled();
     expect(embedStoreMany).not.toHaveBeenCalled();
     expect(embedFlush).not.toHaveBeenCalled();
-    expect(embedStore).toHaveBeenCalledWith(
-      'journal-1',
-      'legacy fallback content',
-      env,
-      expect.arrayContaining(['legacy', 'chain:journal']),
+    expect(embedStore).not.toHaveBeenCalled();
+  });
+
+  it('does not flush a partial index after an embedding failure', async () => {
+    const runtimeDir = mkdtempSync(join(tmpdir(), 'memphis-reindex-failure-'));
+    tempDirs.push(runtimeDir);
+    const env = { ...process.env, NODE_ENV: 'test', MEMPHIS_DATA_DIR: runtimeDir };
+    writeChainBlock(runtimeDir, 'journal', 1, { type: 'journal', content: 'fixture' });
+    embedStoreMany.mockImplementationOnce(() => {
+      throw new Error('fixture provider failed');
+    });
+    const { rebuildDerivedEmbeddings } = await import('../../src/infra/memory/embed-reindex.js');
+
+    expect(() => rebuildDerivedEmbeddings({}, env)).toThrow('fixture provider failed');
+    expect(embedFlush).not.toHaveBeenCalled();
+    expect(embedStore).not.toHaveBeenCalled();
+    expect(embedDiscardReplacement).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a flush failure rather than claiming a successful rebuild', async () => {
+    const runtimeDir = mkdtempSync(join(tmpdir(), 'memphis-reindex-flush-'));
+    tempDirs.push(runtimeDir);
+    const env = { ...process.env, NODE_ENV: 'test', MEMPHIS_DATA_DIR: runtimeDir };
+    writeChainBlock(runtimeDir, 'journal', 1, { type: 'journal', content: 'fixture' });
+    embedFlush.mockImplementationOnce(() => {
+      throw new Error('fixture flush failed');
+    });
+    const { rebuildDerivedEmbeddings } = await import('../../src/infra/memory/embed-reindex.js');
+
+    expect(() => rebuildDerivedEmbeddings({}, env)).toThrow('fixture flush failed');
+    expect(embedDiscardReplacement).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not clear other chains when rebuilding a single chain', async () => {
+    const runtimeDir = mkdtempSync(join(tmpdir(), 'memphis-reindex-chain-'));
+    tempDirs.push(runtimeDir);
+    const env = { ...process.env, NODE_ENV: 'test', MEMPHIS_DATA_DIR: runtimeDir };
+    writeChainBlock(runtimeDir, 'journal', 1, { type: 'journal', content: 'fixture' });
+    const { rebuildDerivedEmbeddings } = await import('../../src/infra/memory/embed-reindex.js');
+
+    expect(rebuildDerivedEmbeddings({ chain: 'journal' }, env).cleared).toBe(false);
+    expect(embedClearInMemory).not.toHaveBeenCalled();
+    expect(() => rebuildDerivedEmbeddings({ chain: 'journal', reset: true }, env)).toThrow(
+      /refusing to replace/,
     );
   });
 });
