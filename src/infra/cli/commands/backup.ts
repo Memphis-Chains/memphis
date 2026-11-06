@@ -1368,6 +1368,16 @@ export async function restoreBackup(options: RestoreOptions): Promise<{
     throw new Error(`Checksum verification failed for ${basename(backupPath)}`);
   }
 
+  // The swap below uses renameSync in both directions. A tmpfs /tmp and an
+  // on-disk data root make every rename fail with EXDEV. Check before taking
+  // a pre-restore backup or moving any live data; otherwise a later failure
+  // can leave a partially moved tree and extracted data in temporary storage.
+  if (statSync(tmpdir()).dev !== statSync(memphisRoot).dev) {
+    throw new Error(
+      'Restore refused before changing data: TMPDIR and the Memphis data directory are on different filesystems. Use a private TMPDIR on the data filesystem and follow the restore runbook.',
+    );
+  }
+
   const preRestoreBackup = await createBackup({
     backupRoot,
     memphisRoot: options.memphisRoot,

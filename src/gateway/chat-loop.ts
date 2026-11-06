@@ -18,6 +18,7 @@ import type {
   SessionStore,
 } from './chat-types.js';
 import { deriveConversationContext } from './conversation-identity.js';
+import { LOOP_LIMITS } from './loop-limits.js';
 import { handleLrDashboardFastPath } from './lr-dashboard-fast-path.js';
 import { runTurnRuntime } from './turn-runtime.js';
 import { LOG_LEVEL } from '../config/env-registry.js';
@@ -25,6 +26,10 @@ import { createPinoLogger } from '../infra/logging/pino.js';
 import type { ChatMessage } from '../providers/index.js';
 
 const log = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
+
+// Interactive Telegram replies must not run hundreds of tool calls before
+// the operator sees an answer. Other surfaces retain their configured limits.
+export const TELEGRAM_MAX_TOOL_CALLS = 16;
 
 // ─── Session fallback ───────────────────────────────────────────
 
@@ -89,7 +94,16 @@ export async function handleMessage(
       ? [config.systemPrompt, message.systemPromptAppend].filter(Boolean).join('\n\n')
       : config.systemPrompt,
     toolExecutor: config.toolExecutor,
-    loopLimits: config.loopLimits,
+    loopLimits:
+      message.channel === 'telegram'
+        ? {
+            ...(config.loopLimits ?? LOOP_LIMITS),
+            max_tool_calls: Math.min(
+              config.loopLimits?.max_tool_calls ?? LOOP_LIMITS.max_tool_calls,
+              TELEGRAM_MAX_TOOL_CALLS,
+            ),
+          }
+        : config.loopLimits,
     surface: 'gateway',
     auditSurface: message.channel,
     rawEnv,
