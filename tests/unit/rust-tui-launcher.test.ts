@@ -2,9 +2,10 @@ import { EventEmitter } from 'node:events';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { spawnMock, existsSyncMock } = vi.hoisted(() => ({
+const { spawnMock, existsSyncMock, statSyncMock } = vi.hoisted(() => ({
   spawnMock: vi.fn(),
   existsSyncMock: vi.fn(),
+  statSyncMock: vi.fn(),
 }));
 
 vi.mock('node:child_process', () => ({
@@ -13,6 +14,7 @@ vi.mock('node:child_process', () => ({
 
 vi.mock('node:fs', () => ({
   existsSync: existsSyncMock,
+  statSync: statSyncMock,
 }));
 
 import { runRustTui } from '../../src/infra/cli/commands/rust-tui.js';
@@ -27,6 +29,24 @@ describe('runRustTui', () => {
   beforeEach(() => {
     spawnMock.mockReset();
     existsSyncMock.mockReset();
+    statSyncMock.mockReset();
+    statSyncMock.mockReturnValue({ isFile: () => true, mtimeMs: 1 });
+  });
+
+  it('selects the newer release build when both binaries exist', async () => {
+    existsSyncMock.mockReturnValue(true);
+    statSyncMock
+      .mockReturnValueOnce({ isFile: () => true, mtimeMs: 100 })
+      .mockReturnValueOnce({ isFile: () => true, mtimeMs: 200 });
+    spawnMock.mockReturnValueOnce(childThatExits());
+
+    await runRustTui({
+      argv: ['node', 'memphis', 'tui'],
+      args: {} as never,
+      getConfig: vi.fn() as never,
+      getContainer: vi.fn() as never,
+    });
+    expect(String(spawnMock.mock.calls[0][0])).toContain('/target/release/memphis-tui');
   });
 
   it('uses an existing compiled binary when present', async () => {
@@ -96,25 +116,28 @@ describe('runRustTui', () => {
     expect(args).toEqual(['--check-only', '--json']);
   });
 
-  it.each([true, false])('preserves initial input with a compiled binary available=%s', async (compiled) => {
-    existsSyncMock.mockReturnValue(compiled);
-    spawnMock.mockReturnValueOnce(childThatExits());
-    const input = '--literal Sprawdź "Omarchy"\ndruga linia; $(nothing)';
+  it.each([true, false])(
+    'preserves initial input with a compiled binary available=%s',
+    async (compiled) => {
+      existsSyncMock.mockReturnValue(compiled);
+      spawnMock.mockReturnValueOnce(childThatExits());
+      const input = '--literal Sprawdź "Omarchy"\ndruga linia; $(nothing)';
 
-    await runRustTui({
-      argv: ['node', 'memphis', 'tui', `--input=${input}`],
-      args: { input } as never,
-      getConfig: vi.fn() as never,
-      getContainer: vi.fn() as never,
-    });
+      await runRustTui({
+        argv: ['node', 'memphis', 'tui', `--input=${input}`],
+        args: { input } as never,
+        getConfig: vi.fn() as never,
+        getContainer: vi.fn() as never,
+      });
 
-    const [, args] = spawnMock.mock.calls[0];
-    expect(args).toEqual(
-      compiled
-        ? ['--input', input]
-        : ['run', '--quiet', '-p', 'memphis-tui', '--', '--input', input],
-    );
-  });
+      const [, args] = spawnMock.mock.calls[0];
+      expect(args).toEqual(
+        compiled
+          ? ['--input', input]
+          : ['run', '--quiet', '-p', 'memphis-tui', '--', '--input', input],
+      );
+    },
+  );
 
   it('forwards run-command and json flags to the Rust binary', async () => {
     existsSyncMock.mockReturnValueOnce(true);

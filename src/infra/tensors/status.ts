@@ -1,8 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { DEFAULT_TENSOR_SURFACE_POLICY, memoryEmbeddingMeta } from './types.js';
 import { getKartografRuntimeSnapshot } from '../../kartograf/runtime.js';
+import { readEmbedIndexDimension } from '../storage/embed-index-metadata.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 
 export interface TensorStatus {
@@ -55,10 +55,9 @@ function defaultEmbedPath(rawEnv: NodeJS.ProcessEnv): string {
 }
 
 function readLegacyDimMismatch(path: string, configuredDim: number): boolean {
-  if (!existsSync(path)) return false;
   try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { dim?: unknown };
-    return typeof parsed.dim === 'number' && parsed.dim !== configuredDim;
+    const dim = readEmbedIndexDimension(path);
+    return dim !== undefined && dim !== configuredDim;
   } catch {
     return false;
   }

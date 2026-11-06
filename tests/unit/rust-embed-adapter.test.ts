@@ -6,14 +6,46 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  embedClearInMemory,
+  embedDiscardReplacement,
   embedReset,
   embedSearch,
   embedSearchTuned,
   embedStore,
   getRustEmbedAdapterStatus,
+  isEmbedRebuildSafe,
 } from '../../src/infra/storage/rust-embed-adapter.js';
 
 describe('rust embed adapter', () => {
+  it('uses the non-destructive clear and explicit abort when the bridge supports them', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-embed-safe-rebuild-'));
+    const bridgePath = join(dir, 'bridge.cjs');
+    writeFileSync(
+      bridgePath,
+      `
+let resets = 0, clears = 0, discards = 0;
+module.exports = {
+  embed_reset: () => { resets++; return JSON.stringify({ok:true,data:{cleared:true}}); },
+  embed_clear_in_memory: () => { clears++; return JSON.stringify({ok:true,data:{cleared:true}}); },
+  embed_discard_replacement: () => { discards++; return JSON.stringify({ok:true,data:{discarded:true}}); },
+  embed_store: () => JSON.stringify({ok:true,data:{}}),
+  embed_search: () => JSON.stringify({ok:true,data:{}}),
+  embed_store_many: () => JSON.stringify({ok:true,data:{}}),
+  embed_flush: () => JSON.stringify({ok:true,data:{}}),
+  counters: () => ({resets, clears, discards}),
+};`,
+      'utf8',
+    );
+    const env = { RUST_CHAIN_ENABLED: 'true', RUST_CHAIN_BRIDGE_PATH: bridgePath };
+    expect(isEmbedRebuildSafe(env)).toBe(true);
+    embedClearInMemory(env);
+    embedDiscardReplacement(env);
+    const fixture = createRequire(import.meta.url)(bridgePath) as {
+      counters: () => { resets: number; clears: number; discards: number };
+    };
+    expect(fixture.counters()).toEqual({ resets: 0, clears: 1, discards: 1 });
+  });
+
   it('returns disabled status by default', () => {
     const out = getRustEmbedAdapterStatus({ RUST_CHAIN_ENABLED: 'false' } as NodeJS.ProcessEnv);
     expect(out.embedApiAvailable).toBe(false);
