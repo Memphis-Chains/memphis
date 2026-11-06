@@ -179,8 +179,10 @@ async function main() {
     // this whole policy exists to prevent.
     const matchers = excludePatterns.map((p) => {
       const body = p.replace(/^--exclude=/, '');
+      // In tar exclusion patterns, * can span path separators. Restricting it
+      // to one component silently missed deeply nested secret and temp files.
       const rx = new RegExp(
-        '^' + body.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*') + '$',
+        '^' + body.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$',
       );
       // Also test the full relative path, so `--exclude=./site-secrets`
       // matches when the walk is already inside a subdirectory.
