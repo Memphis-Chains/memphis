@@ -4,6 +4,11 @@ The operator requested active Basal classification of every prompt. The chat
 runtime now attempts one local intent classification before the first dialogue
 provider call. The validated result is supplied to the answering model as
 context, rather than depending on the model to request `memphis_classify`.
+In the Node turn runtime, classification and turn preparation (memory recall,
+URL fetch, cognitive prelude and blocked-tool audit) run concurrently. The
+provider is called only after both finish, so any latency improvement is
+limited to the time that can actually overlap; CPU contention may reduce it.
+This does not skip classification or by itself demonstrate a token-cost saving.
 
 This covers nonempty user turns in CLI chat/ask, the Telegram gateway, canonical
 HTTP chat and the native Rust operator. Tool-result iterations do not classify

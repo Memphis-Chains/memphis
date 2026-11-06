@@ -537,6 +537,69 @@ it('classifies every text or messages turn once before the reply and exposes the
   ).toBe(true);
 });
 
+it('overlaps Basal with memory recall while waiting for both before invoking the model', async () => {
+  let releaseRecall!: () => void;
+  let releaseClassification!: () => void;
+  const recallPending = new Promise<void>((resolve) => {
+    releaseRecall = resolve;
+  });
+  const classificationPending = new Promise<void>((resolve) => {
+    releaseClassification = resolve;
+  });
+  const fetch = vi.fn(async (url: string) => {
+    if (url.endsWith('/health')) {
+      return new Response(
+        JSON.stringify({ model: 'basal-fixture', thresholds: { '0.01': { confidence: 0.95 } } }),
+      );
+    }
+    await classificationPending;
+    return new Response(JSON.stringify(answer('recall')));
+  });
+  vi.stubGlobal('fetch', fetch);
+  const recall = vi.fn(async () => {
+    await recallPending;
+    return { items: [] };
+  });
+  const complete = vi.fn(async (request: { system: string }) => {
+    void request;
+    return { content: 'Fixture reply.' };
+  });
+  const pending = runTurnRuntime({
+    input: 'Przypomnij wcześniejszy termin.',
+    llm: { complete },
+    providerLabel: 'fixture',
+    model: 'fixture',
+    systemPrompt: 'Answer the user.',
+    surface: 'cli.chat',
+    rawEnv: enabled,
+    cognitiveRuntimeEnabled: false,
+    memoryUserId: 'fixture',
+    memory: { recall, store: vi.fn(async () => undefined), isAvailable: vi.fn(() => true) },
+  });
+  try {
+    await vi.waitFor(() => {
+      expect(recall).toHaveBeenCalledOnce();
+      expect(fetch.mock.calls.filter(([url]) => url.endsWith('/v1/systemone'))).toHaveLength(1);
+    });
+    expect(complete).not.toHaveBeenCalled();
+    releaseRecall();
+    await vi.waitFor(() => expect(recall).toHaveResolved());
+    expect(complete).not.toHaveBeenCalled();
+    releaseClassification();
+    const result = await pending;
+    expect(complete).toHaveBeenCalledOnce();
+    expect(complete.mock.calls[0]![0].system).toContain(BASAL_PROMPT_GUIDANCE.recall);
+    expect(result.telemetry.basalPromptClassification).toMatchObject({
+      status: 'classified',
+      intent: 'recall',
+    });
+  } finally {
+    releaseRecall();
+    releaseClassification();
+    await pending.catch(() => undefined);
+  }
+});
+
 it('continues the reply with honest unavailable context when the local classifier is down', async () => {
   vi.stubGlobal(
     'fetch',

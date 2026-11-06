@@ -1288,40 +1288,47 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
       options.messages ?? [],
       conversationOverlay?.trimRecentMessagesTo,
     );
-    const prepared =
-      typeof options.input === 'string'
-        ? await prepareTextTurn(
-            options.input,
-            { ...options, messages: baseMessages },
-            availableTools,
-            classification,
-            surfacePolicy,
-            rawEnvWithTier3,
-            conversationOverlay,
-          )
-        : await prepareMessagesTurn(
-            baseMessages,
-            options,
-            availableTools,
-            classification,
-            surfacePolicy,
-            conversationOverlay,
-          );
-    if (constrainedTools.blockedToolNames.length > 0) {
-      await emitRuntimeSecurityEvent({
-        action: 'surface_policy.tools.blocked',
-        status: 'blocked',
-        details: {
-          surface: auditSurface,
-          blockedTools: constrainedTools.blockedToolNames,
-          maxToolTier: surfacePolicy.maxToolTier,
-        },
-      });
-    }
-    const basalPromptClassification = await classifyPromptIntent(
-      prepared.originalUserText,
-      rawEnvWithTier3,
-    );
+    const originalUserText =
+      typeof options.input === 'string' ? options.input : findLatestUserText(baseMessages);
+    // The local intent hint does not affect memory/URL preparation or policy
+    // audit. Start it alongside that work, but wait for both before the LLM.
+    const prepareTurn = async (): Promise<PreparedTurn> => {
+      const prepared =
+        typeof options.input === 'string'
+          ? await prepareTextTurn(
+              options.input,
+              { ...options, messages: baseMessages },
+              availableTools,
+              classification,
+              surfacePolicy,
+              rawEnvWithTier3,
+              conversationOverlay,
+            )
+          : await prepareMessagesTurn(
+              baseMessages,
+              options,
+              availableTools,
+              classification,
+              surfacePolicy,
+              conversationOverlay,
+            );
+      if (constrainedTools.blockedToolNames.length > 0) {
+        await emitRuntimeSecurityEvent({
+          action: 'surface_policy.tools.blocked',
+          status: 'blocked',
+          details: {
+            surface: auditSurface,
+            blockedTools: constrainedTools.blockedToolNames,
+            maxToolTier: surfacePolicy.maxToolTier,
+          },
+        });
+      }
+      return prepared;
+    };
+    const [prepared, basalPromptClassification] = await Promise.all([
+      prepareTurn(),
+      classifyPromptIntent(originalUserText, rawEnvWithTier3),
+    ]);
     if (basalPromptClassification) {
       prepared.systemPrompt += '\n\n' + renderBasalPromptClassification(basalPromptClassification);
       log.info(
