@@ -1314,3 +1314,170 @@ its point (S6).
 
 Every stage carries a command and an expected output. If a stage cannot be
 falsified on this host, it does not ship.
+
+---
+
+## 9. Native streaming failure and the homeostat — 2026-11-07
+
+**Status: investigation and plan; no change in this section is implemented by
+this document.** The measurements below are a new, time-bounded observation;
+they do not retroactively change the 2026-11-03 measurements above. The
+operator requested diagnosis of an interrupted native TUI turn and a broader
+refactor plan that preserves the system's ability to steer and recover.
+
+### 9.1 What happened, and what remains unknown
+
+At 14:01:11 CET on 2026-11-07 the native TUI error log recorded
+`provider stream timeout: timed out reading response`. Provider telemetry
+identifies MiniMax / MiniMax-M3.1-Flash: the failed provider call lasted
+51,465 ms and was sent 478 messages. In the surrounding interval telemetry
+recorded 15 successful MiniMax calls before the failed call, with a 4,419 ms
+median and message counts growing from 446 to 478. Their timing is consistent
+with the same tool loop, but provider spans do not carry a turn or session ID,
+so the association is inferred, not certain. The recorded `turn.dispatch`
+duration for the affected session was 161,162 ms. This duration describes the
+instrumented turn body, not necessarily every step before it.
+
+The error means the client timed out while reading the response stream. It
+does **not** establish whether the cause was provider-side generation, an
+intermediary, the network, or a client/transport interaction. The 51.465 s is
+the measured duration of the provider call, not proof of the configured idle
+timeout. Failed-call token usage, actual idle interval and request identifier
+were not captured; 478 messages is not a token count. The context was large
+and repeatedly resent, making cost and prefill plausible contributors, but
+neither is established as the cause of this timeout.
+
+The operation ledger contains 17 `memphis_exec` records for the affected
+session in the incident interval with status `completed`; that status records the dispatcher's outcome
+and must not by itself be interpreted as a zero shell exit code. The ledger
+retained arguments and short display summaries, not the full tool outputs.
+Temporary artifacts survived, but they were not a reliable durable checkpoint.
+The native runtime accumulates the user prompt, assistant steps and tool
+outputs in `pending`; `persist_chat_messages` runs after a successful final
+answer. On the failing path the turn returns an error, so those pending rows
+are not committed as a completed transcript. The separate operation journal
+still protects the uncertain outcome of in-flight actions. Its existing
+`started`, `completed`, `failed` and `unknown` states must be preserved.
+
+A later attempt in the same session finished and produced HTML and PDF files.
+This is evidence of recovery on a later attempt, **not** evidence that the
+first attempt was resumed, that its source data were reused, or that the
+generated document's factual content was verified. The TUI's generic advice
+mentions fallback; the native path visibly selects `local-fallback` when a
+provider is _not configured_. Automatic fallback after this particular
+stream-read timeout has not been demonstrated.
+
+The earlier Telegram work in `docs/dev/TELEGRAM-INTERACTIVE-TURNS.md` addresses
+a different surface. It does not change the native Rust TUI's stream reader,
+native turn persistence, or native defaults. The concurrent Basal/context
+preparation change in `docs/dev/BASAL-EVERY-PROMPT-2026-10-29.md` is likewise
+in the Node turn runtime; it is not evidence of a native TUI fix.
+
+### 9.2 Homeostat as an engineering model
+
+Marian Mazur defines an autonomous system in terms of steering and opposing
+the loss of steering; the homeostat participates in feedback with both the
+information and energy paths. See [Mazur, _Cybernetyka i charakter_, chapter
+9](https://autonom.edu.pl/publikacje/mazur_marian/cybernetyka_i_charakter/czlowiek_jako_system_autonomiczny.php).
+Here this is an engineering mapping, not a claim that software alone controls
+its electricity or can replace the operator:
+
+| Function             | Memphis evidence today                                                    | Required feedback                                                                                 |
+| -------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Reception            | TUI, Telegram, provider and tool events                                   | Observe progress, errors and source freshness without exposing secrets                            |
+| Correlation          | transcript, chains, semantic memory, Basal hint                           | Keep facts and provenance available across interruptions                                          |
+| Effectors            | tools, provider selection, bounded admission, operator                    | Apply only authorized actions and record their outcomes                                           |
+| Resource path        | host power, CPU, memory, disk, backups and external services              | Measure capacity, contention, latency and cost; software budgets are proxies, not physical energy |
+| Homeostatic feedback | SLOs, runtime watch, circuit breaker, admission and supervised governance | Convert fresh signals into bounded, reversible, observable responses                              |
+
+The current pieces do not form one proven closed loop. `runtimeWatch` reports
+health/recent failures and sends notifications; provider circuit breaking and
+turn admission have separate control effects. `self-governance` is a readiness
+assessment, not proof that a restore has succeeded. At investigation time,
+health and readiness were OK, while `canSelfModify` was false because the 1 h
+tool-error SLO and the 24 h tool-error and p99-latency SLOs failed. Respect
+that gate; diagnosis and a design document do not authorize a code change.
+
+### 9.3 Work in order, with falsifiable outcomes
+
+The demonstrated memory race in step 5 is a parallel P0 safety track: close it
+before enabling concurrent autonomous memory writes. The interruption work
+in steps 1–4 can be designed and tested in isolation without assuming that
+the memory issue is already fixed.
+
+1. **Observe the failure before tuning it.** Record a privacy-safe turn ID,
+   provider/model, stage, timeout kind and effective non-secret budget,
+   first-byte time, last-byte time, inter-chunk idle gap, elapsed time, message
+   and estimated token counts, and provider request ID when supplied. Do not
+   log credentials, user prompts, full tool payloads or arbitrary error
+   bodies. Distinguish connect, first-byte, idle-read, total-turn, context and
+   output-limit failures. Acceptance: a local scripted SSE server reproduces
+   a stalled stream and an actively streaming long response with correctly
+   distinct outcomes; a failed call can be correlated to its turn and tools.
+
+2. **Persist recoverable turn progress.** Design a durable turn record with a
+   stable ID, the original user request, bounded/protected assistant progress,
+   tool call IDs, execution states and results or explicitly marked bounded
+   references. Persist completed steps transactionally as they happen, with
+   provenance and encryption/access controls consistent with the rest of the
+   transcript. Keep incomplete text visibly incomplete. Resume from recorded
+   evidence, and never blindly rerun a side-effecting operation: reconcile
+   `started`/`unknown` outcomes and require the existing permissions and
+   operator gates. Define retention, redaction, crash recovery and schema
+   migration before implementation. Acceptance: kill the process before and
+   after tool dispatch and during SSE; restart can reconstruct safe progress,
+   identify uncertain effects, and avoid duplicate writes.
+
+3. **Bound context and work without erasing evidence.** Separate a concise
+   working context from the complete durable record. Compact old messages and
+   large tool outputs with references back to originals, preserve required
+   system instructions and exact tool-call/result pairing, and surface what
+   was omitted. Compare native TUI and Node behavior; do not assume their
+   budgets or retry semantics are the same. Add explicit, operator-visible
+   policies for iteration, elapsed time and token/cost limits that allow
+   long-running work to checkpoint and continue. Acceptance: replay a
+   synthetic long, tool-heavy turn with assertions for bounded context,
+   recall/provenance, no orphaned tool messages and an honest partial result;
+   report measured latency and token use rather than an assumed saving.
+
+4. **Make homeostatic controls actionable.** Define a small state machine
+   (healthy, degraded, recovery pending, operator intervention) with fresh
+   signals, thresholds, hysteresis, bounded retry/backoff and a clear owner for
+   each actuator. A timeout may lead to a safe retry, a verified alternate
+   model, or an explicit interruption according to side effects, remaining
+   budget and operator policy; never promise a fallback that was not executed.
+   The operator's stop and Tier 2 gates remain authoritative. Acceptance:
+   controlled provider outage, recovery, disk pressure and repeated failures
+   cause bounded actions, expose the actual state and recover without loops.
+
+5. **Protect memory and learning.** An isolated synthetic test on this host
+   ran three rounds of eight concurrent TypeScript `updateSoulMemory` writers:
+   all eight reported success, but only one update survived in each round;
+   eight sequential writes retained eight. This does not establish historical
+   loss of operator data. The native Rust soul writer separately uses
+   `fs::write`; its cross-language races and crash behavior were not tested.
+   Design a shared, crash-safe synchronization boundary around read,
+   validation, merge, snapshots and commit for every Node and Rust writer.
+   Route reflection-derived changes through evidence-bearing proposals and an
+   explicit operator accept/apply gate; today's `dream` CLI exposes only
+   list/show/propose while `reflection-loop` still writes soul memory directly.
+   Acceptance: concurrent TS/TS and TS/Rust tests retain all accepted updates;
+   injected crashes leave either a valid old or valid new state; unauthorized
+   acceptance or writes fail without mutating memory.
+
+6. **Prove recovery and independence.** Exercise restore into an isolated
+   destination using the actual backup and media model, including different
+   filesystems and the runtime database, then verify chains and user-relevant
+   memory. The current EXDEV check safely refuses a cross-filesystem restore;
+   it does not implement one. Test a complete offline dialogue with the local
+   model: an `echo` fallback is not a substitute for generation. Evaluate
+   Basal model accuracy and calibration before changing models, and measure
+   actual route decisions, token usage, monetary cost and latency before
+   claiming that classification saves money. Acceptance: a documented,
+   repeatable restore and offline exercise meets its stated data-loss and
+   recovery-time targets without contacting a remote provider.
+
+Implementation remains subject to the operator's Tier 2, HALT, dirty-tree,
+backup, test and rollback rules. The experiment above and the existing 60
+targeted memory/Dreaming/MV2 tests are evidence, not approval to alter the
+live runtime or a substitute for end-to-end recovery tests.
