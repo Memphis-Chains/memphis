@@ -1,3 +1,4 @@
+import { getDataDir } from '../../config/paths.js';
 import { listBackups } from '../../infra/cli/commands/backup.js';
 import { loadConfig } from '../../infra/config/env.js';
 import { buildRuntimeHealthSnapshot } from '../../infra/runtime/runtime-health.js';
@@ -17,7 +18,7 @@ export async function runMemphisSelfGovernanceStatus(
   const config = loadConfig(rawEnv);
   const runtime = await buildRuntimeHealthSnapshot(config, rawEnv);
   const backupReport = getScheduledBackupState(rawEnv);
-  const archives = await listBackups().catch(() => ({ backups: [], totalSize: 0 }));
+  const archives = await listBackups({ memphisRoot: getDataDir(rawEnv) }).catch(() => ({ backups: [], totalSize: 0 }));
   const latestArchive = archives.backups[0];
   const sloReports = {
     '1h': evaluateSlos({ rawEnv, windowHours: 1 }),

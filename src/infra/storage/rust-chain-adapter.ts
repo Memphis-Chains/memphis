@@ -300,6 +300,23 @@ export class NapiChainAdapter {
   }
 
   async appendBlock(chain: string, data: Record<string, unknown>): Promise<AppendBlockResult> {
+    const normalizedData = normalizeData(data);
+    const result = await this.appendBlockWithDecision(chain, async () => ({ data: normalizedData, value: undefined }), false);
+    if (!result.block) throw new Error('chain append unexpectedly skipped');
+    return result.block;
+  }
+
+  /** Decide and optionally append under the same lock as all chain writers. */
+  async appendBlockConditional<T>(chain: string,
+    decide: () => Promise<{ data?: Record<string, unknown>; value: T }>,
+  ): Promise<{ value: T; block?: AppendBlockResult }> {
+    return this.appendBlockWithDecision(chain, decide, true);
+  }
+
+  private async appendBlockWithDecision<T>(chain: string,
+    decide: () => Promise<{ data?: Record<string, unknown>; value: T }>,
+    preflight: boolean,
+  ): Promise<{ value: T; block?: AppendBlockResult }> {
     // Freeze the runtime paths before the first await: test teardown or
     // config reload must not redirect this append after its guard and lock.
     const writeEnv = { ...this.rawEnv };
@@ -316,6 +333,25 @@ export class NapiChainAdapter {
       const chainBlocks = await readChainBlocks(normalizedChain, writeEnv);
       const nextIndex = (chainBlocks.at(-1)?.index ?? 0) + 1;
       const prevHash = chainBlocks.at(-1)?.hash ?? '0'.repeat(64);
+      if (preflight) {
+        const validateFn = bridge.chain_validate;
+        if (typeof validateFn !== 'function') throw new Error('chain_validate not available for conditional append');
+        for (let index = 0; index < chainBlocks.length; index += 1) {
+          const current = chainBlocks[index]!;
+          const previous = index > 0 ? JSON.stringify(chainBlocks[index - 1]) : undefined;
+          const validation = parseEnvelope<ValidateBlockResult>(
+            validateFn(JSON.stringify(current), previous), 'chain_validate preflight');
+          if (!validation.valid) throw new Error(`chain preflight rejected block ${current.index}: ${(validation.errors ?? []).join(', ') || 'invalid'}`);
+        }
+        const probe = toNapiBlock(normalizedChain, nextIndex,
+          { type: 'system_event', kind: 'conditional.preflight', content: 'preflight', tags: [] }, prevHash);
+        const checked = parseEnvelope<{ appended: boolean; errors?: string[] }>(
+          appendFn(JSON.stringify(chainBlocks), JSON.stringify(probe)), 'chain_append preflight');
+        if (!checked.appended) throw new Error(`chain preflight rejected: ${(checked.errors ?? []).join(', ') || 'unknown error'}`);
+      }
+      const decision = await decide();
+      if (!decision.data) return { value: decision.value };
+      const data = decision.data;
       const nextBlock = toNapiBlock(normalizedChain, nextIndex, data, prevHash);
 
       type AppendData = {
@@ -357,12 +393,12 @@ export class NapiChainAdapter {
 
       await writeBlock(normalizedChain, persisted, writeEnv);
 
-      return {
+      return { value: decision.value, block: {
         index: appended.index,
         hash: appended.hash,
         chain: normalizedChain,
         timestamp: appended.timestamp,
-      };
+      } };
     });
   }
 

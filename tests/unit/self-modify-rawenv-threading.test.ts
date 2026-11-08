@@ -12,6 +12,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { runMemphisSelfModify } from '../../src/mcp/tools/self-modify.js';
 
+vi.mock('../../src/mcp/tools/self-governance-status.js', () => ({ runMemphisSelfGovernanceStatus: vi.fn().mockResolvedValue({ canSelfModify: true, blockingReasons: [] }) }));
+
 vi.mock('../../src/soul/manifest.js', () => {
   return {
     ensureSoulManifest: vi.fn(),

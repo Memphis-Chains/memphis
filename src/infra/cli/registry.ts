@@ -30,6 +30,11 @@ function createCommandRegistration(
 
 export const CLI_COMMAND_REGISTRY = [
   createCommandRegistration(
+    'budget',
+    ['budget'],
+    createLazyHandlerLoader(() => import('./handlers/budget.handler.js'), 'budgetCommandHandler'),
+  ),
+  createCommandRegistration(
     'auth',
     ['auth'],
     createLazyHandlerLoader(() => import('./handlers/auth.handler.js'), 'authCommandHandler'),
@@ -297,6 +302,11 @@ export const CLI_COMMAND_REGISTRY = [
     createLazyHandlerLoader(() => import('./handlers/dream.handler.js'), 'dreamCommandHandler'),
   ),
   createCommandRegistration(
+    'recovery',
+    ['recovery'],
+    createLazyHandlerLoader(() => import('./handlers/recovery.handler.js'), 'recoveryCommandHandler'),
+  ),
+  createCommandRegistration(
     'audit-runtime',
     ['audit-runtime'],
     createLazyHandlerLoader(
@@ -332,6 +342,7 @@ export const CLI_COMPLETION_COMMANDS = [
   'suggest',
   'knowledge',
   'dream',
+  'recovery',
   'audit-runtime',
   'serve',
   'service',

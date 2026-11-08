@@ -56,6 +56,7 @@ import type { RuntimeTelemetry, TokenUsage } from '../core/types.js';
 import { metrics } from '../infra/logging/metrics.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
 import { instrument } from '../infra/observability/instrument.js';
+import { withProviderBudget } from '../infra/runtime/provider-budget-ledger.js';
 import {
   buildRuntimeTelemetry,
   ESTIMATED_CHARS_PER_TOKEN,
@@ -1347,16 +1348,6 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
         'Prioritize the requested result and report incomplete work honestly.';
     }
     const llm = resolveLlm(options, prepared.cognitiveModeContribution);
-    // Phase 1.3 production sprint: pre-flight check the provider budget.
-    // Throws PROVIDER_RATE_LIMIT (429) if cap is exceeded; the cascade
-    // caller catches and falls through to the next tier.
-    try {
-      const { checkProviderBudget } = await import('../infra/runtime/cost-cap.js');
-      checkProviderBudget(llm.provider, rawEnvWithTier3);
-    } catch (capError) {
-      metrics.recordProviderCall(llm.provider, false, Date.now() - startedAt);
-      throw capError;
-    }
     // Phase 2.1 production sprint: circuit breaker — if this provider has
     // tripped recently, fail fast so the cascade falls through to the
     // next tier instead of waiting for another timeout.
@@ -1379,7 +1370,18 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
       result = await runAgentLoop({
         systemPrompt: prepared.systemPrompt,
         messages: contextGuard.messages,
-        llm: llm.llm,
+        llm: { complete: (input) => withProviderBudget({
+          provider: llm.provider, model: llm.model, env: rawEnvWithTier3,
+          input: { system: input.system, messages: input.messages, tools: input.tools },
+          outputTokens: input.maxTokens,
+          invoke: (maxTokens) => llm.llm.complete({ ...input, maxTokens }),
+          usage: (response) => response.usage ? {
+            total: response.usage.totalTokens ??
+              (response.usage.inputTokens !== undefined && response.usage.outputTokens !== undefined
+                ? response.usage.inputTokens + response.usage.outputTokens : undefined),
+            estimated: response.usage.estimated,
+          } : undefined,
+        }) },
         toolExecutor: normalizedToolExecutor,
         loopLimits: options.loopLimits,
         // A stalled provider must not hold an interactive Telegram turn for
@@ -1419,6 +1421,7 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
       try {
         const isTransient =
           error instanceof AppError &&
+          error.details?.source !== 'provider-budget' &&
           (error.code === 'PROVIDER_TIMEOUT' ||
             error.code === 'PROVIDER_UNAVAILABLE' ||
             error.code === 'PROVIDER_RATE_LIMIT');

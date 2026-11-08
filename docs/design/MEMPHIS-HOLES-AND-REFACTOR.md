@@ -1481,3 +1481,222 @@ Implementation remains subject to the operator's Tier 2, HALT, dirty-tree,
 backup, test and rollback rules. The experiment above and the existing 60
 targeted memory/Dreaming/MV2 tests are evidence, not approval to alter the
 live runtime or a substitute for end-to-end recovery tests.
+
+### 9.4 Supervised implementation candidate, 2026-11-07
+
+This section describes the candidate branch; it does not assert that the
+live service has been upgraded. It narrows the acceptance claims above to
+what the implementation and isolated tests actually establish.
+
+* Native turns use a durable SQLite checkpoint and unique session slot.
+  Incomplete visible text is saved periodically, up to 128 KiB; a hard kill
+  can lose the last 4 KiB or one second of streamed text. Interrupted tool
+  effects are not automatically replayed. `memphis recovery list` shows
+  metadata, `memphis recovery show <turn-id>` shows saved visible text, and
+  `memphis recovery acknowledge <turn-id>` records a local operator decision.
+  Acknowledgement neither reverses an effect nor establishes whether it
+  occurred. `--force-running` is for a process confirmed stopped; using it
+  on a live turn can defeat the safety boundary. Legacy operations are listed
+  separately and reviewed with `recovery acknowledge-legacy <operation-id>`.
+* A provider call may be retried once on a classified transient failure
+  before response bytes arrive. Prior tool calls are not rerun by the retry.
+  Native circuit breaking is process-local; its state is not shared with Node
+  or persisted across restart. It is not yet the cross-surface homeostat in
+  step 4, and it does not enforce a shared monetary budget.
+* Context trimming keeps the latest user request and the active turn's
+  assistant/tool pairs. It may shorten tool results in the working request,
+  while the durable checkpoint retains the original staged messages. If the
+  protected request and unshortenable tool-call arguments still exceed the
+  estimated window, the turn stops with recoverable progress instead of
+  silently discarding the request. The estimate is not a tokenizer, and the
+  guard cannot guarantee a fit when model limits or tool-schema overhead are
+  unknown.
+* Native exec and Git capture is bounded; uncertain outcomes remain uncertain. Cancelling a
+  shell process group cannot prove that every detached descendant stopped or
+  roll back an external effect. Correlated timing spans omit prompts and
+  payloads; inconclusive tool results are excluded from the tool error-rate
+  denominator and reported separately. These measures do not establish a
+  monetary saving from Basal.
+* Node and native soul-memory writers use the same SQLite lock for the
+  read/merge/write transaction. SQLite releases it on process death; the
+  lock database persists and must not be deleted while writers may run.
+  Legacy directory locks fail closed and require operator inspection. Old
+  directory-lock and new SQLite-lock versions must not run concurrently:
+  deployment requires a coordinated stop and restart. The lock does not cover writers that bypass these APIs,
+  nor does a snapshot ring prove crash-safe rollback. Reflection produces
+  evidence-referencing proposals instead of directly updating soul memory.
+  The candidate adds a narrow operator acceptance and additive apply path
+  for reflection proposals, plus compare-and-swap rollback. It is not yet a
+  complete authorization boundary against code running with the same OS
+  user's permissions; generic soul-write paths still exist.
+
+Isolated fake-provider and fake-memory exercises should accompany unit tests;
+they are not a production-provider test, an actual backup restore, a complete
+offline dialogue, or proof of autonomous recovery. The next review must cover
+shared admission and complete provider coverage, guarded proposal acceptance and idempotent
+apply/rollback, legacy lock recovery, retention, and a controlled end-to-end
+restore before claiming the larger self-steering objective.
+
+**Candidate update, 2026-11-08 — shared token reservations.** When a
+`MEMPHIS_COST_CAP_<PROVIDER>_DAILY_TOKENS` or `_MONTHLY_TOKENS` cap is set,
+the native chat, Node gateway, provider-only orchestration, Ollama
+categorizer and remote provider probe reserve against the same SQLite table
+before dispatch, provided they use the same database path. Each model call
+gets its own reservation. SQLite serializes the check and insert; Node and
+Rust callers share the result. Exact provider-reported usage settles a row;
+failure, absent usage or an estimate retains the reservation. A hard kill
+leaves the row `reserved`. Unresolved rows count in every subsequent UTC
+window until reviewed; settled usage is attributed to the dispatch date.
+
+`memphis budget list` shows recorded totals and outstanding metadata.
+`memphis budget reconcile <id> --tokens <confirmed-count>` records the
+operator's locally authenticated review. `--force-running` also permits a
+`reserved` row and is unsafe unless the original request is known stopped.
+The command records a separate audit row; it cannot establish the provider's
+bill independently. The old `providerBudgets` health field remains a
+**process-local legacy** view; `providerBudgetLedger` is the new view and
+labels its coverage as recorded reservations only.
+
+This is not a monetary cap or proof of a hard provider-token limit. Input
+bytes plus output ceiling and an allowance are an estimate, not the
+provider's tokenizer or a guarantee that an external client obeyed the
+ceiling. Earlier usage and calls that bypass these instrumented surfaces are
+not reconstructed. A newly configured small cap may refuse a request whose
+maximum reservation exceeds the remaining allowance, even if actual usage
+would have been smaller. Soft warnings remain process-local. A later review
+must enumerate every provider entry point, verify common database resolution,
+exercise recovery during settlement, and compare token records with actual
+provider billing before this can be described as a complete budget control.
+
+**Candidate update — operator-reviewed reflection proposals.** `dream accept`
+requires a fresh local operator password and the Tier 2 password when the soul
+manifest requires a separate one. It signs a digest of the complete proposal
+material and appends public approval evidence to the proposal chain. The
+Ed25519 private key is encrypted with the operator password in a separate
+0600 SQLite file. `dream apply` accepts only signed, evidence-referencing,
+additive reflection patches. Before modifying an existing valid soul memory,
+it records a private preimage and before/after hashes; after a successful write
+it records application provenance in the chain. Duplicate applications do
+not repeat the memory update. A failed or interrupted write leaves a staged
+record; `dream reconcile` requires local operator authentication and only
+resolves it when the current memory matches one of the recorded images.
+`dream rollback` also requires operator authentication and refuses to restore
+the preimage if memory has changed since application.
+
+These controls require review before deployment. The approval database and
+public key are writable by the same OS user as the agent, so the signature
+does not defend against an unrestricted same-user process replacing the trust
+anchor or modifying files directly. The acceptance decision and the applied
+state transition now each check the current proposal and append under the
+same shared chain-writer lock. Conditional appends validate the existing
+chain before the decision callback; synthetic tests cover TypeScript,
+Rust NAPI and mixed backend writers, and supersession while an application
+waits. The memory file, private journal and chain remain separate stores: a
+failed chain write after memory application needs journal-guided recovery,
+and an uncooperative direct filesystem writer can bypass the lock. A killed
+writer releases the SQLite lock; synthetic process-kill tests exercise both
+backends around memory and chain publication. `dream rekey` rewraps the same
+signing key after a password change when the previous password is known; it
+cannot recover a key if that password is lost. Retention of private snapshots
+and full coverage of other soul-write surfaces remain open. Synthetic tests
+and a local pseudo-terminal exercise do not prove power-loss recovery.
+
+**Validation, 2026-11-08.** Eight isolated SIGKILL scenarios cover before
+and after memory-file replacement and proposal-chain publication with both
+TypeScript and NAPI chain backends. After memory-file interruption the
+operator-authenticated reconcile path and an idempotent retry work without
+removing a stale lock directory. A separate simultaneous mixed-writer test
+retained all 16 synthetic updates from eight Node and eight native writers.
+The existing live MiniMax provider diagnostic generated its synthetic reply
+in 1,951 ms; this checks the currently deployed provider, not this candidate's
+end-to-end chat behavior. Filesystem power loss, an actual backup restore and
+live rollout remain outside these measurements.
+
+At 15:24 CET the live self-governance command reported `canSelfModify: true`
+while its SLO windows were unavailable. The live one-day SLO command also
+reported `passing` despite only nine latency samples (minimum ten); their
+reported p99 was 501,706 ms against a 90,000 ms threshold. This is insufficient
+evidence of a passing latency objective, not a statistically valid SLO failure.
+Before using governance readiness for autonomous decisions, reconcile its
+handling of unavailable and stale metrics with an explicit fail-closed policy.
+
+**Candidate follow-up — actionable SLO admission.** The shared assessment
+now distinguishes failure, unavailable evidence and a genuine pass, and the
+CLI and morning briefing show that distinction. All four named metrics must
+be present exactly once. Fresh one-hour and 24-hour reports are required for
+the multi-window self-governance decision; unavailable or missing metrics,
+missing, stale, future-dated or overlong reports, and failed metrics block
+`canSelfModify`. A report must end no more than five minutes before the check
+and has a one-second tolerance for clock skew into the future. The
+legacy single-report input is bounded to 24 hours. Future-dated telemetry is
+excluded from evaluation. The deliberate consequence is that quiet runtimes
+may lack enough samples and therefore cannot self-modify; this does not by
+itself disable chat or `canSelfRecover`.
+
+The central `memphis_self_modify` entry point now asks for the live governance
+snapshot before touching a plan, creating a session, snapshot or branch. A
+failed lookup also refuses admission. This is an admission-time check, not a
+continuous lock or security boundary: generic same-user filesystem and Git
+access can bypass it, and conditions may change after admission.
+
+Self-modification requires a Tier 2 passphrase even in full autonomy mode or
+when the general manifest switch is disabled. It no longer reads a standalone
+passphrase file. The model-facing Node and native Rust tools only queue a
+bounded request and do not accept a password. `evolve requests` lists request
+metadata; `evolve request <id>` displays it; `evolve prepare <id>` displays it
+again, requires the full request digest and prompts locally for operator and
+Tier 2 passwords. The exact reviewed bytes and repository are claimed once;
+the internal preparer receives the Tier 2 password in process memory only.
+An interruption leaves the request in `preparing` and is not automatically
+replayed. Pending request payloads contain source text and remain in the
+runtime database; a reviewed retention and secure-deletion policy is still
+needed.
+
+Governance and health now enumerate backup archives under the requested
+runtime data directory rather than the process-default directory; an isolated
+test supplies a different directory with a synthetic archive to check this.
+The runtime audit likewise uses the requested runtime's telemetry directory,
+checked with a separate populated synthetic store.
+Archive presence and scheduled-backup metadata are still not proof that a
+restore will work. A complete restore exercise remains a separate gate.
+
+**Candidate follow-up — reviewed evolution.** Preparation requires a clean
+target, creates a separate Git worktree, runs the test gate there, and stores
+the exact base, commit and test summary in a durable review record. A passed
+test creates a local candidate commit; it does not merge, restart or push.
+`memphis evolve review <full-session-id>` displays the diff and commit;
+`evolve approve` requires the operator to type the full hash and authenticate
+locally with both operator and Tier 2 passwords. It checks governance again,
+the branch and commit, the target branch, base and cleanliness, then performs
+a fast-forward merge. `evolve reject` records rejection without deleting the
+worktree. Review transitions and commit hashes are recorded in SQLite.
+
+A killed or ambiguous merge stays in `merging`. Authenticated `evolve
+reconcile` checks whether the clean target is at the old base or reviewed
+commit; it never repeats the merge. An isolated Git test kills the real merge
+path immediately before and after Git runs. Another test checks that a commit
+hook cannot silently add a file to the reviewed commit. Preparation records a
+decision and applies manual commit-culture checks; the audit hook remains
+unavailable. Git identity must be configured appropriately for the host.
+
+An interrupted preparation can leave an active session and its isolated
+branch before the review record exists. `evolve rollback` recognizes that
+branch and refuses to restore its snapshot over the live worktree; it applies
+the same refusal to any persisted review. The retained worktree and branch
+still need operator inspection; there is no automatic cleanup or resumption.
+
+The approval terminal and the review database run under the same OS user as
+the agent; they are not an operating-system privilege boundary. An unrestricted
+same-user process can bypass them, and the admission check is not a continuous
+lock on independent Git writers. Git hooks may run during commit or merge.
+The terminal and database still share the agent's OS account, so a process
+with equivalent privileges can bypass this boundary. Process-kill tests do
+not establish power-loss recovery, and the live rollout remains untested.
+
+**Isolated restore exercise.** The USB copy of the pre-refactor archive was
+verified and restored to a new, network-isolated temporary data directory.
+The restored 14 chains contained 24,545 verified blocks; soul memory parsed as
+JSON, and both restored operational and dashboard databases passed SQLite
+`quick_check`. The exercise did not reconnect the vault or start a production
+service. The backup intentionally excludes vault secrets, which require their
+own separately tested recovery path.
