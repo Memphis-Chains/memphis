@@ -61,7 +61,6 @@ import { runMemphisSearch } from './tools/search.js';
 import { runMemphisSelfDeployVerify } from './tools/self-deploy-verify.js';
 import { runMemphisSelfDescribe } from './tools/self-describe.js';
 import { runMemphisSelfGovernanceStatus } from './tools/self-governance-status.js';
-import { runMemphisSelfModify } from './tools/self-modify.js';
 import {
   runMemphisSelfPlanAdvance,
   runMemphisSelfPlanCancel,
@@ -94,6 +93,7 @@ import {
   isToolEnabledByFeatureFlag,
 } from '../gateway/tool-registry.js';
 import { loadConfig } from '../infra/config/env.js';
+import { resolveInstallRoot } from '../infra/runtime/install-root.js';
 import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import { createSqliteClient, runMigrations } from '../infra/storage/sqlite/client.js';
 import { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repositories/evolve-session-repository.js';
@@ -1516,21 +1516,20 @@ export function createMemphisMcpServer(
     server.registerTool(
       'memphis_self_modify',
       {
-        description: 'Safe self-modification with snapshot, branch isolation, and test gate',
+        description: 'Submit a code-change request for local operator review; do not send a password',
         inputSchema: registryMcpInputSchema('memphis_self_modify'),
       },
       withApprovalGate('memphis_self_modify', selfModifyPolicy, approvals, async (args) => {
-        const result = await runMemphisSelfModify(
-          {
+        const request = evolveDeps.sessionRepo.requestStore().create(
+          resolveInstallRoot({ rawEnv }), {
             intent: requiredStringArg(args, 'intent'),
             files: requiredStringArrayArg(args, 'files'),
             changes: requiredStringRecordArg(args, 'changes'),
-            passphrase: optionalStringArg(args, 'passphrase'),
             plan_id: optionalStringArg(args, 'plan_id'),
             step_idx: optionalNonnegativeIntegerArg(args, 'step_idx'),
-          },
-          { ...evolveDeps, rawEnv },
-        );
+          });
+        const result = { status: 'operator-review-required', requestId: request.id, digest: request.digest,
+          action: `Run memphis evolve prepare ${request.id} in a local terminal.` };
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
           structuredContent: toJsonRecord(result),

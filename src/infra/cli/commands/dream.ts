@@ -13,18 +13,22 @@
  *            proposals that are NOT in the chain yet. It is idempotent:
  *            a proposal id that is already there is not written again.
  *
- * Accepting a proposal is NOT here. That is R3's gate, and it is an
- * operator action on tier 2 (`docs/design/DREAMING.md` §3.5).
+ * Reflection acceptance and rollback require fresh local Tier 2 auth.
  */
 
 import { loadDreamingCorpus } from '../../../cognitive/dreaming/load.js';
-import { appendProposal, readProposals } from '../../../cognitive/dreaming/proposal-chain.js';
+import { approveDreamProposal, dreamApprovalEvidence, proposalApprovalDigest, rekeyDreamApprovalKey, validateDreamOperator } from '../../../cognitive/dreaming/operator-approval.js';
+import { appendProposal, appendSignedAcceptance, readProposals } from '../../../cognitive/dreaming/proposal-chain.js';
 import type { Proposal } from '../../../cognitive/dreaming/proposal-lifecycle.js';
 import { buildProposalsWithSignals } from '../../../cognitive/dreaming/proposals.js';
+import { applyDreamSoulProposal, dreamApplicationStatus, reconcileDreamSoulProposal, rollbackDreamSoulProposal } from '../../../cognitive/dreaming/soul-proposal-application.js';
+import { getChainPath, getDataDir } from '../../../config/paths.js';
+import { appendBlockConditional } from '../../storage/chain-adapter.js';
 import type { CliContext } from '../context.js';
+import { promptOperatorPassphrase } from '../handlers/recovery.handler.js';
 import { print } from '../utils/render.js';
 
-const DREAM_SUBCOMMANDS = new Set(['list', 'show', 'propose']);
+const DREAM_SUBCOMMANDS = new Set(['list', 'show', 'propose', 'accept', 'apply', 'rollback', 'status', 'reconcile', 'rekey']);
 
 export async function handleDreamCommand(context: CliContext): Promise<boolean> {
   if (context.args.command !== 'dream') {
@@ -44,7 +48,59 @@ export async function handleDreamCommand(context: CliContext): Promise<boolean> 
   if (subcommand === 'show') {
     return handleDreamShow(context);
   }
-  return handleDreamPropose(context);
+  if (subcommand === 'propose') return handleDreamPropose(context);
+  if (subcommand === 'rekey') {
+    const secrets = await promptDreamOperator();
+    const previous = await promptOperatorPassphrase('Previous approval-key passphrase: ');
+    rekeyDreamApprovalKey(secrets.operator, secrets.tier2, previous);
+    print({ status: 'rewrapped', publicKeyChanged: false }, context.args.json);
+    return true;
+  }
+  const id = resolveProposalId(context);
+  const env = { ...process.env };
+  const proposal = (await readProposals(env)).find((candidate) => candidate.id === id);
+  if (!proposal) throw new Error(`no proposal with id "${id}"`);
+  if (subcommand === 'status') {
+    print({ id, proposalStatus: proposal.status, application: dreamApplicationStatus(id) }, context.args.json);
+    return true;
+  }
+  if (subcommand === 'apply') {
+    print({ id, result: await applyDreamSoulProposal(proposal) }, context.args.json);
+    return true;
+  }
+  printProposal(proposal, false);
+  const secrets = await promptDreamOperator();
+  if (getDataDir(env) !== getDataDir(process.env) || getChainPath('proposals', env) !== getChainPath('proposals', process.env))
+    throw new Error('runtime paths changed during operator review; inspect the proposal again');
+  if (subcommand === 'accept') {
+    const latest = (await readProposals(env)).find((candidate) => candidate.id === id);
+    if (!latest || latest.status !== 'pending' || proposalApprovalDigest(latest) !== proposalApprovalDigest(proposal))
+      throw new Error('proposal changed during review; inspect it again');
+    approveDreamProposal(latest, secrets.operator, secrets.tier2);
+    const approvalEvidence = dreamApprovalEvidence(latest);
+    await appendBlockConditional('proposals', async () => ({ data: { type: 'system_event', kind: 'dreaming.operator_approval',
+      content: JSON.stringify(approvalEvidence), tags: ['dreaming', 'approval'] }, value: undefined }), env);
+    await appendSignedAcceptance(latest, env);
+    print({ id, status: 'accepted' }, context.args.json);
+    return true;
+  }
+  if (subcommand === 'reconcile') {
+    print({ id, result: await reconcileDreamSoulProposal(proposal, secrets.operator, secrets.tier2) }, context.args.json);
+    return true;
+  }
+  print({ id, result: await rollbackDreamSoulProposal(proposal, secrets.operator, secrets.tier2) }, context.args.json);
+  return true;
+}
+
+async function promptDreamOperator(): Promise<{ operator: string; tier2: string }> {
+  const operator = await promptOperatorPassphrase();
+  try { validateDreamOperator(operator, operator); return { operator, tier2: operator }; }
+  catch (error) {
+    if (!(error instanceof Error) || error.message !== 'Tier 2 authentication failed') throw error;
+    const tier2 = await promptOperatorPassphrase('Tier 2 passphrase: ');
+    validateDreamOperator(operator, tier2);
+    return { operator, tier2 };
+  }
 }
 
 async function handleDreamList(context: CliContext): Promise<boolean> {
@@ -139,7 +195,7 @@ function resolveProposalId(context: CliContext): string {
   // command and the subcommand rather than at a fixed offset.
   const argv = context.argv;
   const commandIndex = argv.indexOf('dream');
-  const subcommandIndex = commandIndex >= 0 ? argv.indexOf('show', commandIndex + 1) : -1;
+  const subcommandIndex = commandIndex >= 0 ? argv.indexOf(context.args.subcommand ?? 'show', commandIndex + 1) : -1;
   const start = subcommandIndex >= 0 ? subcommandIndex + 1 : commandIndex + 1;
   const positional = argv.slice(start).find((token) => !token.startsWith('--') && token.length > 0);
   if (positional) return positional;

@@ -22,7 +22,7 @@ use std::path::Path;
 
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::provider::{ChatMessage, ChatToolCall};
 use crate::{ChatTranscriptEntry, OperatorError};
@@ -50,7 +50,7 @@ pub(crate) struct StoredChatMessage {
     pub(crate) model: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub(crate) struct MessageToPersist {
     pub(crate) role: &'static str,
     pub(crate) content: String,
@@ -60,6 +60,30 @@ pub(crate) struct MessageToPersist {
     pub(crate) tool_calls_json: Option<String>,
     pub(crate) provider: Option<String>,
     pub(crate) model: Option<String>,
+}
+
+/// Covers errors and panics before the normal turn-finalization path. A hard
+/// process kill still leaves `running`, which requires operator inspection.
+pub(crate) struct RunningCheckpointGuard<'a> {
+    conn: &'a Connection,
+    id: String,
+}
+
+impl<'a> RunningCheckpointGuard<'a> {
+    pub(crate) fn new(conn: &'a Connection, id: &str) -> Self {
+        Self { conn, id: id.to_string() }
+    }
+}
+
+impl Drop for RunningCheckpointGuard<'_> {
+    fn drop(&mut self) {
+        if self.conn.execute(
+            "UPDATE operator_turn_checkpoints SET status='interrupted', updated_at=? WHERE id=? AND status='running'",
+            params![utc_now(), self.id],
+        ).is_err() {
+            eprintln!("[recovery] could not mark the turn interrupted; inspect the running checkpoint");
+        }
+    }
 }
 
 pub(crate) fn normalize_session_id(session_id: Option<&str>) -> String {
@@ -103,9 +127,103 @@ pub(crate) fn ensure_chat_tables(conn: &Connection) -> Result<(), OperatorError>
 
         CREATE INDEX IF NOT EXISTS idx_operator_chat_messages_session_sequence
           ON operator_chat_messages(session_id, sequence DESC);
+
+        CREATE TABLE IF NOT EXISTS operator_turn_checkpoints (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          status TEXT NOT NULL,
+          pending_json TEXT NOT NULL,
+          partial_text TEXT NOT NULL DEFAULT '',
+          partial_truncated INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_operator_turn_checkpoints_session
+          ON operator_turn_checkpoints(session_id, status, updated_at);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_operator_turn_one_running_per_session
+          ON operator_turn_checkpoints(session_id) WHERE status='running';
     "#,
     )
-    .map_err(|error| OperatorError::Sqlite(error.to_string()))
+    .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+    for (name, declaration) in [("partial_text", "TEXT NOT NULL DEFAULT ''"), ("partial_truncated", "INTEGER NOT NULL DEFAULT 0")] {
+        let has_column = {
+            let mut statement = conn.prepare("PRAGMA table_info(operator_turn_checkpoints)")
+                .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+            let columns = statement.query_map([], |row| row.get::<_, String>(1))
+                .map_err(|error| OperatorError::Sqlite(error.to_string()))?
+                .collect::<Result<Vec<_>, _>>().map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+            columns.iter().any(|column| column == name)
+        };
+        if !has_column {
+            let sql = format!("ALTER TABLE operator_turn_checkpoints ADD COLUMN {name} {declaration}");
+            if let Err(error) = conn.execute(&sql, []) {
+                let present = conn.prepare("PRAGMA table_info(operator_turn_checkpoints)").and_then(|mut statement| {
+                    let columns = statement.query_map([], |row| row.get::<_, String>(1))?.collect::<Result<Vec<_>, _>>()?;
+                    Ok(columns.iter().any(|column| column == name))
+                }).unwrap_or(false);
+                if !present { return Err(OperatorError::Sqlite(error.to_string())); }
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn save_partial_turn_text(conn: &Connection, id: &str, text: &str, truncated: bool) -> Result<(), OperatorError> {
+    conn.execute(
+        "UPDATE operator_turn_checkpoints SET partial_text=?, partial_truncated=?, updated_at=? WHERE id=? AND status='running'",
+        params![text, truncated, utc_now(), id],
+    ).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+    Ok(())
+}
+
+/// Stage an incomplete turn separately from the completed conversation.
+/// The same database/access policy as the transcript applies. The cap is a
+/// deliberate fail-closed boundary: silently dropping tool evidence would
+/// make a later replay unsafe.
+pub(crate) fn save_turn_checkpoint(
+    conn: &Connection,
+    id: &str,
+    session_id: &str,
+    status: &str,
+    pending: &[MessageToPersist],
+) -> Result<(), OperatorError> {
+    let json = serde_json::to_string(pending).map_err(|error| OperatorError::Json(error.to_string()))?;
+    if json.len() > 4 * 1024 * 1024 {
+        return Err(OperatorError::Message("turn checkpoint exceeds 4 MiB; operator review required".into()));
+    }
+    conn.execute(
+        "INSERT INTO operator_turn_checkpoints (id, session_id, status, pending_json, updated_at) VALUES (?1, ?2, ?3, ?4, ?5) \
+         ON CONFLICT(id) DO UPDATE SET status=excluded.status, pending_json=excluded.pending_json, updated_at=excluded.updated_at",
+        params![id, session_id, status, json, utc_now()],
+    ).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+    Ok(())
+}
+
+pub(crate) fn incomplete_turn_summary(conn: &Connection, session_id: &str, current_turn_id: &str) -> Result<String, OperatorError> {
+    let mut statement = conn.prepare(
+        "SELECT id, status FROM operator_turn_checkpoints WHERE session_id=? AND id<>? AND status IN ('running','interrupted') ORDER BY updated_at DESC LIMIT 3",
+    ).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+    let rows = statement.query_map(params![session_id, current_turn_id], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    }).map_err(|error| OperatorError::Sqlite(error.to_string()))?
+      .collect::<Result<Vec<_>, _>>().map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+    if rows.is_empty() { return Ok(String::new()); }
+    let mut entries = Vec::new();
+    for (id, status) in &rows {
+        entries.push(format!("- {id} [{status}]"));
+        let mut operations = conn.prepare(
+            "SELECT tool_name, status FROM operator_tool_operations WHERE session_id=? AND turn_id=? ORDER BY created_at ASC LIMIT 20",
+        ).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+        let operations = operations.query_map(params![session_id, id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        }).map_err(|error| OperatorError::Sqlite(error.to_string()))?
+          .collect::<Result<Vec<_>, _>>().map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+        for (name, outcome) in operations {
+            let safe_name: String = name.chars().filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_').take(80).collect();
+            entries.push(format!("  - {safe_name} [{outcome}]"));
+        }
+    }
+    let entries = entries.join("\n");
+    Ok(format!("Earlier turns have staged, incomplete progress (running may mean active or interrupted). Inspect their operations before repeating side effects.\n{entries}"))
 }
 
 pub(crate) fn load_chat_rows(
@@ -194,6 +312,15 @@ pub(crate) fn persist_chat_messages(
     session_id: &str,
     messages: &[MessageToPersist],
 ) -> Result<(), OperatorError> {
+    persist_chat_messages_and_complete(conn, session_id, messages, None)
+}
+
+pub(crate) fn persist_chat_messages_and_complete(
+    conn: &Connection,
+    session_id: &str,
+    messages: &[MessageToPersist],
+    checkpoint_id: Option<&str>,
+) -> Result<(), OperatorError> {
     if messages.is_empty() {
         return Ok(());
     }
@@ -260,6 +387,11 @@ pub(crate) fn persist_chat_messages(
         .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
     }
 
+    if let Some(id) = checkpoint_id {
+        tx.execute("UPDATE operator_turn_checkpoints SET status='completed', pending_json='[]', partial_text='', partial_truncated=0, updated_at=? WHERE id=? AND session_id=?",
+            params![Utc::now().to_rfc3339(), id, session_id])
+            .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+    }
     tx.commit()
         .map_err(|error| OperatorError::Sqlite(error.to_string()))
 }
@@ -298,5 +430,34 @@ pub(crate) fn row_to_chat_message(row: &StoredChatMessage) -> Option<ChatMessage
             content: row.content.clone(),
         }),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod checkpoint_tests {
+    use super::*;
+    use crate::chat_operations::ensure_operation_tables;
+
+    #[test]
+    fn guard_marks_early_failure_interrupted_and_excludes_current_turn() {
+        let conn = Connection::open_in_memory().unwrap();
+        ensure_chat_tables(&conn).unwrap();
+        ensure_operation_tables(&conn).unwrap();
+        save_turn_checkpoint(&conn, "first", "session", "running", &[]).unwrap();
+        {
+            let _guard = RunningCheckpointGuard::new(&conn, "first");
+            assert!(incomplete_turn_summary(&conn, "session", "first").unwrap().is_empty());
+            assert!(save_turn_checkpoint(&conn, "second", "session", "running", &[]).is_err());
+        }
+        save_turn_checkpoint(&conn, "second", "session", "running", &[]).unwrap();
+        let summary = incomplete_turn_summary(&conn, "session", "second").unwrap();
+        assert!(summary.contains("first [interrupted]"));
+        assert!(!summary.contains("second"));
+        save_turn_checkpoint(&conn, "second", "session", "completed", &[]).unwrap();
+        { let _guard = RunningCheckpointGuard::new(&conn, "second"); }
+        let status: String = conn.query_row(
+            "SELECT status FROM operator_turn_checkpoints WHERE id='second'", [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(status, "completed");
     }
 }

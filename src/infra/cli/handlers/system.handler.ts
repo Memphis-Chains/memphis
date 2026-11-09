@@ -350,11 +350,14 @@ function handleSlo(context: CliContext): boolean {
     return true;
   }
 
-  console.log(`SLO status: ${result.allSlosPassing ? 'passing' : 'failing'}`);
+  console.log(`SLO status: ${result.status === 'pass' ? 'passing' : result.status === 'fail' ? 'failing' : 'unavailable'}`);
   console.log(`window: ${result.windowDays}d (${result.windowStart} - ${result.windowEnd})`);
   console.log(`samples: ${result.totalSamples}; span files: ${result.spanFilesScanned}`);
   if (result.failingSlos.length > 0) {
     console.log(`failing: ${result.failingSlos.join(', ')}`);
+  }
+  if (result.unavailableSlos.length > 0) {
+    console.log(`unavailable: ${result.unavailableSlos.join(', ')}`);
   }
   for (const slo of result.slos) {
     const value = slo.value === null ? 'n/a' : String(slo.value);

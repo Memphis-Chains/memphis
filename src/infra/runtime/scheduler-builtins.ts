@@ -235,7 +235,7 @@ async function operatorBriefing(rawEnv: NodeJS.ProcessEnv): Promise<BuiltinJobRe
     `Recall: ${health.runtime.memory.recallMode}`,
     `Pamięć exact: ${health.runtime.exactSearch.entries} wpisów`,
     `Scheduler: ${scheduler?.tasks.enabled ?? 0} aktywnych, ${scheduler?.tasks.overdue ?? 0} opóźnionych`,
-    `SLO 7d: ${slo.allSlosPassing ? 'OK' : `FAIL (${slo.failingSlos.join(', ')})`}`,
+    `SLO 7d: ${slo.status === 'pass' ? 'OK' : slo.status === 'fail' ? `FAIL (${slo.failingSlos.join(', ')})` : `UNAVAILABLE (${slo.unavailableSlos.join(', ')})`}`,
     `Backup: ${health.backups?.lastSuccessFile ?? 'brak'}`,
   ].join('\n');
   const delivery = await notify(report, rawEnv);

@@ -417,6 +417,21 @@ describe('runtime audit · end to end against an isolated home', () => {
     }
     expect(rendered).toContain('overall:');
   });
+
+  it('evaluates telemetry from the requested runtime directory', async () => {
+    const telemetry = path.join(home, 'telemetry');
+    await mkdir(telemetry);
+    const now = new Date();
+    const spans = ['turn.dispatch', 'provider.completion', 'tool.call'].flatMap((name) =>
+      Array.from({ length: 10 }, (_, i) => ({ ts: new Date(now.getTime() - i * 1000).toISOString(),
+        name, status: 'ok', durationMs: 100 })));
+    await writeFile(path.join(telemetry, `spans-${now.toISOString().slice(0, 10)}.jsonl`),
+      `${spans.map((span) => JSON.stringify(span)).join('\n')}\n`);
+    const report = await runRuntimeAudit({ rawEnv: { ...process.env, MEMPHIS_DATA_DIR: home },
+      repoRoot: null, config: null });
+    expect(report.checks.find((check) => check.id === 'slo-reporting')?.summary)
+      .toContain('0 of 4 metrics unavailable; verdict=passing');
+  });
 });
 
 describe('runtime audit · the mutation property', () => {

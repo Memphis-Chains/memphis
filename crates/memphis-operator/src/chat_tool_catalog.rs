@@ -244,14 +244,13 @@ pub(crate) fn native_tool_definitions() -> Vec<ChatToolDefinition> {
         },
         ChatToolDefinition {
             name: "memphis_self_modify".to_string(),
-            description: "Write or edit a file in the Memphis workspace. Creates a git snapshot before writing. Set test=true to run build after write and auto-rollback on failure.".to_string(),
+            description: "Submit a proposed complete file replacement for local operator review. No file is written until the operator runs evolve prepare in a local terminal; no password should be sent to the agent.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "path": { "type": "string", "description": "File path to write" },
                     "content": { "type": "string", "description": "Full file content to write" },
-                    "mode": { "type": "string", "enum": ["write", "append"], "description": "Write mode (default: write)" },
-                    "test": { "type": "boolean", "description": "Run build after write; rollback on failure (default: false)" }
+                    "mode": { "type": "string", "enum": ["write"], "description": "Submit full replacement content" }
                 },
                 "required": ["path", "content"]
             }),
