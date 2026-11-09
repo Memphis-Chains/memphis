@@ -252,4 +252,13 @@ htpasswd-write-tmp.mts
 # scratch dir for throwaway generator/test scripts — never a source of truth
 tmp/
 
+# personal travel documents — never in the public repo.
+# These are one-off HTML renders of a private itinerary. They name the
+# operator's home town and the phone numbers of third-party attractions,
+# and the repository is PUBLIC. They are working copies: the artefacts the
+# operator actually uses live in ~/wyjazd-<dates>/, and one of them is
+# served from there.
+informator-atrakcje-promien-bisztynek.html
+oferta-wyjazd-*.html
+
 <!-- verify: cron-single -->
