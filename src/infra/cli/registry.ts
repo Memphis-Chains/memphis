@@ -415,6 +415,13 @@ export const CLI_COMPLETION_COMMANDS = [
   // `memphis stop`. Mirrors registry-consistency test expectation.
   'demo',
   'stop',
+  // `budget` (2026-11-08, supervised recovery refactor): the provider
+  // budget ledger is a routed command with a handler, so it belongs in the
+  // completion list. It was registered without being added here, and the
+  // registry-consistency test caught it — the same drift class the test
+  // was written for (a routed command that the dispatcher reaches but
+  // completion does not offer).
+  'budget',
 ] as const;
 
 /**

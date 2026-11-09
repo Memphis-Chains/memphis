@@ -16,7 +16,13 @@ out=[]
 for backend in ('false','true'):
  for phase in ('before','after','before-chain','after-chain'):
   case=BASE/(backend+'-'+phase);case.mkdir();data=case/'data';data.mkdir();assert data.resolve().is_relative_to(BASE.resolve())
-  env={'HOME':str(case),'PATH':'/usr/bin:/bin','NODE_ENV':'test','MEMPHIS_DATA_DIR':str(data),'MEMPHIS_HOME':str(data),'MEMPHIS_RUNTIME_ROOT':WORK,'MEMPHIS_ENV_FILE':'/tmp/no-env-file','RUST_CHAIN_BRIDGE_PATH':BRIDGE,'RUST_CHAIN_ENABLED':backend}
+  # The PATH is inherited, not hardcoded to /usr/bin:/bin. On a GitHub
+  # runner `node` lives in the hosted tool cache (/opt/hostedtoolcache/...),
+  # not in /usr/bin, so the hardcoded PATH made every subprocess fail with
+  # "No such file or directory: 'node'". The fixture needs a controlled
+  # environment, not a controlled PATH: HOME, the data directory and the
+  # runtime root are what make it hermetic.
+  env={'HOME':str(case),'PATH':os.environ.get('PATH',os.defpath),'NODE_ENV':'test','MEMPHIS_DATA_DIR':str(data),'MEMPHIS_HOME':str(data),'MEMPHIS_RUNTIME_ROOT':WORK,'MEMPHIS_ENV_FILE':'/tmp/no-env-file','RUST_CHAIN_BRIDGE_PATH':BRIDGE,'RUST_CHAIN_ENABLED':backend}
   setup=run_node(SETUP,env);assert setup.returncode==0,setup.stderr[-500:]
   child=subprocess.Popen(['node','--import',PATCH,'--import','tsx','--input-type=module','-e',APPLY],cwd=WORK,env={**env,'MEMPHIS_SYNTHETIC_CRASH_POINT':phase},stdout=subprocess.PIPE,stderr=subprocess.PIPE)
   seen=b'';deadline=time.monotonic()+20

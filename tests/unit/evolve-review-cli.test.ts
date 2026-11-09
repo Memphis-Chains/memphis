@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -8,7 +9,14 @@ const mocks = vi.hoisted(() => ({ prompt: vi.fn(), operator: vi.fn(), governance
   inspect: vi.fn(), merge: vi.fn(), reconcile: vi.fn(), manifest: vi.fn() }));
 vi.mock('../../src/infra/cli/handlers/recovery.handler.js', () => ({ promptOperatorPassphrase: mocks.prompt }));
 vi.mock('../../src/infra/auth/operator-gate.js', () => ({ requireOperatorAuth: vi.fn(), validateOperatorPassphrase: mocks.operator }));
-vi.mock('../../src/infra/runtime/install-root.js', () => ({ resolveInstallRoot: () => '/tmp' }));
+// `resolveInstallRoot` is mocked, but the handler still resolves the result
+// through `realpathSync`. On macOS `/tmp` is a symlink to `/private/tmp`, so
+// the handler compared `realpathSync('/tmp')` against the review's stored
+// root and refused the review as belonging to another repository — on the
+// macOS CI runner only, and for a reason the failure message did not name.
+// The fixture stores the same resolved path the handler computes.
+const installRoot = realpathSync('/tmp');
+vi.mock('../../src/infra/runtime/install-root.js', () => ({ resolveInstallRoot: () => installRoot }));
 vi.mock('../../src/config/paths.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/config/paths.js')>()),
   getDataDir: () => '/tmp',
@@ -20,7 +28,7 @@ vi.mock('../../src/soul/manifest.js', () => ({ loadSoulManifest: mocks.manifest 
 describe('evolution operator review CLI', () => {
   const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   const commit = 'b'.repeat(40);
-  const review = { sessionId: id, root: '/tmp', target: 'main', base: 'a'.repeat(40), commit,
+  const review = { sessionId: id, root: installRoot, target: 'main', base: 'a'.repeat(40), commit,
     branch: 'evolve/test', worktree: '/tmp/w', testSummary: '[]', status: 'prepared' };
   const store = { get: vi.fn(() => review), transition: vi.fn() };
   const context = { args: { command: 'evolve', subcommand: 'approve', target: id }, argv: [],
