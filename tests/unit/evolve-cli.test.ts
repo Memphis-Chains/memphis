@@ -143,6 +143,32 @@ describe('evolve CLI handler', () => {
     );
   });
 
+  it.each(['exact', 'prefix'])('refuses snapshot restore for an interrupted isolated worktree (%s lookup)', async (lookup) => {
+    const session = { id: 'sess-12345678', snapshotId: 'snapshot-1', status: 'active',
+      intent: 'prepare runtime', branch: 'evolve/review-sess-12345678' };
+    const repo = {
+      getById: vi.fn().mockReturnValue(lookup === 'exact' ? session : null),
+      listRecent: vi.fn().mockReturnValue([session]),
+      updateStatus: vi.fn(),
+    };
+    const context = makeContext(repo);
+    if (lookup === 'prefix') context.args.target = 'sess-123';
+    await expect(evolveCommandHandler.handle(context)).rejects.toThrow('isolated evolution cannot be restored');
+    expect(rollbackCtorMock).not.toHaveBeenCalled();
+    expect(rollbackMock).not.toHaveBeenCalled();
+    expect(repo.updateStatus).not.toHaveBeenCalled();
+  });
+
+  it('refuses snapshot restore for a persisted review even if its branch name differs', async () => {
+    const repo = {
+      getById: vi.fn().mockReturnValue({ id: 'sess-12345678', snapshotId: 'snapshot-1',
+        status: 'committed', intent: 'prepare runtime', branch: 'evolve/other' }),
+      listRecent: vi.fn(), updateStatus: vi.fn(), reviewStore: () => ({ get: () => ({ status: 'prepared' }) }),
+    };
+    await expect(evolveCommandHandler.handle(makeContext(repo))).rejects.toThrow('isolated evolution cannot be restored');
+    expect(rollbackMock).not.toHaveBeenCalled();
+  });
+
   it('reports snapshot availability in evolve status json output', async () => {
     listSnapshotsMock.mockResolvedValue([
       {

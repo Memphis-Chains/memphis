@@ -11,6 +11,7 @@ import {
   type ProviderCascadeResult,
 } from '../../core/types.js';
 import { metrics } from '../../infra/logging/metrics.js';
+import { withProviderBudget } from '../../infra/runtime/provider-budget-ledger.js';
 import {
   sanitizeDegradationReason,
   validateProviderName,
@@ -542,14 +543,23 @@ export class OrchestrationService {
         // previously only ran in runTurnRuntime, so /v1/chat/generate
         // with mode: "provider-only" bypassed them entirely. Apply
         // here so provider-only is subject to the same protection.
-        const [{ checkProviderBudget }, { admitProviderCall }] = await Promise.all([
-          import('../../infra/runtime/cost-cap.js'),
-          import('../../infra/runtime/circuit-breaker.js'),
-        ]);
-        checkProviderBudget(provider.name);
+        const { admitProviderCall } = await import('../../infra/runtime/circuit-breaker.js');
         admitProviderCall(provider.name);
 
-        const out = await provider.generate(input);
+        const out = await withProviderBudget({
+          provider: provider.name, model: input.model ?? provider.defaultModel(), env: process.env,
+          input: { input: input.input, messages: input.messages, system: input.systemPrompt, tools: input.tools },
+          outputTokens: input.options?.maxTokens,
+          invoke: (maxTokens) => provider.generate(maxTokens === undefined ? input : {
+            ...input, options: { ...input.options, maxTokens },
+          }),
+          usage: (response) => response.usage ? {
+            total: response.usage.totalTokens ??
+              (response.usage.inputTokens !== undefined && response.usage.outputTokens !== undefined
+                ? response.usage.inputTokens + response.usage.outputTokens : undefined),
+            estimated: response.usage.estimated,
+          } : undefined,
+        });
         const latencyMs = Date.now() - started;
         metrics.recordProviderCall(provider.name, true, latencyMs);
         this.providerPolicy.markSuccess(provider.name);
@@ -587,15 +597,13 @@ export class OrchestrationService {
         // isRetryable already distinguishes PROVIDER_TIMEOUT /
         // PROVIDER_UNAVAILABLE / PROVIDER_RATE_LIMIT from permanent
         // errors — reuse that classification.
-        if (isRetryable(error)) {
-          try {
-            const { recordProviderOutcome } =
-              await import('../../infra/runtime/circuit-breaker.js');
-            recordProviderOutcome(provider.name, false);
-          } catch {
-            /* best-effort */
-          }
-        }
+        try {
+          const { recordProviderOutcome } = await import('../../infra/runtime/circuit-breaker.js');
+          const budgetDenied = error instanceof AppError && error.details?.source === 'provider-budget';
+          recordProviderOutcome(provider.name, false, process.env, Date.now(), {
+            countAsTrip: isRetryable(error) && !budgetDenied,
+          });
+        } catch { /* best-effort */ }
         trace.push({
           attempt: attempt + 1,
           provider: provider.name,

@@ -1915,6 +1915,7 @@ impl AppState {
                                 chunk,
                             },
                             ChatStreamEvent::Usage(usage) => WorkerEvent::ChatUsage(usage),
+                            ChatStreamEvent::StreamStats(_) => return,
                             ChatStreamEvent::ToolStarted { id, name, detail } => {
                                 WorkerEvent::ChatToolStarted { id, name, detail }
                             }
@@ -5769,6 +5770,13 @@ enum RuntimeErrorPresentation {
 
 fn classify_runtime_error(error: &str) -> RuntimeErrorPresentation {
     let normalized = error.to_lowercase();
+    if normalized.contains("tool outcome unknown") {
+        return RuntimeErrorPresentation::Recoverable {
+            status: "Status: tool outcome unknown",
+            detail: "The tool was interrupted or timed out; it may already have changed something.",
+            action: "Action: inspect `memphis recovery list` before deciding whether to repeat the work.",
+        };
+    }
     if contains_any(
         normalized.as_str(),
         &[
@@ -5808,7 +5816,7 @@ fn classify_runtime_error(error: &str) -> RuntimeErrorPresentation {
         return RuntimeErrorPresentation::Recoverable {
             status: "Status: provider did not answer in time",
             detail: "The runtime call reached a timeout or transient provider/network failure.",
-            action: "Action: retry once, switch provider/model from /providers, or let the fallback route answer.",
+            action: "Action: inspect incomplete work with `memphis recovery list` before retrying. Switch providers explicitly if needed.",
         };
     }
 

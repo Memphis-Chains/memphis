@@ -1,3 +1,4 @@
+import { assessSloReport } from '../../observability/slo-assessment.js';
 import { evaluateSlos, type SloReport } from '../../observability/slo-evaluator.js';
 
 export interface MemphisSloStatusInput {
@@ -14,6 +15,8 @@ export type MemphisSloStatusOutput = SloReport & {
   ok: boolean;
   allSlosPassing: boolean;
   failingSlos: string[];
+  unavailableSlos: string[];
+  status: 'pass' | 'fail' | 'unavailable';
 };
 
 export function runMemphisSloStatus(
@@ -25,11 +28,11 @@ export function runMemphisSloStatus(
     windowHours: input.windowHours,
     rawEnv,
   });
-  const failingSlos = report.slos.filter((s) => s.status === 'fail').map((s) => s.name);
+  const assessment = assessSloReport(report);
   return {
     ...report,
     ok: true,
-    allSlosPassing: failingSlos.length === 0,
-    failingSlos,
+    allSlosPassing: assessment.status === 'pass',
+    ...assessment,
   };
 }
