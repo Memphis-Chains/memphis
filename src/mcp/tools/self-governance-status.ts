@@ -1,6 +1,7 @@
 import { getDataDir } from '../../config/paths.js';
 import { listBackups } from '../../infra/cli/commands/backup.js';
 import { loadConfig } from '../../infra/config/env.js';
+import { observeResources, type ResourceObservation } from '../../infra/runtime/resource-observation.js';
 import { buildRuntimeHealthSnapshot } from '../../infra/runtime/runtime-health.js';
 import { getScheduledBackupState } from '../../infra/runtime/scheduled-backup.js';
 import { getSchedulerRuntimeStatus } from '../../infra/runtime/scheduler.js';
@@ -10,7 +11,7 @@ import {
 } from '../../infra/runtime/self-governance.js';
 import { evaluateSlos } from '../../observability/slo-evaluator.js';
 
-export type MemphisSelfGovernanceStatusOutput = SelfGovernanceSnapshot;
+export type MemphisSelfGovernanceStatusOutput = SelfGovernanceSnapshot & { resources: ResourceObservation };
 
 export async function runMemphisSelfGovernanceStatus(
   rawEnv: NodeJS.ProcessEnv = process.env,
@@ -26,7 +27,7 @@ export async function runMemphisSelfGovernanceStatus(
     '7d': evaluateSlos({ rawEnv, windowDays: 7 }),
   };
 
-  return buildSelfGovernanceSnapshot({
+  const snapshot = buildSelfGovernanceSnapshot({
     runtime,
     backups: {
       enabled: backupReport.state.enabled,
@@ -44,4 +45,6 @@ export async function runMemphisSelfGovernanceStatus(
     scheduler: getSchedulerRuntimeStatus(rawEnv),
     sloReports,
   });
+  // Read-only observations do not relax or alter the existing governance gate.
+  return { ...snapshot, resources: await observeResources(rawEnv) };
 }
