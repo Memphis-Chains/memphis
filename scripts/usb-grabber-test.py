@@ -2,7 +2,15 @@
 # scripts/usb-grabber-test.py
 # Tier-0 helper: defensive test grabbera USB (video + audio entropy)
 # Użycie: python3 scripts/usb-grabber-test.py [device] [duration_sec]
-# Exit 0 = wszystko OK, exit 1 = video failure, exit 2 = audio failure
+# Exit 0 = wszystko OK, exit 1 = video failure, exit 2 = audio failure,
+# exit 3 = urzadzenie obecne, ale nie nadaje sygnalu
+#
+# Measured 2026-11-09: the device argument defaulted to /dev/video0, which
+# on this host is the v4l2loopback DUMMY device. The probe read a virtual
+# sink and reported "video: OK" for hardware that was not involved. The
+# caller now discovers the device (scripts/grabber_devices.py) and passes
+# it; the default is kept only so a bare invocation still names a device
+# rather than silently probing nothing.
 
 import subprocess
 import sys
@@ -16,8 +24,24 @@ from pathlib import Path
 
 DEVICE = sys.argv[1] if len(sys.argv) > 1 else "/dev/video0"
 DURATION = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+# ALSA capture device, e.g. "hw:1,0". Discovered by the caller when the
+# grabber is attached; empty means there is no USB audio on this host.
+AUDIO_DEVICE = sys.argv[3] if len(sys.argv) > 3 else ""
 TMP = Path("/tmp/grabber-test")
 TMP.mkdir(exist_ok=True)
+
+# The probe reads the file ffmpeg produced and judges the verdict from it.
+# A file left behind by an earlier run would be judged as if it were this
+# run's capture, so the stale artefacts are removed first.
+#
+# Measured 2026-11-09: with a device that does not exist, the probe
+# reported `video: OK` because video.mkv from a run six days earlier was
+# still in place. The verdict was about a capture that never happened.
+for _stale in TMP.glob("*"):
+    try:
+        _stale.unlink()
+    except OSError:
+        pass
 
 results = {}
 
@@ -59,32 +83,47 @@ if video_file.exists() and video_file.stat().st_size > 1000:
     unique = len(set(frame_hashes))
     print(f"  Unikalne: {unique}/{len(frame_hashes)}")
 
+    verdict = "DYNAMIC" if unique == len(frame_hashes) else \
+              "PARTIAL" if unique > 1 else "STATIC_OR_NO_SIGNAL"
     results["video"] = {
         "file": str(video_file),
         "size_bytes": video_file.stat().st_size,
         "frames_recorded": len(frame_hashes),
         "unique_frames": unique,
-        "status": "OK",
-        "verdict": "DYNAMIC" if unique == len(frame_hashes) else
-                  "PARTIAL" if unique > 1 else "STATIC_OR_NO_SIGNAL"
+        "status": "OK" if verdict != "STATIC_OR_NO_SIGNAL" else "NO_SIGNAL",
+        "verdict": verdict
     }
     video_ok = True
+    # A device that produces one repeated frame is present but not showing
+    # anything. Reporting that as "OK" is the same kind of green that the
+    # whole audit was wrong about: the file was written, so the status said
+    # OK, while no signal ever arrived.
+    video_no_signal = verdict == "STATIC_OR_NO_SIGNAL"
 else:
     results["video"] = {"status": "FAIL", "error": r.stderr.strip()[:200]}
     video_ok = False
+    video_no_signal = False
 
 # === AUDIO TEST ===
-print(f"\n=== AUDIO test: ALSA hw:2,0 {DURATION}s ===")
-audio_file = TMP / "audio.wav"
-cmd = [
-    "ffmpeg", "-y", "-hide_banner", "-loglevel", "warning",
-    "-f", "alsa", "-channels", "2", "-sample_rate", "48000", "-i", "hw:2,0",
-    "-t", str(DURATION), "-c:a", "pcm_s16le", str(audio_file)
-]
-r = subprocess.run(cmd, capture_output=True, text=True)
-print(r.stderr.strip())
+if not AUDIO_DEVICE:
+    # No USB capture device on this host. That is a fact about the machine,
+    # not a failure of the grabber, and it is not the same thing as audio
+    # hardware that is present but silent.
+    print("\n=== AUDIO test: skipped (no USB audio device on this host) ===")
+    results["audio"] = {"status": "NOT_PRESENT", "reason": "no USB capture device"}
+    audio_ok = True
+else:
+    print(f"\n=== AUDIO test: ALSA {AUDIO_DEVICE} {DURATION}s ===")
+    audio_file = TMP / "audio.wav"
+    cmd = [
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "warning",
+        "-f", "alsa", "-channels", "2", "-sample_rate", "48000", "-i", AUDIO_DEVICE,
+        "-t", str(DURATION), "-c:a", "pcm_s16le", str(audio_file)
+    ]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    print(r.stderr.strip())
 
-if audio_file.exists() and audio_file.stat().st_size > 100:
+if AUDIO_DEVICE and audio_file.exists() and audio_file.stat().st_size > 100:
     with wave.open(str(audio_file), "rb") as w:
         n = w.getnframes()
         rate = w.getframerate()
@@ -114,7 +153,7 @@ if audio_file.exists() and audio_file.stat().st_size > 100:
         "verdict": verdict
     }
     audio_ok = True
-else:
+elif AUDIO_DEVICE:
     results["audio"] = {"status": "FAIL", "error": r.stderr.strip()[:200]}
     audio_ok = False
 
@@ -122,4 +161,13 @@ else:
 print(f"\n=== SUMMARY ===")
 print(json.dumps(results, indent=2))
 
-sys.exit(0 if (video_ok and audio_ok) else (1 if not video_ok else 2))
+# 0 = both fine, 1 = video failed, 2 = audio failed, 3 = device present but
+# no signal. The three failure kinds are distinct facts and the caller
+# reports them differently.
+if not video_ok:
+    sys.exit(1)
+if not audio_ok:
+    sys.exit(2)
+if video_no_signal:
+    sys.exit(3)
+sys.exit(0)
