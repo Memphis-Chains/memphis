@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { realpathSync } from 'node:fs';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -10,13 +9,31 @@ const mocks = vi.hoisted(() => ({ prompt: vi.fn(), operator: vi.fn(), governance
 vi.mock('../../src/infra/cli/handlers/recovery.handler.js', () => ({ promptOperatorPassphrase: mocks.prompt }));
 vi.mock('../../src/infra/auth/operator-gate.js', () => ({ requireOperatorAuth: vi.fn(), validateOperatorPassphrase: mocks.operator }));
 // `resolveInstallRoot` is mocked, but the handler still resolves the result
-// through `realpathSync`. On macOS `/tmp` is a symlink to `/private/tmp`, so
+// through `realpathSync`. The fixture therefore hands the handler a path
+// that is NOT canonical — a symlink to a real directory — so the resolved
+// root differs from the returned root on every platform.
+//
+// Measured 2026-11-09: on macOS `/tmp` is a symlink to `/private/tmp`, so
 // the handler compared `realpathSync('/tmp')` against the review's stored
 // root and refused the review as belonging to another repository — on the
 // macOS CI runner only, and for a reason the failure message did not name.
-// The fixture stores the same resolved path the handler computes.
-const installRoot = realpathSync('/tmp');
-vi.mock('../../src/infra/runtime/install-root.js', () => ({ resolveInstallRoot: () => installRoot }));
+// A fixture that used the literal `/tmp` reproduced that only on macOS,
+// so the same mistake stayed invisible on every other platform. The
+// symlink makes the difference real everywhere.
+const installRoot = await vi.hoisted(async () => {
+  const { mkdtempSync, mkdirSync, symlinkSync, realpathSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const base = mkdtempSync(join(tmpdir(), 'memphis-evolve-root-'));
+  const real = join(base, 'real');
+  mkdirSync(real);
+  const linked = join(base, 'linked');
+  symlinkSync(real, linked);
+  return { returned: linked, resolved: realpathSync(linked) };
+});
+vi.mock('../../src/infra/runtime/install-root.js', () => ({
+  resolveInstallRoot: () => installRoot.returned,
+}));
 vi.mock('../../src/config/paths.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/config/paths.js')>()),
   getDataDir: () => '/tmp',
@@ -28,7 +45,7 @@ vi.mock('../../src/soul/manifest.js', () => ({ loadSoulManifest: mocks.manifest 
 describe('evolution operator review CLI', () => {
   const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   const commit = 'b'.repeat(40);
-  const review = { sessionId: id, root: installRoot, target: 'main', base: 'a'.repeat(40), commit,
+  const review = { sessionId: id, root: installRoot.resolved, target: 'main', base: 'a'.repeat(40), commit,
     branch: 'evolve/test', worktree: '/tmp/w', testSummary: '[]', status: 'prepared' };
   const store = { get: vi.fn(() => review), transition: vi.fn() };
   const context = { args: { command: 'evolve', subcommand: 'approve', target: id }, argv: [],
@@ -44,7 +61,7 @@ describe('evolution operator review CLI', () => {
   it('merges only after exact commit confirmation and both local passwords', async () => {
     mocks.prompt.mockResolvedValueOnce(commit).mockResolvedValueOnce('synthetic-operator').mockResolvedValueOnce('synthetic-tier2');
     await evolveCommandHandler.handle(context);
-    expect(mocks.merge).toHaveBeenCalledWith(store, id, '/tmp', commit);
+    expect(mocks.merge).toHaveBeenCalledWith(store, id, installRoot.resolved, commit);
     expect(mocks.governance).toHaveBeenCalledOnce();
   });
   it('refuses a wrong commit or Tier 2 password', async () => {
@@ -67,6 +84,6 @@ describe('evolution operator review CLI', () => {
     mocks.prompt.mockResolvedValueOnce(commit).mockResolvedValueOnce('synthetic-operator');
     await evolveCommandHandler.handle(context);
     expect(mocks.prompt).toHaveBeenCalledTimes(2);
-    expect(mocks.merge).toHaveBeenCalledWith(store, id, '/tmp', commit);
+    expect(mocks.merge).toHaveBeenCalledWith(store, id, installRoot.resolved, commit);
   });
 });
