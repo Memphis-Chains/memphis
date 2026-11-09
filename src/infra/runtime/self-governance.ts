@@ -1,5 +1,6 @@
 import type { RuntimeHealthSnapshot } from './runtime-health.js';
 import type { SchedulerRuntimeStatus } from './scheduler.js';
+import { assessSloReport } from '../../observability/slo-assessment.js';
 import type { SloReport } from '../../observability/slo-evaluator.js';
 
 export type SelfGovernanceMode = 'supervised-operational';
@@ -29,6 +30,7 @@ export type SelfGovernanceSnapshot = {
   sloWindows?: Record<string, {
     status: 'pass' | 'fail' | 'unavailable';
     failingSlos: string[];
+    unavailableSlos: string[];
     samples: number;
     windowStart: string;
     windowEnd: string;
@@ -53,6 +55,14 @@ export type BuildSelfGovernanceSnapshotInput = {
 
 function addUnique(target: string[], value: string): void {
   if (!target.includes(value)) target.push(value);
+}
+
+function currentSloWindow(report: SloReport, label: string, nowMs: number): boolean {
+  const start = Date.parse(report.windowStart);
+  const end = Date.parse(report.windowEnd);
+  const maxWindowMs = label === '1h' ? 3_600_000 : 86_400_000;
+  return Number.isFinite(start) && Number.isFinite(end) && end > start &&
+    end - start <= maxWindowMs + 1000 && end >= nowMs - 300_000 && end <= nowMs + 1000;
 }
 
 export function buildSelfGovernanceSnapshot(
@@ -116,19 +126,35 @@ export function buildSelfGovernanceSnapshot(
   }
 
   const sloReports = input.sloReports;
-  const blockingSloReports = sloReports
-    ? Object.entries(sloReports).filter(([label]) => label === '1h' || label === '24h')
+  const blockingSloReports: Array<readonly [string, SloReport | undefined]> = sloReports
+    ? [['1h', sloReports['1h']], ['24h', sloReports['24h']]]
     : input.sloReport
       ? [['default', input.sloReport] as const]
-      : [];
-  const failingSloLabels = new Set<string>();
+      : [['default', undefined]];
+  const nowMs = (input.now ?? new Date()).getTime();
+  let sloBlocked = false;
   for (const [label, report] of blockingSloReports) {
-    for (const slo of report.slos.filter((item) => item.status === 'fail')) {
-      addUnique(blockingReasons, `SLO failing (${label}): ${slo.name}`);
-      failingSloLabels.add(label);
+    if (!report) {
+      addUnique(blockingReasons, `SLO report unavailable (${label})`);
+      sloBlocked = true;
+      continue;
+    }
+    if (!currentSloWindow(report, label, nowMs)) {
+      addUnique(blockingReasons, `SLO report stale or invalid (${label})`);
+      sloBlocked = true;
+      continue;
+    }
+    const assessment = assessSloReport(report);
+    for (const name of assessment.failingSlos) {
+      addUnique(blockingReasons, `SLO failing (${label}): ${name}`);
+      sloBlocked = true;
+    }
+    for (const name of assessment.unavailableSlos) {
+      addUnique(blockingReasons, `SLO unavailable (${label}): ${name}`);
+      sloBlocked = true;
     }
   }
-  if (failingSloLabels.size > 0) {
+  if (sloBlocked) {
     addUnique(
       recommendedActions,
       'Run memphis slo status --json and inspect recent telemetry before increasing autonomy',
@@ -157,15 +183,13 @@ export function buildSelfGovernanceSnapshot(
     sloWindows: sloReports
       ? Object.fromEntries(
           Object.entries(sloReports).map(([label, report]) => {
-            const failingSlos = report.slos
-              .filter((slo) => slo.status === 'fail')
-              .map((slo) => slo.name);
-            const hasUnavailable = report.slos.some((slo) => slo.status === 'unavailable');
+            const assessment = assessSloReport(report);
+            const current = label !== '1h' && label !== '24h' || currentSloWindow(report, label, nowMs);
             return [
               label,
               {
-                status: failingSlos.length > 0 ? 'fail' : hasUnavailable ? 'unavailable' : 'pass',
-                failingSlos,
+                ...assessment,
+                status: current ? assessment.status : 'unavailable',
                 samples: report.totalSamples,
                 windowStart: report.windowStart,
                 windowEnd: report.windowEnd,

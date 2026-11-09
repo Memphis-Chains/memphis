@@ -420,13 +420,12 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     name: 'memphis_self_modify',
     tier: 2,
     capabilities: ['write', 'execute'],
-    description: 'Safe self-modification with snapshot, branch isolation, and test gate',
+    description: 'Submit a code-change request for local operator review',
     inputSchema: z
       .object({
         intent: z.string().min(1),
         files: z.array(z.string()).min(1),
         changes: z.record(z.string(), z.string()),
-        passphrase: z.string().optional(),
         // S5 A.5.3 step-aware mode (optional, backward-compatible).
         plan_id: z.string().optional(),
         step_idx: z.number().int().nonnegative().optional(),
@@ -434,7 +433,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       })
       .strict(),
     helpText:
-      'The supervised self-modification surface. Takes an `intent` (one-line description for audit), a `files` array (paths to modify), and a `changes` map (path → new content). Pipeline: (1) snapshot the current tree to `~/.memphis/backups/`, (2) apply changes on an isolated branch, (3) run the test gate (typecheck + lint + vitest). On gate failure: auto-rollback to the snapshot. On gate pass: present the diff for operator approval. Tier-2 with passphrase requirement — never bypass the test gate even for "trivial" edits. The audit chain records every attempt regardless of outcome. **Step-aware mode:** pass `plan_id`+`step_idx` to tie a write into a running self-coding plan (see memphis_self_plan_*). The tool marks the step `in_progress` upfront and flips to `done` (with commit hash as artifact) or `failed` (with error message) on exit; a step already `done` is rejected to keep retries idempotent.',
+      'Submit a bounded code-change request without a password. The operator inspects it and enters passwords locally with `memphis evolve prepare <request-id>`. Preparation creates a separate worktree and tests the exact requested changes. Passing tests create a local candidate commit; the operator must separately review and approve that commit. No automatic merge, restart or push. Same-user processes and generic Git tools remain outside this boundary.',
     cliFlags: [],
   },
   ...FOUNDATION_TOOLS,

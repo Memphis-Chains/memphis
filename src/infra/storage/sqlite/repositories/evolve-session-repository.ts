@@ -2,6 +2,9 @@ import { randomUUID } from 'node:crypto';
 
 import type Database from 'better-sqlite3';
 
+import { EvolveRequestStore } from '../../../runtime/evolve-request.js';
+import { EvolveReviewStore, type EvolveReview } from '../../../runtime/evolve-review.js';
+
 export type EvolveSessionStatus =
   | 'pending'
   | 'approved'
@@ -79,6 +82,16 @@ const DEFAULT_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 export class SqliteEvolveSessionRepository {
   constructor(private readonly db: Database.Database) {}
+
+  reviewStore(): EvolveReviewStore { return new EvolveReviewStore(this.db); }
+  requestStore(): EvolveRequestStore { return new EvolveRequestStore(this.db); }
+  finalizePrepared(review: EvolveReview): void {
+    const store = this.reviewStore();
+    this.db.transaction(() => {
+      if (!this.updateStatus(review.sessionId, 'committed', { committedHash: review.commit })) throw new Error('evolution session missing');
+      store.create(review);
+    })();
+  }
 
   create(input: { intent: string; filesAllowed: string[]; ttlMs?: number }): EvolveSession {
     const now = new Date().toISOString();

@@ -259,18 +259,33 @@ pub(crate) fn record_tool_call(
     failed: bool,
     error_message: Option<&str>,
 ) {
+    record_tool_call_for_turn(config, tool_name, tool_id, duration_ms, failed, error_message, None, None);
+}
+
+pub(crate) fn record_tool_call_for_turn(
+    config: &OperatorConfig,
+    tool_name: &str,
+    tool_id: &str,
+    duration_ms: u64,
+    failed: bool,
+    error_message: Option<&str>,
+    turn_id: Option<&str>,
+    output_shape: Option<&str>,
+) {
     let status = if failed { "error" } else { "ok" };
-    let shape = if failed { "error" } else { "success" };
+    let shape = output_shape.unwrap_or(if failed { "error" } else { "success" });
+    let mut attrs = vec![
+        ("tool.name", Value::String(tool_name.to_string())),
+        ("tool.id", Value::String(tool_id.to_string())),
+        ("tool.output.shape", Value::String(shape.to_string())),
+        ("surface", Value::String("rust-tui".to_string())),
+        ("audit.surface", Value::String("rust-tui".to_string())),
+    ];
+    if let Some(id) = turn_id { attrs.push(("turn.id", Value::String(id.to_string()))); }
     record_span(
         config,
         "tool.call",
-        vec![
-            ("tool.name", Value::String(tool_name.to_string())),
-            ("tool.id", Value::String(tool_id.to_string())),
-            ("tool.output.shape", Value::String(shape.to_string())),
-            ("surface", Value::String("rust-tui".to_string())),
-            ("audit.surface", Value::String("rust-tui".to_string())),
-        ],
+        attrs,
         duration_ms,
         status,
         error_message,
@@ -299,19 +314,34 @@ pub(crate) fn record_turn_dispatch(
     failed: bool,
     error_message: Option<&str>,
 ) {
+    record_turn_dispatch_for_turn(config, session_id, provider, model, duration_ms, failed, error_message, None);
+}
+
+pub(crate) fn record_turn_dispatch_for_turn(
+    config: &OperatorConfig,
+    session_id: &str,
+    provider: &str,
+    model: &str,
+    duration_ms: u64,
+    failed: bool,
+    error_message: Option<&str>,
+    turn_id: Option<&str>,
+) {
     let status = if failed { "error" } else { "ok" };
+    let mut attrs = vec![
+        ("surface", Value::String("rust-tui".to_string())),
+        ("audit.surface", Value::String("rust-tui".to_string())),
+        ("conversation.id", Value::String(session_id.to_string())),
+        ("actor.id", Value::String("local".to_string())),
+        ("provider", Value::String(provider.to_string())),
+        ("model", Value::String(model.to_string())),
+        ("turn.timing_ms", Value::from(duration_ms)),
+    ];
+    if let Some(id) = turn_id { attrs.push(("turn.id", Value::String(id.to_string()))); }
     record_span(
         config,
         "turn.dispatch",
-        vec![
-            ("surface", Value::String("rust-tui".to_string())),
-            ("audit.surface", Value::String("rust-tui".to_string())),
-            ("conversation.id", Value::String(session_id.to_string())),
-            ("actor.id", Value::String("local".to_string())),
-            ("provider", Value::String(provider.to_string())),
-            ("model", Value::String(model.to_string())),
-            ("turn.timing_ms", Value::from(duration_ms)),
-        ],
+        attrs,
         duration_ms,
         status,
         error_message,
@@ -335,16 +365,41 @@ pub(crate) fn record_provider_completion(
     failed: bool,
     error_message: Option<&str>,
 ) {
+    record_provider_completion_for_turn(config, provider, model, tools_count, messages_count, duration_ms, failed, error_message, None, None);
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn record_provider_completion_for_turn(
+    config: &OperatorConfig,
+    provider: &str,
+    model: &str,
+    tools_count: usize,
+    messages_count: usize,
+    duration_ms: u64,
+    failed: bool,
+    error_message: Option<&str>,
+    turn_id: Option<&str>,
+    stream: Option<&crate::provider::StreamReadStats>,
+) {
     let status = if failed { "error" } else { "ok" };
+    let mut attrs = vec![
+        ("provider.name", Value::String(provider.to_string())),
+        ("provider.model", Value::String(model.to_string())),
+        ("provider.tools.count", Value::from(tools_count)),
+        ("provider.messages.count", Value::from(messages_count)),
+    ];
+    if let Some(id) = turn_id { attrs.push(("turn.id", Value::String(id.to_string()))); }
+    if let Some(stream) = stream {
+        attrs.push(("stream.bytes", Value::from(stream.bytes)));
+        attrs.push(("stream.max_interread_gap_ms", Value::from(stream.max_interread_gap_ms)));
+        if let Some(value) = stream.first_byte_after_headers_ms { attrs.push(("stream.first_byte_after_headers_ms", Value::from(value))); }
+        if let Some(value) = stream.last_byte_after_headers_ms { attrs.push(("stream.last_byte_after_headers_ms", Value::from(value))); }
+        if let Some(value) = stream.idle_before_error_ms { attrs.push(("stream.idle_before_error_ms", Value::from(value))); }
+    }
     record_span(
         config,
         "provider.completion",
-        vec![
-            ("provider.name", Value::String(provider.to_string())),
-            ("provider.model", Value::String(model.to_string())),
-            ("provider.tools.count", Value::from(tools_count)),
-            ("provider.messages.count", Value::from(messages_count)),
-        ],
+        attrs,
         duration_ms,
         status,
         error_message,

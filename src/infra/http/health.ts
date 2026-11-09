@@ -115,6 +115,9 @@ export type HealthPayload = {
     daily: { used: number; cap?: number; pctUsed?: number };
     monthly: { used: number; cap?: number; pctUsed?: number };
   }>;
+  /** Legacy providerBudgets are process-local; this is the durable shared ledger. */
+  providerBudgetsScope?: 'process-local-legacy';
+  providerBudgetLedger?: import('../runtime/provider-budget-ledger.js').BudgetLedgerSnapshot;
   /**
    * Phase 2.2 production sprint: turn admission depth.
    * Operators see "we're under load" before hitting the rejection
@@ -466,7 +469,7 @@ export async function buildHealthPayload(
   const backupReport = getScheduledBackupState(rawEnv);
   const { listBackups } = await import('../cli/commands/backup.js');
   const { readOffsiteBackupState } = await import('../cli/commands/offsite-backup-state.js');
-  const backupArchives = await listBackups().catch(() => ({ backups: [], totalSize: 0 }));
+  const backupArchives = await listBackups({ memphisRoot: getDataDir(rawEnv) }).catch(() => ({ backups: [], totalSize: 0 }));
   const latestBackupArchive = backupArchives.backups[0];
   const { evaluateSlos } = await import('../../observability/slo-evaluator.js');
   const sloReports = {
@@ -477,6 +480,14 @@ export async function buildHealthPayload(
   const telemetrySinks = readSinkStatusEntries(getDataDir(rawEnv));
   const { getAllProviderBudgets } = await import('../runtime/cost-cap.js');
   const providerBudgets = getAllProviderBudgets(rawEnv);
+  const { budgetDatabasePath, providerBudgetLedgerSnapshot } = await import('../runtime/provider-budget-ledger.js');
+  let providerBudgetLedger: import('../runtime/provider-budget-ledger.js').BudgetLedgerSnapshot;
+  try {
+    const budgetEnv = { ...rawEnv, DATABASE_URL: config.DATABASE_URL };
+    providerBudgetLedger = providerBudgetLedgerSnapshot(budgetDatabasePath(budgetEnv), budgetEnv);
+  } catch {
+    providerBudgetLedger = { available: false, coverage: 'recorded-reservations-only', providers: [] };
+  }
   const { getAllBreakerSnapshots } = await import('../runtime/circuit-breaker.js');
   const providerBreakers = getAllBreakerSnapshots(rawEnv);
   const { getAdmissionState } = await import('../runtime/turn-admission.js');
@@ -536,6 +547,8 @@ export async function buildHealthPayload(
     uptime_seconds: Math.floor(process.uptime()),
     shutdown: shutdown.shuttingDown ? shutdown : undefined,
     providerBudgets: providerBudgets.length > 0 ? providerBudgets : undefined,
+    providerBudgetsScope: providerBudgets.length > 0 ? 'process-local-legacy' : undefined,
+    providerBudgetLedger,
     providerBreakers: providerBreakers.length > 0 ? providerBreakers : undefined,
     turnAdmission,
     backups,

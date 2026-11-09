@@ -13,16 +13,17 @@ use crate::chat_guards::{
 };
 use crate::chat_operations::{
     ensure_operation_tables, record_operation_completed, record_operation_failed,
-    record_operation_started, record_operation_unknown, unsettled_operations_summary,
+    record_operation_started_for_turn, record_operation_unknown, unsettled_operations_summary,
 };
 use crate::chat_prompt::build_runtime_system_prompt;
 use crate::chat_session::{
-    ensure_chat_tables, load_chat_rows, normalize_session_id, open_sqlite_rw,
-    persist_chat_messages, row_to_chat_message, transcript_from_row, MessageToPersist,
+    ensure_chat_tables, incomplete_turn_summary, load_chat_rows, normalize_session_id, open_sqlite_rw,
+    persist_chat_messages_and_complete, row_to_chat_message, save_partial_turn_text, save_turn_checkpoint,
+    transcript_from_row, MessageToPersist, RunningCheckpointGuard,
 };
 use crate::chat_streaming::{ensure_chat_not_cancelled, StreamingOutputGuard};
 use crate::chat_tool_catalog::{max_tool_tier_from_env, native_tool_definitions, tool_tier};
-use crate::chat_tool_executor::{cut_on_char_boundary, execute_native_tool};
+use crate::chat_tool_executor::{cut_on_char_boundary, execute_native_tool, execute_native_tool_for_turn, native_tool_result_failed};
 use crate::{
     provider::{
         configured_provider_statuses, resolve_provider, ChatMessage, ChatRequestOptions,
@@ -274,6 +275,7 @@ impl OperatorRuntime {
     where
         F: FnMut(ChatStreamEvent),
     {
+        let turn_started = std::time::Instant::now();
         let session_id = normalize_session_id(session_id);
         let trimmed_prompt = prompt.trim();
         if trimmed_prompt.is_empty() {
@@ -285,6 +287,34 @@ impl OperatorRuntime {
         let conn = open_sqlite_rw(&self.config.database_path)?;
         ensure_chat_tables(&conn)?;
         ensure_operation_tables(&conn)?;
+        let running: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM operator_turn_checkpoints WHERE session_id=? AND status='running')",
+            [&session_id], |row| row.get(0),
+        ).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+        if running {
+            return Err(OperatorError::Message(
+                "a turn is active or was interrupted unexpectedly; inspect `memphis recovery list` before continuing".into(),
+            ));
+        }
+        let mut pending = vec![MessageToPersist {
+            role: "user",
+            content: trimmed_prompt.to_string(),
+            display_content: trimmed_prompt.to_string(),
+            tool_call_id: None,
+            tool_name: None,
+            tool_calls_json: None,
+            provider: None,
+            model: None,
+        }];
+        let checkpoint_id: String = conn.query_row("SELECT lower(hex(randomblob(16)))", [], |row| row.get(0))
+            .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+        if let Err(error) = save_turn_checkpoint(&conn, &checkpoint_id, &session_id, "running", &pending) {
+            if error.to_string().contains("UNIQUE constraint failed: operator_turn_checkpoints.session_id") {
+                return Err(OperatorError::Message("another turn started in this session; inspect `memphis recovery list`".into()));
+            }
+            return Err(error);
+        }
+        let _checkpoint_guard = RunningCheckpointGuard::new(&conn, &checkpoint_id);
         let history_rows = load_chat_rows(&conn, session_id.as_str(), chat_max_messages())?;
         let mut messages = history_rows
             .iter()
@@ -377,25 +407,22 @@ impl OperatorRuntime {
         // If an earlier turn in this session left operations without a
         // settled outcome, the model is told about them before it acts. It
         // must not repeat work that may already have been applied.
+        // Re-read prior state only after acquiring the session's unique
+        // running slot. Otherwise another turn could fail between the
+        // earlier check and our insert and escape the recovery guard.
         let unsettled = unsettled_operations_summary(&conn, session_id.as_str())?;
-        let user_content = if unsettled.is_empty() {
-            wrapped_user.clone()
-        } else {
-            format!(
-                "{wrapped_user}\n\n<unsettled_operations>\n{unsettled}\n</unsettled_operations>"
-            )
+        let incomplete = incomplete_turn_summary(&conn, session_id.as_str(), &checkpoint_id)?;
+        let recovery_guard = !incomplete.is_empty() || !unsettled.is_empty();
+        if recovery_guard {
+            on_chunk(ChatStreamEvent::Text(format!(
+                "[recovery] Earlier work is incomplete. Side-effecting tools are paused. Inspect it with `memphis recovery list` before operator acknowledgement.\n{incomplete}\n{unsettled}\n"
+            )));
+        }
+        let user_content = if !recovery_guard { wrapped_user } else {
+            format!("{wrapped_user}\n\n<unsettled_operations>\n{unsettled}\n{incomplete}\n</unsettled_operations>")
         };
-
-        let mut pending = vec![MessageToPersist {
-            role: "user",
-            content: user_content.clone(),
-            display_content: trimmed_prompt.to_string(),
-            tool_call_id: None,
-            tool_name: None,
-            tool_calls_json: None,
-            provider: None,
-            model: None,
-        }];
+        pending[0].content = user_content.clone();
+        save_turn_checkpoint(&conn, &checkpoint_id, &session_id, "running", &pending)?;
         messages.push(ChatMessage::User {
             content: user_content,
         });
@@ -411,17 +438,45 @@ impl OperatorRuntime {
         // Without this, "exceeded recoverable error limit" was opaque and
         // operators had to dig through logs to know which tool failed.
         let mut error_trail: Vec<(String, String)> = Vec::new();
+        let mut blocked_by_recovery = false;
 
         // The turn body is wrapped so that EVERY exit path — provider error,
         // cancellation, loop limit, error budget — marks the operations that
         // were still in flight as `unknown` before returning. Without this,
         // an interrupted turn left `started` rows that nothing ever settled,
         // and the next turn had no way to know the work may already be done.
-        let turn_started = std::time::Instant::now();
-        let turn_result = run_turn(
+        let mut partial_text = String::new();
+        let mut partial_truncated = false;
+        let mut last_saved_bytes = 0_usize;
+        let mut last_partial_save = std::time::Instant::now();
+        let mut partial_save_failed = false;
+        let turn_result = {
+          let mut tracked_chunk = |event: ChatStreamEvent| {
+            if let ChatStreamEvent::Text(text) = &event {
+                const MAX_PARTIAL_BYTES: usize = 128 * 1024;
+                let available = MAX_PARTIAL_BYTES.saturating_sub(partial_text.len());
+                let mut end = text.len().min(available);
+                while end > 0 && !text.is_char_boundary(end) { end -= 1; }
+                partial_text.push_str(&text[..end]);
+                partial_truncated |= end < text.len();
+                if !partial_save_failed && (partial_text.len().saturating_sub(last_saved_bytes) >= 4096
+                    || last_partial_save.elapsed() >= std::time::Duration::from_secs(1)) {
+                    if save_partial_turn_text(&conn, &checkpoint_id, &partial_text, partial_truncated).is_err() {
+                        partial_save_failed = true;
+                        on_chunk(ChatStreamEvent::Text("[recovery] Could not save partial output; progress may be lost.\n".into()));
+                    } else {
+                        last_saved_bytes = partial_text.len();
+                        last_partial_save = std::time::Instant::now();
+                    }
+                }
+            }
+            on_chunk(event);
+          };
+          run_turn(
             self,
             &conn,
             session_id.as_str(),
+            &checkpoint_id,
             cancel_flag,
             &provider_runtime,
             &options,
@@ -433,8 +488,11 @@ impl OperatorRuntime {
             &mut tool_calls_used,
             &mut errors,
             &mut error_trail,
-            &mut on_chunk,
-        );
+            recovery_guard,
+            &mut blocked_by_recovery,
+            &mut tracked_chunk,
+          )
+        };
         // The turn itself, measured. The TypeScript gateway records this
         // span; without it here, `p99_turn_latency_ms` and
         // `confabulation_rate` read the gateway's last measurement
@@ -444,7 +502,7 @@ impl OperatorRuntime {
         // the cockpit every day.
         let turn_elapsed = turn_started.elapsed().as_millis() as u64;
         match &turn_result {
-            Ok(exchange) => crate::telemetry::record_turn_dispatch(
+            Ok(exchange) => crate::telemetry::record_turn_dispatch_for_turn(
                 &self.config,
                 session_id.as_str(),
                 exchange.provider.as_str(),
@@ -452,15 +510,17 @@ impl OperatorRuntime {
                 turn_elapsed,
                 false,
                 None,
+                Some(&checkpoint_id),
             ),
-            Err(error) => crate::telemetry::record_turn_dispatch(
+            Err(_error) => crate::telemetry::record_turn_dispatch_for_turn(
                 &self.config,
                 session_id.as_str(),
                 provider_runtime.name(),
                 options.model.as_deref().unwrap_or("unknown"),
                 turn_elapsed,
                 true,
-                Some(error.to_string().as_str()),
+                Some("turn interrupted"),
+                Some(&checkpoint_id),
             ),
         }
 
@@ -473,6 +533,12 @@ impl OperatorRuntime {
                 operation_id,
                 "turn ended before the operation reported an outcome",
             );
+        }
+
+        if turn_result.is_err() {
+            save_partial_turn_text(&conn, &checkpoint_id, &partial_text, partial_truncated)?;
+            let status = if blocked_by_recovery { "blocked" } else { "interrupted" };
+            save_turn_checkpoint(&conn, &checkpoint_id, &session_id, status, &pending)?;
         }
 
         let exchange = turn_result?;
@@ -512,6 +578,7 @@ fn run_turn(
     runtime: &OperatorRuntime,
     conn: &Connection,
     session_id: &str,
+    checkpoint_id: &str,
     cancel_flag: Option<&AtomicBool>,
     provider_runtime: &crate::provider::ProviderRuntime,
     options: &ChatRequestOptions,
@@ -523,6 +590,8 @@ fn run_turn(
     tool_calls_used: &mut usize,
     errors: &mut usize,
     error_trail: &mut Vec<(String, String)>,
+    recovery_guard: bool,
+    blocked_by_recovery: &mut bool,
     on_chunk: &mut dyn FnMut(ChatStreamEvent),
 ) -> Result<ChatExchange, OperatorError> {
     // Context-window guard: the same protection the TypeScript gateway
@@ -530,8 +599,14 @@ fn run_turn(
     // prompt larger than the model's window, and the provider would answer
     // HTTP 400 "context window exceeds limit" instead of Memphis trimming.
     let effective_model = provider_runtime.effective_model(options.model.as_deref());
-    let declared_context_window =
-        provider_runtime.declared_context_window_tokens(effective_model.as_str());
+    // The local fallback is a fixed diagnostic message, not an inference
+    // request. It does not send the system prompt or context to a model and
+    // therefore must remain available even if that prompt exceeds a window.
+    let declared_context_window = if provider_runtime.name() == "local-fallback" {
+        None
+    } else {
+        provider_runtime.declared_context_window_tokens(effective_model.as_str())
+    };
     let mut account_context_window = if provider_runtime.name() == "openai" {
         crate::openai_codex::read_account_context_window(&runtime.config, effective_model.as_str())
     } else {
@@ -568,11 +643,21 @@ fn run_turn(
                     effective_context_window.unwrap_or_default()
                 )));
             }
+            if !guard.fits {
+                return Err(OperatorError::Message(
+                    "the current request and tool context exceed the estimated model window; progress was saved for operator review".into(),
+                ));
+            }
             let request_context = crate::context::provider_context(&guard.messages);
+            let mut attempt = 0_u8;
+            let (mut completion, mut stream_guard, mut think_stripper) = loop {
             let mut stream_guard = StreamingOutputGuard::new();
             let mut think_stripper = ThinkStripper::new();
+            let mut stream_stats = None;
+            let mut saw_text = false;
             let mut stream_sink = |event: ChatStreamEvent| match event {
                 ChatStreamEvent::Text(chunk) => {
+                    saw_text = true;
                     // Reasoning-model <think>…</think> blocks are the model's
                     // internal deliberation and must not reach the TUI. Strip
                     // them out of the live stream before StreamingOutputGuard
@@ -588,6 +673,7 @@ fn run_turn(
                     stream_guard.push(visible.as_str(), &mut emit_text);
                 }
                 ChatStreamEvent::Usage(usage) => on_chunk(ChatStreamEvent::Usage(usage)),
+                ChatStreamEvent::StreamStats(stats) => stream_stats = Some(stats),
                 // A provider never reports a tool call — the chat loop
                 // does, after the call has already run.
                 ChatStreamEvent::Tool { .. } => {}
@@ -610,6 +696,16 @@ fn run_turn(
             // cockpit's, and the report says "no provider.completion
             // spans in window" for the surface the operator actually
             // uses.
+            let breaker_permit = crate::provider_breaker::admit(&runtime.config, provider_runtime.name())?;
+            let reservation = if crate::provider_budget::configured(&runtime.config, provider_runtime.name())? {
+                let bytes = serde_json::to_vec(&(options.system_prompt.as_ref(), &request_context, tool_definitions))
+                    .map_err(|error| OperatorError::Json(error.to_string()))?.len() as u64;
+                let output = if provider_runtime.name() == "minimax" && effective_model.to_ascii_lowercase().contains("m3") {
+                    options.minimax_max_completion_tokens.or(options.max_tokens).unwrap_or(32_768).clamp(1, 524_288)
+                } else { options.max_tokens.unwrap_or(2_048) };
+                crate::provider_budget::reserve(conn, &runtime.config, provider_runtime.name(),
+                    bytes.saturating_add(u64::from(output)).saturating_add(1_024))?
+            } else { None };
             let provider_started = std::time::Instant::now();
             let provider_result = provider_runtime.chat_stream_with_cancel(
                 &request_context,
@@ -618,10 +714,17 @@ fn run_turn(
                 cancel_flag,
                 &mut stream_sink,
             );
+            drop(stream_sink);
+            breaker_permit.record(&provider_result);
+            if let Some(reservation) = reservation {
+                let usage = provider_result.as_ref().ok().and_then(|completion| completion.token_usage.as_ref());
+                crate::provider_budget::settle(conn, &reservation,
+                    usage.map(|value| value.total_tokens), usage.map(|value| value.estimated).unwrap_or(true))?;
+            }
             let provider_elapsed = provider_started.elapsed().as_millis() as u64;
-            let mut completion = match provider_result {
+            match provider_result {
                 Ok(completion) => {
-                    crate::telemetry::record_provider_completion(
+                    crate::telemetry::record_provider_completion_for_turn(
                         &runtime.config,
                         provider_runtime.name(),
                         completion.model.as_str(),
@@ -630,11 +733,13 @@ fn run_turn(
                         provider_elapsed,
                         false,
                         None,
+                        Some(checkpoint_id),
+                        stream_stats.as_ref(),
                     );
-                    completion
+                    break (completion, stream_guard, think_stripper);
                 }
                 Err(error) => {
-                    crate::telemetry::record_provider_completion(
+                    crate::telemetry::record_provider_completion_for_turn(
                         &runtime.config,
                         provider_runtime.name(),
                         options.model.as_deref().unwrap_or("unknown"),
@@ -642,10 +747,30 @@ fn run_turn(
                         request_context.len(),
                         provider_elapsed,
                         true,
-                        Some(error.to_string().as_str()),
+                        Some(if matches!(&error, OperatorError::ProviderStreamTimeout) { "provider stream timeout" } else { "provider call failed" }),
+                        Some(checkpoint_id),
+                        stream_stats.as_ref(),
                     );
+                    let transient = matches!(&error,
+                        OperatorError::ProviderStreamTimeout |
+                        OperatorError::ProviderTransport { transient: true, .. } |
+                        OperatorError::ProviderHttp { status: 500 | 502 | 503 | 504, .. }
+                    );
+                    // Retry a completion only before any response bytes or
+                    // text. The already-executed tool loop is never replayed.
+                    let no_stream_bytes = stream_stats.as_ref().is_none_or(|stats| stats.bytes == 0);
+                    if attempt == 0 && transient && !saw_text && no_stream_bytes {
+                        attempt += 1;
+                        on_chunk(ChatStreamEvent::Text("[recovery] Provider unavailable before output; retrying once.\n".into()));
+                        for _ in 0..10 {
+                            ensure_chat_not_cancelled(cancel_flag)?;
+                            std::thread::sleep(std::time::Duration::from_millis(25));
+                        }
+                        continue;
+                    }
                     return Err(error);
                 }
+            }
             };
             let mut emit_text = |text: &str| {
                 on_chunk(ChatStreamEvent::Text(text.to_string()));
@@ -688,6 +813,7 @@ fn run_turn(
                 provider: Some(completion.provider.clone()),
                 model: Some(completion.model.clone()),
             });
+            save_turn_checkpoint(conn, checkpoint_id, session_id, "running", pending)?;
             messages.push(ChatMessage::Assistant {
                 content: completion.content.clone(),
                 tool_calls: assistant_tool_calls.clone(),
@@ -710,7 +836,7 @@ fn run_turn(
                     }
                 }
 
-                persist_chat_messages(conn, session_id, pending)?;
+                persist_chat_messages_and_complete(conn, session_id, pending, Some(checkpoint_id))?;
                 let rows = load_chat_rows(conn, session_id, chat_max_messages())?;
                 return Ok(ChatExchange {
                     session_id: session_id.to_string(),
@@ -734,6 +860,21 @@ fn run_turn(
 
             for tool_call in assistant_tool_calls {
                 ensure_chat_not_cancelled(cancel_flag)?;
+                // Model-generated call IDs cannot prove idempotence. Default
+                // unknown tools to side-effecting until the operator reviews
+                // the earlier incomplete turn.
+                let read_only = matches!(tool_call.name.as_str(),
+                    "memphis_recall" | "memphis_search" | "memphis_health" |
+                    "memphis_soul_read" | "memphis_case_query" | "memphis_vault_list" |
+                    "memphis_chain_query" | "memphis_chain_verify" | "memphis_code_read" |
+                    "memphis_grep" | "memphis_glob"
+                );
+                if recovery_guard && !read_only {
+                    *blocked_by_recovery = true;
+                    return Err(OperatorError::Message(
+                        "side-effecting tool paused: inspect `memphis recovery list` and have the operator acknowledge the earlier turn".into(),
+                    ));
+                }
                 *tool_calls_used += 1;
                 if *tool_calls_used > chat_max_tool_calls() {
                     return Err(OperatorError::Message(
@@ -748,17 +889,18 @@ fn run_turn(
                 // outcome is unknown and is reported as such.
                 let arguments_json = serde_json::to_string(&tool_call.arguments)
                     .unwrap_or_else(|_| "{}".to_string());
-                let operation_id = record_operation_started(
+                let operation_id = record_operation_started_for_turn(
                     &conn,
                     session_id,
                     tool_call.id.as_str(),
                     tool_call.name.as_str(),
                     arguments_json.as_str(),
+                    Some(checkpoint_id),
                 )?;
                 in_flight_operations.push(operation_id.clone());
 
                 let tool_started = std::time::Instant::now();
-                let mut tool_failed = false;
+                let tool_failed;
                 // Tell the surface the call is about to run, so a tool
                 // that takes ninety seconds shows as pending instead of
                 // leaving the agent looking idle. The event carries the
@@ -769,13 +911,26 @@ fn run_turn(
                     name: tool_call.name.clone(),
                     detail: safe_tool_action_detail(&tool_call),
                 });
-                let (tool_display, tool_payload) = match execute_native_tool(
-                    runtime, &tool_call, max_tier,
+                let (tool_display, tool_payload) = match execute_native_tool_for_turn(
+                    runtime, &tool_call, max_tier, Some(checkpoint_id), cancel_flag,
                 ) {
                     Ok(result) => {
+                        tool_failed = native_tool_result_failed(&tool_call.name, &result.1);
                         record_operation_completed(&conn, &operation_id, &result.0)?;
                         in_flight_operations.retain(|id| id != &operation_id);
                         result
+                    }
+                    Err(error @ OperatorError::ToolOutcomeUnknown(_)) => {
+                        record_operation_unknown(&conn, &operation_id, "tool outcome unknown; operator review required")?;
+                        in_flight_operations.retain(|id| id != &operation_id);
+                        return Err(error);
+                    }
+                    Err(_error) if !read_only => {
+                        record_operation_unknown(&conn, &operation_id, "tool returned an error after dispatch; side effects cannot be ruled out")?;
+                        in_flight_operations.retain(|id| id != &operation_id);
+                        return Err(OperatorError::ToolOutcomeUnknown(format!(
+                            "{} returned an error after dispatch; operator review required", tool_call.name
+                        )));
                     }
                     Err(error) => {
                         record_operation_failed(&conn, &operation_id, &error.to_string())?;
@@ -821,6 +976,18 @@ fn run_turn(
                     elapsed_ms: tool_started.elapsed().as_millis() as u64,
                 });
 
+                pending.push(MessageToPersist {
+                    role: "tool",
+                    content: tool_payload.clone(),
+                    display_content: tool_display,
+                    tool_call_id: Some(tool_call.id.clone()),
+                    tool_name: Some(tool_call.name.clone()),
+                    tool_calls_json: None,
+                    provider: None,
+                    model: None,
+                });
+                save_turn_checkpoint(conn, checkpoint_id, session_id, "running", pending)?;
+
                 if tool_failed && *errors > chat_max_errors() {
                     let trail = error_trail
                         .iter()
@@ -838,16 +1005,6 @@ fn run_turn(
                     )));
                 }
 
-                pending.push(MessageToPersist {
-                    role: "tool",
-                    content: tool_payload.clone(),
-                    display_content: tool_display,
-                    tool_call_id: Some(tool_call.id.clone()),
-                    tool_name: Some(tool_call.name.clone()),
-                    tool_calls_json: None,
-                    provider: None,
-                    model: None,
-                });
                 messages.push(ChatMessage::Tool {
                     tool_call_id: tool_call.id,
                     content: tool_payload,
@@ -2831,18 +2988,17 @@ mod tests {
         );
     }
 
-    /// The negative test above would also pass if self_modify rejected
-    /// everything. This one writes to a path the tool actually accepts --
-    /// the allowlist resolves ~ from $HOME, so the target has to live under
-    /// ~/memphis, not under the test tmpdir.
+    /// Ordinary native proposals are queued for the local operator; the tool
+    /// must not write the requested file or require a password from the model.
     #[test]
-    fn native_self_modify_still_writes_ordinary_content() {
+    fn native_self_modify_queues_ordinary_content_without_writing() {
         let root = temp_runtime_root("native-self-modify-allow");
-        let runtime = runtime_for(root.as_path());
+        let mut runtime = runtime_for(root.as_path());
         let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-        let target = std::path::Path::new(&home)
-            .join("memphis")
-            .join(".self-modify-scan-probe.md");
+        let workspace = std::path::Path::new(&home).join("memphis");
+        std::fs::create_dir_all(&workspace).expect("workspace");
+        runtime.config.runtime_root = workspace.clone();
+        let target = workspace.join("self-modify-scan-probe.md");
         let _ = std::fs::remove_file(&target);
 
         let call = ChatToolCall {
@@ -2855,9 +3011,15 @@ mod tests {
             }),
         };
 
-        let result = execute_native_tool(&runtime, &call, 2);
-        let _ = std::fs::remove_file(&target);
-        result.expect("ordinary content must be written");
+        let result = execute_native_tool(&runtime, &call, 2).expect("proposal must be queued");
+        assert!(result.1.contains("operator-review-required"));
+        assert!(!target.exists(), "native proposal must never write the file");
+        let db = rusqlite::Connection::open(&runtime.config.database_path).expect("request database");
+        let (payload, status): (String, String) = db.query_row(
+            "SELECT payload,status FROM evolve_requests", [], |row| Ok((row.get(0)?, row.get(1)?))
+        ).expect("queued request");
+        assert_eq!(status, "pending");
+        assert!(payload.contains("self-modify-scan-probe.md"));
     }
     /// The native code_read used to check only that the path sat under
     /// ~/memphis/ -- which is exactly where the operator's own `.env` and

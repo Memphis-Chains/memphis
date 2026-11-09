@@ -261,11 +261,7 @@ async function collectSloReporting(
   windowDays: number,
 ): Promise<{ metrics: { name: string; status: string }[]; verdictPassing: boolean }> {
   try {
-    // The SLO evaluator reads the process environment itself; `rawEnv` is
-    // accepted here only so the call site keeps one shape for every
-    // collector.
-    void rawEnv;
-    const report = await runMemphisSloStatus({ windowDays });
+    const report = await runMemphisSloStatus({ windowDays }, rawEnv);
     return {
       metrics: report.slos.map((metric) => ({ name: metric.name, status: metric.status })),
       verdictPassing: report.allSlosPassing,

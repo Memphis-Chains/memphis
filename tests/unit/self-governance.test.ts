@@ -4,6 +4,10 @@ import {
   buildSelfGovernanceSnapshot,
   type BuildSelfGovernanceSnapshotInput,
 } from '../../src/infra/runtime/self-governance.js';
+import { REQUIRED_SLOS } from '../../src/observability/slo-assessment.js';
+
+const passingSlos = () => REQUIRED_SLOS.map((name) => ({ name, description: name, threshold: 1,
+  thresholdUnit: 'ratio', thresholdDirection: 'below' as const, value: 0, status: 'pass' as const, samples: 20 }));
 
 function healthyInput(): BuildSelfGovernanceSnapshotInput {
   return {
@@ -104,12 +108,12 @@ function healthyInput(): BuildSelfGovernanceSnapshotInput {
       tasks: { total: 0, enabled: 0, overdue: 0 },
     },
     sloReport: {
-      windowDays: 7,
-      windowStart: '2026-06-09T12:00:00Z',
+      windowDays: 1,
+      windowStart: '2026-06-15T12:00:00Z',
       windowEnd: '2026-06-16T12:00:00Z',
       spanFilesScanned: 1,
       totalSamples: 10,
-      slos: [],
+      slos: passingSlos(),
     },
   };
 }
@@ -205,10 +209,10 @@ describe('self-governance snapshot', () => {
         },
       ],
     } as const;
-    const passingFresh = { ...input.sloReport!, slos: [] };
+    const passingFresh = { ...input.sloReport!, slos: passingSlos() };
     input.sloReport = undefined;
     input.sloReports = {
-      '1h': passingFresh,
+      '1h': { ...passingFresh, windowStart: '2026-06-16T11:00:00Z' },
       '24h': passingFresh,
       '7d': failing7d,
     };
@@ -224,7 +228,7 @@ describe('self-governance snapshot', () => {
 
   it('blocks capability on fresh 24h SLO failures', () => {
     const input = healthyInput();
-    const passingFresh = { ...input.sloReport!, slos: [] };
+    const passingFresh = { ...input.sloReport!, slos: passingSlos(), windowStart: '2026-06-16T11:00:00Z' };
     const failing24h = {
       ...input.sloReport!,
       windowDays: 1,

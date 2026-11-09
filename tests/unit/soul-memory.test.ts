@@ -1,7 +1,7 @@
 /**
  * Unit tests for soul memory read, write, deep merge, and empty detection.
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,8 +10,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   emptySoulMemory,
+  applySoulMemoryProposal,
   isSoulMemoryEmpty,
   loadSoulMemory,
+  rollbackSoulMemoryProposal,
   updateSoulMemory,
   writeSoulMemory,
 } from '../../src/soul/memory.js';
@@ -61,6 +63,49 @@ describe('soul memory', () => {
     const loaded = loadSoulMemory();
     expect(loaded).not.toBeNull();
     expect(loaded!.user.name).toBe('TestUser');
+  });
+
+  it('stages a proposal before the write and refuses rollback after another writer', () => {
+    writeSoulMemory(emptySoulMemory());
+    let before = ''; let after = ''; let completed = false;
+    applySoulMemoryProposal({ self: { learnings: ['fixture'] } }, {
+      stage: (a, b) => { before = a; after = b; }, complete: () => { completed = true; },
+    });
+    expect(completed).toBe(true);
+    expect(loadSoulMemory()?.self.learnings).toEqual(['fixture']);
+    const hash = createHash('sha256').update(after).digest('hex');
+    updateSoulMemory({ user: { preferences: ['later change'] } });
+    expect(() => rollbackSoulMemoryProposal(hash, before, { stage: () => {}, complete: () => {} }))
+      .toThrow(/changed since/);
+    expect(loadSoulMemory()?.user.preferences).toEqual(['later change']);
+  });
+
+  it('does not write when provenance staging fails and can roll back an unchanged state', () => {
+    const original = emptySoulMemory();
+    writeSoulMemory(original);
+    expect(() => applySoulMemoryProposal({ self: { learnings: ['fixture'] } }, {
+      stage: () => { throw new Error('journal unavailable'); }, complete: () => {},
+    })).toThrow(/journal unavailable/);
+    expect(loadSoulMemory()?.self.learnings).toEqual([]);
+    let before = ''; let after = ''; let rolledBack = false;
+    applySoulMemoryProposal({ self: { learnings: ['fixture'] } }, {
+      stage: (a, b) => { before = a; after = b; }, complete: () => {},
+    });
+    rollbackSoulMemoryProposal(createHash('sha256').update(after).digest('hex'), before, {
+      stage: () => {}, complete: () => { rolledBack = true; },
+    });
+    expect(rolledBack).toBe(true);
+    expect(loadSoulMemory()?.self.learnings).toEqual([]);
+  });
+
+  it('leaves the staged evidence visible when finalizing fails after the memory write', () => {
+    writeSoulMemory(emptySoulMemory());
+    let staged = false;
+    expect(() => applySoulMemoryProposal({ self: { learnings: ['fixture'] } }, {
+      stage: () => { staged = true; }, complete: () => { throw new Error('finalization failed'); },
+    })).toThrow(/finalization failed/);
+    expect(staged).toBe(true);
+    expect(loadSoulMemory()?.self.learnings).toEqual(['fixture']);
   });
 
   it('isSoulMemoryEmpty returns true for fresh memory', () => {
