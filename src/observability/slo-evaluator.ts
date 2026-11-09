@@ -40,7 +40,7 @@ export interface RecentActivityEntry {
   /** When the span happened. */
   ts: string;
   /** How it ended. */
-  status: 'ok' | 'error';
+  status: 'ok' | 'error' | 'unknown';
 }
 
 export interface RecentActivity {
@@ -66,6 +66,14 @@ export interface SloReport {
    * the last 24h of evidence and says so here.
    */
   sampleWindowStart: string;
+  /** Supplemental stream observations; these do not relax the SLO gate. */
+  streamDiagnostics?: {
+    samples: number;
+    firstByteAfterHeadersSamples: number;
+    p99FirstByteAfterHeadersMs: number | null;
+    idleBeforeErrorSamples: number;
+    maxIdleBeforeErrorMs: number | null;
+  };
   /** Recency bound applied to samples, in ms. 0 = unbounded. */
   maxAgeMs: number;
   /** Spans inside the evaluated population (window ∩ recency bound). */
@@ -173,6 +181,7 @@ function insufficientSamples(
 function readSpansInWindow(
   rawEnv: NodeJS.ProcessEnv,
   windowStart: Date,
+  windowEnd: Date,
 ): { spans: SpanRecord[]; filesScanned: number } {
   const dir = join(getDataDir(rawEnv), 'telemetry');
   if (!existsSync(dir)) return { spans: [], filesScanned: 0 };
@@ -210,7 +219,7 @@ function readSpansInWindow(
       }
       if (typeof parsed.ts !== 'string') continue;
       const tsMs = Date.parse(parsed.ts);
-      if (Number.isNaN(tsMs) || tsMs < startMs) continue;
+      if (Number.isNaN(tsMs) || tsMs < startMs || tsMs > windowEnd.getTime()) continue;
       spans.push(parsed);
     }
   }
@@ -232,7 +241,10 @@ function readRecentActivity(spans: SpanRecord[]): RecentActivity {
       if (!best || Date.parse(span.ts) >= Date.parse(best.ts)) best = span;
     }
     if (!best) return null;
-    return { ts: best.ts, status: best.status === 'error' ? 'error' : 'ok' };
+    const shape = name === 'tool.call' ? best.attrs?.['tool.output.shape'] : undefined;
+    const status = best.status === 'error' || shape === 'error' ? 'error'
+      : shape === 'inconclusive' || shape === 'unknown' ? 'unknown' : 'ok';
+    return { ts: best.ts, status };
   };
   return {
     turn: latest('turn.dispatch'),
@@ -357,11 +369,16 @@ function computeProviderErrorRate(spans: SpanRecord[], minSamples: number): SloR
 
 function computeToolErrorRate(spans: SpanRecord[], minSamples: number): SloResult {
   const toolSpans = spans.filter((s) => s.name === 'tool.call');
-  const errorSpans = toolSpans.filter(
+  // An inconclusive result is not evidence of success. Keep explicit
+  // transport errors, but exclude unknown outcomes from the denominator.
+  const classified = toolSpans.filter((s) => s.status === 'error' ||
+    (s.attrs?.['tool.output.shape'] !== 'inconclusive' && s.attrs?.['tool.output.shape'] !== 'unknown'));
+  const excluded = toolSpans.length - classified.length;
+  const errorSpans = classified.filter(
     (s) => s.status === 'error' || s.attrs?.['tool.output.shape'] === 'error',
   );
   const threshold = 0.05; // 5%
-  if (toolSpans.length === 0) {
+  if (classified.length === 0) {
     return {
       name: 'tool_error_rate',
       description: 'Ratio of tool.call spans with status=error',
@@ -371,11 +388,11 @@ function computeToolErrorRate(spans: SpanRecord[], minSamples: number): SloResul
       value: null,
       status: 'unavailable',
       samples: 0,
-      reason: 'no tool.call spans in window',
+      reason: excluded ? `${excluded} tool outcome(s) inconclusive or unknown` : 'no tool.call spans in window',
     };
   }
-  const rate = errorSpans.length / toolSpans.length;
-  const insufficient = insufficientSamples(toolSpans.length, minSamples);
+  const rate = errorSpans.length / classified.length;
+  const insufficient = insufficientSamples(classified.length, minSamples);
   return {
     name: 'tool_error_rate',
     description: 'Ratio of tool.call spans with status=error',
@@ -384,8 +401,8 @@ function computeToolErrorRate(spans: SpanRecord[], minSamples: number): SloResul
     thresholdDirection: 'below',
     value: rate,
     status: insufficient?.status ?? (rate <= threshold ? 'pass' : 'fail'),
-    samples: toolSpans.length,
-    reason: insufficient?.reason,
+    samples: classified.length,
+    reason: [insufficient?.reason, excluded ? `${excluded} tool outcome(s) inconclusive or unknown` : undefined].filter(Boolean).join('; ') || undefined,
   };
 }
 
@@ -438,9 +455,17 @@ export function evaluateSlos(options: EvaluateSlosOptions = {}): SloReport {
       : windowStart.getTime();
   const sampleWindowStart = new Date(sampleWindowStartMs);
 
-  const { spans, filesScanned } = readSpansInWindow(rawEnv, windowStart);
+  const { spans, filesScanned } = readSpansInWindow(rawEnv, windowStart, now);
   const sinkStatus = readSinkStatusEntries(getDataDir(rawEnv));
   const evaluated = spans.filter((span) => Date.parse(span.ts) >= sampleWindowStartMs);
+  const providerSpans = evaluated.filter((span) => span.name === 'provider.completion');
+  const numericAttr = (name: string): number[] => providerSpans
+    .map((span) => span.attrs?.[name])
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0);
+  const firstBytes = numericAttr('stream.first_byte_after_headers_ms');
+  const errorIdle = providerSpans.filter((span) => span.status === 'error')
+    .map((span) => span.attrs?.['stream.idle_before_error_ms'])
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0);
   const slos: SloResult[] = [
     computeP99TurnLatency(evaluated, minSamples, rawEnv),
     computeConfabulationRate(evaluated, minSamples),
@@ -488,6 +513,13 @@ export function evaluateSlos(options: EvaluateSlosOptions = {}): SloReport {
     windowStart: windowStart.toISOString(),
     windowEnd: now.toISOString(),
     sampleWindowStart: sampleWindowStart.toISOString(),
+    streamDiagnostics: {
+      samples: providerSpans.filter((span) => typeof span.attrs?.['stream.bytes'] === 'number').length,
+      firstByteAfterHeadersSamples: firstBytes.length,
+      p99FirstByteAfterHeadersMs: percentile(firstBytes, 99),
+      idleBeforeErrorSamples: errorIdle.length,
+      maxIdleBeforeErrorMs: errorIdle.length > 0 ? errorIdle.reduce((max, value) => Math.max(max, value), 0) : null,
+    },
     maxAgeMs,
     evaluatedSamples: evaluated.length,
     spanFilesScanned: filesScanned,

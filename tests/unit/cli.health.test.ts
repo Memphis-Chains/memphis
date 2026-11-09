@@ -139,4 +139,14 @@ describe('CLI health', () => {
       'tool_error_rate',
     ]);
   });
+
+  it('prints unavailable rather than passing for an empty telemetry store', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'memphis-cli-empty-slo-'));
+    const text = await runCli(['slo', 'status', '--days', '1'], {
+      env: { MEMPHIS_DATA_DIR: dataDir, MEMPHIS_ENV_FILE: join(dataDir, 'missing-env') },
+    });
+    expect(text).toContain('SLO status: unavailable');
+    expect(text).toContain('unavailable: p99_turn_latency_ms');
+    expect(text).not.toContain('SLO status: passing');
+  });
 });

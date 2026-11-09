@@ -8,6 +8,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runMemphisSelfModify } from '../../src/mcp/tools/self-modify.js';
 import type { SoulManifest } from '../../src/soul/types.js';
 
+vi.mock('../../src/mcp/tools/self-governance-status.js', () => ({ runMemphisSelfGovernanceStatus: vi.fn().mockResolvedValue({ canSelfModify: true, blockingReasons: [] }) }));
+vi.mock('../../src/infra/auth/operator-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/infra/auth/operator-gate.js')>()),
+  validateOperatorPassphrase: (value: string) => value === 'synthetic-operator',
+}));
+
 // Mock all heavy dependencies so we only test the passphrase gate logic
 vi.mock('../../src/soul/manifest.js', () => {
   let mockManifest: SoulManifest | null = null;
@@ -95,10 +101,28 @@ describe('self-modify passphrase gate', () => {
     vi.clearAllMocks();
   });
 
-  it('allows self-modify when requirePassphraseForTier2 is false', async () => {
-    manifestMock.__setMockManifest(makeManifest({ requirePassphraseForTier2: false }));
+  it('requires the operator password when operator mode is explicitly selected', async () => {
+    manifestMock.__setMockManifest(makeManifest({ tier2AuthMode: 'operator' }));
+    const missing = await runMemphisSelfModify(baseInput, fakeDeps);
+    const wrong = await runMemphisSelfModify({ ...baseInput, passphrase: 'wrong' }, fakeDeps);
+    const correct = await runMemphisSelfModify({ ...baseInput, passphrase: 'synthetic-operator' }, fakeDeps);
+    expect(missing.rollbackReason).toContain('Passphrase required');
+    expect(wrong.rollbackReason).toContain('operator authentication failed');
+    expect(correct.rollbackReason ?? '').not.toMatch(/Passphrase required|operator authentication failed/);
+  });
+
+  it('requires a passphrase even when the manifest disables the general Tier 2 gate', async () => {
+    manifestMock.__setMockManifest(makeManifest({ requirePassphraseForTier2: false, passphraseHash: PASSPHRASE_HASH }));
     const result = await runMemphisSelfModify(baseInput, fakeDeps);
-    expect(result.status).not.toBe('error');
+    expect(result.rollbackReason).toContain('Passphrase required');
+  });
+
+  it('requires a passphrase in full autonomy mode', async () => {
+    const manifest = makeManifest({ requirePassphraseForTier2: true, passphraseHash: PASSPHRASE_HASH });
+    manifest.mode = 'full';
+    manifestMock.__setMockManifest(manifest);
+    const result = await runMemphisSelfModify(baseInput, fakeDeps);
+    expect(result.rollbackReason).toContain('Passphrase required');
   });
 
   it('rejects when passphrase required but no passphraseHash configured', async () => {
@@ -116,14 +140,7 @@ describe('self-modify passphrase gate', () => {
     const result = await runMemphisSelfModify(baseInput, fakeDeps);
     expect(result.success).toBe(false);
     expect(result.status).toBe('error');
-    // Production emits either "Passphrase required for self-modification"
-    // (when tier-2 passphrase setup is missing on the operator's host)
-    // or "Passphrase rejected" (when a passphrase is supplied but fails
-    // the manifest hash check). The behavioural contract is "non-success
-    // + passphrase-related error"; the specific user-facing message is
-    // operator-context-dependent. Assert on the category, not the exact
-    // string, so the test stays portable across env states.
-    expect(result.rollbackReason).toMatch(/passphrase (rejected|required)/i);
+    expect(result.rollbackReason).toContain('Passphrase required');
   });
 
   it('rejects when passphrase is wrong', async () => {

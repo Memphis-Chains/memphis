@@ -1,7 +1,10 @@
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { loadCognitiveConfig } from '../../cognitive/config-loader.js';
+import { appendProposal, readProposals } from '../../cognitive/dreaming/proposal-chain.js';
+import { createProposal } from '../../cognitive/dreaming/proposal-lifecycle.js';
 import { InsightGenerator } from '../../cognitive/insight-generator.js';
 import { ModelE_MetaCognitiveReflection } from '../../cognitive/model-e.js';
 import { loadCognitiveBlocks } from '../../cognitive/runtime-support.js';
@@ -10,7 +13,8 @@ import type { Reflection } from '../../cognitive/types.js';
 import { LOG_LEVEL } from '../../config/env-registry.js';
 import { getDataDir } from '../../config/paths.js';
 import type { Block } from '../../memory/chain.js';
-import { updateSoulMemory, writeMemoryActionPersisted } from '../../soul/memory.js';
+import { scanContent } from '../../security/content-scan.js';
+import { writeMemoryActionPersisted } from '../../soul/memory.js';
 import { createPinoLogger } from '../logging/pino.js';
 
 export const DEFAULT_REFLECTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -171,8 +175,7 @@ export async function runReflectionCycle(
   }
 
   const recentDecisions = collectRecentDecisions(blocks);
-  updateSoulMemory(
-    {
+  const patch = {
       self: {
         learnings: collectReflectionLearnings(reflections),
         evolvedCapabilities: dedupeText([
@@ -183,9 +186,38 @@ export async function runReflectionCycle(
       context: {
         recentDecisions,
       },
-    },
-    rawEnv,
-  );
+    };
+  // Reflection is an untrusted proposal, not authority to change the
+  // operator's durable identity. Reference actual source blocks without
+  // copying their contents into the proposal evidence.
+  const sources = blocks.filter((block) =>
+    typeof block.hash === 'string' && /^[0-9a-f]{64}$/i.test(block.hash) &&
+    typeof block.chain === 'string' && typeof block.index === 'number',
+  ).slice(0, 20);
+  if (sources.length > 0 && scanContent(JSON.stringify(patch), 'memory').allowed) {
+    const sourceHashes = sources.map((block) => block.hash as string);
+    const id = `reflection:${createHash('sha256').update(JSON.stringify({ patch, sourceHashes })).digest('hex')}`;
+    const existing = await readProposals(rawEnv);
+    if (!existing.some((proposal) => proposal.id === id)) {
+      await appendProposal(createProposal({
+        id,
+        kind: 'memory.update',
+        target: { scope: 'soul-memory' },
+        patch,
+        evidence: sources.map((block) => ({
+          sessionId: `chain:${block.chain}`,
+          sequence: block.index as number,
+          quote: `source block ${block.hash}`,
+        })),
+        prevalence: { occurrences: 1, sessions: 1, spanDays: 1, denominator: blocks.length },
+        confidence: 0,
+        rationale: 'Uncalibrated reflection for operator review; source blocks are references, not proof of each claim.',
+        proposer: 'agent',
+        basedOn: { sessionIds: [], chainBlockHashes: sourceHashes },
+        nowIso: now.toISOString(),
+      }), rawEnv);
+    }
+  }
 
   await writeMemoryActionPersisted(
     'insight',
@@ -200,7 +232,7 @@ export async function runReflectionCycle(
     reflectionCount: reflections.length,
     insightCount,
     recentDecisionCount: recentDecisions.length,
-    soulMemoryUpdated: true,
+    soulMemoryUpdated: false,
     skipped: false,
   };
 }

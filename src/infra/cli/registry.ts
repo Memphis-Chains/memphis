@@ -30,6 +30,11 @@ function createCommandRegistration(
 
 export const CLI_COMMAND_REGISTRY = [
   createCommandRegistration(
+    'budget',
+    ['budget'],
+    createLazyHandlerLoader(() => import('./handlers/budget.handler.js'), 'budgetCommandHandler'),
+  ),
+  createCommandRegistration(
     'auth',
     ['auth'],
     createLazyHandlerLoader(() => import('./handlers/auth.handler.js'), 'authCommandHandler'),
@@ -297,6 +302,11 @@ export const CLI_COMMAND_REGISTRY = [
     createLazyHandlerLoader(() => import('./handlers/dream.handler.js'), 'dreamCommandHandler'),
   ),
   createCommandRegistration(
+    'recovery',
+    ['recovery'],
+    createLazyHandlerLoader(() => import('./handlers/recovery.handler.js'), 'recoveryCommandHandler'),
+  ),
+  createCommandRegistration(
     'audit-runtime',
     ['audit-runtime'],
     createLazyHandlerLoader(
@@ -332,6 +342,7 @@ export const CLI_COMPLETION_COMMANDS = [
   'suggest',
   'knowledge',
   'dream',
+  'recovery',
   'audit-runtime',
   'serve',
   'service',
@@ -404,6 +415,13 @@ export const CLI_COMPLETION_COMMANDS = [
   // `memphis stop`. Mirrors registry-consistency test expectation.
   'demo',
   'stop',
+  // `budget` (2026-11-08, supervised recovery refactor): the provider
+  // budget ledger is a routed command with a handler, so it belongs in the
+  // completion list. It was registered without being added here, and the
+  // registry-consistency test caught it — the same drift class the test
+  // was written for (a routed command that the dispatcher reaches but
+  // completion does not offer).
+  'budget',
 ] as const;
 
 /**

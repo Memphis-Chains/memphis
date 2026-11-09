@@ -1,11 +1,45 @@
 import type { CommandHandler } from './command-handler.js';
 import { getToolNames } from '../../../gateway/tool-registry.js';
-import { ensureSoulManifest, writeSoulManifest } from '../../../soul/manifest.js';
+import { ensureSoulManifest, loadSoulManifest, writeSoulManifest } from '../../../soul/manifest.js';
 import type { AutonomyMode, TrustRule } from '../../../soul/types.js';
-import { requireOperatorAuth } from '../../auth/operator-gate.js';
+import { requireOperatorAuth, validateOperatorPassphrase } from '../../auth/operator-gate.js';
+import { validateTier2Passphrase } from '../../auth/tier2-auth.js';
 import type { CliContext } from '../context.js';
+import { promptOperatorPassphrase } from './recovery.handler.js';
 
 const VALID_MODES: AutonomyMode[] = ['full', 'quiet', 'balanced', 'paranoid'];
+
+async function handleTier2Mode(context: CliContext): Promise<boolean> {
+  const mode = context.args.target;
+  if (mode !== 'operator' && mode !== 'separate') throw new Error('Usage: memphis trust tier2 <operator|separate>');
+  const operator = await promptOperatorPassphrase('Operator passphrase: ');
+  if (!validateOperatorPassphrase(operator)) throw new Error('operator authentication failed');
+  // Load without the transient autonomy override: writing it back would otherwise
+  // persist a temporary Tier 3 elevation as the configured trust mode.
+  const rawEnv = { ...process.env, MEMPHIS_AUTONOMY_MODE: undefined };
+  const before = loadSoulManifest(rawEnv);
+  if (!before) throw new Error('valid soul manifest is required');
+  const current = before.evolution.tier2AuthMode ?? 'separate';
+  if (mode === current) { console.log(`Tier 2 authentication already uses ${mode}.`); return true; }
+  const oldHash = before.evolution.passphraseHash;
+  if (mode === 'separate' && (!oldHash || !/^[a-f0-9]{64}$/i.test(oldHash))) {
+    throw new Error('separate Tier 2 passphrase is not configured');
+  }
+  // Preserve an existing independent credential: replacing it requires both
+  // the operator and that credential, not just an operator session.
+  if (current === 'separate' && oldHash) {
+    const tier2 = await promptOperatorPassphrase('Current Tier 2 passphrase: ');
+    if (validateTier2Passphrase(tier2, before, rawEnv) !== 'ok') throw new Error('Tier 2 authentication failed');
+  }
+  const latest = loadSoulManifest(rawEnv);
+  if (!latest || (latest.evolution.tier2AuthMode ?? 'separate') !== current || latest.evolution.passphraseHash !== oldHash) {
+    throw new Error('Tier 2 configuration changed during authentication; retry');
+  }
+  latest.evolution.tier2AuthMode = mode;
+  writeSoulManifest(latest, rawEnv);
+  console.log(`Tier 2 authentication now uses ${mode}.`);
+  return true;
+}
 
 async function handleTrustList(context: CliContext): Promise<boolean> {
   const manifest = ensureSoulManifest();
@@ -173,9 +207,12 @@ async function handleTrustCommand(context: CliContext): Promise<boolean> {
   if (sub === 'mode') {
     return handleTrustMode(context);
   }
+  if (sub === 'tier2') {
+    return handleTier2Mode(context);
+  }
 
   console.error(`Unknown trust subcommand: ${sub}`);
-  console.error('Usage: memphis trust <list|add|remove|mode> [options]');
+  console.error('Usage: memphis trust <list|add|remove|mode|tier2> [options]');
   return true;
 }
 

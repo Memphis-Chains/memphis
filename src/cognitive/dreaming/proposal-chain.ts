@@ -33,9 +33,10 @@
 
 import { join } from 'node:path';
 
+import { openDreamApprovalDatabase, proposalApprovalDigest, verifyDreamApproval } from './operator-approval.js';
 import { transitionProposal, type Proposal, type ProposalStatus } from './proposal-lifecycle.js';
-import { getReadableChainPaths } from '../../config/paths.js';
-import { appendBlock, type AppendBlockResult } from '../../infra/storage/chain-adapter.js';
+import { getChainPath, getDataDir, getReadableChainPaths } from '../../config/paths.js';
+import { appendBlock, appendBlockConditional, type AppendBlockResult } from '../../infra/storage/chain-adapter.js';
 import { listBlockFiles, readBlockFile } from '../../infra/storage/chain-file-io.js';
 
 export const PROPOSALS_CHAIN = 'proposals';
@@ -130,14 +131,32 @@ export async function appendProposal(
 ): Promise<AppendBlockResult> {
   return appendBlock(
     PROPOSALS_CHAIN,
-    {
-      type: PROPOSAL_BLOCK_TYPE,
-      kind: PROPOSAL_BLOCK_KIND,
-      content: JSON.stringify(proposal),
-      tags: ['dreaming', 'proposal'],
-    },
+    proposalBlockData(proposal),
     rawEnv,
   );
+}
+
+export function proposalBlockData(proposal: Proposal): Record<string, unknown> {
+  return { type: PROPOSAL_BLOCK_TYPE, kind: PROPOSAL_BLOCK_KIND,
+    content: JSON.stringify(proposal), tags: ['dreaming', 'proposal'] };
+}
+
+/** Accept only the current signed proposal; decide and append under the chain lock. */
+export async function appendSignedAcceptance(proposal: Proposal, rawEnv: NodeJS.ProcessEnv = process.env): Promise<void> {
+  const env = { ...rawEnv };
+  if (getDataDir(env) !== getDataDir(process.env) || getChainPath(PROPOSALS_CHAIN, env) !== getChainPath(PROPOSALS_CHAIN, process.env))
+    throw new Error('approval and proposal paths must match the active runtime');
+  const digest = proposalApprovalDigest(proposal);
+  await appendBlockConditional(PROPOSALS_CHAIN, async () => {
+    const current = (await readProposals(env)).find((candidate) => candidate.id === proposal.id);
+    if (!current || proposalApprovalDigest(current) !== digest || !['pending', 'accepted'].includes(current.status))
+      throw new Error('proposal changed before acceptance was recorded; inspect it again');
+    const db = openDreamApprovalDatabase(env);
+    try { if (!verifyDreamApproval(db, current)) throw new Error('no valid operator signature for this proposal'); }
+    finally { db.close(); }
+    return { data: current.status === 'pending' ? proposalBlockData(transitionProposal(current, 'accepted')) : undefined,
+      value: undefined };
+  }, env);
 }
 
 /**

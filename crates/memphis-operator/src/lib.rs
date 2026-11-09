@@ -19,6 +19,8 @@ mod config;
 mod context;
 mod openai_codex;
 mod provider;
+mod provider_breaker;
+mod provider_budget;
 mod runtime;
 mod telemetry;
 mod text_truncation;
@@ -29,7 +31,7 @@ pub use chat_basal_prompt::BasalPromptClassification;
 pub use config::OperatorConfig;
 pub use provider::{
     normalize_minimax_reasoning_effort, ChatMessage, ChatRequestOptions, ChatStreamEvent,
-    ChatToolCall, ChatToolDefinition, ModelCapabilitySummary, ProviderStatus, TokenUsageSummary,
+    ChatToolCall, ChatToolDefinition, ModelCapabilitySummary, ProviderStatus, StreamReadStats, TokenUsageSummary,
     MINIMAX_DEFAULT_REASONING_EFFORT, MINIMAX_REASONING_EFFORT_LEVELS,
 };
 pub use runtime::{

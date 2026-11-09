@@ -7,6 +7,7 @@ import {
   buildSessionMemoryFragment,
   buildSystemPrompt,
 } from '../../src/gateway/system-prompt.js';
+import { TOOL_REGISTRY } from '../../src/gateway/tool-registry.js';
 
 describe('gateway system prompt', () => {
   it('uses configured agent and owner names when provided', () => {
@@ -658,8 +659,19 @@ describe('gateway system prompt', () => {
     // Should surface the registry description (or richer helpText after
     // Sprint E Phase 2) verbatim so operators reading the prompt see
     // authoritative metadata rather than hallucinations.
+    //
+    // The expected text is read from the registry rather than written out
+    // here. This assertion used to name a literal phrase
+    // ("supervised self-modification surface") that the 2026-11-08
+    // supervised-recovery refactor replaced with a different helpText for
+    // `memphis_self_modify`. The prompt builder was correct the whole
+    // time; the test asserted a phrase that had stopped existing, and it
+    // failed on a CI runner for a reason no reader of the failure could
+    // see. Reading the registry keeps the assertion about the CONTRACT —
+    // "the prompt carries the registry's own text" — which is what the
+    // test is for, and it survives the next description change.
     expect(prompt).toContain('Run a git subcommand');
-    expect(prompt).toContain('supervised self-modification surface');
+    expect(prompt).toContain(TOOL_REGISTRY.memphis_self_modify.helpText);
   });
 
   it('does not auto-gen a second block for tools that already have hand-authored docs (G1)', () => {
