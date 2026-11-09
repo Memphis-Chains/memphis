@@ -48,8 +48,20 @@
 set -uo pipefail
 
 LOG="${MEMPHIS_GRABBER_LOG:-/home/memphis/.memphis/logs/grabber-feed-daily.log}"
-PROBE=/home/memphis/memphis/scripts/usb-grabber-test.py
-DEVICES=/home/memphis/memphis/scripts/grabber_devices.py
+
+# The repo root is derived from this script's own location, not hardcoded.
+# The script lives in <repo>/crons/, so the parent of its directory is the
+# root — and the helper sits next to it in <repo>/scripts/.
+#
+# Measured 2026-11-09: the absolute path /home/memphis/memphis/scripts/...
+# works on the operator's host and nowhere else. The contract suite runs
+# the script from a checkout under /home/runner/work/..., where that path
+# does not exist, so the discovery step failed with exit 2 and the audit
+# reported BROKEN instead of a verdict. A hardcoded home directory is an
+# assumption about where the machine lives, not about where the code is.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROBE="$REPO_ROOT/scripts/usb-grabber-test.py"
+DEVICES="$REPO_ROOT/scripts/grabber_devices.py"
 mkdir -p "$(dirname "$LOG")"
 
 # Which devices this host actually has. A missing key means the device is
