@@ -2,7 +2,7 @@
  * The local OS account is still the trust boundary: an unrestricted process
  * with its permissions can replace this database or its public key. */
 import { createCipheriv, createDecipheriv, createHash, createPrivateKey, createPublicKey,
-  generateKeyPairSync, randomBytes, scryptSync, sign, timingSafeEqual, verify } from 'node:crypto';
+  generateKeyPairSync, randomBytes, scryptSync, sign, verify } from 'node:crypto';
 import { closeSync, lstatSync, mkdirSync, openSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { assertValidProposal, type Proposal } from './proposal-lifecycle.js';
 import { getDataDir } from '../../config/paths.js';
 import { validateOperatorPassphrase } from '../../infra/auth/operator-gate.js';
+import { usesOperatorForTier2, validateTier2Passphrase } from '../../infra/auth/tier2-auth.js';
 import { canonicalize } from '../../kartograf/checkpoint.js';
 import { scanContent } from '../../security/content-scan.js';
 import { loadSoulManifest } from '../../soul/manifest.js';
@@ -78,11 +79,10 @@ export function validateDreamOperator(operatorPassphrase: string, tier2Passphras
   if (!operatorPassphrase || !validateOperatorPassphrase(operatorPassphrase)) throw new Error('operator authentication failed');
   const manifest = loadSoulManifest();
   if (!manifest) throw new Error('valid soul manifest is required for Tier 2');
-  if (manifest.evolution.requirePassphraseForTier2) {
-    const expected = manifest.evolution.passphraseHash;
-    if (!expected || !/^[a-f0-9]{64}$/i.test(expected)) throw new Error('Tier 2 passphrase is not configured');
-    const actual = createHash('sha256').update(tier2Passphrase).digest();
-    if (!timingSafeEqual(actual, Buffer.from(expected, 'hex'))) throw new Error('Tier 2 authentication failed');
+  if (manifest.evolution.requirePassphraseForTier2 || usesOperatorForTier2(manifest)) {
+    const result = validateTier2Passphrase(tier2Passphrase, manifest);
+    if (result === 'missing') throw new Error('Tier 2 passphrase is not configured');
+    if (result !== 'ok') throw new Error('Tier 2 authentication failed');
   }
 }
 

@@ -5,13 +5,14 @@
  * worktree. The resulting commit requires a separate operator review.
  */
 
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import { realpathOrNearest } from './fs-permission.js';
 import { runMemphisSelfGovernanceStatus } from './self-governance-status.js';
 import { RollbackManager } from '../../backup/rollback.js';
+import { usesOperatorForTier2, validateTier2Passphrase } from '../../infra/auth/tier2-auth.js';
 import { isGitRepo } from '../../infra/git-utils.js';
 import { evolveGit } from '../../infra/runtime/evolve-review.js';
 import { createEvolveWorktree, commitEvolveWorktree } from '../../infra/runtime/evolve-worktree.js';
@@ -320,11 +321,11 @@ export async function runMemphisSelfModify(
   // of autonomy mode. Never source it from a standalone passphrase file.
   const manifest = loadSoulManifest(deps.rawEnv);
   {
-    const expected = manifest?.evolution?.passphraseHash;
-    if (!expected || !/^[a-f0-9]{64}$/i.test(expected)) {
+    const result = validateTier2Passphrase(input.passphrase, manifest, deps.rawEnv);
+    if (result === 'missing') {
       return planAwareErrorResult(
         'Passphrase gate enabled but no passphraseHash configured in soul manifest. ' +
-          'Set evolution.passphraseHash via memphis trust set-passphrase or memphis init.',
+          'Configure a separate Tier 2 verifier or explicitly select operator authentication.',
         planId,
         stepIdx,
         deps.rawEnv,
@@ -339,10 +340,9 @@ export async function runMemphisSelfModify(
         deps.rawEnv,
       );
     }
-    const inputHash = createHash('sha256').update(input.passphrase).digest();
-    if (!timingSafeEqual(inputHash, Buffer.from(expected, 'hex'))) {
+    if (result !== 'ok') {
       return planAwareErrorResult(
-        'Passphrase rejected — hash mismatch.',
+        usesOperatorForTier2(manifest) ? 'Passphrase rejected — operator authentication failed.' : 'Passphrase rejected — hash mismatch.',
         planId,
         stepIdx,
         deps.rawEnv,

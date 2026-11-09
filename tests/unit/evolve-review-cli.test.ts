@@ -5,14 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { evolveCommandHandler } from '../../src/infra/cli/handlers/evolve.handler.js';
 
 const mocks = vi.hoisted(() => ({ prompt: vi.fn(), operator: vi.fn(), governance: vi.fn(),
-  inspect: vi.fn(), merge: vi.fn(), reconcile: vi.fn() }));
+  inspect: vi.fn(), merge: vi.fn(), reconcile: vi.fn(), manifest: vi.fn() }));
 vi.mock('../../src/infra/cli/handlers/recovery.handler.js', () => ({ promptOperatorPassphrase: mocks.prompt }));
 vi.mock('../../src/infra/auth/operator-gate.js', () => ({ requireOperatorAuth: vi.fn(), validateOperatorPassphrase: mocks.operator }));
 vi.mock('../../src/infra/runtime/install-root.js', () => ({ resolveInstallRoot: () => '/tmp' }));
+vi.mock('../../src/config/paths.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/config/paths.js')>()),
+  getDataDir: () => '/tmp',
+}));
 vi.mock('../../src/infra/runtime/evolve-review.js', () => ({ inspectEvolveReview: mocks.inspect, mergeEvolveReview: mocks.merge, reconcileEvolveReview: mocks.reconcile }));
 vi.mock('../../src/mcp/tools/self-governance-status.js', () => ({ runMemphisSelfGovernanceStatus: mocks.governance }));
-vi.mock('../../src/soul/manifest.js', () => ({ loadSoulManifest: () => ({ evolution: {
-  passphraseHash: createHash('sha256').update('synthetic-tier2').digest('hex') } }) }));
+vi.mock('../../src/soul/manifest.js', () => ({ loadSoulManifest: mocks.manifest }));
 
 describe('evolution operator review CLI', () => {
   const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -26,6 +29,7 @@ describe('evolution operator review CLI', () => {
     vi.clearAllMocks();
     vi.spyOn(console, 'log').mockImplementation(() => {});
     mocks.inspect.mockResolvedValue('synthetic diff'); mocks.merge.mockResolvedValue(undefined);
+    mocks.manifest.mockReturnValue({ evolution: { passphraseHash: createHash('sha256').update('synthetic-tier2').digest('hex') } });
     mocks.operator.mockReturnValue(true); mocks.governance.mockResolvedValue({ canSelfModify: true, blockingReasons: [] });
   });
   afterEach(() => vi.restoreAllMocks());
@@ -48,5 +52,13 @@ describe('evolution operator review CLI', () => {
     mocks.governance.mockResolvedValue({ canSelfModify: false, blockingReasons: ['SLO unavailable'] });
     await expect(evolveCommandHandler.handle(context)).rejects.toThrow('SLO unavailable');
     expect(mocks.merge).not.toHaveBeenCalled();
+  });
+  it('uses one fresh operator prompt in explicit operator mode', async () => {
+    mocks.manifest.mockReturnValue({ evolution: { tier2AuthMode: 'operator' } });
+    mocks.operator.mockImplementation((value: string) => value === 'synthetic-operator');
+    mocks.prompt.mockResolvedValueOnce(commit).mockResolvedValueOnce('synthetic-operator');
+    await evolveCommandHandler.handle(context);
+    expect(mocks.prompt).toHaveBeenCalledTimes(2);
+    expect(mocks.merge).toHaveBeenCalledWith(store, id, '/tmp', commit);
   });
 });

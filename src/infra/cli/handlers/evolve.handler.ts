@@ -1,4 +1,3 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 
 import type { CommandHandler } from './command-handler.js';
@@ -10,6 +9,7 @@ import { runMemphisSelfModify } from '../../../mcp/tools/self-modify.js';
 import { advanceStep } from '../../../modules/self-coding/plan-store.js';
 import { loadSoulManifest } from '../../../soul/manifest.js';
 import { validateOperatorPassphrase , requireOperatorAuth } from '../../auth/operator-gate.js';
+import { usesOperatorForTier2, validateTier2Passphrase } from '../../auth/tier2-auth.js';
 import { evolveRequestDigest, validateEvolveRequest, type EvolveRequestPayload } from '../../runtime/evolve-request.js';
 import { inspectEvolveReview, mergeEvolveReview, reconcileEvolveReview } from '../../runtime/evolve-review.js';
 import { resolveInstallRoot } from '../../runtime/install-root.js';
@@ -20,10 +20,9 @@ import type { CliContext } from '../context.js';
 async function authenticateEvolution(): Promise<string> {
   const operator = await promptOperatorPassphrase('Operator passphrase: ');
   if (!validateOperatorPassphrase(operator)) throw new Error('operator authentication failed');
-  const tier2 = await promptOperatorPassphrase('Tier 2 passphrase: ');
-  const expected = loadSoulManifest()?.evolution.passphraseHash;
-  if (!expected || !/^[a-f0-9]{64}$/i.test(expected) ||
-      !timingSafeEqual(createHash('sha256').update(tier2).digest(), Buffer.from(expected, 'hex')))
+  const manifest = loadSoulManifest();
+  const tier2 = usesOperatorForTier2(manifest) ? operator : await promptOperatorPassphrase('Tier 2 passphrase: ');
+  if (validateTier2Passphrase(tier2, manifest) !== 'ok')
     throw new Error('Tier 2 authentication failed');
   return tier2;
 }

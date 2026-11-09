@@ -11,7 +11,7 @@ import { createProposal, transitionProposal } from '../../src/cognitive/dreaming
 import { applyDreamSoulProposal, dreamApplicationStatus, reconcileDreamSoulProposal, rollbackDreamSoulProposal } from '../../src/cognitive/dreaming/soul-proposal-application.js';
 import { hashWithSalt, saveOperatorConfig } from '../../src/infra/auth/operator-gate.js';
 import { appendBlockConditional } from '../../src/infra/storage/chain-adapter.js';
-import { generateSoulManifest, writeSoulManifest } from '../../src/soul/manifest.js';
+import { generateSoulManifest, loadSoulManifest, writeSoulManifest } from '../../src/soul/manifest.js';
 import { emptySoulMemory, loadSoulMemory, updateSoulMemory, writeSoulMemory } from '../../src/soul/memory.js';
 
 const OPERATOR = 'synthetic-operator-password';
@@ -44,6 +44,15 @@ describe('operator-approved soul proposals', () => {
     writeSoulMemory(emptySoulMemory());
   });
   afterEach(() => vi.unstubAllEnvs());
+
+  it('requires the operator credential for both checks in explicit operator mode', () => {
+    const manifest = loadSoulManifest()!;
+    manifest.evolution.tier2AuthMode = 'operator';
+    writeSoulManifest(manifest);
+    const p = proposal();
+    expect(() => approveDreamProposal(p, OPERATOR, 'wrong')).toThrow(/Tier 2/);
+    expect(() => approveDreamProposal(p, OPERATOR, OPERATOR)).not.toThrow();
+  }, 20_000);
 
   it('rejects forged approvals, wrong passwords, and altered material', async () => {
     const p = proposal();
