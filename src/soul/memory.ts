@@ -4,15 +4,21 @@
 // pattern. File-level disable per Sprint ι policy — accessor would
 // add registry weight without consumer benefit.
 //
+import { createHash } from 'node:crypto';
 import {
   appendFileSync,
+  closeSync,
   existsSync,
+  lstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
   renameSync,
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
+
+import Database from 'better-sqlite3';
 
 import {
   MEMORY_SCHEMA_VERSION,
@@ -111,6 +117,40 @@ export function loadSoulMemory(rawEnv: NodeJS.ProcessEnv = process.env): SoulMem
  */
 const SOUL_SNAPSHOT_RING_SIZE = 8;
 
+// Shared with the native Rust writer; SQLite releases the lock on process death.
+// Old directory-lock and new SQLite-lock writers require a coordinated restart.
+function withSoulMemoryLock<T>(rawEnv: NodeJS.ProcessEnv, run: () => T): T {
+  const memoryPath = getSoulMemoryPath(rawEnv);
+  mkdirSync(path.dirname(memoryPath), { recursive: true, mode: 0o700 });
+  const legacyLock = `${memoryPath}.lock`;
+  const rejectLegacy = () => {
+    try { lstatSync(legacyLock); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
+    throw new Error(`legacy soul-memory lock exists: ${legacyLock}; operator inspection required`);
+  };
+  rejectLegacy();
+  const lockPath = `${memoryPath}.lock.sqlite`;
+  try { closeSync(openSync(lockPath, 'wx', 0o600)); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+  }
+  const stat = lstatSync(lockPath);
+  if (!stat.isFile() || (process.platform !== 'win32' && (stat.mode & 0o077) !== 0)) {
+    throw new Error(`unsafe soul-memory lock file: ${lockPath}`);
+  }
+  const db = new Database(lockPath, { timeout: 5_000 });
+  let acquired = false;
+  try {
+    db.exec('BEGIN IMMEDIATE');
+    acquired = true;
+    rejectLegacy();
+    return run();
+  } finally {
+    try { if (acquired) db.exec('ROLLBACK'); } finally { db.close(); }
+  }
+}
+
 /**
  * Operator-curated fields that should NEVER silently transition
  * non-empty → empty during a write. If a write would clear any of
@@ -195,6 +235,10 @@ function rotateSnapshots(memoryPath: string): void {
 }
 
 export function writeSoulMemory(memory: SoulMemory, rawEnv: NodeJS.ProcessEnv = process.env): void {
+  withSoulMemoryLock(rawEnv, () => writeSoulMemoryUnlocked(memory, rawEnv));
+}
+
+function writeSoulMemoryUnlocked(memory: SoulMemory, rawEnv: NodeJS.ProcessEnv): void {
   const memoryPath = getSoulMemoryPath(rawEnv);
 
   // Snapshot the prior state into a rotating ring of 8 backups
@@ -287,6 +331,22 @@ export function updateSoulMemory(
   update: SoulMemoryUpdate,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): SoulMemory {
+  return withSoulMemoryLock(rawEnv, () => updateSoulMemoryUnlocked(update, rawEnv));
+}
+
+type SoulProposalHooks = {
+  stage: (beforeJson: string, afterJson: string) => void;
+  complete: () => void;
+};
+
+/** Stage provenance under the shared writer lock before mutating the file. */
+export function applySoulMemoryProposal(update: SoulMemoryUpdate, hooks: SoulProposalHooks,
+  rawEnv: NodeJS.ProcessEnv = process.env): SoulMemory {
+  return withSoulMemoryLock(rawEnv, () => updateSoulMemoryUnlocked(update, rawEnv, hooks));
+}
+
+function updateSoulMemoryUnlocked(update: SoulMemoryUpdate, rawEnv: NodeJS.ProcessEnv,
+  hooks?: SoulProposalHooks): SoulMemory {
   const memoryPath = getSoulMemoryPath(rawEnv);
   const loaded = loadSoulMemory(rawEnv);
 
@@ -304,7 +364,9 @@ export function updateSoulMemory(
     );
   }
 
+  if (hooks && !loaded) throw new Error('proposal application requires an existing, valid soul memory');
   const current = loaded ?? emptySoulMemory();
+  const beforeJson = hooks ? JSON.stringify(current) : '';
 
   if (update.user) {
     if (update.user.name !== undefined) current.user.name = update.user.name;
@@ -351,8 +413,35 @@ export function updateSoulMemory(
   }
 
   current.lastUpdated = new Date().toISOString();
-  writeSoulMemory(current, rawEnv);
+  hooks?.stage(beforeJson, JSON.stringify(current));
+  writeSoulMemoryUnlocked(current, rawEnv);
+  hooks?.complete();
   return current;
+}
+
+/** Refuse rollback if any other writer changed memory since the application. */
+export function rollbackSoulMemoryProposal(expectedAfterHash: string, beforeJson: string,
+  hooks: { stage: () => void; complete: () => void }, rawEnv: NodeJS.ProcessEnv = process.env): void {
+  withSoulMemoryLock(rawEnv, () => {
+    const current = loadSoulMemory(rawEnv);
+    if (!current) throw new Error('rollback requires existing valid soul memory');
+    const hash = createHash('sha256').update(JSON.stringify(current)).digest('hex');
+    if (hash !== expectedAfterHash) throw new Error('soul memory changed since application; rollback refused');
+    const before = soulMemorySchema.parse(JSON.parse(beforeJson));
+    hooks.stage();
+    writeSoulMemoryUnlocked(before, rawEnv);
+    hooks.complete();
+  });
+}
+
+/** Inspect under the same lock used by all supported Node and Rust writers. */
+export function inspectSoulMemoryAtomically<T>(inspect: (currentJson: string) => T,
+  rawEnv: NodeJS.ProcessEnv = process.env): T {
+  return withSoulMemoryLock(rawEnv, () => {
+    const current = loadSoulMemory(rawEnv);
+    if (!current) throw new Error('valid soul memory is required for reconciliation');
+    return inspect(JSON.stringify(current));
+  });
 }
 
 function dedupeAppend(existing: string[], additions: string[]): string[] {

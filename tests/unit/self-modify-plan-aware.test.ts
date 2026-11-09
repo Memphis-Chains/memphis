@@ -23,6 +23,8 @@ import {
   getPlan,
 } from '../../src/modules/self-coding/plan-store.js';
 
+vi.mock('../../src/mcp/tools/self-governance-status.js', () => ({ runMemphisSelfGovernanceStatus: vi.fn().mockResolvedValue({ canSelfModify: true, blockingReasons: [] }) }));
+
 vi.mock('../../src/soul/manifest.js', () => {
   return {
     ensureSoulManifest: vi.fn(),

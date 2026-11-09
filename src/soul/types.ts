@@ -38,6 +38,8 @@ export interface SoulEvolutionPolicy {
   autoApproveReflections: boolean;
   requirePassphraseForTier2: boolean;
   passphraseHash?: string;
+  /** Explicit opt-in. Absence preserves the legacy separate Tier 2 gate. */
+  tier2AuthMode?: 'operator' | 'separate';
   snapshotBeforeEvolution: boolean;
 }
 
@@ -148,6 +150,7 @@ export const soulManifestSchema = z.object({
     autoApproveReflections: z.boolean(),
     requirePassphraseForTier2: z.boolean(),
     passphraseHash: z.string().optional(),
+  tier2AuthMode: z.enum(['operator', 'separate']).optional(),
     snapshotBeforeEvolution: z.boolean(),
   }),
   mode: autonomyModeSchema.default('balanced'),

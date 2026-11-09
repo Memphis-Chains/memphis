@@ -25,6 +25,14 @@ pub enum OperatorError {
     Message(String),
     #[error("cancelled")]
     Cancelled,
+    #[error("tool outcome unknown: {0}")]
+    ToolOutcomeUnknown(String),
+    #[error("provider stream timeout: timed out reading response")]
+    ProviderStreamTimeout,
+    #[error("{message}")]
+    ProviderHttp { status: u16, message: String },
+    #[error("{message}")]
+    ProviderTransport { transient: bool, message: String },
     #[error("io: {0}")]
     Io(String),
     #[error("sqlite: {0}")]

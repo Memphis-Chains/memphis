@@ -78,10 +78,10 @@ export function registerTelegramOperationalCommands(
       '1. Use memphis_grep and memphis_code_read to understand the relevant code',
       '2. Plan the minimal changes needed',
       '3. Call memphis_self_modify with: intent, files (list of files to change), changes (file path → new content)',
-      '4. Report the result: committed, rolled-back, or error',
+      '4. Report the request ID and tell the operator to use a local terminal; never ask for a password in chat.',
       '',
-      'The self-modify tool will: create a snapshot, branch, apply changes, run tests, and merge only if tests pass.',
-      'If tests fail, changes are automatically rolled back.',
+      'The self-modify tool only queues a request. The operator reviews and starts preparation locally with memphis evolve prepare.',
+      'The operator reviews and approves the exact commit locally using memphis evolve review/approve.',
       '</evolve_directive>',
     ].join('\n');
 
