@@ -1650,9 +1650,10 @@ VAULT BOUNDARY:
   encrypt/decrypt; tampering with the file produces loud errors.
 
 SELF-MODIFY GUARDS:
-- memphis_self_modify creates a snapshot via RollbackManager and a new
-  git branch BEFORE the edit applies, then runs tests in the isolated
-  branch. Failed tests auto-revert.
+- memphis_self_modify queues a code-change request without a password. The
+  operator reviews and starts preparation in a local terminal; it creates a
+  snapshot and tests in a separate Git worktree. A prepared commit is not
+  merged or loaded until the operator reviews and approves it locally.
 - Boot-failure-counter in ~/.memphis/state/boot-failures.json increments
   on every \`memphis serve\` start (pre-import, in bin/memphis.js).
   Three failures in a row → auto-revert to the previous snapshot on the

@@ -4,6 +4,10 @@ import {
   buildSelfGovernanceSnapshot,
   type BuildSelfGovernanceSnapshotInput,
 } from '../../src/infra/runtime/self-governance.js';
+import { REQUIRED_SLOS } from '../../src/observability/slo-assessment.js';
+
+const passingSlos = () => REQUIRED_SLOS.map((name) => ({ name, description: name, threshold: 1,
+  thresholdUnit: 'ratio', thresholdDirection: 'below' as const, value: 0, status: 'pass' as const, samples: 20 }));
 
 function healthyInput(): BuildSelfGovernanceSnapshotInput {
   return {
@@ -33,7 +37,7 @@ function healthyInput(): BuildSelfGovernanceSnapshotInput {
     backups: { enabled: true, lastSuccessAt: '2026-06-16T11:00:00Z', isStale: false, totalSuccess: 1, totalFailures: 0 },
     backupArchives: { total: 1, latestFile: 'backup.tar.gz', latestCreatedAt: '2026-06-16T11:00:00Z' },
     scheduler: { configuredTarget: 'local', effectiveTarget: 'local', running: true, intervalMs: 30000, workerLaneReady: true, tasks: { total: 0, enabled: 0, overdue: 0 } },
-    sloReports: { '1h': { windowHours: 1, windowStart: '2026-06-16T11:00:00Z', windowEnd: '2026-06-16T12:00:00Z', spanFilesScanned: 1, totalSamples: 10, slos: [] }, '24h': { windowDays: 1, windowStart: '2026-06-15T12:00:00Z', windowEnd: '2026-06-16T12:00:00Z', spanFilesScanned: 1, totalSamples: 10, slos: [] }, '7d': { windowDays: 7, windowStart: '2026-06-09T12:00:00Z', windowEnd: '2026-06-16T12:00:00Z', spanFilesScanned: 1, totalSamples: 10, slos: [] } },
+    sloReports: { '1h': { windowHours: 1, windowStart: '2026-06-16T11:00:00Z', windowEnd: '2026-06-16T12:00:00Z', spanFilesScanned: 1, totalSamples: 10, slos: passingSlos() }, '24h': { windowDays: 1, windowStart: '2026-06-15T12:00:00Z', windowEnd: '2026-06-16T12:00:00Z', spanFilesScanned: 1, totalSamples: 10, slos: passingSlos() }, '7d': { windowDays: 7, windowStart: '2026-06-09T12:00:00Z', windowEnd: '2026-06-16T12:00:00Z', spanFilesScanned: 1, totalSamples: 10, slos: passingSlos() } } as never,
   };
 }
 
@@ -102,8 +106,8 @@ describe('self-governance canSelfModify (#can-self-modify-computed)', () => {
     const input = healthyInput();
     const failing7d = sampleSloFail(7) as never;
     const passingFresh = sampleSloFail(1);
-    (passingFresh as { slos: unknown[] }).slos = [];
-    input.sloReports = { '1h': passingFresh as never, '24h': passingFresh as never, '7d': failing7d as never };
+    (passingFresh as { slos: unknown[] }).slos = passingSlos();
+    input.sloReports = { '1h': { ...passingFresh, windowStart: '2026-06-16T11:00:00Z' } as never, '24h': passingFresh as never, '7d': failing7d as never };
     const s = buildSelfGovernanceSnapshot(input);
     expect(s.canSelfModify).toBe(true);
     expect(s.capable).toBe(true);
@@ -116,5 +120,44 @@ describe('self-governance canSelfModify (#can-self-modify-computed)', () => {
     const s = buildSelfGovernanceSnapshot(input);
     expect(s.canSelfModify).toBe(true);
     expect(s.canSelfRecover).toBe(true);
+  });
+
+  it('blocks modification on unavailable measurements while preserving recovery', () => {
+    const input = healthyInput();
+    input.sloReports!['24h'].slos[0].status = 'unavailable';
+    const s = buildSelfGovernanceSnapshot(input);
+    expect(s.canSelfModify).toBe(false);
+    expect(s.canSelfRecover).toBe(true);
+    expect(s.blockingReasons).toContain('SLO unavailable (24h): p99_turn_latency_ms');
+    expect(s.sloWindows?.['24h'].status).toBe('unavailable');
+  });
+
+  it('blocks missing, empty, stale, future and overlong evidence', () => {
+    const missing = healthyInput();
+    missing.sloReports = undefined;
+    expect(buildSelfGovernanceSnapshot(missing).blockingReasons).toContain('SLO report unavailable (default)');
+    const missingWindow = healthyInput();
+    delete missingWindow.sloReports!['1h'];
+    expect(buildSelfGovernanceSnapshot(missingWindow).blockingReasons).toContain('SLO report unavailable (1h)');
+    const empty = healthyInput();
+    empty.sloReports!['24h'].slos = [];
+    expect(buildSelfGovernanceSnapshot(empty).canSelfModify).toBe(false);
+    const duplicated = healthyInput();
+    duplicated.sloReports!['24h'].slos.push(duplicated.sloReports!['24h'].slos[0]);
+    expect(buildSelfGovernanceSnapshot(duplicated).blockingReasons).toContain('SLO unavailable (24h): p99_turn_latency_ms');
+    for (const [start, end] of [
+      ['2026-06-15T11:00:00Z', '2026-06-16T11:00:00Z'],
+      ['2026-06-15T12:00:02Z', '2026-06-16T12:00:02Z'],
+      ['2026-06-15T12:10:00Z', '2026-06-16T12:10:00Z'],
+      ['2026-06-14T12:00:00Z', '2026-06-16T12:00:00Z'],
+    ]) {
+      const input = healthyInput();
+      input.sloReports!['24h'].windowStart = start;
+      input.sloReports!['24h'].windowEnd = end;
+      const s = buildSelfGovernanceSnapshot(input);
+      expect(s.canSelfModify).toBe(false);
+      expect(s.blockingReasons).toContain('SLO report stale or invalid (24h)');
+      expect(s.sloWindows?.['24h'].status).toBe('unavailable');
+    }
   });
 });

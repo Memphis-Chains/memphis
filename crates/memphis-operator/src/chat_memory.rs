@@ -43,6 +43,99 @@ use crate::runtime::{MemoryQueryResult, OperatorRuntime, SearchMode};
 use crate::text_truncation::truncate_with_ellipsis;
 use crate::{JournalWriteResult, OperatorError};
 
+/// Shared with `src/soul/memory.ts`; SQLite releases a dead process's lock.
+/// Directory-lock and SQLite-lock writers require a coordinated restart.
+struct SoulMemoryLock(rusqlite::Connection);
+
+impl SoulMemoryLock {
+    fn acquire(path: &Path) -> Result<Self, OperatorError> {
+        let parent = path.parent().ok_or_else(|| OperatorError::Io("soul memory has no parent".into()))?;
+        fs::create_dir_all(parent).map_err(|error| OperatorError::Io(error.to_string()))?;
+        let mut legacy_name = path.as_os_str().to_os_string();
+        legacy_name.push(".lock");
+        let legacy_path = PathBuf::from(legacy_name);
+        let reject_legacy = || match fs::symlink_metadata(&legacy_path) {
+            Ok(_) => Err(OperatorError::Io(format!("legacy soul-memory lock exists: {}; operator inspection required", legacy_path.display()))),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(OperatorError::Io(error.to_string())),
+        };
+        reject_legacy()?;
+        let mut lock_name = path.as_os_str().to_os_string();
+        lock_name.push(".lock.sqlite");
+        let lock_path = PathBuf::from(lock_name);
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)] { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
+        match options.open(&lock_path) {
+            Ok(file) => drop(file),
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => (),
+            Err(error) => return Err(OperatorError::Io(error.to_string())),
+        }
+        let metadata = fs::symlink_metadata(&lock_path).map_err(|e| OperatorError::Io(e.to_string()))?;
+        if !metadata.is_file() { return Err(OperatorError::Io(format!("unsafe soul-memory lock file: {}", lock_path.display()))); }
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            if metadata.permissions().mode() & 0o077 != 0 { return Err(OperatorError::Io(format!("unsafe soul-memory lock file: {}", lock_path.display()))); }
+        }
+        let db = rusqlite::Connection::open(&lock_path).map_err(|e| OperatorError::Io(e.to_string()))?;
+        db.busy_timeout(std::time::Duration::from_secs(5)).map_err(|e| OperatorError::Io(e.to_string()))?;
+        db.execute_batch("BEGIN IMMEDIATE").map_err(|e| OperatorError::Io(e.to_string()))?;
+        reject_legacy()?;
+        Ok(Self(db))
+    }
+}
+
+impl Drop for SoulMemoryLock {
+    fn drop(&mut self) {
+        if let Err(error) = self.0.execute_batch("ROLLBACK") {
+            eprintln!("soul-memory lock release failed: {error}");
+        }
+    }
+}
+
+fn write_soul_memory_atomic(path: &Path, value: &Value) -> Result<(), OperatorError> {
+    let parent = path.parent().ok_or_else(|| OperatorError::Io("soul memory has no parent".into()))?;
+    let bytes = serde_json::to_vec_pretty(value).map_err(|error| OperatorError::Json(error.to_string()))?;
+    let nonce = TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos()).unwrap_or(0);
+    let temporary = parent.join(format!(".soul-memory.tmp-{}-{nanos}-{nonce}", std::process::id()));
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&temporary).map_err(|error| OperatorError::Io(error.to_string()))?;
+    let result = (|| -> Result<(), OperatorError> {
+        file.write_all(&bytes).map_err(|error| OperatorError::Io(error.to_string()))?;
+        file.sync_all().map_err(|error| OperatorError::Io(error.to_string()))?;
+        // Match the existing TypeScript snapshot ring while holding the same lock.
+        if path.exists() {
+            for index in (1..8).rev() {
+                let source = format!("{}.bak-{index}", path.display());
+                let target = format!("{}.bak-{}", path.display(), index + 1);
+                if Path::new(&source).exists() { let _ = fs::rename(source, target); }
+            }
+            let backup = format!("{}.bak-1", path.display());
+            if fs::copy(path, &backup).is_ok() {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(backup, fs::Permissions::from_mode(0o600));
+                }
+            }
+        }
+        fs::rename(&temporary, path).map_err(|error| OperatorError::Io(error.to_string()))?;
+        #[cfg(unix)]
+        fs::File::open(parent).and_then(|dir| dir.sync_all()).map_err(|error| OperatorError::Io(error.to_string()))?;
+        Ok(())
+    })();
+    if result.is_err() { let _ = fs::remove_file(&temporary); }
+    result
+}
+
 /// Previous-hash value of the first block in a chain.
 pub(crate) const GENESIS_PREV_HASH: &str =
     "0000000000000000000000000000000000000000000000000000000000000000";
@@ -210,6 +303,7 @@ pub(crate) fn run_soul_write(
         .data_dir
         .join("config")
         .join("soul-memory.json");
+    let soul_lock = SoulMemoryLock::acquire(&soul_path)?;
     // Distinguish "no file yet" (legitimate first run -> empty baseline) from
     // "file exists but is unreadable/corrupt" (must NOT be overwritten with
     // an empty baseline -- that is how decision #317 escalated one malformed
@@ -249,7 +343,8 @@ pub(crate) fn run_soul_write(
             Value::String(Utc::now().to_rfc3339()),
         );
     }
-    write_json_file(&soul_path, &merged)?;
+    write_soul_memory_atomic(&soul_path, &merged)?;
+    drop(soul_lock);
 
     let mut updated = Vec::new();
     for key in ["user", "self", "context"] {

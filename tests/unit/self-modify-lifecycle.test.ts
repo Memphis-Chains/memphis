@@ -1,7 +1,16 @@
+import { createHash } from 'node:crypto';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { runMemphisSelfModify } from '../../src/mcp/tools/self-modify.js';
 import type { SoulManifest } from '../../src/soul/types.js';
+
+vi.mock('../../src/mcp/tools/self-governance-status.js', () => ({ runMemphisSelfGovernanceStatus: vi.fn().mockResolvedValue({ canSelfModify: true, blockingReasons: [] }) }));
+vi.mock('../../src/infra/runtime/evolve-worktree.js', () => ({
+  createEvolveWorktree: vi.fn().mockResolvedValue({ root: '/tmp/memphis-self-modify-test',
+    worktree: '/tmp/isolate', target: 'main', base: 'a'.repeat(40), branch: 'evolve/review-fixture' }),
+  commitEvolveWorktree: vi.fn(),
+}));
 
 const {
   commitAllMock,
@@ -77,6 +86,7 @@ function makeManifest(): SoulManifest {
     evolution: {
       autoApproveReflections: true,
       requirePassphraseForTier2: false,
+      passphraseHash: createHash('sha256').update('fixture-tier2').digest('hex'),
       snapshotBeforeEvolution: true,
     },
     mode: 'quiet',
@@ -123,6 +133,7 @@ function createDeps() {
 
 const baseInput = {
   intent: 'tighten runtime safety',
+  passphrase: 'fixture-tier2',
   files: ['src/test.ts'],
   changes: {
     'src/test.ts': 'export const x = 1;',
@@ -153,9 +164,9 @@ describe('self-modify lifecycle reliability', () => {
 
     expect(result.status).toBe('rolled-back');
     expect(result.sessionId).toBe('sess-1');
-    expect(deps.rollback.rollback).toHaveBeenCalledWith('snap-1');
-    expect(switchBranchMock).toHaveBeenCalledWith('main', '/tmp/memphis-self-modify-test');
-    expect(deleteBranchMock).toHaveBeenCalledOnce();
+    expect(deps.rollback.rollback).not.toHaveBeenCalled();
+    expect(switchBranchMock).not.toHaveBeenCalled();
+    expect(deleteBranchMock).not.toHaveBeenCalled();
     expect(deps.sessionRepo.updateStatus).toHaveBeenNthCalledWith(1, 'sess-1', 'approved');
     expect(deps.sessionRepo.updateStatus).toHaveBeenNthCalledWith(
       2,

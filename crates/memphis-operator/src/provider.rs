@@ -1,5 +1,5 @@
 use std::{
-    io::{BufRead, BufReader, ErrorKind},
+    io::{BufRead, BufReader, ErrorKind, Read},
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc,
@@ -172,6 +172,8 @@ pub struct TokenUsageSummary {
 pub enum ChatStreamEvent {
     Text(String),
     Usage(TokenUsageSummary),
+    /// Byte timing after HTTP response headers; no payload is recorded.
+    StreamStats(StreamReadStats),
     /// A native tool is about to run inside the chat loop.
     ///
     /// Emitted *before* the tool executes, so a surface can show the
@@ -219,6 +221,56 @@ pub enum ChatStreamEvent {
         /// The provider's `finish_reason`, e.g. `length`.
         reason: String,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamReadStats {
+    pub first_byte_after_headers_ms: Option<u64>,
+    pub last_byte_after_headers_ms: Option<u64>,
+    pub max_interread_gap_ms: u64,
+    pub idle_before_error_ms: Option<u64>,
+    pub bytes: u64,
+}
+
+struct MeasuredStream<R> {
+    inner: R,
+    started: std::time::Instant,
+    last_byte_at: Option<std::time::Instant>,
+    stats: StreamReadStats,
+}
+
+impl<R: Read> MeasuredStream<R> {
+    fn new(inner: R) -> Self {
+        Self { inner, started: std::time::Instant::now(), last_byte_at: None, stats: StreamReadStats {
+            first_byte_after_headers_ms: None, last_byte_after_headers_ms: None,
+            max_interread_gap_ms: 0, idle_before_error_ms: None, bytes: 0,
+        }}
+    }
+    fn snapshot(&self, failed: bool) -> StreamReadStats {
+        let mut stats = self.stats.clone();
+        if failed {
+            stats.idle_before_error_ms = Some(self.last_byte_at.unwrap_or(self.started).elapsed().as_millis() as u64);
+        }
+        stats
+    }
+}
+
+impl<R: Read> Read for MeasuredStream<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let count = self.inner.read(buffer)?;
+        if count > 0 {
+            let now = std::time::Instant::now();
+            let since_headers = now.duration_since(self.started).as_millis() as u64;
+            if self.stats.first_byte_after_headers_ms.is_none() { self.stats.first_byte_after_headers_ms = Some(since_headers); }
+            if let Some(last) = self.last_byte_at {
+                self.stats.max_interread_gap_ms = self.stats.max_interread_gap_ms.max(now.duration_since(last).as_millis() as u64);
+            }
+            self.stats.last_byte_after_headers_ms = Some(since_headers);
+            self.stats.bytes = self.stats.bytes.saturating_add(count as u64);
+            self.last_byte_at = Some(now);
+        }
+        Ok(count)
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -915,7 +967,7 @@ impl ProviderRuntime {
                 &[("Accept", "text/event-stream")], Some(self.name.as_str()),
             )?
         };
-        let reader = BufReader::new(response.into_reader());
+        let mut reader = BufReader::new(MeasuredStream::new(response.into_reader()));
         let mut content = String::new();
         let mut reasoning_content = String::new();
         let mut resolved_model = model.to_string();
@@ -923,14 +975,31 @@ impl ProviderRuntime {
         let mut token_usage = None;
         let mut last_emitted_usage = None;
 
-        for line in reader.lines() {
-            ensure_not_cancelled(cancel_flag)?;
-            let line = line.map_err(|error| match error.kind() {
-                ErrorKind::TimedOut => OperatorError::Message(
-                    "provider stream timeout: timed out reading response".to_string(),
-                ),
-                _ => OperatorError::Message(format!("invalid provider stream response: {error}")),
-            })?;
+        loop {
+            if let Err(error) = ensure_not_cancelled(cancel_flag) {
+                on_event(ChatStreamEvent::StreamStats(reader.get_ref().snapshot(false)));
+                return Err(error);
+            }
+            let mut line = String::new();
+            // A provider can send a never-ending line. Bound its memory
+            // before parsing rather than allowing `read_line` to grow forever.
+            const MAX_SSE_LINE_BYTES: u64 = 1024 * 1024;
+            let read_result = (&mut reader).take(MAX_SSE_LINE_BYTES + 1).read_line(&mut line);
+            match read_result {
+                Ok(0) => break,
+                Ok(bytes) if bytes as u64 > MAX_SSE_LINE_BYTES => {
+                    on_event(ChatStreamEvent::StreamStats(reader.get_ref().snapshot(false)));
+                    return Err(OperatorError::Message("provider stream line exceeds 1 MiB".into()));
+                }
+                Ok(_) => {},
+                Err(error) => {
+                    on_event(ChatStreamEvent::StreamStats(reader.get_ref().snapshot(true)));
+                    return Err(match error.kind() {
+                        ErrorKind::TimedOut | ErrorKind::WouldBlock => OperatorError::ProviderStreamTimeout,
+                        _ => OperatorError::Message(format!("invalid provider stream response: {error}")),
+                    });
+                }
+            }
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
@@ -1019,6 +1088,7 @@ impl ProviderRuntime {
             }
         }
 
+        on_event(ChatStreamEvent::StreamStats(reader.get_ref().snapshot(false)));
         let token_usage = token_usage.or_else(|| {
             Some(estimated_chat_usage(
                 messages,
@@ -2801,11 +2871,14 @@ fn send_json_request(
                 }
             }
             let hint = extract_provider_error_hint(body.as_str());
-            OperatorError::Message(format!(
+            OperatorError::ProviderHttp { status: code, message: format!(
                 "provider request failed: {url}: status code {code}: {hint}"
-            ))
+            ) }
         }
-        other => OperatorError::Message(format!("provider request failed: {url}: {other}")),
+        ureq::Error::Transport(error) => {
+            let transient = matches!(error.kind(), ureq::ErrorKind::Dns | ureq::ErrorKind::ConnectionFailed | ureq::ErrorKind::Io | ureq::ErrorKind::ProxyConnect);
+            OperatorError::ProviderTransport { transient, message: format!("provider request failed: {url}: {error}") }
+        },
     })
 }
 

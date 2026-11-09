@@ -322,8 +322,30 @@ export async function appendBlock(
   data: Record<string, unknown>,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<AppendBlockResult> {
-  const normalizedChainName = normalizeChainName(chainName) ?? chainName;
+  // Capture the block before waiting for a lock, as the old append path did.
   const normalizedData = normalizeBlockData(data);
+  const result = await appendBlockConditionalInternal(chainName, async () => ({ data: normalizedData, value: undefined }), rawEnv, false);
+  if (!result.block) throw new Error('chain append unexpectedly skipped');
+  return result.block;
+}
+
+/** Decide and append while holding the writer lock; no callback may prompt for input. */
+export async function appendBlockConditional<T>(
+  chainName: string,
+  decide: () => Promise<{ data?: Record<string, unknown>; value: T }>,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): Promise<{ value: T; block?: AppendBlockResult }> {
+  return appendBlockConditionalInternal(chainName, decide, rawEnv, true);
+}
+
+async function appendBlockConditionalInternal<T>(
+  chainName: string,
+  decide: () => Promise<{ data?: Record<string, unknown>; value: T }>,
+  rawEnv: NodeJS.ProcessEnv,
+  preflight: boolean,
+): Promise<{ value: T; block?: AppendBlockResult }> {
+  rawEnv = { ...rawEnv };
+  const normalizedChainName = normalizeChainName(chainName) ?? chainName;
   // Block 1853 incident (2026-05-12) — refuse `system`/`security`
   // chain writes from VITEST processes that haven't opted in. Throws
   // a clear error rather than silent-skipping; emitRuntimeSecurityEvent's
@@ -337,7 +359,15 @@ export async function appendBlock(
   if (status.backend === 'rust-napi') {
     try {
       const adapter = new NapiChainAdapter(rawEnv);
-      return await adapter.appendBlock(normalizedChainName, normalizedData);
+      if (!preflight) {
+        const decision = await decide();
+        if (!decision.data) return { value: decision.value };
+        return { value: decision.value, block: await adapter.appendBlock(normalizedChainName, normalizeBlockData(decision.data)) };
+      }
+      return await adapter.appendBlockConditional(normalizedChainName, async () => {
+        const decision = await decide();
+        return { ...decision, data: decision.data ? normalizeBlockData(decision.data) : undefined };
+      });
     } catch (error) {
       throw new Error(`rust chain append failed: ${String(error)}`, { cause: error });
     }
@@ -362,10 +392,13 @@ export async function appendBlock(
   await fs.mkdir(chainsDir, { recursive: true });
 
   return withAppendLock(chainsDir, fs, path, async () => {
-    await pruneTrailingEmptyBlockFiles(chainsDir, fs, path);
+    if (!preflight) await pruneTrailingEmptyBlockFiles(chainsDir, fs, path);
     const blocks = await readAndValidateChainBlocks(chainsDir, fs, crypto, rawEnv, {
-      repairOnMismatch: true,
+      repairOnMismatch: !preflight,
     });
+    const decision = await decide();
+    if (!decision.data) return { value: decision.value };
+    const normalizedData = normalizeBlockData(decision.data);
     const previousBlock = blocks.at(-1);
     const nextIndex = previousBlock ? previousBlock.index + 1 : 1;
 
@@ -386,12 +419,12 @@ export async function appendBlock(
     // was wrong or another writer ignored the lock.
     await writeBlockAtomic(chainsDir, nextIndex, JSON.stringify(block, null, 2));
 
-    return {
+    return { value: decision.value, block: {
       index: nextIndex,
       hash: block.hash,
       chain: normalizedChainName,
       timestamp,
-    };
+    } };
   });
 }
 

@@ -6,7 +6,9 @@ import Database from 'better-sqlite3';
 import { MinimaxProvider, resolveProviderKeyResult } from './index.js';
 import { ProviderHttpError } from './request-error.js';
 import { getDataDir } from '../config/paths.js';
+import { AppError } from '../core/errors.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
+import { withProviderBudget } from '../infra/runtime/provider-budget-ledger.js';
 
 export type ProbeOutcome = 'usable' | 'generated' | 'not-configured' | 'credential-error' | 'unsupported' | 'destination-denied' | 'unauthorized' | 'forbidden' | 'rate-limited' | 'model-or-endpoint-not-found' | 'bad-request' | 'provider-error' | 'network-error' | 'timeout' | 'cancelled' | 'invalid-response';
 export interface ProviderProbeResult {
@@ -81,12 +83,18 @@ export async function probeProvider(
   const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
   writeSecurityAudit({ action: 'provider.probe.started', status: 'allowed', details: { provider, verification } });
   try {
-    const client = new MinimaxProvider({ apiKey: credential.key, model: rawEnv.MINIMAX_MODEL, baseUrl: destination.href.replace(/\/$/, '') });
-    const reply = await client.chat([{ role: 'user', content: 'Reply with exactly MEMPHIS_OK.' }], { maxTokens: 32, temperature: 0, signal, rejectRedirects: true });
+    const client = new MinimaxProvider({ apiKey: credential.key, model: rawEnv.MINIMAX_MODEL, baseUrl: destination.href.replace(/\/$/, ''), rawEnv });
+    const messages = [{ role: 'user' as const, content: 'Reply with exactly MEMPHIS_OK.' }];
+    const reply = await withProviderBudget({ provider, model: rawEnv.MINIMAX_MODEL ?? client.defaultModel(), env: rawEnv,
+      input: { messages }, outputTokens: 32,
+      invoke: (maxTokens) => client.chat(messages, { maxTokens, temperature: 0, signal, rejectRedirects: true }),
+      usage: (result) => result.tokens ? { total: result.tokens.total, estimated: result.tokens.estimated } : undefined,
+    });
     return finish(reply.content.trim() ? 'generated' : 'invalid-response');
   } catch (error) {
     if (options.signal?.aborted) return finish('cancelled');
     if (deadline.aborted) return finish('timeout');
+    if (error instanceof AppError && error.details?.source === 'provider-budget') return finish('rate-limited');
     if (error instanceof ProviderHttpError) {
       const outcomes: Record<number, ProbeOutcome> = { 400: 'bad-request', 401: 'unauthorized', 403: 'forbidden', 404: 'model-or-endpoint-not-found', 429: 'rate-limited' };
       return finish(outcomes[error.status] ?? 'provider-error');

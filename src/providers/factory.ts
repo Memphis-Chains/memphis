@@ -1,5 +1,6 @@
 import { OllamaProvider } from './index.js';
 import type { ChatMessage } from './index.js';
+import { withProviderBudget } from '../infra/runtime/provider-budget-ledger.js';
 
 // Cache the (baseUrl → reachable) outcome for a short window so the
 // categorizer's three-tier cascade (qwen2.5:0.5b → phi3 → default)
@@ -111,10 +112,13 @@ export async function resolveProvider(opts?: {
   return {
     provider: {
       chat: async (messages, options) => {
-        const response = await provider.chat(messages as ChatMessage[], {
-          model: options?.model,
-          temperature: options?.temperature,
-          maxTokens: options?.max_tokens,
+        const response = await withProviderBudget({
+          provider: provider.name, model: options?.model ?? provider.defaultModel(), env: process.env,
+          input: { messages }, outputTokens: options?.max_tokens,
+          invoke: (maxTokens) => provider.chat(messages as ChatMessage[], {
+            model: options?.model, temperature: options?.temperature, maxTokens,
+          }),
+          usage: (result) => result.tokens ? { total: result.tokens.total, estimated: result.tokens.estimated } : undefined,
         });
         return { content: response.content };
       },

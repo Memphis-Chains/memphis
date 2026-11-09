@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { readProposals } from '../../src/cognitive/dreaming/proposal-chain.js';
 import {
   ReflectionLoop,
   resolveDueReflectionPeriods,
@@ -30,6 +32,8 @@ function block(
   return {
     timestamp,
     chain,
+    index: 0,
+    hash: createHash('sha256').update(`${timestamp}:${chain}:${content}`).digest('hex'),
     data: {
       type,
       content,
@@ -53,7 +57,7 @@ describe('reflection loop runtime', () => {
     vi.useRealTimers();
   });
 
-  it('updates soul memory on the first due run and skips duplicate same-day runs', async () => {
+  it('proposes evidence-backed memory changes without applying them and skips duplicate runs', async () => {
     process.env.MEMPHIS_DATA_DIR = mkdtempSync(join(tmpdir(), 'memphis-reflection-loop-'));
     process.env.RUST_CHAIN_ENABLED = 'false';
     process.env.COGNITIVE_MODEL_E_REFLECTION_SCHEDULE = 'daily';
@@ -89,19 +93,19 @@ describe('reflection loop runtime', () => {
       skipped: false,
       periods: ['daily'],
       reflectionCount: 1,
-      soulMemoryUpdated: true,
+      soulMemoryUpdated: false,
       recentDecisionCount: 1,
     });
 
     const memory = loadSoulMemory(process.env);
-    expect(memory).not.toBeNull();
-    expect(memory?.self.evolvedCapabilities).toEqual(
-      expect.arrayContaining(['daily self-reflection', 'autonomous insight synthesis']),
-    );
-    expect(memory?.self.learnings.length).toBeGreaterThan(0);
-    expect(memory?.context.recentDecisions).toEqual([
-      'Ship release guardrails before feature expansion',
-    ]);
+    expect(memory).toBeNull();
+    const proposals = await readProposals(process.env);
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0]).toMatchObject({ status: 'pending', kind: 'memory.update' });
+    expect(proposals[0].basedOn.chainBlockHashes.length).toBeGreaterThan(0);
+    expect(proposals[0].patch).toMatchObject({
+      context: { recentDecisions: ['Ship release guardrails before feature expansion'] },
+    });
 
     const memoryEntries = loadMemoryEntries(process.env);
     expect(memoryEntries).toEqual(

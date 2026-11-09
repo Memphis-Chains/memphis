@@ -50,6 +50,45 @@ describe('evaluateSlos', () => {
     }
   });
 
+  it('does not report empty telemetry as passing through the SLO tool', () => {
+    const report = runMemphisSloStatus({ windowDays: 1 }, process.env);
+    expect(report.ok).toBe(true);
+    expect(report.status).toBe('unavailable');
+    expect(report.allSlosPassing).toBe(false);
+    expect(report.failingSlos).toEqual([]);
+    expect(report.unavailableSlos).toHaveLength(4);
+  });
+
+  it('excludes future spans from both assessment and most recent activity', () => {
+    const spans: SpanLine[] = Array.from({ length: 10 }, () => ({
+      ts: '2026-04-29T12:00:01Z', name: 'turn.dispatch', durationMs: 1, status: 'ok',
+    }));
+    writeSpans(telemetryDir, '2026-04-29', spans);
+    const report = evaluateSlos({ now: fixedNow });
+    expect(report.totalSamples).toBe(0);
+    expect(report.slos.find((slo) => slo.name === 'p99_turn_latency_ms')?.status).toBe('unavailable');
+    expect(report.recent.turn).toBeNull();
+  });
+
+  it('reports stream timing separately without clearing the existing latency gate', () => {
+    const spans: SpanLine[] = Array.from({ length: 10 }, () => ({
+      ts: '2026-04-29T10:00:00Z', name: 'turn.dispatch',
+      attrs: { 'turn.timing_ms': 10000 }, status: 'ok',
+    }));
+    spans.push({
+      ts: '2026-04-29T10:00:01Z', name: 'provider.completion', status: 'error',
+      attrs: { 'stream.bytes': 100, 'stream.first_byte_after_headers_ms': 23, 'stream.idle_before_error_ms': 1234 },
+    });
+    spans.push({ ts: '2026-04-29T10:00:02Z', name: 'provider.completion', status: 'ok', attrs: {} });
+    writeSpans(telemetryDir, '2026-04-29', spans);
+    const report = evaluateSlos({ now: fixedNow });
+    expect(report.slos.find((s) => s.name === 'p99_turn_latency_ms')?.status).toBe('fail');
+    expect(report.streamDiagnostics).toEqual({
+      samples: 1, firstByteAfterHeadersSamples: 1, p99FirstByteAfterHeadersMs: 23,
+      idleBeforeErrorSamples: 1, maxIdleBeforeErrorMs: 1234,
+    });
+  });
+
   it('computes p99 turn latency from turn.dispatch spans (high p99 → fail)', () => {
     const today = '2026-04-29';
     const spans: SpanLine[] = [];
@@ -431,5 +470,30 @@ describe('evaluateSlos', () => {
     expect(tool?.samples).toBe(10);
     expect(tool?.value).toBe(0.1);
     expect(tool?.status).toBe('fail');
+  });
+
+  it('does not turn inconclusive tool outcomes into successes', () => {
+    const spans: SpanLine[] = Array.from({ length: 20 }, () => ({
+      ts: '2026-04-29T10:00:00Z', name: 'tool.call', durationMs: 10,
+      status: 'ok' as const, attrs: { 'tool.output.shape': 'inconclusive' },
+    }));
+    spans.push({ ts: '2026-04-29T10:00:01Z', name: 'tool.call', durationMs: 10,
+      status: 'error', attrs: { 'tool.output.shape': 'unknown' } });
+    writeSpans(telemetryDir, '2026-04-29', spans);
+    const tool = evaluateSlos({ now: fixedNow }).slos.find((s) => s.name === 'tool_error_rate');
+    expect(tool?.samples).toBe(1);
+    expect(tool?.value).toBe(1);
+    expect(tool?.status).toBe('unavailable');
+    expect(tool?.reason).toContain('20 tool outcome(s)');
+  });
+
+  it('reports the latest inconclusive tool outcome as unknown', () => {
+    writeSpans(telemetryDir, '2026-04-29', [{
+      ts: '2026-04-29T10:00:00Z', name: 'tool.call', durationMs: 10,
+      status: 'ok', attrs: { 'tool.output.shape': 'inconclusive' },
+    }]);
+    const report = evaluateSlos({ now: fixedNow });
+    expect(report.recent.tool?.status).toBe('unknown');
+    expect(report.slos.find((s) => s.name === 'tool_error_rate')?.status).toBe('unavailable');
   });
 });

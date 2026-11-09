@@ -39,7 +39,7 @@ export function createRuntimeHealthTools(rawEnv?: NodeJS.ProcessEnv): RuntimeToo
     buildTool({
       name: 'memphis_self_governance_status',
       description:
-        'Read Memphis self-governance capability state — supervised-operational autonomy readiness, recovery blockers, and required operator actions.',
+        'Read Memphis self-governance capability state, recovery blockers, required operator actions and instantaneous host resource observations; unavailable observations are not passes or forecasts.',
       inputSchema: { type: 'object', properties: {} },
       isConcurrencySafe: true,
       isReadOnly: true,

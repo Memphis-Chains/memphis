@@ -1,40 +1,27 @@
-/* eslint-disable no-restricted-syntax */
-//
-// memphis_self_modify — reads VITEST + MEMPHIS_DISABLE_RESTART_AFTER_EVOLVE
-// + MEMPHIS_RESTART_AFTER_EVOLVE for restart-after-evolve gating logic.
-// Test/local-only knobs; not used elsewhere in the codebase.
-//
 /**
- * memphis_self_modify — Safe self-modification MCP tool (Phase C).
+ * Internal local-operator preparer for self-modification requests.
  *
- * Orchestrates: session → snapshot → branch → apply changes → test gate → commit/rollback.
- * Requires git — self-modification without version control is not allowed.
+ * Creates a snapshot and tests the requested changes in an isolated Git
+ * worktree. The resulting commit requires a separate operator review.
  */
 
 import { createHash } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import { realpathOrNearest } from './fs-permission.js';
+import { runMemphisSelfGovernanceStatus } from './self-governance-status.js';
 import { RollbackManager } from '../../backup/rollback.js';
-import { NODE_ENV } from '../../config/env-registry.js';
-import {
-  commitAll,
-  createBranch,
-  deleteBranch,
-  getCurrentBranch,
-  isGitRepo,
-  mergeBranch,
-  switchBranch,
-} from '../../infra/git-utils.js';
-import { createPinoLogger } from '../../infra/logging/pino.js';
+import { usesOperatorForTier2, validateTier2Passphrase } from '../../infra/auth/tier2-auth.js';
+import { isGitRepo } from '../../infra/git-utils.js';
+import { evolveGit } from '../../infra/runtime/evolve-review.js';
+import { createEvolveWorktree, commitEvolveWorktree } from '../../infra/runtime/evolve-worktree.js';
 import { CaseChainAdapter } from '../../infra/storage/case-chain-adapter.js';
 import { SqliteEvolveSessionRepository } from '../../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import { runTestGate, type TestGateResult } from '../../infra/test-gate.js';
 import { advanceStep, getPlan } from '../../modules/self-coding/plan-store.js';
 import { scanContent } from '../../security/content-scan.js';
 import { emitRuntimeSecurityEvent } from '../../security/runtime-security-events.js';
-import { readTier2PassphraseFromFile } from '../../security/tier2-passphrase-file.js';
 import { ensureSoulManifest, loadSoulManifest } from '../../soul/manifest.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -62,7 +49,7 @@ export interface SelfModifyInput {
 export interface SelfModifyResult {
   success: boolean;
   sessionId: string;
-  status: 'committed' | 'rolled-back' | 'error';
+  status: 'prepared' | 'committed' | 'rolled-back' | 'error';
   commitHash?: string;
   branch?: string;
   rollbackReason?: string;
@@ -209,9 +196,7 @@ async function finalizeFailedEvolution(input: {
     sessionId,
     reason,
     sessionRepo,
-    rollback,
     caseAdapter,
-    projectRoot,
     originalBranch,
     evolveBranch,
     snapshotId,
@@ -220,36 +205,8 @@ async function finalizeFailedEvolution(input: {
     testGate,
   } = input;
 
-  let switchedBranch = false;
-  let deletedBranch = false;
-  let restoredSnapshot = false;
-
-  if (originalBranch) {
-    try {
-      await switchBranch(originalBranch, projectRoot);
-      switchedBranch = true;
-    } catch {
-      // best-effort branch cleanup
-    }
-  }
-
-  if (evolveBranch) {
-    try {
-      await deleteBranch(evolveBranch, projectRoot);
-      deletedBranch = true;
-    } catch {
-      // best-effort branch cleanup
-    }
-  }
-
-  if (snapshotId) {
-    try {
-      const rollbackResult = await rollback.rollback(snapshotId);
-      restoredSnapshot = rollbackResult.success;
-    } catch {
-      // best-effort snapshot rollback
-    }
-  }
+  // Preparation runs in an isolated worktree: do not switch the live branch,
+  // delete a branch, or restore a snapshot over unrelated operator work.
 
   sessionRepo.updateStatus(sessionId, 'rolled-back', {
     errorMessage: reason,
@@ -264,9 +221,7 @@ async function finalizeFailedEvolution(input: {
       originalBranch,
       evolveBranch,
       snapshotId,
-      switchedBranch,
-      deletedBranch,
-      restoredSnapshot,
+      worktreeRetained: Boolean(evolveBranch),
     },
   });
 
@@ -292,6 +247,17 @@ export async function runMemphisSelfModify(
   const { sessionRepo, rollback, caseAdapter } = deps;
   const projectRoot = deps.projectRoot ?? process.cwd();
   const planAware = typeof planId === 'string' && typeof stepIdx === 'number';
+
+  // This status used to be advisory only. Refuse before plan, session,
+  // snapshot, branch or file side effects if the live gate is not ready.
+  try {
+    const governance = await runMemphisSelfGovernanceStatus(deps.rawEnv);
+    if (!governance.canSelfModify) {
+      return errorResult(`Self-modification blocked by governance: ${governance.blockingReasons.join('; ') || 'readiness unavailable'}`);
+    }
+  } catch {
+    return errorResult('Self-modification blocked: governance status unavailable');
+  }
 
   // 0a. Step-aware preflight — refuse early if the plan step is in a
   // bad state. We do this before any side effects so a no-op step
@@ -351,40 +317,32 @@ export async function runMemphisSelfModify(
   // Enforce evolution policy
   ensureSoulManifest(deps.rawEnv);
 
-  // Passphrase gate for tier 2 self-modification (skipped in full autonomy mode)
+  // Tier 2 self-modification always needs a conscious passphrase, regardless
+  // of autonomy mode. Never source it from a standalone passphrase file.
   const manifest = loadSoulManifest(deps.rawEnv);
-  if (manifest?.evolution?.requirePassphraseForTier2 && manifest.mode !== 'full') {
-    if (!manifest.evolution.passphraseHash) {
+  {
+    const result = validateTier2Passphrase(input.passphrase, manifest, deps.rawEnv);
+    if (result === 'missing') {
       return planAwareErrorResult(
         'Passphrase gate enabled but no passphraseHash configured in soul manifest. ' +
-          'Set evolution.passphraseHash via memphis trust set-passphrase or memphis init.',
+          'Configure a separate Tier 2 verifier or explicitly select operator authentication.',
         planId,
         stepIdx,
         deps.rawEnv,
       );
     }
 
-    // Use provided passphrase, or try to read from file
-    let passphrase = input.passphrase;
-    if (!passphrase) {
-      passphrase = readTier2PassphraseFromFile() ?? undefined;
-      if (passphrase) {
-        console.log('[tier2] Auto-obtained passphrase from secure file');
-      }
-    }
-
-    if (!passphrase) {
+    if (!input.passphrase) {
       return planAwareErrorResult(
-        'Passphrase required for self-modification (tier 2). Provide a passphrase or ensure ~/.memphis/.tier2-passphrase exists.',
+        'Passphrase required for self-modification (tier 2).',
         planId,
         stepIdx,
         deps.rawEnv,
       );
     }
-    const inputHash = createHash('sha256').update(passphrase).digest('hex');
-    if (inputHash !== manifest.evolution.passphraseHash) {
+    if (result !== 'ok') {
       return planAwareErrorResult(
-        'Passphrase rejected — hash mismatch.',
+        usesOperatorForTier2(manifest) ? 'Passphrase rejected — operator authentication failed.' : 'Passphrase rejected — hash mismatch.',
         planId,
         stepIdx,
         deps.rawEnv,
@@ -404,162 +362,61 @@ export async function runMemphisSelfModify(
     // 2. Snapshot
     snapshotId = await rollback.createSnapshot(`evolve: ${intent}`);
 
-    // 3. Branch isolation
-    originalBranch = await getCurrentBranch(projectRoot);
-    const slug = intent
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .slice(0, 40);
-    evolveBranch = `evolve/${Date.now()}-${slug}`;
-    await createBranch(evolveBranch, projectRoot);
-
+    // 3. Prepare and test in a separate Git worktree. The live checkout is
+    // neither switched nor edited by the agent.
+    const workspace = await createEvolveWorktree(projectRoot, session.id, deps.rawEnv);
+    originalBranch = workspace.target;
+    evolveBranch = workspace.branch;
     sessionRepo.updateStatus(session.id, 'active', {
-      snapshotId,
-      branch: evolveBranch,
-      originalBranch,
+      snapshotId, branch: evolveBranch, originalBranch,
     });
 
-    // 4. Apply changes
     for (const [filePath, content] of Object.entries(changes)) {
-      if (!files.includes(filePath)) {
-        throw new Error(`File ${filePath} not in allowed list: ${files.join(', ')}`);
-      }
+      if (!files.includes(filePath)) throw new Error(`File ${filePath} is not in the allowed list`);
       const scan = scanContent(content, 'code-change');
-      if (!scan.allowed) {
-        const scanReason = `Blocked self-modify content for ${filePath}: ${scan.reason}`;
-        if (planAware) {
-          advanceStep(
-            { planId, stepIdx, status: 'failed', error: scanReason },
-            deps.rawEnv,
-          );
-        }
-        const blockedResult = await finalizeFailedEvolution({
-          sessionId: session.id,
-          reason: scanReason,
-          sessionRepo,
-          rollback,
-          caseAdapter,
-          projectRoot,
-          originalBranch,
-          evolveBranch,
-          snapshotId,
-          auditAction: 'content_scan.self_modify.blocked',
-          auditStatus: 'blocked',
-        });
-        return planAware
-          ? { ...blockedResult, plan_id: planId, step_idx: stepIdx }
-          : blockedResult;
-      }
-      const fullPath = validateFilePath(filePath, projectRoot);
+      if (!scan.allowed) throw new Error(`Blocked self-modify content for ${filePath}: ${scan.reason}`);
+      const fullPath = validateFilePath(filePath, workspace.worktree);
       mkdirSync(dirname(fullPath), { recursive: true });
       writeFileSync(fullPath, content, 'utf-8');
     }
-
-    // 5. Test gate (pass changed files so it knows whether to rebuild Rust)
     const changedFiles = Object.keys(changes);
-    const testResult = await runTestGate(projectRoot, changedFiles);
+    const testResult = await runTestGate(workspace.worktree, changedFiles);
 
     if (testResult.passed) {
-      // 6a. Commit + merge
-      const commitHash = await commitAll(`evolve: ${intent}`, projectRoot, files);
-      // Phase 2.3 production sprint: record the previous-known-good
-      // hash BEFORE the merge so a boot-failure auto-revert can roll
-      // back if the merged code breaks startup.
-      const previousHash = await (async () => {
-        try {
-          const { execFile } = await import('node:child_process');
-          const { promisify } = await import('node:util');
-          const execFileAsync = promisify(execFile);
-          const { stdout } = await execFileAsync('git', ['rev-parse', originalBranch], {
-            cwd: projectRoot,
-          });
-          return stdout.trim();
-        } catch {
-          return '';
-        }
-      })();
-      await switchBranch(originalBranch, projectRoot);
-      await mergeBranch(evolveBranch, projectRoot);
-      await deleteBranch(evolveBranch, projectRoot);
-      if (previousHash) {
-        try {
-          const { recordSelfModifyCommit } =
-            await import('../../infra/runtime/self-modify-revert.js');
-          recordSelfModifyCommit({
-            commitHash,
-            previousHash,
-            intent,
-          });
-        } catch {
-          // best-effort
-        }
+      // Do not allow the test command to silently replace the reviewed input.
+      for (const [filePath, expected] of Object.entries(changes)) {
+        const actual = readFileSync(validateFilePath(filePath, workspace.worktree), 'utf8');
+        if (actual !== expected) throw new Error(`test changed proposed content: ${filePath}`);
       }
-
-      sessionRepo.updateStatus(session.id, 'committed', { committedHash: commitHash });
-      await emitRuntimeSecurityEvent({
-        action: 'self_modify.committed',
-        status: 'allowed',
-        details: {
-          sessionId: session.id,
-          commitHash,
-          changedFiles,
-          snapshotId,
-          branch: evolveBranch,
-          originalBranch,
-        },
-      });
-
-      try {
-        await caseAdapter.appendCaseEntry({
-          case_type: 'accusative',
-          subject: 'agent',
-          verb: 'evolved',
-          object: `modified ${changedFiles.length} file(s): ${intent} [${commitHash.slice(0, 8)}]`,
-        });
-      } catch {
-        // audit is best-effort
+      const commitHash = await commitEvolveWorktree(workspace.worktree, changedFiles, intent, deps.rawEnv);
+      const parents = (await evolveGit(workspace.worktree, ['rev-list', '--parents', '-n', '1', commitHash])).split(' ');
+      const committedPaths = (await evolveGit(workspace.worktree, ['diff', '--name-only', '-z', workspace.base, commitHash])).split('\0').filter(Boolean);
+      if (parents.length !== 2 || parents[1] !== workspace.base || committedPaths.length !== changedFiles.length ||
+          committedPaths.some((file) => !changedFiles.includes(file)))
+        throw new Error('commit does not match the reviewed base and paths');
+      if (await evolveGit(workspace.worktree, ['status', '--porcelain', '--untracked-files=all']) !== '')
+        throw new Error('commit hooks left the proposal worktree dirty');
+      const objectFormat = await evolveGit(workspace.worktree, ['rev-parse', '--show-object-format']);
+      if (objectFormat !== 'sha1' && objectFormat !== 'sha256') throw new Error('unsupported Git object format');
+      for (const [filePath, expected] of Object.entries(changes)) {
+        const actual = readFileSync(validateFilePath(filePath, workspace.worktree));
+        if (actual.toString('utf8') !== expected)
+          throw new Error(`commit hook changed proposed content: ${filePath}`);
+        const blob = createHash(objectFormat).update(`blob ${actual.length}\0`).update(actual).digest('hex');
+        if (await evolveGit(workspace.worktree, ['rev-parse', `${commitHash}:${filePath}`]) !== blob)
+          throw new Error(`committed content differs from tested content: ${filePath}`);
       }
-
-      // Schedule graceful restart if MEMPHIS_RESTART_AFTER_EVOLVE is set.
-      // systemd will restart the process on exit. Never fire under vitest — a
-      // stray process.exit() from a pending timer kills the test runner.
-      const inTestRunner =
-        process.env.VITEST === 'true' ||
-        NODE_ENV.read(process.env) === 'test' ||
-        process.env.MEMPHIS_DISABLE_RESTART_AFTER_EVOLVE === 'true';
-      const shouldRestart =
-        !inTestRunner &&
-        (process.env.MEMPHIS_RESTART_AFTER_EVOLVE ?? 'true').toLowerCase() === 'true';
-      if (shouldRestart) {
-        const selfModifyLog = createPinoLogger({ level: 'info' });
-        selfModifyLog.info(
-          { commitHash, changedFiles, intent },
-          'self-modify committed — scheduling graceful restart in 2s to reload code',
-        );
-        setTimeout(() => {
-          // Exit with code 0 — systemd/wrapper will restart
-          // The PULSE system will log the restart on next boot
-          process.exit(0);
-        }, 2000);
-      }
-
-      if (planAware) {
-        advanceStep(
-          { planId, stepIdx, status: 'done', artifact: commitHash },
-          deps.rawEnv,
-        );
-      }
-
-      return {
-        success: true,
-        sessionId: session.id,
-        status: 'committed',
-        commitHash,
-        testGate: testResult,
-        timestamp: new Date().toISOString(),
-        restartScheduled: shouldRestart,
-        ...(planAware ? { plan_id: planId, step_idx: stepIdx } : {}),
-      };
+      sessionRepo.finalizePrepared({ sessionId: session.id, ...workspace, commit: commitHash,
+        testSummary: JSON.stringify(testResult.steps.map(({ name, passed }) => ({ name, passed }))),
+        status: 'prepared', ...(planAware ? { planId, stepIdx } : {}) });
+      // Once persisted, audit failures cannot make an approved candidate look
+      // rolled back. The review row remains the authoritative state.
+      try { await emitRuntimeSecurityEvent({ action: 'self_modify.prepared', status: 'allowed',
+        details: { sessionId: session.id, commitHash, changedFiles, snapshotId,
+          branch: evolveBranch, originalBranch } }); } catch { /* visible via review store */ }
+      return { success: true, sessionId: session.id, status: 'prepared', commitHash,
+        branch: evolveBranch, testGate: testResult, timestamp: new Date().toISOString(),
+        restartScheduled: false, ...(planAware ? { plan_id: planId, step_idx: stepIdx } : {}) };
     }
 
     // 6b. Test failed — rollback
@@ -587,8 +444,9 @@ export async function runMemphisSelfModify(
     });
     return planAware ? { ...failResult, plan_id: planId, step_idx: stepIdx } : failResult;
   } catch (err) {
-    // Catastrophic failure — rollback everything
+    // Leave the isolated worktree intact for inspection and keep the live checkout untouched.
     const errorMsg = err instanceof Error ? err.message : String(err);
+    const blockedByScan = errorMsg.startsWith('Blocked self-modify content');
     const currentSnapshotId = sessionRepo.getById(session.id)?.snapshotId ?? snapshotId;
     if (planAware) {
       advanceStep(
@@ -606,8 +464,8 @@ export async function runMemphisSelfModify(
       originalBranch,
       evolveBranch,
       snapshotId: currentSnapshotId ?? undefined,
-      auditAction: 'self_modify.exception',
-      auditStatus: 'error',
+      auditAction: blockedByScan ? 'content_scan.self_modify.blocked' : 'self_modify.exception',
+      auditStatus: blockedByScan ? 'blocked' : 'error',
     });
     return planAware ? { ...exResult, plan_id: planId, step_idx: stepIdx } : exResult;
   }
