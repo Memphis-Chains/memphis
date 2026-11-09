@@ -193,6 +193,52 @@ describe('the daily grabber audit', () => {
   });
 });
 
+describe('the audit script finds its own repo', () => {
+  it('does not hardcode the operator home directory', () => {
+    // Measured 2026-11-09: the script pointed at
+    // /home/memphis/memphis/scripts/... , which exists on the operator's
+    // host and nowhere else. The CI runner checks out the repository
+    // under /home/runner/work/, so the discovery step failed there and
+    // the audit reported BROKEN instead of a verdict.
+    const executed = readFileSync(auditScript, 'utf8')
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('#'));
+    for (const line of executed) {
+      expect(line).not.toContain('/home/memphis/memphis/scripts');
+    }
+  });
+
+  it('runs from a checkout that is not the operator home', () => {
+    // The script must resolve its helper relative to its own location,
+    // so a copy of the repository anywhere on disk works.
+    const fx = fixture({
+      videoDevices: [{ name: 'Dummy video device (0x0000)', device: 'video0' }],
+    });
+    const elsewhere = path.join(fx.root, 'elsewhere');
+    mkdirSync(elsewhere, { recursive: true });
+    const copy = path.join(elsewhere, 'grabber-feed-audit.sh');
+    writeFileSync(copy, readFileSync(auditScript, 'utf8'), 'utf8');
+    // The copy sits outside the repository, so the helper beside it does
+    // not exist — which is exactly the failure the CI runner hit.
+    const result = spawnSync('bash', [copy], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        MEMPHIS_GRABBER_VIDEO_SYSFS: fx.videoSysfs,
+        MEMPHIS_GRABBER_SOUND_SYSFS: fx.soundSysfs,
+        MEMPHIS_GRABBER_ASOUND_PCM: fx.pcmFile,
+        MEMPHIS_GRABBER_LOG: path.join(fx.root, 'elsewhere.log'),
+      },
+    });
+    // A missing helper is a BROKEN script, and that is reported as such —
+    // never as a verdict about the hardware.
+    expect(result.stdout).toContain('BROKEN');
+    expect(result.stdout).not.toContain('NOT_CONNECTED');
+    expect(result.status).toBe(1);
+  });
+});
+
 describe('the grabber probe', () => {
   const probe = path.join(repoRoot, 'scripts', 'usb-grabber-test.py');
 
