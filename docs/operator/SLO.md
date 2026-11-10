@@ -78,11 +78,25 @@ blocking (`src/infra/runtime/self-governance.ts`).
 
 ### p99_turn_latency_ms
 
-p99 of `turn.dispatch` span latency over the window. Latency is read from `attrs['turn.timing_ms']` first, falling back to `durationMs`.
+p99 of `provider.completion` span latency over the window — how long the operator waited for the model to answer.
 
-- **Threshold**: 3000 ms (3 seconds) by default; local operators can raise/lower it with `MEMPHIS_SLO_TURN_P99_MS` when the configured provider has a different normal latency profile.
+- **Threshold**: 60000 ms (60 seconds) by default; local operators can raise/lower it with `MEMPHIS_SLO_TURN_P99_MS` when the configured provider has a different normal latency profile.
 - **Direction**: below (lower is better)
-- **Why this matters**: every user turn — TUI, CLI chat, Telegram, HTTP — emits this span. p99 above 3s means the slowest 1% of operator interactions are too laggy to trust. Persistent fails point at provider degradation, embedding storms, or chain-write contention.
+- **Why this matters**: every user turn — TUI, CLI chat, Telegram, HTTP — emits this span. p99 above 60s means the slowest 1% of model calls are too slow to be usable. Persistent fails point at provider degradation, embedding storms, or chain-write contention.
+
+Measured 2026-11-10, 7-day window: n=948 samples, p50=5 145 ms, p95=53 193 ms, p99=138 154 ms. 4.85% of samples exceed 60s.
+
+This metric used to be computed from the `turn.dispatch` span, which covers the WHOLE agent turn — from the operator's prompt through every tool call to the last one. A working session of ninety minutes counted as a ninety-minute "latency", and the threshold sat below the median turn, so the metric was red by construction and blocked self-modification on every run. The name, the threshold variable and the public contract are unchanged; what the number measures is now what it says. The whole-turn duration is still measured, under `p99_turn_duration_ms`.
+
+### p99_turn_duration_ms
+
+p99 of the WHOLE turn duration over the window — every tool call included.
+
+- **Threshold**: 7200000 ms (2 hours) by default; raise/lower it with `MEMPHIS_SLO_TURN_DURATION_P99_MS`.
+- **Direction**: below (lower is better)
+- **Why this matters**: a turn's duration is the length of the work the operator asked for, so a threshold over it says nothing about the health of the runtime. The threshold is set above the longest turn ever measured here (106 minutes), which makes this metric a HANG DETECTOR: a turn that exceeds it is a turn that did not finish.
+
+**This metric is reported, not gated.** The autonomy gate treats only `fail` on the four gated metrics as blocking.
 
 ### confabulation_rate
 

@@ -56,7 +56,9 @@ describe('evaluateSlos', () => {
     expect(report.status).toBe('unavailable');
     expect(report.allSlosPassing).toBe(false);
     expect(report.failingSlos).toEqual([]);
-    expect(report.unavailableSlos).toHaveLength(4);
+    // Five metrics now: the four required ones plus the whole-turn
+    // duration, which is reported separately from the model latency.
+    expect(report.unavailableSlos).toHaveLength(5);
   });
 
   it('excludes future spans from both assessment and most recent activity', () => {
@@ -72,8 +74,8 @@ describe('evaluateSlos', () => {
 
   it('reports stream timing separately without clearing the existing latency gate', () => {
     const spans: SpanLine[] = Array.from({ length: 10 }, () => ({
-      ts: '2026-04-29T10:00:00Z', name: 'turn.dispatch',
-      attrs: { 'turn.timing_ms': 10000 }, status: 'ok',
+      ts: '2026-04-29T10:00:00Z', name: 'provider.completion',
+      attrs: { 'provider.name': 'minimax' }, durationMs: 90000, status: 'ok',
     }));
     spans.push({
       ts: '2026-04-29T10:00:01Z', name: 'provider.completion', status: 'error',
@@ -89,10 +91,50 @@ describe('evaluateSlos', () => {
     });
   });
 
-  it('computes p99 turn latency from turn.dispatch spans (high p99 → fail)', () => {
+  it('computes p99 turn latency from provider.completion spans (high p99 → fail)', () => {
     const today = '2026-04-29';
     const spans: SpanLine[] = [];
     // 50 fast + 50 slow → nearest-rank p99 lands in the slow half
+    for (let i = 0; i < 50; i++) {
+      spans.push({
+        ts: '2026-04-29T10:00:00Z',
+        name: 'provider.completion',
+        attrs: { 'provider.name': 'minimax' },
+        durationMs: 500,
+        status: 'ok',
+      });
+    }
+    for (let i = 0; i < 50; i++) {
+      spans.push({
+        ts: '2026-04-29T10:00:01Z',
+        name: 'provider.completion',
+        attrs: { 'provider.name': 'minimax' },
+        durationMs: 9999,
+        status: 'ok',
+      });
+    }
+    writeSpans(telemetryDir, today, spans);
+
+    const report = evaluateSlos({ now: fixedNow });
+    const p99 = report.slos.find((s) => s.name === 'p99_turn_latency_ms');
+    expect(p99).toBeDefined();
+    expect(p99?.samples).toBe(100);
+    expect(p99?.value).toBe(9999);
+    expect(p99?.status).toBe('fail');
+  });
+
+  it('computes the whole-turn duration separately from the model latency', () => {
+    // Measured 2026-11-10: `p99_turn_latency_ms` used to read
+    // `turn.dispatch`, which covers the WHOLE agent turn. Two of the 45
+    // samples were ninety-minute working sessions, so the metric measured
+    // the length of the work rather than the health of the runtime — and
+    // its threshold sat BELOW the median turn, so it was red by
+    // construction.
+    //
+    // The turn duration is still measured, under the name that says what
+    // it is.
+    const today = '2026-04-29';
+    const spans: SpanLine[] = [];
     for (let i = 0; i < 50; i++) {
       spans.push({
         ts: '2026-04-29T10:00:00Z',
@@ -114,11 +156,14 @@ describe('evaluateSlos', () => {
     writeSpans(telemetryDir, today, spans);
 
     const report = evaluateSlos({ now: fixedNow });
-    const p99 = report.slos.find((s) => s.name === 'p99_turn_latency_ms');
-    expect(p99).toBeDefined();
-    expect(p99?.samples).toBe(100);
-    expect(p99?.value).toBe(9999);
-    expect(p99?.status).toBe('fail');
+    const duration = report.slos.find((s) => s.name === 'p99_turn_duration_ms');
+    expect(duration).toBeDefined();
+    expect(duration?.samples).toBe(100);
+    expect(duration?.value).toBe(9999);
+    // The model latency has no provider.completion spans here, so it
+    // cannot be measured — and missing evidence is not a pass.
+    const latency = report.slos.find((s) => s.name === 'p99_turn_latency_ms');
+    expect(latency?.status).toBe('unavailable');
   });
 
   it('computes confabulation rate as ratio to turn.dispatch', () => {
@@ -151,7 +196,7 @@ describe('evaluateSlos', () => {
     writeSpans(telemetryDir, '2026-01-01', [
       {
         ts: '2026-01-01T10:00:00Z',
-        name: 'turn.dispatch',
+        name: 'provider.completion',
         durationMs: 99999,
         status: 'ok',
       },
@@ -159,8 +204,8 @@ describe('evaluateSlos', () => {
     writeSpans(telemetryDir, '2026-04-28', [
       {
         ts: '2026-04-28T10:00:00Z',
-        name: 'turn.dispatch',
-        attrs: { 'turn.timing_ms': 500 },
+        name: 'provider.completion',
+        attrs: { 'provider.name': 'minimax' },
         durationMs: 500,
         status: 'ok',
       },
@@ -182,18 +227,18 @@ describe('evaluateSlos', () => {
     for (let i = 0; i < 20; i++) {
       spans.push({
         ts: '2026-04-29T11:00:00Z',
-        name: 'turn.dispatch',
-        attrs: { 'turn.timing_ms': 500 },
+        name: 'provider.completion',
+        attrs: { 'provider.name': 'minimax' },
         durationMs: 500,
         status: 'ok',
       });
     }
-    // 20 stale turns (26h old) with a latency far above the threshold
+    // 20 stale completions (26h old) with a latency far above the threshold
     for (let i = 0; i < 20; i++) {
       spans.push({
         ts: '2026-04-28T09:00:00Z',
-        name: 'turn.dispatch',
-        attrs: { 'turn.timing_ms': 99000 },
+        name: 'provider.completion',
+        attrs: { 'provider.name': 'minimax' },
         durationMs: 99000,
         status: 'ok',
       });
@@ -238,8 +283,8 @@ describe('evaluateSlos', () => {
     for (let i = 0; i < 20; i++) {
       spans.push({
         ts: '2026-04-28T09:00:00Z',
-        name: 'turn.dispatch',
-        attrs: { 'turn.timing_ms': 99000 },
+        name: 'provider.completion',
+        attrs: { 'provider.name': 'minimax' },
         durationMs: 99000,
         status: 'ok',
       });
@@ -264,8 +309,9 @@ describe('evaluateSlos', () => {
     for (let i = 0; i < 100; i++) {
       spans.push({
         ts: '2026-04-29T10:00:00Z',
-        name: 'turn.dispatch',
-        durationMs: 5000,
+        name: 'provider.completion',
+        attrs: { 'provider.name': 'minimax' },
+        durationMs: 90000,
         status: 'ok',
       });
     }
@@ -274,7 +320,7 @@ describe('evaluateSlos', () => {
     const report = evaluateSlos({ now: fixedNow });
     const p99 = report.slos.find((s) => s.name === 'p99_turn_latency_ms');
     expect(p99?.status).toBe('fail');
-    expect(p99?.value).toBe(5000);
+    expect(p99?.value).toBe(90000);
   });
 
   it('allows operator-local p99 turn latency threshold override', () => {
@@ -283,7 +329,8 @@ describe('evaluateSlos', () => {
     for (let i = 0; i < 100; i++) {
       spans.push({
         ts: '2026-04-29T10:00:00Z',
-        name: 'turn.dispatch',
+        name: 'provider.completion',
+        attrs: { 'provider.name': 'minimax' },
         durationMs: 5000,
         status: 'ok',
       });
@@ -306,8 +353,9 @@ describe('evaluateSlos', () => {
     for (let i = 0; i < 100; i++) {
       spans.push({
         ts: now.toISOString(),
-        name: 'turn.dispatch',
-        durationMs: 5000,
+        name: 'provider.completion',
+        attrs: { 'provider.name': 'minimax' },
+        durationMs: 90000,
         status: 'ok',
       });
     }

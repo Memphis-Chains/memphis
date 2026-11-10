@@ -107,6 +107,10 @@ describe('CLI health', () => {
         ts: new Date(now.getTime() - (20 + i) * 1000).toISOString(),
         name: 'provider.completion',
         status: 'ok',
+        // The model latency is measured from this span, so it needs a
+        // duration. Without one there is nothing to compute a p99 from,
+        // and the metric is unavailable rather than passing.
+        durationMs: 100 + i,
       })),
       ...Array.from({ length: 10 }, (_, i) => ({
         ts: new Date(now.getTime() - (40 + i) * 1000).toISOString(),
@@ -136,6 +140,7 @@ describe('CLI health', () => {
       'p99_turn_latency_ms',
       'confabulation_rate',
       'provider_error_rate',
+      'p99_turn_duration_ms',
       'tool_error_rate',
     ]);
   });
