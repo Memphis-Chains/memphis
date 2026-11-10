@@ -23,6 +23,7 @@ trap cleanup EXIT
 mkdir -p "$TMP_HOME" "$TMP_WORK" "$TMP_WORK/data"
 
 cat >"$BRIDGE_PATH" <<'EOF'
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const rowStorePath = path.join(process.env.MEMPHIS_DATA_DIR || process.cwd(), 'smoke-rows.json');
@@ -124,6 +125,120 @@ module.exports = {
     createdAt: new Date().toISOString(),
   }),
   vaultRetrieve: (_vault, entry) => Buffer.from(entry.ciphertext),
+  // The reader half of the vault contract. The TypeScript side stopped
+  // parsing persisted entries itself in 10fac3d819 and asks the bridge
+  // for them, so a mock without these exports is not a mock of the
+  // current bridge -- it is a mock of an older one. Measured 2026-11-10:
+  // nightly crystal had been red for four days because this file was
+  // last touched in June.
+  vaultParseEntries: (raw, key, latest) => {
+    let entries;
+    try {
+      entries = JSON.parse(raw);
+    } catch {
+      return { errorCode: 'VAULT_ENTRIES_MALFORMED' };
+    }
+    if (!Array.isArray(entries)) {
+      return { errorCode: 'VAULT_ENTRIES_MALFORMED' };
+    }
+    const normalized = entries
+      .filter((entry) => entry && typeof entry.key === 'string')
+      .map((entry) => ({
+        ...entry,
+        // The native reader fills in the fingerprint when it is missing.
+        fingerprint:
+          typeof entry.fingerprint === 'string' && entry.fingerprint.length > 0
+            ? entry.fingerprint
+            : crypto
+                .createHash('sha256')
+                .update(JSON.stringify({ key: entry.key, encrypted: entry.encrypted, iv: entry.iv }))
+                .digest('hex'),
+      }));
+    const filtered = key ? normalized.filter((entry) => entry.key === key) : normalized;
+    const selected = latest ? filtered.slice(-1) : filtered;
+    return { entriesJson: JSON.stringify(selected) };
+  },
+  vaultDecodeEntry: (raw) => {
+    let entry;
+    try {
+      entry = JSON.parse(raw);
+    } catch {
+      return { errorCode: 'VAULT_ENTRIES_MALFORMED' };
+    }
+    if (!entry || typeof entry.key !== 'string' || typeof entry.encrypted !== 'string') {
+      return { errorCode: 'VAULT_ENTRIES_MALFORMED' };
+    }
+    return {
+      entry: {
+        id: typeof entry.id === 'string' && entry.id.length > 0 ? entry.id : 'legacy-entry',
+        key: entry.key,
+        ciphertext: Buffer.from(entry.encrypted, 'base64'),
+        nonce: Buffer.from(typeof entry.iv === 'string' ? entry.iv : '', 'base64'),
+        tag: Buffer.from(typeof entry.tag === 'string' ? entry.tag : '', 'base64'),
+        created_at: typeof entry.createdAt === 'string' ? entry.createdAt : new Date(0).toISOString(),
+      },
+    };
+  },
+  vaultLoadState: (statePath, pepper) => {
+    let raw;
+    try {
+      raw = fs.readFileSync(statePath, 'utf8');
+    } catch {
+      return { errorCode: 'VAULT_STATE_MISSING' };
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return { errorCode: 'VAULT_STATE_MALFORMED' };
+    }
+    const version = parsed && parsed.version === undefined ? 1 : parsed.version;
+    if (version !== 1 && version !== 2) {
+      return { errorCode: 'VAULT_STATE_UNSUPPORTED_VERSION' };
+    }
+    const salt = Buffer.from(typeof parsed.salt === 'string' ? parsed.salt : '', 'base64');
+    if (version === 1) {
+      return {
+        vault: {
+          salt,
+          master_key: Buffer.from(
+            typeof parsed.masterKey === 'string' ? parsed.masterKey : '',
+            'base64',
+          ),
+        },
+        version: 1,
+      };
+    }
+    const trimmedPepper = typeof pepper === 'string' ? pepper.trim() : '';
+    if (trimmedPepper.length < 12) {
+      return { errorCode: 'VAULT_PEPPER_REQUIRED' };
+    }
+    try {
+      const key = crypto.scryptSync(trimmedPepper, 'memphis-vault-state-v2', 32, {
+        N: 16384,
+        r: 8,
+        p: 1,
+      });
+      const decipher = crypto.createDecipheriv(
+        'aes-256-gcm',
+        key,
+        Buffer.from(typeof parsed.iv === 'string' ? parsed.iv : '', 'base64'),
+      );
+      decipher.setAuthTag(Buffer.from(typeof parsed.tag === 'string' ? parsed.tag : '', 'base64'));
+      const masterKey = Buffer.concat([
+        decipher.update(
+          Buffer.from(
+            typeof parsed.encryptedMasterKey === 'string' ? parsed.encryptedMasterKey : '',
+            'base64',
+          ),
+        ),
+        decipher.final(),
+      ]);
+      return { vault: { salt, master_key: masterKey }, version: 2 };
+    } catch {
+      return { errorCode: 'VAULT_STATE_AUTH_FAILED' };
+    }
+  },
   pathsResolveDataDir: (envJson, cwd) => ok(dataDir(envJson, cwd)),
   pathsResolveVaultState: (envJson, cwd) => {
     const env = parseEnv(envJson);
@@ -152,6 +267,11 @@ export NODE_ENV=test
 export DEFAULT_PROVIDER=local-fallback
 export MEMPHIS_DATA_DIR="$TMP_WORK/.memphis"
 export MEMPHIS_VAULT_STATE_PATH="$TMP_WORK/data/vault-state.json"
+export MEMPHIS_VAULT_ENTRIES_PATH="$TMP_WORK/data/vault-entries.json"
+# Without this the entries path falls back to the inherited
+# environment, which on an operator machine is the PRODUCTION vault
+# (~/.memphis/vault-entries.json). Measured 2026-11-10: the smoke
+# test was reading the operator's real vault instead of its own.
 export MEMPHIS_VAULT_PEPPER="memphis-0123456789abcdef0123456789abcdef"
 export RUST_CHAIN_ENABLED=true
 export RUST_CHAIN_BRIDGE_PATH="$BRIDGE_PATH"

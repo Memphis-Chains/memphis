@@ -374,7 +374,9 @@ export function checkBranchBoundary(input: BranchBoundaryInput): AuditCheckResul
   }
   for (const pusher of input.pushers) {
     if (violations.includes(pusher)) continue;
-    details.push(`${pusher.file}:${pusher.line} pushes ${pusher.target} (not the protected branch)`);
+    details.push(
+      `${pusher.file}:${pusher.line} pushes ${pusher.target} (not the protected branch)`,
+    );
   }
   if (input.rulesetId) {
     details.push(
