@@ -149,10 +149,47 @@ print(f"stale={len(stale)} prs={len(prs)} ahead={len(ahead)} fails={len(fails)}"
 PY
 
 # --- commit priorytetów ---
-cd "$REPO" && git add -A docs/roadmap/current-priorities.md 2>/dev/null
+#
+# The commit goes to a BRANCH and a pull request, never straight to main.
+#
+# Measured 2026-11-03: the script pushed HEAD to refs/heads/main and
+# GitHub refused it — "failed to push some refs" — because the repository
+# ruleset requires a pull request and four green checks. The cron ran for
+# eleven minutes, wrote a commit, and the one thing it was for did not
+# happen. The push was attempted on every run and refused on every run.
+#
+# The ruleset is the operator's decision and stays as it is; this script
+# changes to work with it. A branch and a PR also mean the generated
+# priorities are reviewed rather than landing unattended.
+cd "$REPO" || exit 1
+# A LITERAL branch name. The date lives in the commit message and the PR
+# title, not in the refspec.
+#
+# Measured 2026-11-10: with the date in the refspec
+# (`HEAD:refs/heads/chore/priorities-$(date ...)`) the runtime audit's
+# branch-boundary detector matched the line but could not read the target,
+# because its character class stops at `$`. The check would have passed
+# without having read where the push went — green for the wrong reason.
+# A literal target is a target the check can read.
+PRIO_BRANCH="chore/priorities-weekly"
+git add -A docs/roadmap/current-priorities.md 2>/dev/null
 if ! git diff --cached --quiet 2>/dev/null; then
   git commit -q -m "chore(priorities): auto-generowana lista na wtorek $(date -I)" 2>/dev/null
-  git push -q origin HEAD:refs/heads/main 2>&1 | tail -1
+  git push -q origin "HEAD:refs/heads/chore/priorities-weekly" 2>&1 | tail -1
+  if [ -n "$(git rev-parse --verify "origin/chore/priorities-weekly" 2>/dev/null)" ]; then
+    EXISTING="$($GHP pr list --head "$PRIO_BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null)"
+    if [ -n "$EXISTING" ]; then
+      echo "priorytety: PR #$EXISTING (gałąź $PRIO_BRANCH) czeka na review" >> "$LOG"
+    else
+      $GHP pr create --head "$PRIO_BRANCH" --base main \
+        --title "chore(priorities): auto-generowana lista na wtorek $(date -I)" \
+        --body "Wygenerowane automatycznie przez crons/tuesday-code.sh z rzeczywistego stanu repo (issues, PR-y, przebiegi CI, gałęzie).\n\nPlik: docs/roadmap/current-priorities.md" \
+        >>"$LOG" 2>&1
+      echo "priorytety: PR otwarty z gałęzi $PRIO_BRANCH" >> "$LOG"
+    fi
+  else
+    echo "priorytety: push na $PRIO_BRANCH się nie udał" >> "$LOG"
+  fi
 fi
 
 # --- delivery ---

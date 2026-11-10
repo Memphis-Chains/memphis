@@ -362,6 +362,8 @@ interface BranchFacts {
   pushers: { file: string; line: number; target: string }[];
   rulesetHasRequiredPr: boolean | null;
   rulesetId: string | null;
+  /** The branch the ruleset protects — the repository's default branch. */
+  protectedBranch: string | null;
 }
 
 async function collectBranchBoundary(repoRoot: string | null): Promise<BranchFacts> {
@@ -388,6 +390,7 @@ async function collectBranchBoundary(repoRoot: string | null): Promise<BranchFac
 
   let rulesetHasRequiredPr: boolean | null = null;
   let rulesetId: string | null = null;
+  let protectedBranch: string | null = null;
   if (repoRoot) {
     const remote = await git(['remote', 'get-url', 'origin'], repoRoot);
     const slug = /github\.com[/:]([^/]+\/[^/]+?)(?:\.git)?$/.exec(remote ?? '')?.[1];
@@ -412,10 +415,24 @@ async function collectBranchBoundary(repoRoot: string | null): Promise<BranchFac
       } catch {
         rulesetHasRequiredPr = null;
       }
+      // The protected branch is the repository's default branch. The
+      // ruleset's condition names it as ~DEFAULT_BRANCH, which is not a
+      // branch name — it is a placeholder the API resolves.
+      try {
+        const { stdout } = await execFileAsync(
+          'gh',
+          ['api', `repos/${slug}`, '--jq', '.default_branch'],
+          { cwd: repoRoot, timeout: 20_000 },
+        );
+        const branch = stdout.trim();
+        protectedBranch = branch.length > 0 ? branch : null;
+      } catch {
+        protectedBranch = null;
+      }
     }
   }
 
-  return { measured: repoRoot !== null, pushers, rulesetHasRequiredPr, rulesetId };
+  return { measured: repoRoot !== null, pushers, rulesetHasRequiredPr, rulesetId, protectedBranch };
 }
 
 async function collectGateCoverage(repoRoot: string | null): Promise<{

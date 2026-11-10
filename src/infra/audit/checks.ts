@@ -332,6 +332,20 @@ export interface BranchBoundaryInput {
   /** Whether the repository ruleset requires a pull request. Null when unknown. */
   readonly rulesetHasRequiredPr: boolean | null;
   readonly rulesetId: string | null;
+  /**
+   * The branch the boundary protects — the repository's default branch.
+   *
+   * Measured 2026-11-10: the check was called "no script pushes HEAD to
+   * main" but every push was counted as a violation, including a push to
+   * a feature branch. A script that publishes through a branch and a pull
+   * request is exactly what the ruleset wants, and the check reported it
+   * as a hole. The check has to measure what its own title says, or the
+   * operator learns to ignore it.
+   *
+   * Null when the default branch could not be read; then every push is
+   * reported, because the protected branch is not known.
+   */
+  readonly protectedBranch: string | null;
 }
 
 export function checkBranchBoundary(input: BranchBoundaryInput): AuditCheckResult {
@@ -346,9 +360,21 @@ export function checkBranchBoundary(input: BranchBoundaryInput): AuditCheckResul
     };
   }
 
+  // With the protected branch known, a push to any OTHER branch is not a
+  // boundary violation — it is a branch. Only a push to the protected
+  // branch is. When it is not known, every push is reported: an unknown
+  // boundary is not a boundary that can be assumed away.
+  const violations = input.pushers.filter(
+    (pusher) => input.protectedBranch === null || pusher.target === input.protectedBranch,
+  );
+
   const details: string[] = [];
-  for (const pusher of input.pushers) {
+  for (const pusher of violations) {
     details.push(`${pusher.file}:${pusher.line} pushes ${pusher.target}`);
+  }
+  for (const pusher of input.pushers) {
+    if (violations.includes(pusher)) continue;
+    details.push(`${pusher.file}:${pusher.line} pushes ${pusher.target} (not the protected branch)`);
   }
   if (input.rulesetId) {
     details.push(
@@ -365,11 +391,13 @@ export function checkBranchBoundary(input: BranchBoundaryInput): AuditCheckResul
   return {
     id: 'branch-boundary',
     title,
-    verdict: input.pushers.length > 0 ? FAIL : PASS,
+    verdict: violations.length > 0 ? FAIL : PASS,
     summary:
-      input.pushers.length > 0
-        ? `${input.pushers.length} script(s) push HEAD to a protected branch`
-        : 'no script pushes HEAD to a protected branch',
+      violations.length > 0
+        ? `${violations.length} script(s) push HEAD to ${input.protectedBranch ?? 'a protected branch'}`
+        : input.pushers.length > 0
+          ? `no script pushes HEAD to ${input.protectedBranch ?? 'the protected branch'} (${input.pushers.length} push(es) to other branches)`
+          : 'no script pushes HEAD to a protected branch',
     details,
   };
 }

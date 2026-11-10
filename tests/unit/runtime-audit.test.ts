@@ -296,6 +296,7 @@ describe('runtime audit · the branch boundary (H6)', () => {
       pushers: [{ file: 'crons/tuesday-code.sh', line: 155, target: 'main' }],
       rulesetHasRequiredPr: false,
       rulesetId: '14186283',
+      protectedBranch: 'main',
     });
     expect(result.verdict).toBe('failure');
     expect(result.details.join(' ')).toContain('crons/tuesday-code.sh:155');
@@ -307,8 +308,39 @@ describe('runtime audit · the branch boundary (H6)', () => {
       pushers: [],
       rulesetHasRequiredPr: false,
       rulesetId: '14186283',
+      protectedBranch: 'main',
     });
     expect(result.verdict).toBe('success');
+  });
+
+  it('does not report a push to another branch as a boundary violation', () => {
+    // Measured 2026-11-10: the check was called "no script pushes HEAD to
+    // main" but counted every push, so a script that publishes through a
+    // branch and a pull request — exactly what the ruleset wants — was
+    // reported as a hole. The operator would learn to ignore the check.
+    const result = checkBranchBoundary({
+      measured: true,
+      pushers: [{ file: 'crons/tuesday-code.sh', line: 178, target: 'chore/priorities-weekly' }],
+      rulesetHasRequiredPr: false,
+      rulesetId: '14186283',
+      protectedBranch: 'main',
+    });
+    expect(result.verdict).toBe('success');
+    // The push is still reported, so the reader can see where it went.
+    expect(result.details.join(' ')).toContain('chore/priorities-weekly');
+    expect(result.details.join(' ')).toContain('not the protected branch');
+  });
+
+  it('reports every push when the protected branch could not be read', () => {
+    // An unknown boundary is not a boundary that can be assumed away.
+    const result = checkBranchBoundary({
+      measured: true,
+      pushers: [{ file: 'crons/tuesday-code.sh', line: 178, target: 'chore/whatever' }],
+      rulesetHasRequiredPr: null,
+      rulesetId: null,
+      protectedBranch: null,
+    });
+    expect(result.verdict).toBe('failure');
   });
 
   it('says unknown when there was no repository to read', () => {
@@ -317,6 +349,7 @@ describe('runtime audit · the branch boundary (H6)', () => {
       pushers: [],
       rulesetHasRequiredPr: null,
       rulesetId: null,
+      protectedBranch: null,
     });
     expect(result.verdict).toBe('unknown');
   });
