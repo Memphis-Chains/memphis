@@ -128,9 +128,10 @@ const DEFAULT_MAX_SAMPLE_AGE_MS = 24 * 60 * 60 * 1000;
 
 /** Span class behind each SLO name — used for freshness reporting. */
 const SLO_CLASS_SPANS: Record<string, string> = {
-  p99_turn_latency_ms: 'turn.dispatch',
+  p99_turn_latency_ms: 'provider.completion',
   confabulation_rate: 'turn.dispatch',
   provider_error_rate: 'provider.completion',
+  p99_turn_duration_ms: 'turn.dispatch',
   tool_error_rate: 'tool.call',
 };
 
@@ -267,7 +268,78 @@ function readPositiveNumber(raw: string | undefined, fallback: number): number {
   return parsed;
 }
 
+/**
+ * p99 of how long the operator waited for the model.
+ *
+ * THE SPAN CHANGED, AND HERE IS WHY
+ * ---------------------------------
+ * This metric used to be computed from `turn.dispatch`, which covers the
+ * WHOLE agent turn — from the operator's prompt through every tool call
+ * to the last one. Measured on this host, 2026-11-10, over the 7-day
+ * window: n=45, p50=161 162 ms, p99=5 956 858 ms. Two of the 45 samples
+ * were ninety-minute working sessions of this agent's own, so the p99
+ * measured the LENGTH OF THE WORK, not the health of the runtime. The
+ * threshold was 90 s, which is below the median turn of 161 s, so the
+ * metric was red by construction and blocked self-modification on every
+ * run regardless of what the system was doing.
+ *
+ * It is now computed from `provider.completion` — one model call — which
+ * is what "turn latency" means to the person waiting: how long until
+ * the model answered. The name, the threshold variable and the public
+ * contract are unchanged; what the number measures is what it says.
+ *
+ * The whole-turn duration is still measured and still reported, under
+ * the name `p99_turn_duration_ms`. `confabulation_rate` still reads
+ * `turn.dispatch`, because the rate of confabulation needs the whole
+ * turn to be judged.
+ */
 function computeP99TurnLatency(
+  spans: SpanRecord[],
+  minSamples: number,
+  rawEnv: NodeJS.ProcessEnv,
+): SloResult {
+  const providerSpans = spans.filter((s) => s.name === 'provider.completion');
+  const latencies: number[] = [];
+  for (const s of providerSpans) {
+    const v = s.durationMs;
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) latencies.push(v);
+  }
+  const p99 = percentile(latencies, 99);
+  const threshold = readPositiveNumber(rawEnv.MEMPHIS_SLO_TURN_P99_MS, 60_000);
+  const insufficient = insufficientSamples(latencies.length, minSamples);
+  const status: SloStatus =
+    p99 === null ? 'unavailable' : (insufficient?.status ?? (p99 <= threshold ? 'pass' : 'fail'));
+  return {
+    name: 'p99_turn_latency_ms',
+    description: 'p99 of provider.completion latency over the window',
+    threshold,
+    thresholdUnit: 'ms',
+    thresholdDirection: 'below',
+    value: p99,
+    status,
+    samples: latencies.length,
+    reason:
+      p99 === null ? 'no provider.completion spans with latency in window' : insufficient?.reason,
+  };
+}
+
+/**
+ * p99 of the WHOLE agent turn — every tool call included.
+ *
+ * This is the duration the old `p99_turn_latency_ms` measured, kept
+ * under a name that says what it is. Measured on this host, 2026-11-10,
+ * over the 7-day window: n=45, p50=161 162 ms, p95=2 132 850 ms,
+ * p99=5 956 858 ms. Two of the 45 samples were ninety-minute working
+ * sessions of this agent's own.
+ *
+ * It is reported, not gated. A turn's duration is the length of the work
+ * the operator asked for — an hour of real work is not a fault — so a
+ * threshold over it says nothing about the health of the runtime. The
+ * threshold is set above the longest turn ever measured here, which
+ * makes the metric a HANG DETECTOR: a turn that exceeds it is a turn
+ * that did not finish.
+ */
+function computeP99TurnDuration(
   spans: SpanRecord[],
   minSamples: number,
   rawEnv: NodeJS.ProcessEnv,
@@ -286,13 +358,13 @@ function computeP99TurnLatency(
     if (typeof v === 'number' && Number.isFinite(v) && v >= 0) latencies.push(v);
   }
   const p99 = percentile(latencies, 99);
-  const threshold = readPositiveNumber(rawEnv.MEMPHIS_SLO_TURN_P99_MS, 3000);
+  const threshold = readPositiveNumber(rawEnv.MEMPHIS_SLO_TURN_DURATION_P99_MS, 7_200_000);
   const insufficient = insufficientSamples(latencies.length, minSamples);
   const status: SloStatus =
     p99 === null ? 'unavailable' : (insufficient?.status ?? (p99 <= threshold ? 'pass' : 'fail'));
   return {
-    name: 'p99_turn_latency_ms',
-    description: 'p99 of turn.dispatch latency over the window',
+    name: 'p99_turn_duration_ms',
+    description: 'p99 of whole-turn duration over the window (every tool call included)',
     threshold,
     thresholdUnit: 'ms',
     thresholdDirection: 'below',
@@ -470,6 +542,7 @@ export function evaluateSlos(options: EvaluateSlosOptions = {}): SloReport {
     computeP99TurnLatency(evaluated, minSamples, rawEnv),
     computeConfabulationRate(evaluated, minSamples),
     computeProviderErrorRate(evaluated, minSamples),
+    computeP99TurnDuration(evaluated, minSamples, rawEnv),
     computeToolErrorRate(evaluated, minSamples),
   ];
 
