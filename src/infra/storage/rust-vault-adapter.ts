@@ -70,7 +70,7 @@ interface JsVaultEntry {
   createdAt?: string;
 }
 
-const NEW_VAULT_BRIDGE_ALIASES = {
+export const NEW_VAULT_BRIDGE_ALIASES = {
   vault_init_full: ['vault_init_full', 'vaultInitFull'],
   vault_store: ['vault_store', 'vaultStore'],
   vault_retrieve: ['vault_retrieve', 'vaultRetrieve'],
@@ -86,7 +86,7 @@ const NEW_VAULT_BRIDGE_ALIASES = {
   | 'vault_decode_entry'
 >;
 
-const LEGACY_VAULT_BRIDGE_ALIASES = {
+export const LEGACY_VAULT_BRIDGE_ALIASES = {
   vault_init_json: ['vault_init_json', 'vault_init', 'vaultInitJson'],
   vault_encrypt: ['vault_encrypt', 'vaultEncrypt'],
   vault_decrypt: ['vault_decrypt', 'vaultDecrypt'],
