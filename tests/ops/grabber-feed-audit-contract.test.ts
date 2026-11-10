@@ -259,9 +259,7 @@ describe('the grabber probe', () => {
     // hw:2,0 is the NVIDIA HDMI device here — playback only. The audio
     // device is discovered, and its absence is reported as absence.
     const source = readFileSync(probe, 'utf8');
-    const executed = source
-      .split('\n')
-      .filter((line) => !line.trimStart().startsWith('#'));
+    const executed = source.split('\n').filter((line) => !line.trimStart().startsWith('#'));
     for (const line of executed) {
       expect(line).not.toContain('hw:2,0');
     }
