@@ -473,7 +473,7 @@ describe('runtime audit · end to end against an isolated home', () => {
       config: null,
     });
     expect(report.checks.find((check) => check.id === 'slo-reporting')?.summary).toContain(
-      '0 of 4 metrics unavailable; verdict=passing',
+      '0 of 5 metrics unavailable; verdict=passing',
     );
   });
 });

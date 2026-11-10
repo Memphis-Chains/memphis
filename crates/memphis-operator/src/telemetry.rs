@@ -295,11 +295,16 @@ pub(crate) fn record_tool_call_for_turn(
 /// Record the turn itself, in the same shape the TypeScript gateway
 /// emits, so one evaluator can read both surfaces.
 ///
-/// The SLO evaluator reads three of its four signals from this span:
-/// `p99_turn_latency_ms` takes its duration, and
+/// The SLO evaluator reads two of its signals from this span:
+/// `p99_turn_duration_ms` takes its duration, and
 /// `confabulation_rate` divides the number of `confabulation.event`
 /// spans by the number of turns. Without it, the cockpit — the
 /// authoritative surface — is invisible to both.
+///
+/// `p99_turn_latency_ms` no longer reads this span: measured
+/// 2026-11-10, a whole turn covers every tool call the operator asked
+/// for, so its p99 measured the length of the work rather than the
+/// wait for the model. That metric reads `provider.completion` now.
 ///
 /// Measured on this host (2026-11-01): the report said "no turn.dispatch
 /// spans in window — last turn.dispatch span 3d ago" while the operator
@@ -503,9 +508,9 @@ mod tests {
     }
 
     /// The cockpit is the authoritative surface, and it has to be
-    /// measurable: `p99_turn_latency_ms` and `confabulation_rate` both
-    /// read the `turn.dispatch` span, `provider_error_rate` reads the
-    /// `provider.completion` one.
+    /// measurable: `p99_turn_duration_ms` and `confabulation_rate` both
+    /// read the `turn.dispatch` span, `provider_error_rate` and
+    /// `p99_turn_latency_ms` read the `provider.completion` one.
     ///
     /// Measured on this host (2026-11-01) the report said "no
     /// turn.dispatch spans in window — last turn.dispatch span 3d ago"

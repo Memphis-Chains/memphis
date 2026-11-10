@@ -494,7 +494,7 @@ impl OperatorRuntime {
           )
         };
         // The turn itself, measured. The TypeScript gateway records this
-        // span; without it here, `p99_turn_latency_ms` and
+        // span; without it here, `p99_turn_duration_ms` and
         // `confabulation_rate` read the gateway's last measurement
         // instead of the cockpit's — the surface the operator actually
         // uses. Measured on this host: the report said "last
