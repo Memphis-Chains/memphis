@@ -1,6 +1,6 @@
 import type { RuntimeHealthSnapshot } from './runtime-health.js';
 import type { SchedulerRuntimeStatus } from './scheduler.js';
-import { assessSloReport } from '../../observability/slo-assessment.js';
+import { assessGatedSlos } from '../../observability/slo-assessment.js';
 import type { SloReport } from '../../observability/slo-evaluator.js';
 
 export type SelfGovernanceMode = 'supervised-operational';
@@ -27,14 +27,17 @@ export type SelfGovernanceSnapshot = {
   canSelfModify: boolean;
   blockingReasons: string[];
   recommendedActions: string[];
-  sloWindows?: Record<string, {
-    status: 'pass' | 'fail' | 'unavailable';
-    failingSlos: string[];
-    unavailableSlos: string[];
-    samples: number;
-    windowStart: string;
-    windowEnd: string;
-  }>;
+  sloWindows?: Record<
+    string,
+    {
+      status: 'pass' | 'fail' | 'unavailable';
+      failingSlos: string[];
+      unavailableSlos: string[];
+      samples: number;
+      windowStart: string;
+      windowEnd: string;
+    }
+  >;
   freshness: {
     generatedAt: string;
     sloWindowEnd?: string;
@@ -61,8 +64,14 @@ function currentSloWindow(report: SloReport, label: string, nowMs: number): bool
   const start = Date.parse(report.windowStart);
   const end = Date.parse(report.windowEnd);
   const maxWindowMs = label === '1h' ? 3_600_000 : 86_400_000;
-  return Number.isFinite(start) && Number.isFinite(end) && end > start &&
-    end - start <= maxWindowMs + 1000 && end >= nowMs - 300_000 && end <= nowMs + 1000;
+  return (
+    Number.isFinite(start) &&
+    Number.isFinite(end) &&
+    end > start &&
+    end - start <= maxWindowMs + 1000 &&
+    end >= nowMs - 300_000 &&
+    end <= nowMs + 1000
+  );
 }
 
 export function buildSelfGovernanceSnapshot(
@@ -106,19 +115,30 @@ export function buildSelfGovernanceSnapshot(
   if (backups) {
     if (!backups.enabled && archiveCount === 0) {
       addUnique(blockingReasons, 'scheduled backups are disabled and no backup archive is present');
-      addUnique(recommendedActions, 'Enable scheduled backups or create and verify a manual backup');
+      addUnique(
+        recommendedActions,
+        'Enable scheduled backups or create and verify a manual backup',
+      );
     }
     if (backups.enabled && backups.isStale) {
       addUnique(blockingReasons, 'latest scheduled backup is stale');
       addUnique(recommendedActions, 'Run memphis backup create and verify the latest archive');
     }
-    if (backups.enabled && !backups.lastSuccessAt && backups.totalSuccess === 0 && archiveCount === 0) {
+    if (
+      backups.enabled &&
+      !backups.lastSuccessAt &&
+      backups.totalSuccess === 0 &&
+      archiveCount === 0
+    ) {
       addUnique(blockingReasons, 'no successful backup is known for this runtime');
       addUnique(recommendedActions, 'Run memphis backup create before relying on self-recovery');
     }
     if (backups.lastError) {
       addUnique(blockingReasons, `scheduled backup has last error: ${backups.lastError}`);
-      addUnique(recommendedActions, 'Inspect scheduled backup logs and run memphis backup list --verify');
+      addUnique(
+        recommendedActions,
+        'Inspect scheduled backup logs and run memphis backup list --verify',
+      );
     }
   } else if (archiveCount === 0) {
     addUnique(blockingReasons, 'backup readiness is unavailable');
@@ -127,7 +147,10 @@ export function buildSelfGovernanceSnapshot(
 
   const sloReports = input.sloReports;
   const blockingSloReports: Array<readonly [string, SloReport | undefined]> = sloReports
-    ? [['1h', sloReports['1h']], ['24h', sloReports['24h']]]
+    ? [
+        ['1h', sloReports['1h']],
+        ['24h', sloReports['24h']],
+      ]
     : input.sloReport
       ? [['default', input.sloReport] as const]
       : [['default', undefined]];
@@ -144,7 +167,10 @@ export function buildSelfGovernanceSnapshot(
       sloBlocked = true;
       continue;
     }
-    const assessment = assessSloReport(report);
+    // The GATE weighs the gated metrics only. The report itself still
+    // names every metric, reported-only ones included — a tool that hid
+    // them would be hiding the state of the system.
+    const assessment = assessGatedSlos(report);
     for (const name of assessment.failingSlos) {
       addUnique(blockingReasons, `SLO failing (${label}): ${name}`);
       sloBlocked = true;
@@ -161,9 +187,16 @@ export function buildSelfGovernanceSnapshot(
     );
   }
 
-  if (input.scheduler && input.scheduler.configuredTarget === 'workers' && input.scheduler.effectiveTarget !== 'workers') {
+  if (
+    input.scheduler &&
+    input.scheduler.configuredTarget === 'workers' &&
+    input.scheduler.effectiveTarget !== 'workers'
+  ) {
     addUnique(blockingReasons, 'scheduler worker target fell back from workers');
-    addUnique(recommendedActions, input.scheduler.fallbackReason ?? 'Restore scheduler worker lane readiness');
+    addUnique(
+      recommendedActions,
+      input.scheduler.fallbackReason ?? 'Restore scheduler worker lane readiness',
+    );
   }
 
   const canSelfRecover =
@@ -183,8 +216,9 @@ export function buildSelfGovernanceSnapshot(
     sloWindows: sloReports
       ? Object.fromEntries(
           Object.entries(sloReports).map(([label, report]) => {
-            const assessment = assessSloReport(report);
-            const current = label !== '1h' && label !== '24h' || currentSloWindow(report, label, nowMs);
+            const assessment = assessGatedSlos(report);
+            const current =
+              (label !== '1h' && label !== '24h') || currentSloWindow(report, label, nowMs);
             return [
               label,
               {
