@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
+import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -467,8 +468,28 @@ describe('runtime audit · end to end against an isolated home', () => {
       path.join(telemetry, `spans-${now.toISOString().slice(0, 10)}.jsonl`),
       `${spans.map((span) => JSON.stringify(span)).join('\n')}\n`,
     );
+    // The operator database, with the turn checkpoint table the native
+    // runtime creates on the first turn. `p99_turn_duration_ms` reads it
+    // because a turn that never finishes writes no telemetry span — the
+    // checkpoint table is the only place that records it.
+    const operatorDbPath = path.join(home, 'operator.db');
+    const operatorDb = new Database(operatorDbPath);
+    operatorDb.exec(`CREATE TABLE IF NOT EXISTS operator_turn_checkpoints (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      pending_json TEXT NOT NULL,
+      partial_text TEXT NOT NULL DEFAULT '',
+      partial_truncated INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    )`);
+    operatorDb.close();
     const report = await runRuntimeAudit({
-      rawEnv: { ...process.env, MEMPHIS_DATA_DIR: home },
+      rawEnv: {
+        ...process.env,
+        MEMPHIS_DATA_DIR: home,
+        DATABASE_URL: `file:${operatorDbPath}`,
+      },
       repoRoot: null,
       config: null,
     });
