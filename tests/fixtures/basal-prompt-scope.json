@@ -1,0 +1,276 @@
+{
+  "description": "Shared scope-gate contract for the automatic Basal prompt hint. Both arms (TypeScript and native Rust) must gate identically: a message is gated when it can still need a memory (recall/remember) or correction intent.",
+  "cues": [
+    "zapamiętaj",
+    "zapamiętaj sobie",
+    "zachowaj na przyszłość",
+    "odnotuj",
+    "remember that",
+    "co ustaliliśmy",
+    "co ustalili",
+    "co robiliśmy",
+    "przypomnij",
+    "pamiętasz",
+    "co pozostaje",
+    "otwarte",
+    "co wisi",
+    "co się podziało",
+    "jaki był plan",
+    "status",
+    "what did we",
+    "remind me",
+    "nie,",
+    "pomyłka",
+    "zmiana:",
+    "jednak nie",
+    "wracając do tego",
+    "sko tak, to popraw",
+    "źle napisałem",
+    "actually,",
+    "i meant",
+    "co przed chwilą",
+    "what did i just say"
+  ],
+  "cases": [
+    {
+      "id": "remember-01",
+      "input": "zapamiętaj, że wolę odpowiedzi po polsku i krótko",
+      "gated": true,
+      "intent": "remember"
+    },
+    {
+      "id": "remember-02",
+      "input": "Zapamiętaj sobie, że budżet to 300 zł miesięcznie",
+      "gated": true,
+      "intent": "remember"
+    },
+    {
+      "id": "remember-03",
+      "input": "zachowaj na przyszłość, że wolę Q8 zamiast Q4",
+      "gated": true,
+      "intent": "remember"
+    },
+    {
+      "id": "remember-04",
+      "input": "odnotuj, że zawsze odpowiadam po polsku",
+      "gated": true,
+      "intent": "remember"
+    },
+    {
+      "id": "remember-05",
+      "input": "Remember that I prefer short answers",
+      "gated": true,
+      "intent": "remember"
+    },
+    {
+      "id": "recall-01",
+      "input": "co ustaliliśmy wczoraj o bazie semantycznej?",
+      "gated": true,
+      "intent": "recall"
+    },
+    {
+      "id": "recall-02",
+      "input": "co ustaliliśmy o offsite backupie?",
+      "gated": true,
+      "intent": "recall"
+    },
+    {
+      "id": "recall-03",
+      "input": "co robiliśmy z łańcuchem decyzji?",
+      "gated": true,
+      "intent": "recall"
+    },
+    {
+      "id": "recall-04",
+      "input": "przypomnij, jaki termin przeglądu zapisaliśmy",
+      "gated": true,
+      "intent": "recall"
+    },
+    {
+      "id": "recall-05",
+      "input": "pamiętasz jaką ustaliliśmy kalibrację?",
+      "gated": true,
+      "intent": "recall"
+    },
+    {
+      "id": "recall-06",
+      "input": "co pozostaje?",
+      "gated": true,
+      "intent": "recall"
+    },
+    {
+      "id": "recall-07",
+      "input": "otwarte",
+      "gated": true,
+      "intent": "recall"
+    },
+    {
+      "id": "recall-08",
+      "input": "co wisi?",
+      "gated": true,
+      "intent": "recall"
+    },
+    {
+      "id": "recall-09",
+      "input": "co się podziało?",
+      "gated": true,
+      "intent": "recall"
+    },
+    {
+      "id": "recall-10",
+      "input": "jaki był plan na ten tydzień?",
+      "gated": true,
+      "intent": "recall"
+    },
+    {
+      "id": "recall-11",
+      "input": "status",
+      "gated": true,
+      "intent": "recall"
+    },
+    {
+      "id": "recall-12",
+      "input": "what did we decide about the threshold?",
+      "gated": true,
+      "intent": "recall"
+    },
+    {
+      "id": "recall-13",
+      "input": "remind me what the plan was",
+      "gated": true,
+      "intent": "recall"
+    },
+    {
+      "id": "correction-01",
+      "input": "nie, chodziło mi o BGE-M3 a nie o lokalny indeks",
+      "gated": true,
+      "intent": "correction"
+    },
+    {
+      "id": "correction-02",
+      "input": "pomyłka, liczba to 42 a nie 24",
+      "gated": true,
+      "intent": "correction"
+    },
+    {
+      "id": "correction-03",
+      "input": "zmiana: zamiast Q4 użyj Q8",
+      "gated": true,
+      "intent": "correction"
+    },
+    {
+      "id": "correction-04",
+      "input": "jednak nie, zostawmy to jak było",
+      "gated": true,
+      "intent": "correction"
+    },
+    {
+      "id": "correction-05",
+      "input": "wracając do tego — źle napisałem, popraw na tak",
+      "gated": true,
+      "intent": "correction"
+    },
+    {
+      "id": "correction-06",
+      "input": "sko tak, to popraw ten kontrakt",
+      "gated": true,
+      "intent": "correction"
+    },
+    {
+      "id": "correction-07",
+      "input": "actually, I meant the Q8 build",
+      "gated": true,
+      "intent": "correction"
+    },
+    {
+      "id": "correction-08",
+      "input": "i meant BGE-M3",
+      "gated": true,
+      "intent": "correction"
+    },
+    {
+      "id": "plain-01",
+      "input": "opisz jak basal zmienil memphis. podaj statystyki",
+      "gated": false,
+      "intent": null
+    },
+    {
+      "id": "plain-02",
+      "input": "wyślij mi raport na telegram",
+      "gated": false,
+      "intent": null
+    },
+    {
+      "id": "plain-03",
+      "input": "zrestartuj kokpit",
+      "gated": false,
+      "intent": null
+    },
+    {
+      "id": "plain-04",
+      "input": "dzień dobry, jak się masz?",
+      "gated": false,
+      "intent": null
+    },
+    {
+      "id": "plain-05",
+      "input": "zrób to lepiej",
+      "gated": false,
+      "intent": null
+    },
+    {
+      "id": "plain-06",
+      "input": "yo",
+      "gated": false,
+      "intent": null
+    },
+    {
+      "id": "plain-07",
+      "input": "siema",
+      "gated": false,
+      "intent": null
+    },
+    {
+      "id": "plain-08",
+      "input": "napisz mi skrypt bash który kasuje pliki starsze niż 30 dni",
+      "gated": false,
+      "intent": null
+    },
+    {
+      "id": "plain-09",
+      "input": "Odpowiedz tylko slowem GOTOWE. Nie korzystaj z narzedzi.",
+      "gated": false,
+      "intent": null
+    },
+    {
+      "id": "plain-10",
+      "input": "hejze, co jest teraz najistotniejsze? wykonaj. co jest wazne potem? wykonaj badz zaplanuj",
+      "gated": false,
+      "intent": null
+    },
+    {
+      "id": "plain-11",
+      "input": "Test tylko do odczytu: wywolaj raz narzedzie memphis_health i krotko podaj wynik.",
+      "gated": false,
+      "intent": null
+    },
+    {
+      "id": "plain-12",
+      "input": "a co jak beda to dziewczynki - nowy html/pdf - wyklucz kaliningrad nie mamy paszportow",
+      "gated": false,
+      "intent": null
+    },
+    {
+      "id": "recall-14",
+      "input": "Co przed chwilą napisałem?",
+      "gated": true,
+      "intent": "recall"
+    },
+    {
+      "id": "recall-15",
+      "input": "What did I just say?",
+      "gated": true,
+      "intent": "recall"
+    }
+  ]
+}
