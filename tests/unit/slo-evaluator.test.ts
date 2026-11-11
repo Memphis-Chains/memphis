@@ -63,31 +63,53 @@ describe('evaluateSlos', () => {
 
   it('excludes future spans from both assessment and most recent activity', () => {
     const spans: SpanLine[] = Array.from({ length: 10 }, () => ({
-      ts: '2026-04-29T12:00:01Z', name: 'turn.dispatch', durationMs: 1, status: 'ok',
+      ts: '2026-04-29T12:00:01Z',
+      name: 'turn.dispatch',
+      durationMs: 1,
+      status: 'ok',
     }));
     writeSpans(telemetryDir, '2026-04-29', spans);
     const report = evaluateSlos({ now: fixedNow });
     expect(report.totalSamples).toBe(0);
-    expect(report.slos.find((slo) => slo.name === 'p99_turn_latency_ms')?.status).toBe('unavailable');
+    expect(report.slos.find((slo) => slo.name === 'p99_turn_latency_ms')?.status).toBe(
+      'unavailable',
+    );
     expect(report.recent.turn).toBeNull();
   });
 
   it('reports stream timing separately without clearing the existing latency gate', () => {
     const spans: SpanLine[] = Array.from({ length: 10 }, () => ({
-      ts: '2026-04-29T10:00:00Z', name: 'provider.completion',
-      attrs: { 'provider.name': 'minimax' }, durationMs: 90000, status: 'ok',
+      ts: '2026-04-29T10:00:00Z',
+      name: 'provider.completion',
+      attrs: { 'provider.name': 'minimax' },
+      durationMs: 90000,
+      status: 'ok',
     }));
     spans.push({
-      ts: '2026-04-29T10:00:01Z', name: 'provider.completion', status: 'error',
-      attrs: { 'stream.bytes': 100, 'stream.first_byte_after_headers_ms': 23, 'stream.idle_before_error_ms': 1234 },
+      ts: '2026-04-29T10:00:01Z',
+      name: 'provider.completion',
+      status: 'error',
+      attrs: {
+        'stream.bytes': 100,
+        'stream.first_byte_after_headers_ms': 23,
+        'stream.idle_before_error_ms': 1234,
+      },
     });
-    spans.push({ ts: '2026-04-29T10:00:02Z', name: 'provider.completion', status: 'ok', attrs: {} });
+    spans.push({
+      ts: '2026-04-29T10:00:02Z',
+      name: 'provider.completion',
+      status: 'ok',
+      attrs: {},
+    });
     writeSpans(telemetryDir, '2026-04-29', spans);
     const report = evaluateSlos({ now: fixedNow });
     expect(report.slos.find((s) => s.name === 'p99_turn_latency_ms')?.status).toBe('fail');
     expect(report.streamDiagnostics).toEqual({
-      samples: 1, firstByteAfterHeadersSamples: 1, p99FirstByteAfterHeadersMs: 23,
-      idleBeforeErrorSamples: 1, maxIdleBeforeErrorMs: 1234,
+      samples: 1,
+      firstByteAfterHeadersSamples: 1,
+      p99FirstByteAfterHeadersMs: 23,
+      idleBeforeErrorSamples: 1,
+      maxIdleBeforeErrorMs: 1234,
     });
   });
 
@@ -131,8 +153,17 @@ describe('evaluateSlos', () => {
     // its threshold sat BELOW the median turn, so it was red by
     // construction.
     //
-    // The turn duration is still measured, under the name that says what
-    // it is.
+    // Measured 2026-11-11: `p99_turn_duration_ms` had the same defect.
+    // It read `turn.dispatch` too, so it measured FINISHED work — and a
+    // 2.5-hour session with 211 tool calls (206 successful) tripped its
+    // threshold. It could not see a hang either: a turn that never
+    // finishes writes no `turn.dispatch` span, and the host had an
+    // 18-hour-old turn every span-based metric was blind to.
+    //
+    // It now measures the turns that did NOT finish, from the operator
+    // database's own checkpoint table. Its own tests live in
+    // `slo-stuck-turn.test.ts`; this one pins that the length of FINISHED
+    // sessions is still reported — as a diagnostic, not a verdict.
     const today = '2026-04-29';
     const spans: SpanLine[] = [];
     for (let i = 0; i < 50; i++) {
@@ -156,10 +187,9 @@ describe('evaluateSlos', () => {
     writeSpans(telemetryDir, today, spans);
 
     const report = evaluateSlos({ now: fixedNow });
-    const duration = report.slos.find((s) => s.name === 'p99_turn_duration_ms');
-    expect(duration).toBeDefined();
-    expect(duration?.samples).toBe(100);
-    expect(duration?.value).toBe(9999);
+    // The length of finished sessions is a diagnostic now.
+    expect(report.turnDuration?.p99Ms).toBe(9999);
+    expect(report.turnDuration?.samples).toBe(100);
     // The model latency has no provider.completion spans here, so it
     // cannot be measured — and missing evidence is not a pass.
     const latency = report.slos.find((s) => s.name === 'p99_turn_latency_ms');
@@ -522,11 +552,19 @@ describe('evaluateSlos', () => {
 
   it('does not turn inconclusive tool outcomes into successes', () => {
     const spans: SpanLine[] = Array.from({ length: 20 }, () => ({
-      ts: '2026-04-29T10:00:00Z', name: 'tool.call', durationMs: 10,
-      status: 'ok' as const, attrs: { 'tool.output.shape': 'inconclusive' },
+      ts: '2026-04-29T10:00:00Z',
+      name: 'tool.call',
+      durationMs: 10,
+      status: 'ok' as const,
+      attrs: { 'tool.output.shape': 'inconclusive' },
     }));
-    spans.push({ ts: '2026-04-29T10:00:01Z', name: 'tool.call', durationMs: 10,
-      status: 'error', attrs: { 'tool.output.shape': 'unknown' } });
+    spans.push({
+      ts: '2026-04-29T10:00:01Z',
+      name: 'tool.call',
+      durationMs: 10,
+      status: 'error',
+      attrs: { 'tool.output.shape': 'unknown' },
+    });
     writeSpans(telemetryDir, '2026-04-29', spans);
     const tool = evaluateSlos({ now: fixedNow }).slos.find((s) => s.name === 'tool_error_rate');
     expect(tool?.samples).toBe(1);
@@ -536,10 +574,15 @@ describe('evaluateSlos', () => {
   });
 
   it('reports the latest inconclusive tool outcome as unknown', () => {
-    writeSpans(telemetryDir, '2026-04-29', [{
-      ts: '2026-04-29T10:00:00Z', name: 'tool.call', durationMs: 10,
-      status: 'ok', attrs: { 'tool.output.shape': 'inconclusive' },
-    }]);
+    writeSpans(telemetryDir, '2026-04-29', [
+      {
+        ts: '2026-04-29T10:00:00Z',
+        name: 'tool.call',
+        durationMs: 10,
+        status: 'ok',
+        attrs: { 'tool.output.shape': 'inconclusive' },
+      },
+    ]);
     const report = evaluateSlos({ now: fixedNow });
     expect(report.recent.tool?.status).toBe('unknown');
     expect(report.slos.find((s) => s.name === 'tool_error_rate')?.status).toBe('unavailable');
