@@ -82,6 +82,11 @@ export const BASAL_PROMPT_SCOPE_CUES: readonly string[] = [
   'status',
   'what did we',
   'remind me',
+  // The deterministic session-recall shortcut phrases. They ARE recall
+  // requests, and the runtime still classifies them when the shortcut is
+  // available, so the gate must not skip them.
+  'co przed chwilą',
+  'what did i just say',
   // correction
   'nie,',
   'pomyłka',
