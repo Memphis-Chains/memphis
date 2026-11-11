@@ -93,6 +93,26 @@ describe('CLI health', () => {
     const telemetryDir = join(dataDir, 'telemetry');
     mkdirSync(telemetryDir, { recursive: true });
 
+    // The operator database. `p99_turn_duration_ms` reads the turns the
+    // runtime still believes are running from here, because a turn that
+    // never finishes writes no telemetry span — the checkpoint table is
+    // the only place that records it. The table itself is created by the
+    // native runtime when the first turn runs (crates/memphis-operator/
+    // src/chat_session.rs, `ensure_chat_tables`), so the fixture creates
+    // the same shape.
+    const operatorDbPath = join(runtimeDir, 'operator.db');
+    const operatorDb = createSqliteClient(`file:${operatorDbPath}`);
+    operatorDb.exec(`CREATE TABLE IF NOT EXISTS operator_turn_checkpoints (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      pending_json TEXT NOT NULL,
+      partial_text TEXT NOT NULL DEFAULT '',
+      partial_truncated INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    )`);
+    operatorDb.close();
+
     const now = new Date();
     const today = now.toISOString().slice(0, 10);
     const spans = [
@@ -128,6 +148,7 @@ describe('CLI health', () => {
       env: {
         MEMPHIS_DATA_DIR: dataDir,
         MEMPHIS_ENV_FILE: envFile,
+        DATABASE_URL: `file:${operatorDbPath}`,
       },
     });
 
