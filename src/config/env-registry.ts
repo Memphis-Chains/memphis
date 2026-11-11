@@ -188,6 +188,15 @@ export const MEMPHIS_BASAL_PROMPT_ENABLED = defineEnumAccessor({
   defaultValue: 'false',
 });
 
+export const MEMPHIS_BASAL_PROMPT_SCOPE = defineEnumAccessor({
+  name: 'MEMPHIS_BASAL_PROMPT_SCOPE',
+  envKey: 'MEMPHIS_BASAL_PROMPT_SCOPE',
+  description:
+    'Which prompts are classified: every nonempty turn, or only turns that can need a memory or correction intent',
+  values: ['every', 'actionable'] as const,
+  defaultValue: 'every',
+});
+
 export const MEMPHIS_BASAL_PROMPT_TIMEOUT_MS = defineNumberAccessor({
   name: 'MEMPHIS_BASAL_PROMPT_TIMEOUT_MS',
   envKey: 'MEMPHIS_BASAL_PROMPT_TIMEOUT_MS',
@@ -755,6 +764,7 @@ export const MEMPHIS_VISION_TIMEOUT_MS = defineNumberAccessor({
  */
 export const ENV_REGISTRY: readonly EnvAccessor<unknown>[] = [
   MEMPHIS_BASAL_PROMPT_ENABLED,
+  MEMPHIS_BASAL_PROMPT_SCOPE,
   MEMPHIS_BASAL_PROMPT_TIMEOUT_MS,
   LOG_LEVEL,
   NODE_ENV,

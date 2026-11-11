@@ -109,6 +109,7 @@ pub const BASAL_PROMPT_UNAVAILABLE: &str = "Basal classification is unavailable 
 pub const BASAL_PROMPT_MAX_STATE_BYTES: usize = 1024;
 
 const BASAL_PROMPT_ENABLED_ENV: &str = "MEMPHIS_BASAL_PROMPT_ENABLED";
+const BASAL_PROMPT_SCOPE_ENV: &str = "MEMPHIS_BASAL_PROMPT_SCOPE";
 const BASAL_PROMPT_TIMEOUT_ENV: &str = "MEMPHIS_BASAL_PROMPT_TIMEOUT_MS";
 const BASAL_PROMPT_URL_ENV: &str = "MEMPHIS_BASAL_URL";
 const BASAL_PROMPT_TIMEOUT_DEFAULT_MS: u64 = 60_000;
@@ -225,6 +226,86 @@ pub fn basal_prompt_enabled(config: &OperatorConfig) -> bool {
         None => false,
     }
 }
+
+/// Whether every nonempty turn is classified, or only the turns that can
+/// still need a memory or correction intent.
+///
+/// Measured on this host (2026-11-10): 93 of 99 recorded classifications
+/// were below the calibrated threshold, and 87 carried the `clarify` label —
+/// a hint that only says "interpret the message normally" while the turn paid
+/// 22-27 s of CPU for it. `actionable` keeps the hint only where it can
+/// change a decision.
+pub fn basal_prompt_scope_is_actionable(config: &OperatorConfig) -> bool {
+    config
+        .env(BASAL_PROMPT_SCOPE_ENV)
+        .map(|value| value.trim().eq_ignore_ascii_case("actionable"))
+        .unwrap_or(false)
+}
+
+/// Cues that mark a turn as possibly needing a memory or correction intent.
+///
+/// This is a gate on spending CPU, never a classifier: it decides whether to
+/// call the service, and the verdict still comes from the model. A cue miss
+/// only removes a hint that would have said "interpret the message normally".
+///
+/// The patterns are byte-identical to the TypeScript arm
+/// (`src/gateway/basal-prompt-classification.ts`); the shared fixture
+/// `tests/fixtures/basal-prompt-scope.json` pins both implementations.
+pub fn basal_prompt_may_need_actionable_intent(prompt: &str) -> bool {
+    let lowered = prompt.to_lowercase();
+    BASAL_PROMPT_SCOPE_CUES
+        .iter()
+        .any(|cue| lowered.contains(&cue.to_lowercase()))
+}
+
+/// The cue table, byte-identical to the TypeScript arm
+/// (`src/gateway/basal-prompt-classification.ts`) and pinned by the shared
+/// fixture `tests/fixtures/basal-prompt-scope.json`.
+///
+/// Matching is plain case-insensitive substring containment in both arms.
+/// Word-boundary matching would diverge here: JavaScript's `\b` treats Polish
+/// letters as non-word characters while Rust's `is_alphanumeric` does not, so
+/// the two arms would answer differently on the same message. Substring
+/// matching errs towards *classifying more often*, and a needless
+/// classification only spends CPU — a missed one would drop a hint that
+/// could have changed a decision.
+pub const BASAL_PROMPT_SCOPE_CUES: [&str; 29] = [
+    // remember
+    "zapamiętaj",
+    "zapamiętaj sobie",
+    "zachowaj na przyszłość",
+    "odnotuj",
+    "remember that",
+    // recall
+    "co ustaliliśmy",
+    "co ustalili",
+    "co robiliśmy",
+    "przypomnij",
+    "pamiętasz",
+    "co pozostaje",
+    "otwarte",
+    "co wisi",
+    "co się podziało",
+    "jaki był plan",
+    "status",
+    "what did we",
+    "remind me",
+    // The deterministic session-recall shortcut phrases. They ARE recall
+    // requests, and the runtime still classifies them when the shortcut is
+    // available, so the gate must not skip them.
+    "co przed chwilą",
+    "what did i just say",
+    // correction
+    "nie,",
+    "pomyłka",
+    "zmiana:",
+    "jednak nie",
+    "wracając do tego",
+    "sko tak, to popraw",
+    "źle napisałem",
+    "actually,",
+    "i meant",
+];
 
 /// The per-turn deadline. Invalid values fall back to the default.
 pub fn basal_prompt_timeout(config: &OperatorConfig) -> Duration {
@@ -400,6 +481,13 @@ pub fn classify_prompt_for_turn(
 
     let trimmed = prompt.trim();
     if trimmed.is_empty() {
+        return Ok(None);
+    }
+    // Scope gate: skip the service when the hint could not change a decision.
+    // Same rule as the TypeScript arm, so both surfaces behave identically.
+    if basal_prompt_scope_is_actionable(config)
+        && !basal_prompt_may_need_actionable_intent(trimmed)
+    {
         return Ok(None);
     }
     let input_bytes = trimmed.len();
@@ -927,6 +1015,12 @@ mod tests {
 
     const CONTRACT_FIXTURE: &str =
         include_str!("../../../tests/fixtures/basal-prompt-contract.json");
+
+    const SCOPE_FIXTURE: &str = include_str!("../../../tests/fixtures/basal-prompt-scope.json");
+
+    fn scope_contract() -> Value {
+        serde_json::from_str(SCOPE_FIXTURE).expect("scope fixture is JSON")
+    }
 
     fn contract() -> Value {
         serde_json::from_str(CONTRACT_FIXTURE).expect("contract fixture is JSON")
@@ -1490,4 +1584,64 @@ mod tests {
         assert!(rendered.contains(BASAL_PROMPT_UNAVAILABLE));
         assert!(!rendered.contains("\"intent\""));
     }
+
+    #[test]
+    fn scope_cue_table_matches_the_shared_contract() {
+        let contract = scope_contract();
+        let expected: Vec<&str> = contract["cues"]
+            .as_array()
+            .expect("cues array")
+            .iter()
+            .map(|value| value.as_str().expect("cue string"))
+            .collect();
+        let mut actual: Vec<&str> = BASAL_PROMPT_SCOPE_CUES.to_vec();
+        actual.sort_unstable();
+        let mut expected = expected;
+        expected.sort_unstable();
+        assert_eq!(actual, expected, "scope cue table drifted from the contract");
+    }
+
+    #[test]
+    fn scope_gate_matches_the_shared_contract_cases() {
+        let contract = scope_contract();
+        for case in contract["cases"].as_array().expect("cases array") {
+            let input = case["input"].as_str().expect("case input");
+            let gated = case["gated"].as_bool().expect("case gate");
+            assert_eq!(
+                basal_prompt_may_need_actionable_intent(input),
+                gated,
+                "gate disagreed with the contract for {}",
+                case["id"]
+            );
+        }
+    }
+
+    #[test]
+    fn actionable_scope_skips_the_service_for_a_plain_turn() {
+        let config = config_with(&[
+            ("MEMPHIS_BASAL_PROMPT_ENABLED", "true"),
+            ("MEMPHIS_BASAL_PROMPT_SCOPE", "actionable"),
+            ("MEMPHIS_BASAL_URL", "http://127.0.0.1:9/v1/systemone"),
+        ]);
+        let flag = AtomicBool::new(false);
+        let result = classify_prompt_for_turn(&config, "wyślij mi raport na telegram", Some(&flag))
+            .expect("gate must not fail the turn");
+        assert!(result.is_none(), "a plain turn must not be classified");
+    }
+
+    #[test]
+    fn every_scope_classifies_a_plain_turn() {
+        let config = config_with(&[
+            ("MEMPHIS_BASAL_PROMPT_ENABLED", "true"),
+            ("MEMPHIS_BASAL_URL", "http://127.0.0.1:9/v1/systemone"),
+        ]);
+        let flag = AtomicBool::new(false);
+        let result = classify_prompt_for_turn(&config, "wyślij mi raport na telegram", Some(&flag))
+            .expect("unreachable service must be reported, not raised");
+        assert!(
+            result.is_some(),
+            "the default scope must still classify every turn"
+        );
+    }
+
 }
