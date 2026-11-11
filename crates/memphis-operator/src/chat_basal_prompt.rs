@@ -269,7 +269,7 @@ pub fn basal_prompt_may_need_actionable_intent(prompt: &str) -> bool {
 /// matching errs towards *classifying more often*, and a needless
 /// classification only spends CPU — a missed one would drop a hint that
 /// could have changed a decision.
-pub const BASAL_PROMPT_SCOPE_CUES: [&str; 27] = [
+pub const BASAL_PROMPT_SCOPE_CUES: [&str; 29] = [
     // remember
     "zapamiętaj",
     "zapamiętaj sobie",
@@ -290,6 +290,11 @@ pub const BASAL_PROMPT_SCOPE_CUES: [&str; 27] = [
     "status",
     "what did we",
     "remind me",
+    // The deterministic session-recall shortcut phrases. They ARE recall
+    // requests, and the runtime still classifies them when the shortcut is
+    // available, so the gate must not skip them.
+    "co przed chwilą",
+    "what did i just say",
     // correction
     "nie,",
     "pomyłka",
