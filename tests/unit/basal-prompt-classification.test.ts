@@ -304,6 +304,31 @@ it('classifies the local ask-session recall shortcut once before printing its an
   expect(fetch).not.toHaveBeenCalled();
 });
 
+it('skips the service call for a turn that cannot need an actionable intent', async () => {
+  const fetch = mockService();
+  const result = await classifyPromptIntent('wyślij mi raport na telegram', {
+    ...enabled,
+    MEMPHIS_BASAL_PROMPT_SCOPE: 'actionable',
+  });
+  expect(result).toBeUndefined();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it('still classifies a memory turn under the actionable scope', async () => {
+  mockService(answer('recall'));
+  const result = await classifyPromptIntent('co ustaliliśmy wczoraj?', {
+    ...enabled,
+    MEMPHIS_BASAL_PROMPT_SCOPE: 'actionable',
+  });
+  expect(result).toMatchObject({ status: 'classified', intent: 'recall' });
+});
+
+it('classifies every turn under the default scope', async () => {
+  mockService(answer('execute'));
+  const result = await classifyPromptIntent('wyślij mi raport na telegram', enabled);
+  expect(result).toMatchObject({ status: 'classified', intent: 'execute' });
+});
+
 it('preserves actual classification metadata through the public HTTP result contract', async () => {
   mockService();
   const classification = await classifyPromptIntent('synthetic', enabled);
