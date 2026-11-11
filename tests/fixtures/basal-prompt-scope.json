@@ -27,7 +27,9 @@
     "sko tak, to popraw",
     "źle napisałem",
     "actually,",
-    "i meant"
+    "i meant",
+    "co przed chwilą",
+    "what did i just say"
   ],
   "cases": [
     {
@@ -257,6 +259,18 @@
       "input": "a co jak beda to dziewczynki - nowy html/pdf - wyklucz kaliningrad nie mamy paszportow",
       "gated": false,
       "intent": null
+    },
+    {
+      "id": "recall-14",
+      "input": "Co przed chwilą napisałem?",
+      "gated": true,
+      "intent": "recall"
+    },
+    {
+      "id": "recall-15",
+      "input": "What did I just say?",
+      "gated": true,
+      "intent": "recall"
     }
   ]
 }
