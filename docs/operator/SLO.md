@@ -90,11 +90,18 @@ This metric used to be computed from the `turn.dispatch` span, which covers the 
 
 ### p99_turn_duration_ms
 
-p99 of the WHOLE turn duration over the window — every tool call included.
+p99 of the time a turn that has **not finished** has been running without progress.
 
 - **Threshold**: 7200000 ms (2 hours) by default; raise/lower it with `MEMPHIS_SLO_TURN_DURATION_P99_MS`.
 - **Direction**: below (lower is better)
-- **Why this matters**: a turn's duration is the length of the work the operator asked for, so a threshold over it says nothing about the health of the runtime. The threshold is set above the longest turn ever measured here (106 minutes), which makes this metric a HANG DETECTOR: a turn that exceeds it is a turn that did not finish.
+- **Source**: the operator database's `operator_turn_checkpoints` table, not telemetry spans.
+- **Why this matters**: this is the HANG DETECTOR. A turn that is still running and has made no progress for longer than the threshold is a turn the runtime never finished — and the operator's session is blocked until it is acknowledged (`memphis recovery list`).
+
+**Why it reads the database and not the spans.** Measured 2026-11-11: `turn.dispatch` is written only when a turn ENDS, so a turn that never finishes writes no span at all. The host had an 18-hour-old turn the runtime still believed was running — it wrote zero spans of any kind, every span-based metric was blind to it, and the runtime refused to start a new turn in that session. The checkpoint table is where the runtime records which turn is in flight: `status='running'` while it is in flight, with `updated_at` refreshed after every assistant step and after every tool result. The age of that row is the time since the turn last made progress.
+
+The earlier version of this metric read `turn.dispatch` and failed at 9 002 810 ms against the same 7 200 000 ms threshold — but it was measuring the length of FINISHED work. The failing sample was a 2.5-hour session that ran 211 tool calls (206 successful) and ended when the operator interrupted it. A long session is not a runtime fault, so the metric was red by construction.
+
+The length of finished sessions is still reported — under `turnDuration` in the report — as a diagnostic, not a verdict.
 
 **This metric is reported, not gated.** The autonomy gate treats only `fail` on the four gated metrics as blocking.
 

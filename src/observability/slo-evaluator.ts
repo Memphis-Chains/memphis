@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { readRunningTurns, resolveOperatorDatabasePath } from './stuck-turns.js';
 import { getDataDir } from '../config/paths.js';
 import { readSinkStatusEntries, type SinkStatusEntry } from '../infra/observability/sink-status.js';
 
@@ -66,6 +67,14 @@ export interface SloReport {
    * the last 24h of evidence and says so here.
    */
   sampleWindowStart: string;
+  /**
+   * The length of the sessions that finished.
+   *
+   * A diagnostic, not a verdict: the length of finished work says
+   * something about the work the operator asked for. `p99_turn_duration_ms`
+   * is the fault signal — it measures the turns that did not finish.
+   */
+  turnDuration?: { p99Ms: number | null; samples: number };
   /** Supplemental stream observations; these do not relax the SLO gate. */
   streamDiagnostics?: {
     samples: number;
@@ -131,7 +140,6 @@ const SLO_CLASS_SPANS: Record<string, string> = {
   p99_turn_latency_ms: 'provider.completion',
   confabulation_rate: 'turn.dispatch',
   provider_error_rate: 'provider.completion',
-  p99_turn_duration_ms: 'turn.dispatch',
   tool_error_rate: 'tool.call',
 };
 
@@ -243,8 +251,12 @@ function readRecentActivity(spans: SpanRecord[]): RecentActivity {
     }
     if (!best) return null;
     const shape = name === 'tool.call' ? best.attrs?.['tool.output.shape'] : undefined;
-    const status = best.status === 'error' || shape === 'error' ? 'error'
-      : shape === 'inconclusive' || shape === 'unknown' ? 'unknown' : 'ok';
+    const status =
+      best.status === 'error' || shape === 'error'
+        ? 'error'
+        : shape === 'inconclusive' || shape === 'unknown'
+          ? 'unknown'
+          : 'ok';
     return { ts: best.ts, status };
   };
   return {
@@ -324,55 +336,137 @@ function computeP99TurnLatency(
 }
 
 /**
- * p99 of the WHOLE agent turn — every tool call included.
+ * How long the turns the runtime has NOT finished have been running.
  *
- * This is the duration the old `p99_turn_latency_ms` measured, kept
- * under a name that says what it is. Measured on this host, 2026-11-10,
- * over the 7-day window: n=45, p50=161 162 ms, p95=2 132 850 ms,
- * p99=5 956 858 ms. Two of the 45 samples were ninety-minute working
- * sessions of this agent's own.
+ * WHAT CHANGED, AND WHY
+ * ---------------------
+ * Measured 2026-11-11 on this host: this metric read `turn.dispatch`
+ * spans and failed at 9 002 810 ms against a 7 200 000 ms threshold.
+ * Two separate things were wrong with that.
  *
- * It is reported, not gated. A turn's duration is the length of the work
- * the operator asked for — an hour of real work is not a fault — so a
- * threshold over it says nothing about the health of the runtime. The
- * threshold is set above the longest turn ever measured here, which
- * makes the metric a HANG DETECTOR: a turn that exceeds it is a turn
- * that did not finish.
+ * 1. THE POPULATION WAS THE WRONG ONE. `turn.dispatch` is written only
+ *    when a turn ENDS, so this metric measured the length of finished
+ *    work — and the operator's working sessions are long. The failing
+ *    sample was a 2.5-hour session that ran 211 tool calls (206 of them
+ *    successful) and ended when the operator interrupted it. A long
+ *    session is not a runtime fault, so the metric was red by
+ *    construction: the same defect #758 fixed for
+ *    `p99_turn_latency_ms` a day earlier.
+ *
+ * 2. THE METRIC COULD NOT SEE A HANG AT ALL. A turn that never
+ *    finishes writes no `turn.dispatch` span, so no threshold over
+ *    those spans can detect one. The host had an 18-hour-old turn the
+ *    runtime still believed was running — that turn wrote zero spans
+ *    of any kind, every span-based metric was blind to it, and the
+ *    runtime refused to start a new turn in that session.
+ *
+ * The runtime does know: `operator_turn_checkpoints` holds one row
+ * per turn with `status='running'` while the turn is in flight, and its
+ * `updated_at` is refreshed after every assistant step and after every
+ * tool result. So the age of that row is the time since the turn last
+ * made progress — the thing a hang detector has to measure.
+ *
+ * The name, the threshold variable and the public contract are
+ * unchanged; what the number measures is now what it says. The length
+ * of FINISHED sessions is still reported — under `turnDuration` in the
+ * report — because it is worth knowing and is not a fault.
+ *
+ * The recency bound (`maxAgeMs`) does not apply here: this reads the
+ * runtime's current state, not a window of old evidence. A turn that
+ * has been stuck for a day is still stuck now.
  */
-function computeP99TurnDuration(
-  spans: SpanRecord[],
-  minSamples: number,
-  rawEnv: NodeJS.ProcessEnv,
-): SloResult {
-  const turnSpans = spans.filter((s) => s.name === 'turn.dispatch');
-  const latencies: number[] = [];
-  for (const s of turnSpans) {
-    const fromAttr = s.attrs?.['turn.timing_ms'];
-    const fromDuration = s.durationMs;
-    const v =
-      typeof fromAttr === 'number'
-        ? fromAttr
-        : typeof fromDuration === 'number'
-          ? fromDuration
-          : null;
-    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) latencies.push(v);
-  }
-  const p99 = percentile(latencies, 99);
+function computeTurnDuration(rawEnv: NodeJS.ProcessEnv, now: Date): SloResult {
   const threshold = readPositiveNumber(rawEnv.MEMPHIS_SLO_TURN_DURATION_P99_MS, 7_200_000);
-  const insufficient = insufficientSamples(latencies.length, minSamples);
-  const status: SloStatus =
-    p99 === null ? 'unavailable' : (insufficient?.status ?? (p99 <= threshold ? 'pass' : 'fail'));
-  return {
-    name: 'p99_turn_duration_ms',
-    description: 'p99 of whole-turn duration over the window (every tool call included)',
+  const name = 'p99_turn_duration_ms';
+  const description =
+    'p99 of the time a turn that has not finished has been running without progress';
+  const databasePath = resolveOperatorDatabasePath(rawEnv);
+  if (!databasePath) {
+    return {
+      name,
+      description,
+      threshold,
+      thresholdUnit: 'ms',
+      thresholdDirection: 'below',
+      value: null,
+      status: 'unavailable',
+      samples: 0,
+      reason: 'operator database path could not be resolved from DATABASE_URL',
+    };
+  }
+  const read = readRunningTurns(databasePath, now.getTime());
+  if (!read.ok) {
+    return {
+      name,
+      description,
+      threshold,
+      thresholdUnit: 'ms',
+      thresholdDirection: 'below',
+      value: null,
+      status: 'unavailable',
+      samples: 0,
+      reason: read.reason,
+    };
+  }
+  const idleAges = read.turns.map((turn) => turn.idleMs);
+  // No unfinished turn is a real zero, not missing evidence: the
+  // runtime has no turn in flight, so nothing can be stuck.
+  const p99 = idleAges.length === 0 ? 0 : (percentile(idleAges, 99) ?? 0);
+  const oldest = read.turns[0];
+  const status: SloStatus = p99 > threshold ? 'fail' : 'pass';
+  let reason: string | undefined;
+  if (read.turns.length === 0) {
+    reason = 'no turn is currently running';
+  } else if (status === 'fail') {
+    reason = `${read.turns.length} turn(s) still running; oldest has made no progress for ${Math.round(oldest.idleMs / 60000)} min (session ${oldest.sessionId}, turn ${oldest.id.slice(0, 8)})`;
+  } else {
+    reason = `${read.turns.length} turn(s) running, oldest idle ${Math.round(oldest.idleMs / 1000)} s`;
+  }
+  const result: SloResult = {
+    name,
+    description,
     threshold,
     thresholdUnit: 'ms',
     thresholdDirection: 'below',
     value: p99,
     status,
-    samples: latencies.length,
-    reason: p99 === null ? 'no turn.dispatch spans with latency in window' : insufficient?.reason,
+    samples: read.turns.length,
+    reason,
   };
+  if (oldest) {
+    result.lastSampleAt = oldest.updatedAt;
+    result.ageMs = oldest.idleMs;
+  }
+  return result;
+}
+
+/**
+ * The length of the sessions that DID finish.
+ *
+ * Kept as a diagnostic, not a verdict: how long a working session took
+ * says something about the work the operator asked for, not about the
+ * health of the runtime. Measured 2026-11-11, the longest finished
+ * session on this host was 2.49 hours — a real session with 398 tool
+ * calls, and every gap between its spans was under a second.
+ */
+function computeFinishedTurnDuration(spans: SpanRecord[]): {
+  p99Ms: number | null;
+  samples: number;
+} {
+  const latencies: number[] = [];
+  for (const span of spans) {
+    if (span.name !== 'turn.dispatch') continue;
+    const fromAttr = span.attrs?.['turn.timing_ms'];
+    const fromDuration = span.durationMs;
+    const value =
+      typeof fromAttr === 'number'
+        ? fromAttr
+        : typeof fromDuration === 'number'
+          ? fromDuration
+          : null;
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) latencies.push(value);
+  }
+  return { p99Ms: percentile(latencies, 99), samples: latencies.length };
 }
 
 function computeConfabulationRate(spans: SpanRecord[], minSamples: number): SloResult {
@@ -443,8 +537,12 @@ function computeToolErrorRate(spans: SpanRecord[], minSamples: number): SloResul
   const toolSpans = spans.filter((s) => s.name === 'tool.call');
   // An inconclusive result is not evidence of success. Keep explicit
   // transport errors, but exclude unknown outcomes from the denominator.
-  const classified = toolSpans.filter((s) => s.status === 'error' ||
-    (s.attrs?.['tool.output.shape'] !== 'inconclusive' && s.attrs?.['tool.output.shape'] !== 'unknown'));
+  const classified = toolSpans.filter(
+    (s) =>
+      s.status === 'error' ||
+      (s.attrs?.['tool.output.shape'] !== 'inconclusive' &&
+        s.attrs?.['tool.output.shape'] !== 'unknown'),
+  );
   const excluded = toolSpans.length - classified.length;
   const errorSpans = classified.filter(
     (s) => s.status === 'error' || s.attrs?.['tool.output.shape'] === 'error',
@@ -460,7 +558,9 @@ function computeToolErrorRate(spans: SpanRecord[], minSamples: number): SloResul
       value: null,
       status: 'unavailable',
       samples: 0,
-      reason: excluded ? `${excluded} tool outcome(s) inconclusive or unknown` : 'no tool.call spans in window',
+      reason: excluded
+        ? `${excluded} tool outcome(s) inconclusive or unknown`
+        : 'no tool.call spans in window',
     };
   }
   const rate = errorSpans.length / classified.length;
@@ -474,7 +574,13 @@ function computeToolErrorRate(spans: SpanRecord[], minSamples: number): SloResul
     value: rate,
     status: insufficient?.status ?? (rate <= threshold ? 'pass' : 'fail'),
     samples: classified.length,
-    reason: [insufficient?.reason, excluded ? `${excluded} tool outcome(s) inconclusive or unknown` : undefined].filter(Boolean).join('; ') || undefined,
+    reason:
+      [
+        insufficient?.reason,
+        excluded ? `${excluded} tool outcome(s) inconclusive or unknown` : undefined,
+      ]
+        .filter(Boolean)
+        .join('; ') || undefined,
   };
 }
 
@@ -531,18 +637,25 @@ export function evaluateSlos(options: EvaluateSlosOptions = {}): SloReport {
   const sinkStatus = readSinkStatusEntries(getDataDir(rawEnv));
   const evaluated = spans.filter((span) => Date.parse(span.ts) >= sampleWindowStartMs);
   const providerSpans = evaluated.filter((span) => span.name === 'provider.completion');
-  const numericAttr = (name: string): number[] => providerSpans
-    .map((span) => span.attrs?.[name])
-    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0);
+  const numericAttr = (name: string): number[] =>
+    providerSpans
+      .map((span) => span.attrs?.[name])
+      .filter(
+        (value): value is number =>
+          typeof value === 'number' && Number.isFinite(value) && value >= 0,
+      );
   const firstBytes = numericAttr('stream.first_byte_after_headers_ms');
-  const errorIdle = providerSpans.filter((span) => span.status === 'error')
+  const errorIdle = providerSpans
+    .filter((span) => span.status === 'error')
     .map((span) => span.attrs?.['stream.idle_before_error_ms'])
-    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0);
+    .filter(
+      (value): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0,
+    );
   const slos: SloResult[] = [
     computeP99TurnLatency(evaluated, minSamples, rawEnv),
     computeConfabulationRate(evaluated, minSamples),
     computeProviderErrorRate(evaluated, minSamples),
-    computeP99TurnDuration(evaluated, minSamples, rawEnv),
+    computeTurnDuration(rawEnv, now),
     computeToolErrorRate(evaluated, minSamples),
   ];
 
@@ -587,13 +700,16 @@ export function evaluateSlos(options: EvaluateSlosOptions = {}): SloReport {
     windowEnd: now.toISOString(),
     sampleWindowStart: sampleWindowStart.toISOString(),
     streamDiagnostics: {
-      samples: providerSpans.filter((span) => typeof span.attrs?.['stream.bytes'] === 'number').length,
+      samples: providerSpans.filter((span) => typeof span.attrs?.['stream.bytes'] === 'number')
+        .length,
       firstByteAfterHeadersSamples: firstBytes.length,
       p99FirstByteAfterHeadersMs: percentile(firstBytes, 99),
       idleBeforeErrorSamples: errorIdle.length,
-      maxIdleBeforeErrorMs: errorIdle.length > 0 ? errorIdle.reduce((max, value) => Math.max(max, value), 0) : null,
+      maxIdleBeforeErrorMs:
+        errorIdle.length > 0 ? errorIdle.reduce((max, value) => Math.max(max, value), 0) : null,
     },
     maxAgeMs,
+    turnDuration: computeFinishedTurnDuration(evaluated),
     evaluatedSamples: evaluated.length,
     spanFilesScanned: filesScanned,
     totalSamples: spans.length,
