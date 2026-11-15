@@ -219,6 +219,20 @@ pub(crate) fn native_tool_definitions() -> Vec<ChatToolDefinition> {
                 "required": ["url"]
             }),
         },
+        ChatToolDefinition {
+            name: "memphis_brave_search".to_string(),
+            description: "Search the web via Brave Search API (requires BRAVE_API_KEY)".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Search query" },
+                    "limit": { "type": "number", "minimum": 1, "maximum": 20, "description": "Max results to return (1-20, default 10)" },
+                    "country": { "type": "string", "minLength": 2, "maxLength": 2, "description": "ISO 3166-1 alpha-2 country code, e.g. PL" },
+                    "search_lang": { "type": "string", "minLength": 2, "maxLength": 2, "description": "ISO 639-1 language code, e.g. pl" }
+                },
+                "required": ["query"]
+            }),
+        },
         // --- Tier 2 tools ---
         ChatToolDefinition {
             name: "memphis_exec".to_string(),
@@ -307,11 +321,12 @@ pub(crate) fn native_tool_definitions() -> Vec<ChatToolDefinition> {
 /// operator served the file body. `memphis_grep`, `memphis_glob`,
 /// `memphis_git` and `memphis_web_fetch` were also one tier lower natively.
 ///
-/// Covers all 22 catalog and dispatcher operations. Unknown tools
+/// Covers all 23 catalog and dispatcher operations. Unknown tools
 /// are denied; adding a tool without explicit policy fails generation.
 pub(crate) fn tool_tier(name: &str) -> u8 {
     match name {
-        "memphis_classify"
+        "memphis_brave_search"
+        | "memphis_classify"
         | "memphis_code_read"
         | "memphis_cron_script"
         | "memphis_exec"

@@ -64,6 +64,16 @@ export interface ToolContract {
  */
 export const NATIVE_TOOL_CONTRACTS: readonly ToolContract[] = [
   {
+    // Web search through the Brave Search API. The gateway has had this
+    // tool since 2026-05-08; the native cockpit gained the same tool
+    // with the same behaviour, arbitrated by the shared case table in
+    // tests/fixtures/brave-search-contract.json.
+    name: 'memphis_brave_search',
+    tier: 2,
+    capabilities: ['network', 'read'],
+    exposures: ['native', 'gateway'],
+  },
+  {
     name: 'memphis_case_append',
     tier: 0,
     capabilities: ['write'],
