@@ -41,6 +41,7 @@ pub use runtime::{
     VaultEntryMetadata, VaultSecretView, VaultSummary,
 };
 pub use text_truncation::{truncate_on_char_boundary, truncate_with_ellipsis};
+pub mod brave_search;
 pub mod code_read;
 pub use code_read::{
     assert_not_blocked, assert_not_write_blocked, assert_within_read_roots, assert_within_roots,
