@@ -393,6 +393,61 @@ describe('runtime audit · postmortem status (H8)', () => {
       'unknown',
     );
   });
+
+  it('NAMES the documents that carry no status, not just how many', () => {
+    // Measured 2026-11-16: the check reported a failure with an EMPTY
+    // details list. The condition was inverted — the message was pushed
+    // only when the list of offending documents was empty, so the one
+    // case where the reader needed to know WHICH documents were
+    // unreadable was the one case that said nothing.
+    //
+    // A failure that says "3 of 11" without saying which three sends
+    // the reader back to the directory listing to find them — the
+    // manual step this whole check exists to remove.
+    const result = checkPostmortemStatus({
+      total: 11,
+      indexed: 11,
+      machineReadable: 9,
+      withoutStatus: ['a.md', 'b.md'],
+    });
+    expect(result.verdict).toBe('failure');
+    expect(result.details.join(' ')).toContain('a.md');
+    expect(result.details.join(' ')).toContain('b.md');
+  });
+
+  it('still reports the count when it cannot name the documents', () => {
+    // The caller may know only the numbers. A check that then says
+    // nothing at all is a check that reports a failure with no
+    // information in it.
+    const result = checkPostmortemStatus({ total: 11, indexed: 11, machineReadable: 9 });
+    expect(result.verdict).toBe('failure');
+    expect(result.details.join(' ')).toContain('2 postmortem(s)');
+  });
+
+  it('reports a document whose header contradicts its own open items', () => {
+    const result = checkPostmortemStatus({
+      total: 11,
+      indexed: 11,
+      machineReadable: 11,
+      inconsistent: [{ file: 'liar.md', reason: 'header says 5, the section lists 1' }],
+    });
+    expect(result.verdict).toBe('failure');
+    expect(result.details.join(' ')).toContain('liar.md');
+  });
+
+  it('reports the still-open work without failing on it', () => {
+    // A corpus that says "still open" is a corpus doing its job. A
+    // corpus that cannot say it is the hole. So open items are
+    // reported, not blocked on.
+    const result = checkPostmortemStatus({
+      total: 11,
+      indexed: 11,
+      machineReadable: 11,
+      open: [{ file: 'x.md', openItems: 7 }],
+    });
+    expect(result.verdict).toBe('success');
+    expect(result.summary).toContain('open=7');
+  });
 });
 
 describe('runtime audit · end to end against an isolated home', () => {

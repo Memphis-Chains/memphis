@@ -6,11 +6,21 @@ Post-incident analyses for Memphis runtime failures. **Each postmortem should ha
 
 ## Current postmortems
 
-| File | Date | Severity | Status | Related issue |
+<!-- postmortem-index:start -->
+| File | Date | Severity | Status | Open items |
 |---|---|---|---|---|
-| [2026-09-22-chains-halt-invalid-block-shape.md](2026-09-22-chains-halt-invalid-block-shape.md) | 2026-09-22 | HIGH | Resolved (PR #385) | (related: GitHub issues around chain race condition) |
-| [2026-09-21-soul-append-and-deep-restart.md](2026-09-21-soul-append-and-deep-restart.md) | 2026-09-21 | MEDIUM | Resolved | — |
-| [2026-05-08-zawoja-and-runtime-state.md](2026-05-08-zawoja-and-runtime-state.md) | 2026-05-08 | LOW | Resolved | — |
+| [2026-05-08-zawoja-and-runtime-state.md](2026-05-08-zawoja-and-runtime-state.md) | 2026-05-08 | S3 | resolved | — |
+| [2026-09-21-soul-append-and-deep-restart.md](2026-09-21-soul-append-and-deep-restart.md) | 2026-09-21 | S3 | resolved | — |
+| [2026-09-22-chains-halt-invalid-block-shape.md](2026-09-22-chains-halt-invalid-block-shape.md) | 2026-09-22 | S1 (runtime down + boot-loop) | open | 8 |
+| [2026-10-12-omarchy-vault-and-launcher-repair.md](2026-10-12-omarchy-vault-and-launcher-repair.md) | 2026-10-12 | S2 | resolved | — |
+| [2026-10-15-config-transaction-recovery.md](2026-10-15-config-transaction-recovery.md) | 2026-10-15 | S2 | resolved | — |
+| [2026-10-15-vault-init-serialization.md](2026-10-15-vault-init-serialization.md) | 2026-10-15 | S2 | resolved | — |
+| [2026-10-15-vault-test-isolation.md](2026-10-15-vault-test-isolation.md) | 2026-10-15 | S2 | resolved | — |
+| [2026-10-18-credential-prose-triage.md](2026-10-18-credential-prose-triage.md) | 2026-10-18 | S2 | resolved | — |
+| [2026-10-19-generic-dotenv-writers.md](2026-10-19-generic-dotenv-writers.md) | 2026-10-19 | S2 | resolved | — |
+| [2026-10-26-reflection-background-memory-write.md](2026-10-26-reflection-background-memory-write.md) | 2026-10-26 | S2 | resolved | — |
+| [2026-10-29-basal-audit-block-shape.md](2026-10-29-basal-audit-block-shape.md) | 2026-10-29 | S2 | resolved | — |
+<!-- postmortem-index:end -->
 
 ## Format
 

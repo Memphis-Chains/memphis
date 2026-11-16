@@ -59,8 +59,8 @@ fi
 
 SELF="scripts/default-secret-scan.sh"
 
-# WHY tests/ IS EXEMPT -- MEASURED, NOT ASSUMED
-# ---------------------------------------------
+# WHY tests/ IS NOT EXEMPT ANY MORE -- MEASURED, NOT ASSUMED
+# ----------------------------------------------------------
 # The first run of this gate reported 13 "hard-coded credentials" in tracked
 # files. All 13 were test fixtures:
 #
@@ -73,15 +73,36 @@ SELF="scripts/default-secret-scan.sh"
 # 401 Unauthorized for bot123456:AArealoperator. It is a fixture shaped like a
 # credential, not a credential.
 #
-# So the gate skips tests/ rather than carrying an exception list. An exception
-# list is a place where the next real leak gets whitelisted; a path exclusion is
-# a statement about what the directory is FOR. Tests assert behaviour and must
-# be able to name a secret-shaped string.
+# THE FIRST ANSWER WAS A PATH EXEMPTION, AND IT WAS WRONG
+# -------------------------------------------------------
+# Until 2026-11-16 this gate skipped `tests/*` and every `*.test.*` by path.
+# The reasoning was sound — tests assert behaviour and must be able to name a
+# secret-shaped string — but the exemption was by DIRECTORY, so a real secret
+# committed inside a test file was outside this gate's reach. The runtime audit
+# named it: "default-secret-scan: exempts tests/ and every *.test.* by path".
 #
-# The cost is real and worth stating: a secret genuinely committed inside a test
-# is now outside this gate's reach. tests/unit/pii-scan.test.ts and
-# secret-scan.sh still cover that directory, and the api/ contract test reads
-# the shipped endpoints directly.
+# THE ANSWER NOW: A POSITIVE RULE, BY VALUE
+# -------------------------------------------
+# Known fake values are allowlisted by value, in
+# `scripts/default-secret-scan.allowlist`, each with the reason it is
+# accepted and when it is removed. An entry without a reason is rejected by
+# the scan above — the exception list cannot grow silently.
+#
+# MEASURED 2026-11-16, on this host, after the change:
+#
+#   * a planted `const TOKEN = 'ghp_AAAA...'` inside tests/unit/ -> BLOCKED.
+#     (The first planting attempt reported OK, because the scan reads
+#     `git ls-files` and the file was untracked. The falsifying probe needs
+#     `git add -N` — a scan that reads the index sees the working tree only
+#     for files the index knows about.)
+#   * every fixture value in the allowlist -> accepted.
+#   * removing one allowlist entry -> the fixture it covered is BLOCKED.
+#
+# The cost is now stated in the other direction: an exception list is a place
+# where the next real leak gets whitelisted, so each entry carries its
+# measurement and the condition under which it is removed. That is a
+# statement about a VALUE, which is what can be measured; a path exemption
+# was a statement about a DIRECTORY, which is what cannot be.
 
 # Credential-shaped variable NAMES. `auth` was tried and removed: it matched
 # MEMPHIS_HTTP_CORS_ORIGIN's neighbourhood and told us nothing. `key` alone was
@@ -115,15 +136,59 @@ VAR='(token|secret|passwd|password|passphrase|api_key|apikey|credential)'
 VAR_PHP='(tokens?|secrets?|passw?d|password|passphrase|api_?keys?|credentials?|expected|given|fromenv|shared_?secrets?|[a-z_]*(tokens?|secrets?|passw?d|password|passphrase|credentials?))'
 VAR_JS='(TOKEN|SECRET|PASSWORD|PASSPHRASE|API_KEY|APISECRET|APIKEY|CREDENTIAL)'
 
+# The allowlist: known fixture values, accepted BY VALUE.
+#
+# WHY A VALUE LIST AND NOT A PATH EXEMPTION
+# ------------------------------------------
+# Until 2026-11-10 this gate skipped the whole test directory and every
+# test-shaped file by path. The reasoning was sound — tests assert
+# behaviour and must be able to name a secret-shaped string — but the
+# exemption was by DIRECTORY, so a real secret committed inside a test
+# file was outside the gate's reach. The runtime audit named it.
+#
+# An entry without a reason is rejected: an accepted value with no
+# stated reason is how an exception list becomes permanent.
+ALLOWLIST_FILE="${MEMPHIS_SECRET_SCAN_ALLOWLIST:-scripts/default-secret-scan.allowlist}"
+ALLOWLIST_VALUES="$(mktemp)"
+if [ -f "$ALLOWLIST_FILE" ]; then
+  # An entry is a VALUE, a tab, and a REASON. All three, or the entry is
+  # not an entry.
+  #
+  # Measured 2026-11-16: this loop did not exist, and `cut -f1` took the
+  # first field of every line — so a line with no tab was accepted as a
+  # value with an empty reason. The allowlist file's own header promises
+  # "a value without a reason is rejected by the scan", and the code did
+  # not reject it. An exception list where the exception can be added
+  # without saying why is an exception list that grows.
+  while IFS= read -r line; do
+    case "$line" in
+      ''|'#'*) continue ;;
+    esac
+    value="${line%%	*}"
+    reason="${line#*	}"
+    if [ "$line" = "$value" ]; then
+      echo "[default-secret-scan] BLOCK: allowlist entry without a reason: $value" >&2
+      echo "[default-secret-scan] Format: <value><TAB><why it is accepted, and when it is removed>" >&2
+      exit 1
+    fi
+    if [ -z "$reason" ]; then
+      echo "[default-secret-scan] BLOCK: allowlist entry with an empty reason: $value" >&2
+      exit 1
+    fi
+    printf '%s\n' "$value" >>"$ALLOWLIST_VALUES"
+  done <"$ALLOWLIST_FILE"
+else
+  : >"$ALLOWLIST_VALUES"
+fi
+
 TMPHITS="$(mktemp)"
-trap 'rm -f "$TMPHITS"' EXIT
+trap 'rm -f "$TMPHITS" "$ALLOWLIST_VALUES"' EXIT
 scanned=0
 
 while IFS= read -r -d '' f; do
   [ "$f" = "$SELF" ] && continue
   [ -f "$f" ] || continue
   case "$f" in
-    tests/*|*.test.ts|*.test.mts|*.test.js|*.test.mjs) continue ;;
     *.png|*.jpg|*.jpeg|*.gif|*.ico|*.mp4|*.webm|*.woff|*.woff2|*.ttf|*.pdf|*.zip) continue ;;
   esac
   scanned=$((scanned + 1))
@@ -148,6 +213,25 @@ while IFS= read -r -d '' f; do
   m="$(grep -niE "[\$]$VAR_PHP[[:space:]]*=[[:space:]]*['\"][^'\"]{4,}['\"]" "$f" 2>/dev/null || true)"
   # js/ts: const TOKEN = "literal";  — uppercase only, so `key = record.key` is safe
   [ -z "$m" ] && m="$(grep -nE "(var|let|const)[[:space:]]+$VAR_JS[[:space:]]*=[[:space:]]*['\"][^'\"]{4,}['\"]" "$f" 2>/dev/null || true)"
+  if [ -n "$m" ]; then
+    # A hit line is `88:const TOKEN = 'value';` — the allowlist holds the
+    # VALUE, so the line is dropped when it contains an allowed value.
+    # Matching the whole line would never match anything.
+    m="$(printf '%s\n' "$m" | while IFS= read -r line; do
+      if [ -z "$line" ]; then continue; fi
+      allowed=1
+      while IFS= read -r value; do
+        [ -z "$value" ] && continue
+        if [[ "$line" == *"$value"* ]]; then
+          allowed=0
+          break
+        fi
+      done <"$ALLOWLIST_VALUES"
+      if [ "$allowed" -eq 1 ]; then
+        printf '%s\n' "$line"
+      fi
+    done)"
+  fi
   if [ -n "$m" ]; then
     {
       echo "[default-secret-scan] HARD-CODED CREDENTIAL in $f:"

@@ -1,5 +1,8 @@
 # Credential prose/history triage — 2026-10-18
 
+**Status:** resolved
+**Severity:** S2
+**Open items:** 0
 Codex performed and self-reviewed a local S1.8 inventory. No independent review,
 remote repository visibility check or current Synjar account verification is claimed.
 
