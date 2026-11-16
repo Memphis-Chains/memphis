@@ -1,5 +1,8 @@
 # Basal native audit made runtime health unhealthy — 2026-10-29
 
+**Status:** resolved
+**Severity:** S2
+**Open items:** 0
 The native TUI's automatic Basal classification, added in PR #714, exposed an
 older audit writer that persisted `security_event` payloads without canonical
 `content` and `tags`. The first observed live event was `system/011476.json`,

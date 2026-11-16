@@ -3,10 +3,11 @@
 **Date:** 2026-09-22 12:30 CEST
 **Operator on call:** Wodzu (Marcin)
 **Author:** Mavis (Mavis/MiniMax-M3) — operacyjnie, podczas sesji
+**Status:** open
+**Open items:** 8
 **Severity:** S1 (runtime down + boot-loop)
 **Duration:** ~2h 30m degraded (09:44 first failure → 12:11 clean boot)
 **Detection channel:** systemd restart storm + `journalctl -u memphis` (`code=exited, status=102/n/a`)
-
 ---
 
 ## TL;DR
@@ -218,29 +219,35 @@ blockCount: 11958
 > Priority: **P0** = prevent the same incident, **P1** = improve detection,
 > **P2** = improve process / documentation.
 
+These are the items as they were written on the day of the incident, with
+their original text. Their LIVE status is in "Open items" below, which is the
+single checklist — this list deliberately carries no checkboxes, because two
+checklists for one set of items is exactly the drift the postmortem corpus
+audit exists to catch.
+
 ### Stop the bleed (P0)
 
-- [ ] **A1. Move halt audit out of `chains/`.** Change `AUDIT_DIR` in
+- **A1. Move halt audit out of `chains/`.** Change `AUDIT_DIR` in
       `check.sh` and `verify.sh` to `~/.memphis/audit/halt/`. Use JSONL
       append-only (`~/.memphis/audit/halt/events.jsonl`), one event per line,
       no `index`/`prev_hash`/`hash`. Update SKILL.md accordingly.
       _Owner:_ operator + next session.
       _Verification:_ `ls ~/.memphis/audit/halt/` after a halt-check; no files
       under `~/.memphis/chains/halt/`.
-- [ ] **A2. Add `MEMPHIS_CHAINS_ALLOWLIST` config** (env var + `config/`)
+- **A2. Add `MEMPHIS_CHAINS_ALLOWLIST` config** (env var + `config/`)
       listing which directories under `chains/` are real chains. Default
       to the current 10 core chains + `cases.backup-*/` + `journal.backup-*/` + `system.backup-*/`. `verifyChainIntegrity` only scans allowlisted
       entries; unknown dirs emit a warning to `runtime-watch.log`.
       _Verification:_ `memphis chain verify --strict` with a stray directory
       in `chains/` should pass and warn, not crash.
-- [ ] **A3. Verify `RestartPreventExitStatus` actually stops restarts in
+- **A3. Verify `RestartPreventExitStatus` actually stops restarts in
       user-mode systemd.** If it does not, switch the unit to
       `Restart=no` and add an external watchdog (e.g., a separate
       `memphis-watcher.service` that runs `memphis doctor --fix` after a
       single failure, then starts the daemon on green).
       _Verification:_ force `node … serve` to `exit 102` under test and observe
       that systemd does not restart it again.
-- [ ] **A4. Hard rate-limit the service unit.**
+- **A4. Hard rate-limit the service unit.**
       `ini
 StartLimitBurst=5
 StartLimitIntervalSec=300
@@ -252,49 +259,120 @@ failed)` after burst limit.
 
 ### Detect earlier (P1)
 
-- [ ] **B1. Periodic chain integrity scan at runtime** (e.g., every 5 min,
+- **B1. Periodic chain integrity scan at runtime** (e.g., every 5 min,
       cheap — read only header + last block, full verify once per hour).
       On failure: send Telegram alert + auto-archive the offending dir to
       `~/.memphis-backup-corrupt-chains/<ts>/` + leave runtime running.
       _Verification:_ artificially corrupt a non-critical chain block;
       expect Telegram alert within 5 min and `chains/<name>/` moved to
       backup.
-- [ ] **B2. Skill loader must dry-run.** `register.sh` / skill install
+- **B2. Skill loader must dry-run.** `register.sh` / skill install
       path should: install files → run for 60s in a sandbox → assert no
       writes under `~/.memphis/` outside expected paths → only then
       commit the staged files. Currently a skill is staged and effectively
       live the first time the timer fires.
-- [ ] **B3. `memphis doctor` should refuse `start` when
+- **B3. `memphis doctor` should refuse `start` when
       `boot-failures.json` had > 5 entries in the last 10 minutes.**
       Currently the service keeps restarting regardless of the JSON file
       that exists exactly for this purpose.
 
 ### Process (P2)
 
-- [ ] **C1. New-skill contract.** Any new skill under
+- **C1. New-skill contract.** Any new skill under
       `skills/<name>/` must include `compat.test.sh` asserting that any
       persistent write passes `memphis chain verify --strict` if written
       under `chains/`, or stays outside `chains/` if sidecar.
       `memphis self-update` runs `compat.test.sh` of every skill before
       enabling the timer.
-- [ ] **C2. Pre-commit git hook** running `memphis chain verify` over
+- **C2. Pre-commit git hook** running `memphis chain verify` over
       any staged change under `chains/`. Any block failing the schema
       blocks the commit. Covers future `register.sh`-style manual
       appends as well.
-- [ ] **C3. Document in `docs/SKILLS.md`** the rule: "sidecar audit
+- **C3. Document in `docs/SKILLS.md`** the rule: "sidecar audit
       storage MUST NOT live under `chains/`". Cross-link from this
       postmortem.
 
 ### Knowledge (P2)
 
-- [ ] **D1.** Add this postmortem to `docs/postmortems/INDEX.md`
+- **D1.** Add this postmortem to `docs/postmortems/INDEX.md`
       (create one if missing) and link from `docs/runbooks/SYSTEMD_EXIT_CODES.md`
       under "exit 102" section.
-- [ ] **D2.** Update `docs/ROADMAP-CURRENT.md` (or a new entry) noting
+- **D2.** Update `docs/ROADMAP-CURRENT.md` (or a new entry) noting
       that `chains/halt/` is deprecated and halt-aware-destructive-ops
       v0.2 will move to `~/.memphis/audit/halt/`.
 
 ---
+
+## Open items
+
+This section is the machine-readable one: `npm run -s ops:audit` counts its
+unchecked boxes and compares the count with the `**Open items:**` header
+above. A document whose header contradicts this list is reported as
+inconsistent, so the two cannot drift apart silently.
+
+The history of these items is in "Lessons learned — action items" above; the
+ticks there are updated together with this list.
+
+- [x] **A1.** Move the halt audit out of `chains/` into `~/.memphis/audit/halt/`
+      (JSONL, append-only) and update the skill's SKILL.md.
+      _Done:_ measured 2026-11-16 — `skills/halt-aware-destructive-ops/check.sh:25`
+      writes to `${MEMPHIS_HOME:-$HOME/.memphis}/audit/halt`, the directory holds
+      `events.jsonl`, and `~/.memphis/chains/halt/` is gone.
+- [x] **A2.** Add the `MEMPHIS_CHAINS_ALLOWLIST` config (env var + `config/`).
+      _Done:_ measured 2026-11-16 — `src/infra/storage/chain-adapter.ts:196`
+      reads the variable and skips non-allowlisted directories under `chains/`.
+      (This repository has no `config/` directory; `src/config/` holds the
+      registry, and the variable is not listed in `env-registry.ts` — see the
+      open item C4 below.)
+- [x] **A3.** Verify `RestartPreventExitStatus` actually stops restarts, with
+      `Restart=` set to a value that does not override it.
+      _Done:_ measured 2026-11-16 — the live unit
+      `~/.config/systemd/user/memphis.service` carries `Restart=on-failure` +
+      `RestartPreventExitStatus=101 102 103`, and `src/infra/runtime/user-service.ts:137`
+      writes the same pair into a generated unit.
+- [ ] **A4.** Hard rate-limit the service unit.
+      _Still open, and now measured rather than assumed:_ the repository unit
+      `ops/memphis.service` has `StartLimitBurst=5` +
+      `StartLimitIntervalSec=300` in `[Unit]` (the section systemd v229+ reads),
+      but the LIVE unit `~/.config/systemd/user/memphis.service` has neither —
+      `systemctl --user show memphis.service` reports
+      `StartLimitBurst=5 StartLimitIntervalUSec=10s`, which are the systemd
+      DEFAULTS, not the 5-per-300s cap the item asks for. The repository unit
+      says "keep these in sync with the live user unit"; they are not in sync.
+- [x] **B1.** Periodic chain integrity scan at runtime (e.g. every 5 min).
+      _Done:_ measured 2026-11-16 — `memphis-chain-integrity-sweep.timer` is
+      enabled and last fired 30 minutes before the measurement.
+- [ ] **B2.** The skill loader must dry-run before it installs anything.
+- [ ] **B3.** `memphis doctor` must refuse `start` when the audit sidecar
+      layout is not yet migrated.
+- [ ] **C1.** A new-skill contract: every skill under `skills/` states its
+      sidecar writes and its audit target.
+      _Partly done, and now measured:_ `skills/halt-aware-destructive-ops/SKILL.md`
+      and `skills/remote-site-edit/SKILL.md` state theirs;
+      `skills/memphis-v5-landing-rebuild/SKILL.md` and
+      `skills/play-customer-promo-video/SKILL.md` state nothing, and nothing
+      enforces the rule.
+- [ ] **C2.** A pre-commit git hook running `memphis chain verify` over the
+      chains a change touches.
+- [ ] **C3.** Document in `docs/SKILLS.md` the rule that sidecar audit
+      targets live outside `chains/`.
+      _Note:_ this repository has no `docs/SKILLS.md`; the rule belongs in the
+      file that does not exist yet, so the item is still open as written.
+- [x] **D1.** Add this postmortem to the postmortem index.
+      _Done:_ measured 2026-11-16 — the index is
+      `docs/postmortems/README.md`, generated by
+      `npm run -s ops:sync-postmortem-index`, and it lists this document.
+      (The item names `docs/postmortems/INDEX.md`; the generated table lives in
+      the README, so the intent is met by a different file.)
+- [ ] **D2.** Record in `docs/ROADMAP-CURRENT.md` that `chains/halt/` is
+      deprecated and halt-aware-destructive-ops v0.2 moves to
+      `~/.memphis/audit/halt/`.
+      _Still open:_ `docs/ROADMAP-CURRENT.md` mentions "halt" zero times.
+- [ ] **C4.** Register `MEMPHIS_CHAINS_ALLOWLIST` in `src/config/env-registry.ts`.
+      _Added 2026-11-16 while measuring A2:_ the variable is read by
+      `chain-adapter.ts` and set in the operator's `.env`, but the registry that
+      documents every environment variable does not list it.
+
 
 ## Open questions
 

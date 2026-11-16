@@ -1,0 +1,76 @@
+name: rust-security
+
+# The Rust dependency CVE scan.
+#
+# WHY THIS WORKFLOW EXISTS
+# ------------------------
+# `scripts/rust-core-safety-check.sh` ran `cargo audit`, and no workflow
+# invoked it. Measured 2026-11-10: grep over `.github/workflows/`
+# returned no reference, and the npm script that calls it was a command
+# nobody ran. The runtime audit named it: "cargo audit: the script
+# exists, no workflow invokes it".
+#
+# "Exists but is never called" is the third option, and it was the one
+# in force: a security script whose failure nobody can observe.
+#
+# WHAT IT RUNS
+# ------------
+# `scripts/cargo-audit-check.sh` — NOT `cargo audit` inline, and NOT
+# the `rustsec/audit-check` action. The allowlist and the policy live
+# in that one file, so an accepted advisory cannot be written down in
+# one place and not the other. The action's configuration would be a
+# second place.
+#
+# The script also refuses to pass when `cargo-audit` is missing (exit
+# 127): a scanner that is not installed is not a clean tree.
+#
+# Cost: one advisory-database fetch and one Cargo.lock scan. The
+# database fetch is cached for a week; without the cache it is about a
+# minute on the runner.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Rust
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+          fi
+          if [ -f "$HOME/.cargo/env" ]; then
+            source "$HOME/.cargo/env"
+          fi
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+
+      - name: Cache cargo-audit and the advisory database
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-audit
+            ~/.cargo/advisory-db
+          key: cargo-audit-${{ runner.os }}-stable
+
+      - name: Install cargo-audit
+        # `cargo install` is the slow path (~9 minutes measured on the
+        # operator host); the released binary is what the cache holds.
+        run: |
+          if ! command -v cargo-audit >/dev/null 2>&1; then
+            cargo install cargo-audit --locked
+          fi
+          cargo audit --version
+
+      - name: Audit Rust dependencies
+        run: bash scripts/cargo-audit-check.sh

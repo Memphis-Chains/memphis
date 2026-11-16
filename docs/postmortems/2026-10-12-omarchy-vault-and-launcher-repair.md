@@ -1,5 +1,8 @@
 # Memphis vault and Omarchy launcher recovery
 
+**Status:** resolved
+**Severity:** S2
+**Open items:** 0
 Incident: 2026-10-11. Local repair and verification: 2026-10-11–12.
 
 ## TL;DR
