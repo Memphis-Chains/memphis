@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use chrono::Utc;
 use serde_json::{json, Value};
 
+use crate::brave_search::{search as run_brave_search, BraveSearchInput};
 use crate::chat_basal::{
     basal_threshold_from_service, classify_reply_to_json, read_basal_json, BASAL_DEFAULT_URL,
     BASAL_TIMEOUT_SECS,
@@ -914,6 +915,47 @@ fn execute_native_tool_inner(
                     &serde_json::to_string(&json).unwrap(),
                     None,
                     Some("memphis_web_fetch"),
+                ),
+            ))
+        }
+        "memphis_brave_search" => {
+            let query = call
+                .arguments
+                .get("query")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    OperatorError::Message("memphis_brave_search requires query".to_string())
+                })?;
+            let input = BraveSearchInput {
+                query: query.to_string(),
+                limit: call.arguments.get("limit").and_then(Value::as_f64),
+                country: call
+                    .arguments
+                    .get("country")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                search_lang: call
+                    .arguments
+                    .get("search_lang")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+            };
+            // The arm resolves its own credential: the daemon's
+            // environment carries `BRAVE_API_KEY=VAULT:brave_api_key`,
+            // so an arm that trusted the environment refused to work on
+            // the surface that serves Telegram and HTTP.
+            let output = run_brave_search(runtime.config(), &input);
+            if let Some(error) = output.error.clone() {
+                return Err(OperatorError::Message(error));
+            }
+            let json = serde_json::to_value(&output).unwrap_or(Value::Null);
+            Ok((
+                format!("{} results", output.count),
+                build_wrapped_segment(
+                    "tool_output",
+                    &serde_json::to_string(&json).unwrap_or_default(),
+                    None,
+                    Some("memphis_brave_search"),
                 ),
             ))
         }
