@@ -39,6 +39,50 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+/**
+ * A credential-shaped value, ASSEMBLED AT RUNTIME.
+ *
+ * `scripts/secret-scan.sh` reads this very file — it scans
+ * `git ls-files`, and this file is in it. A literal `ghp_` + 36
+ * characters in the source is therefore a real match for the GitHub PAT
+ * arm, and the scan blocks the commit with a finding that is about the
+ * TEST, not about a leak.
+ *
+ * The same trap has been paid for before in this repository: a test
+ * whose own fixture value made the scanner report the test as the
+ * leak. So the value is composed at runtime, and the scan sees a
+ * fragment that is not a credential.
+ */
+const PLANTED_TOKEN = ['ghp', '_', 'A'.repeat(36)].join('');
+
+/**
+ * A second credential-shaped value, also assembled at runtime.
+ *
+ * `scripts/default-secret-scan.sh` looks for a quoted literal assigned
+ * to a credential-shaped NAME — `const TOKEN = '...'` is exactly that.
+ * So this fixture value trips that scan too, for the same reason: the
+ * scanner reads this file, and a literal is a literal.
+ */
+const ALLOWLISTED_TOKEN = ['ghp', '_fixture', '-value', '-not', '-a', '-real', '-credential'].join(
+  '',
+);
+
+/**
+ * The planted LINE, assembled at runtime as well.
+ *
+ * Interpolating the value is not enough: the scan's pattern is
+ * `NAME = 'anything at least four characters long'`, and
+ * `'${ALLOWLISTED_TOKEN}'` IS such a literal — the interpolation is
+ * text in the source as far as the scanner is concerned. So the whole
+ * assignment is composed, and what the scanner reads in this file is a
+ * call to `join`.
+ */
+const plantedAssignment = (value: string): string =>
+  ['const TOKEN = ', `'${value}'`, ';'].join('');
+
+const plantedDefault = (value: string): string =>
+  ['process.env.TOKEN ?? ', `'${value}'`, ';'].join('');
+
 const REPO_ROOT = process.cwd();
 const SCRIPT = path.join(REPO_ROOT, 'scripts', 'default-secret-scan.sh');
 const ALLOWLIST = path.join(REPO_ROOT, 'scripts', 'default-secret-scan.allowlist');
@@ -95,7 +139,7 @@ describe('default-secret-scan · a secret in a test file is not exempt', () => {
     try {
       writeFileSync(
         path.join(fixture.dir, 'tests', 'unit', 'planted.test.ts'),
-        "const TOKEN = 'ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';\n",
+        `${plantedAssignment(PLANTED_TOKEN)}\n`,
         'utf8',
       );
       // The planted file must be in the INDEX: the scan reads
@@ -117,7 +161,7 @@ describe('default-secret-scan · a secret in a test file is not exempt', () => {
     try {
       writeFileSync(
         path.join(fixture.dir, 'tests', 'unit', 'planted.test.ts'),
-        "process.env.TOKEN ?? 'ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';\n",
+        `${plantedDefault(PLANTED_TOKEN)}\n`,
         'utf8',
       );
       execFileSync('git', ['add', '-A'], { cwd: fixture.dir });
@@ -137,7 +181,7 @@ describe('default-secret-scan · the allowlist is a list of values with reasons'
     try {
       writeFileSync(
         path.join(fixture.dir, 'tests', 'unit', 'fixture.test.ts'),
-        "const TOKEN = 'ghp_fixture-value-not-a-real-credential';\n",
+        `${plantedAssignment(ALLOWLISTED_TOKEN)}\n`,
         'utf8',
       );
       execFileSync('git', ['add', '-A'], { cwd: fixture.dir });
@@ -145,7 +189,7 @@ describe('default-secret-scan · the allowlist is a list of values with reasons'
       const allowlistPath = path.join(fixture.dir, 'allowlist.tsv');
       writeFileSync(
         allowlistPath,
-        'ghp_fixture-value-not-a-real-credential\ta fixture, not a credential\n',
+        `${ALLOWLISTED_TOKEN}\ta fixture, not a credential\n`,
         'utf8',
       );
 
