@@ -4,6 +4,9 @@
 **Operator:** Wodzu (Marcin)
 **Memphis runtime:** memphis.service PID 8905 → 2678753 (post-restart)
 **Surface:** `memphis-tui` (TUI cockpit) → backend REST API on :3000
+**Status:** resolved
+**Severity:** S3
+**Open items:** 0
 
 This postmortem captures two adjacent operations performed in one session:
 

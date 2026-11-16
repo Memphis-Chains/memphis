@@ -1,5 +1,8 @@
 # Vault recovery and test isolation — 2026-10-15
 
+**Status:** resolved
+**Severity:** S2
+**Open items:** 0
 ## TL;DR
 
 The October 14 startup failure came from an incompatible vault state and pepper.
