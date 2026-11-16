@@ -1,5 +1,8 @@
 # Reflection completion preceded its memory-chain write
 
+**Status:** resolved
+**Severity:** S2
+**Open items:** 0
 The ARM suite on PR #692 passed every assertion but failed during fixture
 cleanup with `ENOTEMPTY` in `tests/unit/reflection-loop.test.ts`.
 

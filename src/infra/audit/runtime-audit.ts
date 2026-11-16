@@ -40,6 +40,7 @@ import {
   checkSloReporting,
   type UnreadableBlock,
 } from './checks.js';
+import { readPostmortemCorpus } from './postmortem-corpus.js';
 import { worstVerdict, type AuditCheckResult, type RuntimeAuditReport } from './types.js';
 import { getChainPath } from '../../config/paths.js';
 import { runMemphisSloStatus } from '../../mcp/tools/slo-status.js';
@@ -130,6 +131,39 @@ async function newestMtime(dir: string): Promise<number | null> {
 
 async function readTextIfExists(file: string): Promise<string | null> {
   return fs.readFile(file, 'utf8').catch(() => null);
+}
+
+/**
+ * The lines of a file that a shell or a workflow actually EXECUTES.
+ *
+ * WHY A GATE MUST NOT READ A COMMENT
+ * ----------------------------------
+ * A script that describes what it used to do still contains the words.
+ * The first version of the gate-coverage check asked "does this file
+ * mention `tests/*`?" and the answer stayed YES forever, because the
+ * header of the fixed script explains the history of the fix — including
+ * the very pattern it no longer applies. The gate reported a hole that
+ * had been closed, and a gate that cries wolf is a gate nobody reads.
+ *
+ * So the rule is mechanical: drop the lines whose first non-blank
+ * character is `#` (a shell comment), drop the YAML comment lines, and
+ * keep the rest. What is left is what runs.
+ *
+ * It is deliberately simple. A parser that understood heredocs and
+ * quoting would be more precise and would also be wrong in new ways;
+ * this question — "is this line executed?" — is answered exactly well
+ * enough by "is it commented out?".
+ */
+export function executableLines(text: string): string {
+  return text
+    .split('\n')
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (trimmed === '') return false;
+      if (trimmed.startsWith('#')) return false;
+      return true;
+    })
+    .join('\n');
 }
 
 /* ------------------------------------------------------------------ */
@@ -435,7 +469,16 @@ async function collectBranchBoundary(repoRoot: string | null): Promise<BranchFac
   return { measured: repoRoot !== null, pushers, rulesetHasRequiredPr, rulesetId, protectedBranch };
 }
 
-async function collectGateCoverage(repoRoot: string | null): Promise<{
+/**
+ * Which gates measure a scope that cannot fail on this host.
+ *
+ * Exported for the contract test: the audit's own readers must be able
+ * to ask "what does this gate say about this repository?" without
+ * running the whole audit. A collector that cannot be asked is a
+ * collector whose behaviour is only visible through the report — and a
+ * report hides which of six checks did the work.
+ */
+export async function collectGateCoverage(repoRoot: string | null): Promise<{
   measured: boolean;
   misScoped: { gate: string; scope: string }[];
 }> {
@@ -485,7 +528,15 @@ async function collectGateCoverage(repoRoot: string | null): Promise<{
   const workflowText = (
     await Promise.all(workflowFiles.map((name) => readTextIfExists(path.join(workflowDir, name))))
   ).join('\n');
-  if (workflowText && !/rust-core-safety|cargo audit/.test(workflowText)) {
+  // Only the lines a workflow EXECUTES. A workflow that mentions the
+  // scanner in a comment names it exactly like a workflow that runs it,
+  // and a gate that cannot tell the two apart reports green on a
+  // workflow that scans nothing.
+  const workflowCommands = executableLines(workflowText);
+  if (
+    workflowCommands &&
+    !/cargo-audit-check\.sh|rust-core-safety-check\.sh/.test(workflowCommands)
+  ) {
     misScoped.push({
       gate: 'cargo audit',
       scope: 'the script exists, no workflow invokes it',
@@ -524,7 +575,11 @@ async function collectGateCoverage(repoRoot: string | null): Promise<{
   const secretScan = await readTextIfExists(
     path.join(repoRoot, 'scripts', 'default-secret-scan.sh'),
   );
-  if (secretScan && /tests\/\*/.test(secretScan)) {
+  // Same rule as above: the EXECUTED lines decide, not the header. The
+  // header of a script may describe the behaviour it used to have — and
+  // a gate that reads the description reports the old behaviour forever.
+  const secretScanCommands = secretScan ? executableLines(secretScan) : null;
+  if (secretScanCommands && /tests\/\*/.test(secretScanCommands)) {
     misScoped.push({
       gate: 'default-secret-scan',
       scope: 'exempts tests/ and every *.test.* by path',
@@ -538,23 +593,37 @@ async function collectPostmortemStatus(repoRoot: string | null): Promise<{
   total: number;
   indexed: number;
   machineReadable: number;
+  inconsistent: { file: string; reason: string }[];
+  withoutStatus: string[];
+  open: { file: string; openItems: number }[];
 }> {
-  if (!repoRoot) return { total: 0, indexed: 0, machineReadable: 0 };
-  const dir = path.join(repoRoot, 'docs', 'postmortems');
-  const files = (await fs.readdir(dir).catch(() => [])).filter(
-    (name) => name.endsWith('.md') && name !== 'README.md',
-  );
-  const readme = (await readTextIfExists(path.join(dir, 'README.md'))) ?? '';
-
-  let indexed = 0;
-  let machineReadable = 0;
-  for (const file of files) {
-    if (readme.includes(file)) indexed += 1;
-    const text = (await readTextIfExists(path.join(dir, file))) ?? '';
-    if (/^\s*[-*]?\s*\*?\*?status\*?\*?\s*[:：]/im.test(text)) machineReadable += 1;
+  // The corpus module is the single reader of the corpus: it parses the
+  // header, the open-item boxes, and the index in one place, so the audit
+  // and the index generator cannot drift apart.
+  const corpus = await readPostmortemCorpus(repoRoot);
+  if (!corpus) {
+    return {
+      total: 0,
+      indexed: 0,
+      machineReadable: 0,
+      inconsistent: [],
+      withoutStatus: [],
+      open: [],
+    };
   }
 
-  return { total: files.length, indexed, machineReadable };
+  const open = corpus.entries
+    .filter((entry) => entry.openItems.length > 0)
+    .map((entry) => ({ file: entry.file, openItems: entry.openItems.length }));
+
+  return {
+    total: corpus.total,
+    indexed: corpus.indexed,
+    machineReadable: corpus.machineReadable,
+    inconsistent: [...corpus.inconsistent],
+    withoutStatus: [...corpus.withoutStatus],
+    open,
+  };
 }
 
 /* ------------------------------------------------------------------ */

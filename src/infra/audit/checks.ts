@@ -443,6 +443,12 @@ export interface PostmortemStatusInput {
   readonly total: number;
   readonly indexed: number;
   readonly machineReadable: number;
+  /** Documents whose declared status contradicts their own open-item list. */
+  readonly inconsistent?: readonly { readonly file: string; readonly reason: string }[];
+  /** Documents with no status a program can read. */
+  readonly withoutStatus?: readonly string[];
+  /** Documents with still-open work, with the count. */
+  readonly open?: readonly { readonly file: string; readonly openItems: number }[];
 }
 
 export function checkPostmortemStatus(input: PostmortemStatusInput): AuditCheckResult {
@@ -457,13 +463,47 @@ export function checkPostmortemStatus(input: PostmortemStatusInput): AuditCheckR
     };
   }
 
+  const inconsistent = input.inconsistent ?? [];
+  const withoutStatus = input.withoutStatus ?? [];
+  const open = input.open ?? [];
+
+  // A document whose header contradicts its own body is worse than a
+  // document with no status at all: the first one is a claim that can be
+  // disproved, the second one is an absence nobody trusted. Both
+  // fail the check.
   const gap = input.total - input.machineReadable;
+  const details: string[] = [];
+
+  if (gap > 0) {
+    // Name the documents. A failure that says "3 of 11" without saying
+    // WHICH three sends the reader back to the directory listing to
+    // find them, which is the manual step this whole check exists to
+    // remove.
+    if (withoutStatus.length > 0) {
+      details.push(
+        `${withoutStatus.length} postmortem(s) carry no status a tool can read: ${withoutStatus.join(', ')}`,
+      );
+    } else {
+      details.push(`${gap} postmortem(s) carry no status a tool can read`);
+    }
+  }
+  for (const entry of inconsistent) {
+    details.push(`${entry.file}: ${entry.reason}`);
+  }
+
+  // The open items are NOT a failure. A corpus that says "still open"
+  // is a corpus doing its job; a corpus that cannot say it is the
+  // hole. So they are reported, not blocked on.
+  const openSummary = open.length
+    ? ` open=${open.reduce((sum, entry) => sum + entry.openItems, 0)} in ${open.length} document(s)`
+    : '';
+
   return {
     id: 'postmortem-status',
     title,
-    verdict: gap > 0 ? FAIL : PASS,
-    summary: `indexed=${input.indexed}/${input.total} machine-readable status=${input.machineReadable}/${input.total}`,
-    details: gap > 0 ? [`${gap} postmortem(s) carry no status a tool can read`] : [],
+    verdict: gap > 0 || inconsistent.length > 0 ? FAIL : PASS,
+    summary: `indexed=${input.indexed}/${input.total} machine-readable status=${input.machineReadable}/${input.total}${openSummary}`,
+    details,
   };
 }
 

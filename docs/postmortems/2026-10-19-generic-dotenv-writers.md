@@ -1,5 +1,8 @@
 # Generic dotenv writes could bypass vault protection — 2026-10-19
 
+**Status:** resolved
+**Severity:** S2
+**Open items:** 0
 ## TL;DR
 
 The legacy `upsertEnvVars` and `removeEnvVars` helpers did not apply the initialized

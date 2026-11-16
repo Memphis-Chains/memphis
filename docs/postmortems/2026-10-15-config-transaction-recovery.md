@@ -1,5 +1,8 @@
 # Configuration transaction recovery — 2026-10-15
 
+**Status:** resolved
+**Severity:** S2
+**Open items:** 0
 ## Problem and change
 
 Recovery checked and published each target in order. A conflict in a later target

@@ -3,6 +3,9 @@
 **Operator:** Marcin Kukla (Wodzu)
 **Captured by:** Memphis (Opus 4.7, planning instance)
 **Source:** Operator dictation post-Zawoja, runtime diagnostic from second TUI instance (MiniMax-M2.7)
+**Status:** resolved
+**Severity:** S3
+**Open items:** 0
 
 ---
 
