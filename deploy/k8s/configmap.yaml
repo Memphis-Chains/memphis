@@ -5,12 +5,11 @@ metadata:
   labels:
     app: memphis
 data:
-  config.env: |
-    NODE_ENV=production
-    HOST=0.0.0.0
-    PORT=3000
-    LOG_LEVEL=info
-    LOG_FORMAT=json
-    DEFAULT_PROVIDER=local-fallback
-    DATABASE_URL=file:/app/data/memphis.db
-    RUST_CHAIN_ENABLED=false
+  NODE_ENV: production
+  HOST: '0.0.0.0'
+  PORT: '3000'
+  LOG_LEVEL: info
+  LOG_FORMAT: json
+  DEFAULT_PROVIDER: local-fallback
+  DATABASE_URL: 'file:/home/memphis/.memphis/memphis.db'
+  RUST_CHAIN_ENABLED: 'false'

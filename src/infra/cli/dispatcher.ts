@@ -21,7 +21,6 @@ const VERB_FIRST_HINTS: Record<string, readonly string[]> = {
   set: ['memphis config set'],
   get: ['memphis config get'],
   show: ['memphis config show'],
-  status: ['memphis health', 'memphis tier status', 'memphis service status'],
 };
 
 function levenshtein(a: string, b: string): number {

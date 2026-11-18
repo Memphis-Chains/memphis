@@ -4,10 +4,12 @@ metadata:
   name: memphis
   labels:
     app: memphis
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: '8m'
 spec:
+  # Install a controller with the vendor's security fixes before applying this example.
   ingressClassName: nginx
+  tls:
+    - hosts: [memphis.example.com]
+      secretName: memphis-public-tls
   rules:
     - host: memphis.example.com
       http:
@@ -16,6 +18,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: memphis
+                name: memphis-public
                 port:
                   number: 80

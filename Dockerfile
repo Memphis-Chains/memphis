@@ -6,7 +6,8 @@ WORKDIR /app
 # Native modules + Rust toolchain for workspace build
 RUN apk add --no-cache python3 make g++ rust cargo
 
-COPY package*.json ./
+COPY package.json package-lock.json npm-shrinkwrap.json ./
+COPY scripts/check-ollama.js scripts/postinstall-check-native.mjs scripts/setup-githooks.mjs ./scripts/
 RUN npm ci
 
 COPY . .
@@ -27,6 +28,10 @@ COPY --from=builder /app/package-lock.json ./package-lock.json
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/bin ./bin
+COPY --from=builder /app/crates/memphis-napi/index.node ./crates/memphis-napi/index.node
+COPY --from=builder /app/scripts/public-chat-gateway.mjs ./scripts/public-chat-gateway.mjs
+COPY --from=builder /app/sites/memphis-v5/chat/ ./sites/memphis-v5/chat/
+COPY --from=builder /app/sites/memphis-v5/favicon.svg ./sites/memphis-v5/favicon.svg
 
 RUN mkdir -p /home/memphis/.memphis /app/data \
   && chown -R memphis:memphis /app /home/memphis
