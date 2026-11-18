@@ -105,6 +105,20 @@ describe('http health payload', () => {
     expect(payload.latestTurnTelemetry).toEqual([]);
   });
 
+  it('checks the configured Ollama server and reports a missing tags endpoint', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-health-provider-'));
+    const probe = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(null, { status: 404 }));
+    const payload = await buildHealthPayload(makeConfig(`file:${join(dir, 'test.db')}`), {
+      MEMPHIS_DATA_DIR: dir,
+      MEMPHIS_ENV_FILE: join(dir, '.env'),
+      RUST_CHAIN_ENABLED: 'false',
+      RUST_EMBED_MODE: 'ollama',
+      RUST_EMBED_PROVIDER_URL: 'http://embed.example.test:11434/api/embeddings/',
+    });
+    expect(probe).toHaveBeenCalledWith('http://embed.example.test:11434/api/tags', expect.objectContaining({ method: 'GET' }));
+    expect(payload.checks.embedding_provider).toMatchObject({ status: 'fail', message: 'provider returned 404' });
+  });
+
   it('returns unhealthy when sqlite file is missing', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'memphis-health-unit-missing-'));
     const missingDb = join(dir, 'missing.db');

@@ -58,8 +58,9 @@ function printServiceStatusHuman(result: UserServiceStatus): void {
   console.log(`systemd user: ${result.available ? 'available' : 'unavailable'}`);
   console.log(`unit path: ${result.unitPath}`);
   console.log(`installed: ${result.installed ? 'yes' : 'no'}`);
-  console.log(`enabled: ${result.enabled ? 'yes' : 'no'}`);
-  console.log(`active: ${result.active ? 'yes' : 'no'}`);
+  const observed = (value: boolean) => (result.available ? (value ? 'yes' : 'no') : 'unknown');
+  console.log(`enabled: ${observed(result.enabled)}`);
+  console.log(`active: ${observed(result.active)}`);
   console.log(`exec start: ${result.execStart}`);
   console.log(`detail: ${result.detail}`);
 }
@@ -178,9 +179,10 @@ export async function handleServiceCommand(
   context: CliContext,
   serviceOps: ServiceOps = DEFAULT_SERVICE_OPS,
 ): Promise<boolean> {
-  const { command, subcommand, json, latest, yes, runtime } = context.args;
+  const { command, json, latest, yes, runtime } = context.args;
+  const subcommand = command === 'status' ? 'status' : context.args.subcommand;
 
-  if (command !== 'service' && command !== 'reset') return false;
+  if (command !== 'service' && command !== 'reset' && command !== 'status') return false;
 
   if (command === 'reset') {
     if (!runtime) {

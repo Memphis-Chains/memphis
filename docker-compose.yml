@@ -9,7 +9,7 @@ services:
     container_name: memphis
     restart: unless-stopped
     ports:
-      - '${MEMPHIS_PORT:-3000}:3000'
+      - '127.0.0.1:${MEMPHIS_PORT:-3000}:3000'
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
@@ -24,6 +24,7 @@ services:
       DECENTRALIZED_LLM_API_KEY: ${DECENTRALIZED_LLM_API_KEY:-}
       RUST_CHAIN_ENABLED: ${RUST_CHAIN_ENABLED:-false}
       OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
     volumes:
       - ./data:/app/data
       - ~/.memphis:/home/memphis/.memphis
@@ -40,7 +41,7 @@ services:
     restart: unless-stopped
     profiles: ['ollama']
     ports:
-      - '${OLLAMA_PORT:-11434}:11434'
+      - '127.0.0.1:${OLLAMA_PORT:-11434}:11434'
     volumes:
       - ollama-data:/root/.ollama
 
