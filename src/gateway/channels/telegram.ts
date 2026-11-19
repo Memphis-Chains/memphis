@@ -21,6 +21,7 @@ import {
   registerTelegramTurnGuardMiddleware,
 } from './telegram-turn-guard.js';
 import { registerTelegramVoiceAndRestart } from './telegram-voice-handlers.js';
+import { createLogger } from '../../infra/logging/logger.js';
 import type { ChannelAdapter, MessageHandler } from '../chat-types.js';
 import { resolveVoiceConfig, type VoiceConfig } from '../voice/voice-service.js';
 
@@ -30,6 +31,8 @@ export {
   isTelegramStatusProbe,
   isTelegramToolsProbe,
 } from './telegram-probes.js';
+
+const log = createLogger('error', 'json', { component: 'telegram.gateway' });
 
 export type TelegramAdapterOptions = {
   onStatus?: () => string;
@@ -94,7 +97,30 @@ export function createTelegramAdapter(
       registerTelegramMediaHandlers(bot, token, handler);
       subscribeTelegramTierLifecycle(bot);
 
-      void bot.start({ drop_pending_updates: true });
+      // `drop_pending_updates: true` makes grammY call deleteWebhook with
+      // the flag, which DISCARDS every update queued while the gateway was
+      // down. The operator's message — written while the service was
+      // restarting — is exactly the one that gets thrown away. Measured
+      // 2026-11-19: the gateway restarted at 22:17 and no inbound update
+      // was ever logged, while Telegram reported zero pending updates
+      // and a live long-poll.
+      //
+      // `false` keeps the queue. grammY still confirms updates one by one
+      // as it handles them, so nothing is replayed forever.
+      //
+      // `bot.start()` rejects on 401 Unauthorized and 409 Conflict
+      // (another poller holds the same token). The call was `void`, so
+      // that rejection landed in an unhandled promise: the gateway looked
+      // alive, the log said "Channel gateway started (Telegram)", and
+      // nothing ever arrived. A failed start must be visible.
+      void bot.start({ drop_pending_updates: false }).catch((error: unknown) => {
+        started = false;
+        const reason = error instanceof Error ? error.message : String(error);
+        log.error(
+          { err: error, reason },
+          'Telegram gateway failed to start — no updates will be received',
+        );
+      });
       started = true;
     },
 
