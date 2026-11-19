@@ -1,0 +1,16 @@
+[Unit]
+Description=Private transport for the Memphis public chat website
+After=network-online.target memphis-public-chat-gateway.service
+Wants=network-online.target memphis-public-chat-gateway.service
+
+[Service]
+Type=simple
+ExecStart=/bin/bash %h/memphis/scripts/public-chat-tunnel.sh
+Restart=always
+RestartSec=15
+TimeoutStopSec=10
+NoNewPrivileges=yes
+UMask=0077
+
+[Install]
+WantedBy=default.target
