@@ -32,7 +32,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from dashboard_probes import ALL_PROBES, PROBES, RETIRED_PROBES, probe_one  # noqa: E402
+from dashboard_probes import ALL_PROBES, PROBES, RETIRED_PROBES, probe_all  # noqa: E402
 
 CHAIN_ROOT = Path("/home/memphis/.memphis/chains")
 DECISIONS = CHAIN_ROOT / "decisions"
@@ -286,8 +286,15 @@ def render(audience: str = "internal") -> str:
 
     probe_rows = []
     retired_rows = []
+    # The probes are independent HTTP requests, so they run concurrently.
+    # Measured 2026-11-19: probing them one after another took 176 seconds
+    # in the worst case, against a 180 second hook limit in the contract
+    # test that generates this dashboard — on a CI runner it ran past it
+    # and the test file failed with "Hook timed out in 180000ms", so
+    # nothing about the dashboard was checked at all.
+    probe_rows_by_url = dict(zip(ALL_PROBES, probe_all(ALL_PROBES)))
     for url in ALL_PROBES:
-        row = probe_one(url)
+        row = probe_rows_by_url[url]
         is_retired = url in RETIRED_PROBES
         badge = "b-retired" if is_retired else ("b-200" if row["http_code"] == 200 else f"b-{row['http_code']}")
         code = "wycofany" if is_retired else row["http_code"]
