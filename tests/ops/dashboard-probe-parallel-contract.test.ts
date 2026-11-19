@@ -16,16 +16,20 @@ import { expect, it } from 'vitest';
  * failed with "Hook timed out in 180000ms", so nothing about the
  * dashboard was checked at all.
  *
- * This test measures the worst case directly: every probe pointed at an
- * address that never answers, so every probe burns its full timeout.
+ * This test measures the GENERATOR (`dashboard_report.render`), because
+ * that is what the contract test runs and what used to probe one URL
+ * after another. Measuring the helper alone was not enough: the
+ * generator had its own loop, and a mutation that restored that loop
+ * passed a helper-only test.
  */
 
 const repoRoot = resolve(new URL('../..', import.meta.url).pathname);
+const scripts = join(repoRoot, 'scripts');
 
 /** The hook limit in `dashboard-live-contract.test.ts` (beforeAll, 180_000). */
 const HOOK_LIMIT_MS = 180_000;
 
-it('probes concurrently — the worst case stays far below the hook limit', () => {
+it('generates the dashboard in parallel — the worst case stays far below the hook limit', () => {
   const root = mkdtempSync(join(tmpdir(), 'memphis-probe-parallel-'));
   try {
     const script = join(root, 'measure.py');
@@ -33,16 +37,20 @@ it('probes concurrently — the worst case stays far below the hook limit', () =
       script,
       [
         'import sys, time',
-        `sys.path.insert(0, ${JSON.stringify(join(repoRoot, 'scripts'))})`,
+        `sys.path.insert(0, ${JSON.stringify(scripts)})`,
         'import dashboard_probes as dp',
         '# Every probe points at an address that never answers:',
         '# each one burns its full timeout.',
         'dp.ALL_PROBES = [f"https://10.255.255.1/probe-{i}" for i in range(22)]',
         'dp.TIMEOUT_SECONDS = 8',
+        'import dashboard_report as dr',
+        'dr.ALL_PROBES = dp.ALL_PROBES',
+        '# The generator itself, not the helper: the generator had its own',
+        '# sequential loop, and a helper-only test did not catch it.',
         'started = time.time()',
-        'rows = dp.probe_all()',
+        'html = dr.render("internal")',
         'elapsed = time.time() - started',
-        'print(f"{len(rows)} {elapsed:.1f}")',
+        'print(f"{len(html)} {elapsed:.1f}")',
       ].join('\n'),
     );
 
@@ -53,10 +61,10 @@ it('probes concurrently — the worst case stays far below the hook limit', () =
       timeout: HOOK_LIMIT_MS,
     }).trim();
 
-    const [rowCount, elapsedText] = output.split(' ');
+    const [htmlLength, elapsedText] = output.split(' ');
     const elapsedMs = Number(elapsedText) * 1000;
 
-    expect(Number(rowCount), 'every probe must still produce a row').toBe(22);
+    expect(Number(htmlLength), 'the generator must still produce a dashboard').toBeGreaterThan(0);
     // The sequential worst case was 176 s. A generous bound still fails
     // the sequential implementation by a wide margin, and still passes with
     // room to spare on a slow runner.
