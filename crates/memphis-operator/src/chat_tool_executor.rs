@@ -26,9 +26,9 @@ use crate::chat_guards::{
     build_wrapped_segment, emit_runtime_security_event, scan_code_change_content, sha256_hex,
 };
 use crate::chat_memory::{
-    append_case_entry, append_generic_block, read_chain_blocks, recall_result_with_sources,
-    run_native_journal, run_soul_read, run_soul_write, search_result_to_json, validate_chain_name,
-    value_string_array, value_usize,
+    append_case_entry, append_generic_block, is_scannable_chain_directory_name, read_chain_blocks,
+    recall_result_with_sources, run_native_journal, run_soul_read, run_soul_write,
+    search_result_to_json, validate_chain_name, value_string_array, value_usize,
 };
 use crate::chat_tool_catalog::tool_tier;
 use crate::code_read::{
@@ -1653,7 +1653,12 @@ fn execute_native_tool_inner(
             let selected_chain = call.arguments.get("chain").and_then(Value::as_str);
             let chains_root = runtime.config.data_dir.join("chains");
             let chain_names = if let Some(chain_name) = selected_chain {
-                validate_chain_name(chain_name)?;
+                // An archive IS a chain: it holds the same blocks the chain
+                // holds. The TypeScript arm opens it, so refusing it here
+                // made the two arms disagree about the same directory.
+                if !is_scannable_chain_directory_name(chain_name) {
+                    return Err(OperatorError::Message("invalid chain name".to_string()));
+                }
                 vec![chain_name.to_string()]
             } else {
                 let mut names = fs::read_dir(&chains_root)
@@ -1669,7 +1674,14 @@ fn execute_native_tool_inner(
             let mut chains_checked = 0usize;
             let mut block_count = 0usize;
             for chain_name in &chain_names {
-                validate_chain_name(chain_name)?;
+                // A directory the verifier may not open is SKIPPED, not
+                // fatal: refusing to name it used to abort the whole run,
+                // so "verify all chains" checked nothing at all and
+                // answered "invalid chain name". The TypeScript arm skips
+                // the same directories and keeps going.
+                if !is_scannable_chain_directory_name(chain_name) {
+                    continue;
+                }
                 match read_chain_blocks(&chains_root.join(chain_name)) {
                     Ok(blocks) => {
                         chains_checked += 1;
