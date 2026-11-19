@@ -6,8 +6,7 @@ import { join } from 'node:path';
 import { sha256Hex, signCheckpoint } from '../../src/kartograf/checkpoint.js';
 
 /** Tiny tokenizer fixture: no downloaded weights, no semantic quality claim. */
-export function kartografBundleFixture() {
-  const root = mkdtempSync(join(tmpdir(), 'kartograf-contract-'));
+export function kartografBundleFixture(root = mkdtempSync(join(tmpdir(), 'kartograf-contract-'))) {
   const tokenizer = {
     version: '1.0',
     truncation: null,
