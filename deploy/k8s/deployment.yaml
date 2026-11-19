@@ -5,7 +5,9 @@ metadata:
   labels:
     app: memphis
 spec:
-  replicas: 2
+  replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: memphis
@@ -14,6 +16,7 @@ spec:
       labels:
         app: memphis
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         fsGroup: 1000
@@ -21,7 +24,8 @@ spec:
         - name: memphis
           image: ghcr.io/memphis-chains/memphis:latest
           imagePullPolicy: IfNotPresent
-          args: ['serve']
+          securityContext:
+            runAsUser: 1000
           ports:
             - containerPort: 3000
               name: http
@@ -31,7 +35,12 @@ spec:
             - secretRef:
                 name: memphis-secrets
           env:
-            - name: OLLAMA_HOST
+            - name: MEMPHIS_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: memphis-secrets
+                  key: MEMPHIS_API_TOKEN
+            - name: OLLAMA_URL
               value: 'http://localhost:11434'
           volumeMounts:
             - name: memphis-data
@@ -57,15 +66,35 @@ spec:
             limits:
               cpu: '1'
               memory: 1Gi
+        - name: public-chat
+          image: ghcr.io/memphis-chains/memphis:latest
+          command: ['node', '--permission', '--allow-fs-read=/app/scripts/public-chat-gateway.mjs', '--allow-fs-read=/app/sites/memphis-v5', '/app/scripts/public-chat-gateway.mjs']
+          securityContext:
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ['ALL']
+          env:
+            - name: PUBLIC_CHAT_HOST
+              value: '0.0.0.0'
+          ports:
+            - containerPort: 9100
+              name: public-chat
         - name: ollama
           image: ollama/ollama:latest
           imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 1000
+          env:
+            - name: HOME
+              value: /home/ollama
           ports:
             - containerPort: 11434
               name: ollama
           volumeMounts:
             - name: ollama-data
-              mountPath: /root/.ollama
+              mountPath: /home/ollama
       volumes:
         - name: memphis-data
           persistentVolumeClaim:
@@ -73,4 +102,5 @@ spec:
         - name: app-data
           emptyDir: {}
         - name: ollama-data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: memphis-models-pvc

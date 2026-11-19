@@ -1,0 +1,65 @@
+{
+  "description": "The chain directory names the two arms of memphis_chain_verify used to disagree about. The native arm refused every archive directory (a dot is not in [A-Za-z0-9_-]), so 'verify all chains' aborted on the first archive and checked nothing. The TypeScript arm skipped them and kept going. {HOME} = <home>. The fixture holds the directory names only — the verifier's decision about a name is what both arms must agree on.",
+  "cases": [
+    {
+      "name": "a plain chain name is scannable",
+      "directory": "journal",
+      "scannable": true
+    },
+    {
+      "name": "a plain chain name with a digit suffix is scannable",
+      "directory": "cases2",
+      "scannable": true
+    },
+    {
+      "name": "an underscore in a chain name is scannable",
+      "directory": "_quarantine",
+      "scannable": true
+    },
+    {
+      "name": "a numeric archive suffix is an archive and therefore scannable",
+      "directory": "journal.backup-1784913076785",
+      "scannable": true
+    },
+    {
+      "name": "a dated archive suffix is an archive and therefore scannable",
+      "directory": "cases.backup-2026-07-07T15-07-23-108Z",
+      "scannable": true
+    },
+    {
+      "name": "a second archive of another chain is an archive too",
+      "directory": "system.backup-1782897312539",
+      "scannable": true
+    },
+    {
+      "name": "a parent traversal is not scannable",
+      "directory": "..",
+      "scannable": false
+    },
+    {
+      "name": "a nested path is not scannable",
+      "directory": "journal/000001",
+      "scannable": false
+    },
+    {
+      "name": "a backslash path is not scannable",
+      "directory": "journal\\000001",
+      "scannable": false
+    },
+    {
+      "name": "a dot that is not an archive suffix is not scannable",
+      "directory": "journal.partial",
+      "scannable": false
+    },
+    {
+      "name": "an archive without a stamp is not an archive",
+      "directory": "journal.backup-",
+      "scannable": false
+    },
+    {
+      "name": "an empty name is not scannable",
+      "directory": "",
+      "scannable": false
+    }
+  ]
+}

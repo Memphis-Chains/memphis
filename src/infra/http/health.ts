@@ -338,7 +338,10 @@ async function checkEmbeddingProvider(rawEnv: NodeJS.ProcessEnv): Promise<CheckR
   const mode = rawEnv.RUST_EMBED_MODE ?? 'local';
   let endpoint: string | undefined;
 
-  if (mode === 'ollama') endpoint = 'http://127.0.0.1:11434/api/tags';
+  if (mode === 'ollama') {
+    const base = rawEnv.RUST_EMBED_PROVIDER_URL?.trim() || 'http://127.0.0.1:11434';
+    endpoint = `${base.replace(/\/+$/, '').replace(/\/api\/embeddings$/, '')}/api/tags`;
+  }
   if (mode === 'provider' || mode === 'openai-compatible') {
     endpoint = rawEnv.RUST_EMBED_PROVIDER_URL;
   }
@@ -351,24 +354,29 @@ async function checkEmbeddingProvider(rawEnv: NodeJS.ProcessEnv): Promise<CheckR
   try {
     const response = await fetch(endpoint, {
       method: 'GET',
-      signal: AbortSignal.timeout(350),
+      redirect: 'error',
+      signal: AbortSignal.timeout(1500),
     });
     const latency_ms = Date.now() - startedAt;
-    if (response.ok || response.status < 500) {
+    if (response.ok) {
       return { status: 'ok', latency_ms };
+    }
+    if (mode !== 'ollama' && response.status < 500) {
+      // A generic POST endpoint may require credentials or reject GET.
+      return { status: 'ok', message: 'provider reachable; embedding request unverified', latency_ms };
     }
     return {
       status: 'fail',
       message: `provider returned ${response.status}`,
       latency_ms,
-      fixAction: `Check embedding provider URL ${endpoint} - server may be down or misconfigured. For Ollama: ollama serve`,
+      fixAction: 'Check RUST_EMBED_PROVIDER_URL and the embedding service.',
     };
   } catch {
     return {
       status: 'fail',
       message: 'provider ping failed',
       latency_ms: Date.now() - startedAt,
-      fixAction: `Cannot reach embedding provider at ${endpoint}. Verify the service is running. For Ollama: ollama serve`,
+      fixAction: 'Verify the embedding service is running and RUST_EMBED_PROVIDER_URL is reachable.',
     };
   }
 }

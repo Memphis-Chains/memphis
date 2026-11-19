@@ -2133,6 +2133,57 @@ mod tests {
         assert!(verify_output.contains("\"blockCount\":1"));
     }
 
+    /// "Verify all chains" must actually verify chains.
+    ///
+    /// The tool description promises it: "Optional chain name; omit to
+    /// verify all chains". It used to abort on the first archive directory
+    /// it met, because a dot is not in `[A-Za-z0-9_-]`, and answered
+    /// "invalid chain name" after checking NOTHING. The TypeScript arm
+    /// skipped those directories and kept going.
+    #[test]
+    fn native_chain_verify_without_a_chain_checks_every_chain_including_archives() {
+        let root = temp_runtime_root("native-chain-verify-all");
+        let runtime = runtime_for(root.as_path());
+        append_generic_block(
+            &root,
+            "journal",
+            json!({
+                "type": "journal",
+                "content": "every chain must be verified",
+                "tags": ["competence"],
+                "source": "test"
+            }),
+        )
+        .expect("append journal");
+
+        // An archive of the journal, next to the chain itself.
+        let archive = root.join("chains").join("journal.backup-1784913076785");
+        fs::create_dir_all(&archive).expect("create the archive directory");
+        fs::copy(
+            root.join("chains")
+                .join("journal")
+                .join("000001.json"),
+            archive.join("000001.json"),
+        )
+        .expect("copy the block into the archive");
+
+        let verify = ChatToolCall {
+            id: "verify-all-call".to_string(),
+            name: "memphis_chain_verify".to_string(),
+            arguments: json!({}),
+        };
+        let (_, verify_output) =
+            execute_native_tool(&runtime, &verify, 2).expect("verify every chain");
+        assert!(
+            verify_output.contains("\"ok\":true"),
+            "verifying every chain must not fail: {verify_output}"
+        );
+        assert!(
+            verify_output.contains("\"chainsChecked\":2"),
+            "both the chain and its archive must be checked: {verify_output}"
+        );
+    }
+
     /// BASAL answers over HTTP, so the validation paths are the part worth
     /// testing: they must fail before a request is sent. The happy path is
     /// covered against the live service in the manual probe, not here, because

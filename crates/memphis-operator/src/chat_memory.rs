@@ -682,6 +682,47 @@ pub(crate) fn validate_generic_block(
     Ok(())
 }
 
+/// A chain archive directory: `<chain>.backup-<stamp>`.
+///
+/// The TypeScript arm calls this `isChainBackupDirectory` and accepts
+/// `<chain>.backup-<digits>` or `<chain>.backup-<ISO-ish stamp>`. The
+/// archive holds the same blocks the chain holds, so it IS scannable —
+/// treating it as unsafe made the native verifier refuse to open any
+/// archive while the TypeScript verifier opened all three.
+pub fn is_chain_backup_directory(name: &str) -> bool {
+    let Some((chain, stamp)) = name.split_once(".backup-") else {
+        return false;
+    };
+    if chain.is_empty()
+        || !chain
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
+        return false;
+    }
+    if stamp.is_empty() || !stamp.chars().all(|ch| ch.is_ascii_digit()) {
+        // The dated form: 2026-07-07T15-07-23-108Z
+        let bytes = stamp.as_bytes();
+        let shaped = bytes.len() == 24
+            && stamp.ends_with('Z')
+            && stamp.contains('T')
+            && stamp
+                .chars()
+                .all(|ch| ch.is_ascii_digit() || ch == '-' || ch == 'T' || ch == 'Z');
+        return shaped;
+    }
+    true
+}
+
+/// A chain directory the verifier may open: a plain chain or an archive.
+pub fn is_scannable_chain_directory_name(name: &str) -> bool {
+    let plain = !name.is_empty()
+        && name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-');
+    plain || is_chain_backup_directory(name)
+}
+
 pub(crate) fn validate_chain_name(chain_name: &str) -> Result<(), OperatorError> {
     if chain_name.is_empty()
         || chain_name.contains("..")
