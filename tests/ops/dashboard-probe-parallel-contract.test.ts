@@ -21,13 +21,17 @@ import { expect, it } from 'vitest';
  * after another. Measuring the helper alone was not enough: the
  * generator had its own loop, and a mutation that restored that loop
  * passed a helper-only test.
+ *
+ * The probe timeout is scaled down to 1 second here (production uses 8).
+ * The ratio is what matters: sequential probing costs 22 x 1 s = 22 s,
+ * concurrent probing costs ceil(22 / 8) x 1 s = 3 s, and the bound below
+ * sits between them. The test therefore still fails on a sequential
+ * implementation, in seconds instead of minutes, and it does not depend
+ * on how fast the runner happens to be.
  */
 
 const repoRoot = resolve(new URL('../..', import.meta.url).pathname);
 const scripts = join(repoRoot, 'scripts');
-
-/** The hook limit in `dashboard-live-contract.test.ts` (beforeAll, 180_000). */
-const HOOK_LIMIT_MS = 180_000;
 
 it('generates the dashboard in parallel — the worst case stays far below the hook limit', () => {
   const root = mkdtempSync(join(tmpdir(), 'memphis-probe-parallel-'));
@@ -42,7 +46,8 @@ it('generates the dashboard in parallel — the worst case stays far below the h
         '# Every probe points at an address that never answers:',
         '# each one burns its full timeout.',
         'dp.ALL_PROBES = [f"https://10.255.255.1/probe-{i}" for i in range(22)]',
-        'dp.TIMEOUT_SECONDS = 8',
+        '# Scaled down from the production 8 s: the ratio is what matters.',
+        'dp.TIMEOUT_SECONDS = 1',
         'import dashboard_report as dr',
         'dr.ALL_PROBES = dp.ALL_PROBES',
         '# The generator itself, not the helper: the generator had its own',
@@ -58,18 +63,19 @@ it('generates the dashboard in parallel — the worst case stays far below the h
       cwd: repoRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: HOOK_LIMIT_MS,
+      timeout: 60_000,
     }).trim();
 
     const [htmlLength, elapsedText] = output.split(' ');
     const elapsedMs = Number(elapsedText) * 1000;
 
     expect(Number(htmlLength), 'the generator must still produce a dashboard').toBeGreaterThan(0);
-    // The sequential worst case was 176 s. A generous bound still fails
-    // the sequential implementation by a wide margin, and still passes with
-    // room to spare on a slow runner.
-    expect(elapsedMs).toBeLessThan(HOOK_LIMIT_MS / 2);
+    // Sequential probing costs 22 x 1 s = 22 s at the scaled timeout;
+    // concurrent probing costs ceil(22 / 8) x 1 s = 3 s. The bound sits
+    // between the two, so a sequential implementation fails here and a
+    // concurrent one passes with room to spare on a slow runner.
+    expect(elapsedMs).toBeLessThan(12_000);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-});
+}, 120_000);
