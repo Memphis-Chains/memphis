@@ -50,6 +50,10 @@ it('generates the dashboard in parallel — the worst case stays far below the h
         'dp.TIMEOUT_SECONDS = 1',
         'import dashboard_report as dr',
         'dr.ALL_PROBES = dp.ALL_PROBES',
+        '# The store facts make three more requests, each with a 10 s',
+        '# timeout. They are independent too, so they run concurrently.',
+        'dr.fetch_json = lambda url, timeout=10: None',
+        'dr.fetch_home = lambda: None',
         '# The generator itself, not the helper: the generator had its own',
         '# sequential loop, and a helper-only test did not catch it.',
         'started = time.time()',
@@ -75,6 +79,51 @@ it('generates the dashboard in parallel — the worst case stays far below the h
     // between the two, so a sequential implementation fails here and a
     // concurrent one passes with room to spare on a slow runner.
     expect(elapsedMs).toBeLessThan(12_000);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 120_000);
+
+it('collects the store facts in parallel — they are three independent requests', () => {
+  const root = mkdtempSync(join(tmpdir(), 'memphis-store-facts-'));
+  try {
+    const script = join(root, 'measure.py');
+    writeFileSync(
+      script,
+      [
+        'import sys, time',
+        `sys.path.insert(0, ${JSON.stringify(scripts)})`,
+        'import dashboard_report as dr',
+        '# Each request burns its full timeout.',
+        'def slow_json(url, timeout=10):',
+        '    time.sleep(timeout)',
+        '    return None',
+        'def slow_home():',
+        '    time.sleep(10)',
+        '    return None',
+        'dr.fetch_json = slow_json',
+        'dr.fetch_home = slow_home',
+        'started = time.time()',
+        'facts = dr.store_facts()',
+        'elapsed = time.time() - started',
+        'print(f"{len(facts)} {elapsed:.1f}")',
+      ].join('\n'),
+    );
+
+    const output = execFileSync('python3', [script], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 60_000,
+    }).trim();
+
+    const [factsCount, elapsedText] = output.split(' ');
+    const elapsedMs = Number(elapsedText) * 1000;
+
+    expect(Number(factsCount), 'store_facts must still return its facts').toBeGreaterThan(0);
+    // Sequential: 3 x 10 s = 30 s. Concurrent: 10 s. The bound sits
+    // between the two.
+    expect(elapsedMs).toBeLessThan(20_000);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

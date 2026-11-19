@@ -29,6 +29,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -181,11 +182,35 @@ def fetch_json(url: str, timeout: int = 10):
         return None
 
 
+def fetch_home():
+    """The shop's home page, or None when it cannot be reached."""
+    try:
+        request = urllib.request.Request("https://dsmxshop.com/", headers={"User-Agent": "MemphisDashboard/1.0"})
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.read().decode("utf-8", "replace")
+    except Exception:
+        return None
+
+
 def store_facts():
-    """What the production shop actually offers right now."""
+    """What the production shop actually offers right now.
+
+    The three requests are independent, so they run concurrently. Measured
+    2026-11-19: run one after another they cost up to 3 x 10 seconds,
+    which on a slow runner pushed the whole dashboard generation past the
+    180 second hook limit of the contract test that produces it.
+    """
     facts = {"products": [], "product_count": None, "pages": None, "wp_version": None,
              "woo_version": None, "reachable": None}
-    products = fetch_json("https://dsmxshop.com/wp-json/wc/store/v1/products?per_page=20")
+    products_url = "https://dsmxshop.com/wp-json/wc/store/v1/products?per_page=20"
+    pages_url = "https://dsmxshop.com/wp-json/wp/v2/pages?per_page=50"
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        products_future = pool.submit(fetch_json, products_url)
+        pages_future = pool.submit(fetch_json, pages_url)
+        home_future = pool.submit(fetch_home)
+        products = products_future.result()
+        pages = pages_future.result()
+        home = home_future.result()
     if isinstance(products, list):
         facts["product_count"] = len(products)
         for product in products:
@@ -201,16 +226,8 @@ def store_facts():
                 "minor_unit": prices.get("currency_minor_unit") or 0,
                 "price_minor": prices.get("price"),
             })
-    pages = fetch_json("https://dsmxshop.com/wp-json/wp/v2/pages?per_page=50")
     if isinstance(pages, list):
         facts["pages"] = len(pages)
-    home = None
-    try:
-        request = urllib.request.Request("https://dsmxshop.com/", headers={"User-Agent": "MemphisDashboard/1.0"})
-        with urllib.request.urlopen(request, timeout=10) as response:
-            home = response.read().decode("utf-8", "replace")
-    except Exception:
-        home = None
     if home:
         facts["reachable"] = True
         match = re.search(r'content="WordPress ([\d.]+)"', home)
