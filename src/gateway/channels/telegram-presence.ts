@@ -21,6 +21,39 @@ const PREVIEW_LIMIT = 200;
  */
 const log = createLogger('info', 'json', { component: 'telegram.inbound' });
 
+/**
+ * The text of an inbound update, whatever shape it arrives in.
+ *
+ * grammY hands the middleware the RAW update object. A text message is
+ * `{ update_id, message: { text } }` — there is no `text` at the top
+ * level. A caption arrives as `message.caption` (a photo with a caption),
+ * and a callback query carries its text one level deeper still.
+ *
+ * Exported so the behaviour can be tested against real update shapes
+ * instead of a shape invented for the test.
+ */
+export function extractInboundText(update: unknown): string {
+  if (!update || typeof update !== 'object') return '';
+  const candidate = update as {
+    message?: { text?: unknown; caption?: unknown };
+    edited_message?: { text?: unknown; caption?: unknown };
+    channel_post?: { text?: unknown; caption?: unknown };
+    callback_query?: { message?: { text?: unknown; caption?: unknown } };
+  };
+  const holders = [
+    candidate.message,
+    candidate.edited_message,
+    candidate.channel_post,
+    candidate.callback_query?.message,
+  ];
+  for (const holder of holders) {
+    if (!holder) continue;
+    const value = holder.text ?? holder.caption;
+    if (typeof value === 'string' && value.length > 0) return value;
+  }
+  return '';
+}
+
 export function registerTelegramPresenceMiddleware(
   bot: Bot,
   getSessionTier: (chatId: string) => 0 | 1 | 2 | 3,
@@ -36,7 +69,18 @@ export function registerTelegramPresenceMiddleware(
       if (fromAllowed) {
         // The update reached the gateway, but we may drop it below. Log the
         // whole thing on the way in, not just the accepted branch.
-        const text = 'text' in ctx.update ? String(ctx.update.text ?? '') : '';
+        //
+        // The text lives under `ctx.update.message.text` (or
+        // `ctx.update.callback_query.message.text`), NOT under
+        // `ctx.update.text`. Measured 2026-11-20: the old code asked
+        // `'text' in ctx.update`, which is false for every real Telegram
+        // update, so the preview was an empty string in ALL 93 logged
+        // inbound messages. The log line that was supposed to answer "what
+        // did the operator write" showed nothing — the very question the
+        // 2026-11-19 diagnosis of the silent Telegram gateway could not
+        // answer. `ctx.msg` is grammY's own alias that covers every
+        // message-bearing update, so it is the shape to read.
+        const text = extractInboundText(ctx.update);
         log.info('telegram inbound', {
           updateId: ctx.update.update_id,
           fromId: fromId === undefined ? null : String(fromId),
