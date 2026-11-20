@@ -288,11 +288,11 @@ function scanLegacyChainStateFull(rawEnv: NodeJS.ProcessEnv = process.env): Lega
     const entries = readdirSync(absoluteDir)
       .filter((entry) => entry.endsWith('.json'))
       .sort((left, right) => left.localeCompare(right));
+    const normalizedChain = normalizeChainName(chainDir) ?? chainDir;
 
     for (const entry of entries) {
       const absolutePath = join(absoluteDir, entry);
       files += 1;
-      const normalizedChain = normalizeChainName(chainDir) ?? chainDir;
       try {
         const payload = JSON.parse(readFileSync(absolutePath, 'utf8')) as Record<string, unknown>;
         const rootShapeOk =

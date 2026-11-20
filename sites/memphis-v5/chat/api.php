@@ -40,7 +40,7 @@ curl_setopt_array($request, [
     CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Expect:', 'X-Real-IP: ' . ($ip ?: '127.0.0.1')],
     CURLOPT_FOLLOWLOCATION => false,
     CURLOPT_CONNECTTIMEOUT => 2,
-    CURLOPT_TIMEOUT => 75,
+    CURLOPT_TIMEOUT => 125,
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_HEADERFUNCTION => static function ($handle, string $line): int {
         if (preg_match('/^Retry-After:\s*(\d{1,4})\s*$/i', $line, $m)) {
@@ -51,7 +51,7 @@ curl_setopt_array($request, [
 ]);
 $reply = curl_exec($request);
 $status = curl_getinfo($request, CURLINFO_RESPONSE_CODE);
-if ($reply === false || !in_array($status, [200, 400, 413, 415, 429, 502, 503], true)) {
+if ($reply === false || !in_array($status, [200, 400, 413, 415, 422, 429, 502, 503], true)) {
     failure(503, 'backend_unavailable');
 }
 http_response_code($status);
