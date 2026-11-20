@@ -180,13 +180,15 @@ type CliProbeSpec = {
 
 function createProbeEnv(prefixDir: string, extractDir: string): NodeJS.ProcessEnv {
   return {
-    ...process.env,
     PATH: `${path.join(prefixDir, 'bin')}${path.delimiter}${process.env.PATH ?? ''}`,
+    SystemRoot: process.env.SystemRoot,
     NODE_NO_WARNINGS: '1',
     NODE_ENV: 'test',
     RUST_CHAIN_ENABLED: 'false',
     DEFAULT_PROVIDER: 'local-fallback',
     MEMPHIS_SKIP_FIRST_RUN_CHECKS: '1',
+    // A fresh installation must use its own config and transaction journals.
+    MEMPHIS_ENV_FILE: path.join(extractDir, '.env'),
     MEMPHIS_DATA_DIR: path.join(extractDir, 'data'),
   };
 }

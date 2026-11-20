@@ -35,7 +35,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from dashboard_probes import ALL_PROBES, PROBES, RETIRED_PROBES, probe_all  # noqa: E402
 
-CHAIN_ROOT = Path("/home/memphis/.memphis/chains")
+DATA_DIR = Path(os.environ.get("MEMPHIS_DATA_DIR") or Path.home() / ".memphis")
+CHAIN_ROOT = DATA_DIR / "chains"
 DECISIONS = CHAIN_ROOT / "decisions"
 JOURNAL = CHAIN_ROOT / "journal"
 CASES = CHAIN_ROOT / "cases"
@@ -55,7 +56,7 @@ SYSTEM = CHAIN_ROOT / "system"
 PROJECT_CONFIG = Path(
     os.environ.get(
         "MEMPHIS_DASHBOARD_PROJECT",
-        "/home/memphis/.memphis/config/dashboard-project.json",
+        DATA_DIR / "config" / "dashboard-project.json",
     )
 )
 

@@ -1,5 +1,5 @@
 [Unit]
-Description=Memphis public chat with local inference
+Description=Memphis public chat with MiniMax and local inference
 After=network.target
 
 [Service]
@@ -9,6 +9,7 @@ ExecStart=/usr/bin/node --permission --allow-fs-read=%h/memphis/scripts/public-c
 Environment=PUBLIC_CHAT_HOST=127.0.0.1
 Environment=PUBLIC_CHAT_PORT=9100
 Environment=PUBLIC_CHAT_TRUST_PROXY=1
+Environment=PUBLIC_CHAT_MINIMAX_SOCKET=%t/memphis-public-provider/inference.sock
 UnsetEnvironment=NODE_OPTIONS NODE_PATH
 Restart=on-failure
 RestartSec=5
