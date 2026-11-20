@@ -84,7 +84,7 @@ const NOOP = () => undefined;
  * processes within one boot. Both are needed: a PID is only unique within a
  * single boot, and a start time is only meaningful within a single boot.
  */
-interface ProcessIdentity {
+export interface ProcessIdentity {
   pid: number;
   bootId: string;
   startTime: number;
@@ -139,7 +139,7 @@ function readProcessStartTime(pid: number): number | undefined {
 }
 
 /** Identity of the process running this code, for writing the lock file. */
-function currentIdentity(): ProcessIdentity {
+export function currentIdentity(): ProcessIdentity {
   return {
     pid: process.pid,
     bootId: readBootId(),
@@ -154,7 +154,7 @@ function currentIdentity(): ProcessIdentity {
  * kernel reuses numbers, and an unrelated process may hold the recorded PID.
  * The boot ID catches that, and the start time catches reuse within a boot.
  */
-function identityIsAlive(identity: ProcessIdentity): boolean {
+export function identityIsAlive(identity: ProcessIdentity): boolean {
   if (!Number.isFinite(identity.pid) || identity.pid <= 0) return false;
 
   // Signal 0 delivers nothing but proves the PID exists and is ours to

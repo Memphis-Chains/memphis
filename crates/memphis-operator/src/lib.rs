@@ -48,3 +48,8 @@ pub use code_read::{
     resolve_path, split_lines,
 };
 pub use code_read_range::{resolve_code_read_range, CodeReadRange};
+/// The chain directory names the verifier may open — a plain chain or an
+/// archive of one. Exported so the contract test can check the native arm
+/// against `tests/fixtures/chain-verify-contract.json`, the same fixture
+/// the TypeScript arm is checked against.
+pub use chat_memory::{is_chain_backup_directory, is_scannable_chain_directory_name};
