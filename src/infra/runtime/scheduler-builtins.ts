@@ -10,10 +10,21 @@ import {
 } from 'node:fs';
 import { basename, join } from 'node:path';
 
+import {
+  HOMEIOSTAT_DEGRADABLE_TASK_IDS,
+  decideInformationalHomeostat,
+  describeHomeostatRequest,
+  homeostatActivityStatus,
+  readHomeostatPolicy,
+  runInformationalHomeostat,
+  type HomeostatActionResult,
+} from './informational-homeostat.js';
 import { startScheduledBackupLoop } from './scheduled-backup.js';
+import { loadTasks, saveTasks, withTaskStoreLock } from './scheduler.js';
 import { getConfigPath, getDataDir } from '../../config/paths.js';
 import { sendTelegramMessage } from '../../gateway/channels/telegram-send.js';
 import { runMemphisSloStatus } from '../../mcp/tools/slo-status.js';
+import { assessGatedSlos } from '../../observability/slo-assessment.js';
 import type { RecentActivity } from '../../observability/slo-evaluator.js';
 import { runDoctorChecksV2 } from '../cli/utils/doctor-v2.js';
 import { loadConfig } from '../config/env.js';
@@ -131,6 +142,75 @@ export function describeHealthFailure(payload: {
   return undefined;
 }
 
+/**
+ * Switch the optional background tasks off, and report which ones.
+ *
+ * The runtime sheds work it can live without: the doctor diagnose, the
+ * attachment retention and the operator briefing. It NEVER touches the
+ * watch that is making the decision, and never the scheduled backup — a
+ * homeostat that switches off the eye that watches it, or the copy that
+ * protects the operator's data, has removed its own safety.
+ */
+export function shedOptionalBackgroundWork(taskIds: readonly string[]): {
+  shed: string[];
+  detail: string;
+} {
+  if (taskIds.length === 0) return { shed: [], detail: 'nothing to shed' };
+  const shed = withTaskStoreLock(() => {
+    const tasks = loadTasks();
+    const changed: string[] = [];
+    for (const task of tasks) {
+      if (!taskIds.includes(task.id)) continue;
+      if (!task.enabled) continue;
+      task.enabled = false;
+      changed.push(task.id);
+    }
+    if (changed.length > 0) saveTasks(tasks);
+    return changed;
+  });
+  return {
+    shed,
+    detail:
+      shed.length > 0
+        ? `shed the optional background work: ${shed.join(', ')}`
+        : 'the optional background work was already shed',
+  };
+}
+
+/**
+ * Switch the optional background tasks back on — but only the ones the
+ * homeostat itself switched off.
+ *
+ * The list comes from the watch's own state, not from "every task that
+ * happens to be disabled": a task the operator disabled on purpose must
+ * stay disabled after a recovery.
+ */
+export function restoreOptionalBackgroundWork(taskIds: readonly string[]): {
+  restored: string[];
+  detail: string;
+} {
+  if (taskIds.length === 0) return { restored: [], detail: 'nothing to restore' };
+  const restored = withTaskStoreLock(() => {
+    const tasks = loadTasks();
+    const changed: string[] = [];
+    for (const task of tasks) {
+      if (!taskIds.includes(task.id)) continue;
+      if (task.enabled) continue;
+      task.enabled = true;
+      changed.push(task.id);
+    }
+    if (changed.length > 0) saveTasks(tasks);
+    return changed;
+  });
+  return {
+    restored,
+    detail:
+      restored.length > 0
+        ? `restored the optional background work: ${restored.join(', ')}`
+        : 'the optional background work was already running',
+  };
+}
+
 async function runtimeWatch(rawEnv: NodeJS.ProcessEnv): Promise<BuiltinJobResult> {
   const health = await buildHealthPayload(loadConfig(rawEnv), rawEnv);
   const slo = runMemphisSloStatus({ windowDays: 7 }, rawEnv);
@@ -144,22 +224,93 @@ async function runtimeWatch(rawEnv: NodeJS.ProcessEnv): Promise<BuiltinJobResult
     failingSlos: slo.failingSlos,
   });
   const statePath = join(getConfigPath('scheduler'), 'runtime-watch-state.json');
-  let prior: { failureKey?: string; lastAlertAt?: string } = {};
+  let prior: {
+    failureKey?: string;
+    lastAlertAt?: string;
+    homeostat?: {
+      action?: string;
+      slo?: string;
+      at?: string;
+      shedTaskIds?: string[];
+    };
+  } = {};
   try {
     prior = JSON.parse(readFileSync(statePath, 'utf8')) as typeof prior;
   } catch {
     // First run has no transition state.
   }
   if (failures.length === 0) {
+    // The runtime recovered, so the work it shed has to come back. Only
+    // the tasks the homeostat shed: a task the operator disabled on
+    // purpose is not ours to switch on.
+    const restored = restoreOptionalBackgroundWork(prior.homeostat?.shedTaskIds ?? []);
     if (prior.failureKey) {
-      await notify(`Memphis runtime watch recovered from: ${prior.failureKey}`, rawEnv);
+      await notify(
+        `Memphis runtime watch recovered from: ${prior.failureKey}${
+          restored.restored.length > 0 ? `; ${restored.detail}` : ''
+        }`,
+        rawEnv,
+      );
     }
     mkdirSync(join(getConfigPath('scheduler')), { recursive: true });
     writeFileSync(statePath, `${JSON.stringify({}, null, 2)}\n`, { mode: 0o600 });
     return { success: true, output: 'Runtime health and SLO checks pass' };
   }
+
+  // ── The informational homeostat ────────────────────────────────────────
+  //
+  // The failing gated SLO is an INPUT. What the runtime does about it is
+  // a decision, and the decision is written down with its reason. The
+  // runtime acts only on a failure that is happening right now: a window
+  // average can sit above its threshold for days after the fault stopped.
+  const gated = assessGatedSlos(recent);
+  const activityStatusBySlo = homeostatActivityStatus(gated.failingSlos, recent.recent);
+  const failingAges = recent.slos
+    .filter((entry) => gated.failingSlos.includes(entry.name))
+    .map((entry) => entry.ageMs)
+    .filter((age): age is number => typeof age === 'number');
+  const evidenceAgeMs =
+    gated.failingSlos.length === 0 ? 0 : failingAges.length === 0 ? null : Math.max(...failingAges);
+  const decision = decideInformationalHomeostat({
+    evidence: {
+      failingSlos: gated.failingSlos,
+      unavailableSlos: gated.unavailableSlos,
+      evidenceAgeMs,
+      activityStatusBySlo,
+    },
+    policy: readHomeostatPolicy(rawEnv),
+    lastAction: prior.homeostat?.at
+      ? {
+          action: (prior.homeostat.action ?? 'none') as 'none' | 'degrade-mode' | 'escalate',
+          slo: prior.homeostat.slo,
+          atMs: Date.parse(prior.homeostat.at),
+        }
+      : undefined,
+    nowMs: Date.now(),
+  });
+
+  let shedTaskIds = prior.homeostat?.shedTaskIds ?? [];
+  const outcome = await runInformationalHomeostat(decision, {
+    degradeMode: (): HomeostatActionResult => {
+      const result = shedOptionalBackgroundWork(HOMEIOSTAT_DEGRADABLE_TASK_IDS);
+      shedTaskIds = result.shed.length > 0 ? result.shed : shedTaskIds;
+      return { ok: true, detail: result.detail };
+    },
+    // The escalation travels in the watch's own message: one message per
+    // failure, with the request named, instead of a second notification
+    // that says the same thing in fewer words.
+    escalate: (): HomeostatActionResult => ({
+      ok: true,
+      detail: describeHomeostatRequest(decision.request),
+    }),
+  });
+
   const sloContext = slo.failingSlos.length > 0 ? ` (SLO 7d: ${slo.failingSlos.join(', ')})` : '';
-  const message = `Memphis runtime watch: ${failures.join(', ')}${sloContext}`;
+  const homeostatContext =
+    outcome.action === 'none'
+      ? ''
+      : ` [homeostat: ${outcome.action}${decision.slo ? ` ${decision.slo}` : ''} — ${outcome.detail ?? decision.reason}]`;
+  const message = `Memphis runtime watch: ${failures.join(', ')}${sloContext}${homeostatContext}`;
   const failureKey = [...failures].sort().join('|');
   const lastAlertMs = prior.lastAlertAt ? Date.parse(prior.lastAlertAt) : 0;
   const alertDue =
@@ -176,6 +327,15 @@ async function runtimeWatch(rawEnv: NodeJS.ProcessEnv): Promise<BuiltinJobResult
       {
         failureKey,
         lastAlertAt: alertDue ? new Date().toISOString() : prior.lastAlertAt,
+        homeostat:
+          outcome.action === 'none'
+            ? prior.homeostat
+            : {
+                action: outcome.action,
+                slo: decision.slo,
+                at: new Date().toISOString(),
+                shedTaskIds,
+              },
       },
       null,
       2,
