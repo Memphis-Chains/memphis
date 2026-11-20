@@ -345,6 +345,24 @@ function mergeTokenUsage(
   };
 }
 
+/**
+ * Does this text claim that the work is finished?
+ *
+ * A turn that was halted by a budget limit did NOT finish its work, so
+ * a completion claim inside it is false by construction. That claim is
+ * dropped before the reply reaches the operator
+ * (`telegram-interactive-agent.test.ts` protects that contract).
+ *
+ * Every other part of what the model said — what it found, what it
+ * measured — is kept: the operator asked a question and that is the
+ * answer, not a placeholder.
+ */
+export function claimsCompletion(text: string): boolean {
+  return /\b(?:complete|completed|done|finished|all set|all good|zrobione|gotowe|skończone|wykonane)\b/i.test(
+    text,
+  );
+}
+
 export async function runAgentLoop(options: {
   systemPrompt: string;
   messages: ChatMessage[];
@@ -622,11 +640,56 @@ export async function runAgentLoop(options: {
     }
 
     if (halted) {
-      const reply =
+      // WHAT THE MODEL ALREADY SAID IS PART OF THE ANSWER.
+      //
+      // Measured 2026-11-20: on the telegram surface this branch used to
+      // return a fixed sentence and DISCARD `response.content` — the text
+      // the model had already produced. The session history shows what
+      // that cost: eight consecutive identical replies
+      // ("Zatrzymałem tę odpowiedź po osiągnięciu limitu pracy") to
+      // "No siema", "?", ".", "I" and "Pracujemy" — the operator got a
+      // placeholder instead of the answer, and the placeholder looked
+      // like a broken bot rather than a stopped turn.
+      //
+      // Every other surface already kept the content
+      // (`response.content || fallback`). Telegram was the only one that
+      // threw the answer away, and Telegram is the surface where the
+      // operator reads the reply on a phone.
+      //
+      // The notice is still worth sending — the turn really was cut
+      // short — so it is APPENDED to what the model said, not
+      // substituted for it.
+      const limitNotice =
         options.surface === 'telegram'
           ? 'Zatrzymałem tę odpowiedź po osiągnięciu limitu pracy. Część działań mogła już zostać wykonana; nie zakładam, że zadanie jest skończone. Poproś mnie o sprawdzenie i kontynuację.'
-          : response.content ||
-            `I've reached my tool call limit (${state.halt_reason}). Here's what I gathered so far — please ask me to continue if needed.`;
+          : `I've reached my tool call limit (${state.halt_reason}). Here's what I gathered so far — please ask me to continue if needed.`;
+
+      // What the model already said is PART OF THE ANSWER — but only the
+      // part that is not a claim about the work being finished.
+      //
+      // Measured 2026-11-20: this branch used to DISCARD
+      // `response.content` entirely and return only the canned notice.
+      // The session history shows the cost: eight consecutive identical
+      // replies ("Zatrzymałem tę odpowiedź po osiągnięciu limitu pracy")
+      // to "No siema", "?", ".", "I" and "Pracujemy" — the operator got a
+      // placeholder instead of the answer, and the placeholder reads
+      // like a broken bot rather than a turn that ran out of budget.
+      //
+      // The discard itself was NOT pointless: a turn that was cut short
+      // cannot honestly claim the work is done, and
+      // `telegram-interactive-agent.test.ts` protects exactly that — a
+      // model claiming "This unexecuted work is complete" must not reach
+      // the operator.
+      //
+      // So the rule is narrower than "throw it away": a HALTED turn may
+      // keep what the model said, EXCEPT a claim that the work is
+      // complete. That claim is dropped, because it is the one thing the
+      // cut makes untrue. Everything else the model reported — what it
+      // found, what it measured — is evidence the operator is waiting
+      // for.
+      const content = response.content?.trim() ?? '';
+      const reply =
+        content && !claimsCompletion(content) ? `${content}\n\n${limitNotice}` : limitNotice;
       workingMessages.push({ role: 'assistant', content: reply });
       return {
         reply,
