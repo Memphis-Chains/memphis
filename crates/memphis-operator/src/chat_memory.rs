@@ -1188,7 +1188,13 @@ pub(crate) const SOUL_LIST_FIELDS: &[(&str, &[&str])] = &[
         &["languages", "preferences", "expertise", "integrations"],
     ),
     ("self", &["strengths", "learnings", "evolvedCapabilities"]),
-    ("context", &["recentDecisions"]),
+    // `operatorTodo` lives here, not in `activeWork`. Measured
+    // 2026-11-21: a note addressed to the OPERATOR sat inside the
+    // free-text `activeWork` field, the Telegram agent read it as its
+    // own assignment, and burned sixteen tool calls on a one-word
+    // greeting. A list field with an explicit name is the enforcement;
+    // a Polish phrase in prose is not.
+    ("context", &["recentDecisions", "operatorTodo"]),
 ];
 
 pub(crate) const SOUL_SECTIONS: &[&str] = &["user", "self", "context"];
