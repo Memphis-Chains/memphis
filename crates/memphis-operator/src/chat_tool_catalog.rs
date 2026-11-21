@@ -431,11 +431,12 @@ pub(crate) fn soul_updates_schema() -> Value {
             },
             "context": {
                 "type": "object",
-                "description": "What the agent is doing right now.",
+                "description": "What the agent is doing right now, plus items the OPERATOR has to do.",
                 "additionalProperties": false,
                 "properties": {
                     "activeWork": soul_scalar_field("One line on the current task."),
-                    "recentDecisions": soul_list_field("Short summaries of recent decisions.")
+                    "recentDecisions": soul_list_field("Short summaries of recent decisions."),
+                    "operatorTodo": soul_list_field("Items the OPERATOR has to do — NOT work for the agent. Use this field for anything addressed to the operator (things they must send, check or decide); the agent may mention these but must not act on them.")
                 }
             }
         },

@@ -38,6 +38,58 @@ export function getSoulMemoryPath(rawEnv: NodeJS.ProcessEnv = process.env): stri
   return path.join(getDataDir(rawEnv), 'config', 'soul-memory.json');
 }
 
+/**
+ * Phrases that mark a note as addressed to the OPERATOR.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * Measured 2026-11-21 03:05 on this host: the operator sent "Yo" on
+ * Telegram and the agent burned sixteen tool calls looking for
+ * `telegram.inbound`, because the startup context carried a note that
+ * said "Do zrobienia dla operatora: ..." — inside the free-text
+ * `activeWork` field, with nothing saying whose item it was.
+ *
+ * A separate field (`operatorTodo`) makes the distinction structural.
+ * This list is the second half: it CATCHES the mistake at write time
+ * and moves the item to the right place, so one careless write cannot
+ * turn the agent's own work list into the operator's shopping list.
+ *
+ * The pattern is deliberately narrow. It matches an explicit marker of
+ * RECIPIENT ("for the operator", "operator has to", "operator must"),
+ * not a generic word — a note that merely mentions the operator
+ * ("the operator asked about X") is still the agent's work.
+ */
+const OPERATOR_ADDRESSED_PATTERN =
+  /(?:\bdo\s+zrobienia\s+dla\s+operatora\b)|(?:\bdla\s+operatora\s*[:—-])|(?:\boperator\s+(?:musi|ma\s+to\s+zrobić|ma\s+to\s+sprawdzić|musi\s+sprawdzić|musi\s+wysłać)\b)|(?:\bfor\s+the\s+operator\b)|(?:\boperator\s+(?:must|has\s+to|needs\s+to)\b)/i;
+
+/**
+ * Split a free-text note into the part that is the agent's work and
+ * the parts addressed to the operator.
+ *
+ * Returns the note unchanged when nothing matches — the common case,
+ * and the one where guessing would do damage.
+ */
+export function splitOperatorAddressedNote(note: string): {
+  activeWork: string;
+  operatorTodo: string[];
+} {
+  const operatorTodo: string[] = [];
+  // Split on sentence-ish boundaries so a marked item leaves the rest of
+  // the note intact. A marked item is kept whole, marker included, so
+  // the operator still recognises it.
+  const segments = note
+    .split(/(?<=[.!?;])\s+|\s*\n\s*/)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+  const kept: string[] = [];
+  for (const segment of segments) {
+    if (OPERATOR_ADDRESSED_PATTERN.test(segment)) operatorTodo.push(segment);
+    else kept.push(segment);
+  }
+  if (operatorTodo.length === 0) return { activeWork: note, operatorTodo: [] };
+  return { activeWork: kept.join(' ').trim(), operatorTodo };
+}
+
 export function emptySoulMemory(): SoulMemory {
   // Optional string fields are written as `undefined` rather than
   // omitted so `Object.keys()` yields them — `isSoulMemoryEmpty` walks
@@ -67,6 +119,7 @@ export function emptySoulMemory(): SoulMemory {
     context: {
       activeWork: undefined,
       recentDecisions: [],
+      operatorTodo: undefined,
     },
   };
 }
@@ -124,7 +177,9 @@ function withSoulMemoryLock<T>(rawEnv: NodeJS.ProcessEnv, run: () => T): T {
   mkdirSync(path.dirname(memoryPath), { recursive: true, mode: 0o700 });
   const legacyLock = `${memoryPath}.lock`;
   const rejectLegacy = () => {
-    try { lstatSync(legacyLock); } catch (error) {
+    try {
+      lstatSync(legacyLock);
+    } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
       throw error;
     }
@@ -132,7 +187,9 @@ function withSoulMemoryLock<T>(rawEnv: NodeJS.ProcessEnv, run: () => T): T {
   };
   rejectLegacy();
   const lockPath = `${memoryPath}.lock.sqlite`;
-  try { closeSync(openSync(lockPath, 'wx', 0o600)); } catch (error) {
+  try {
+    closeSync(openSync(lockPath, 'wx', 0o600));
+  } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
   }
   const stat = lstatSync(lockPath);
@@ -147,7 +204,11 @@ function withSoulMemoryLock<T>(rawEnv: NodeJS.ProcessEnv, run: () => T): T {
     rejectLegacy();
     return run();
   } finally {
-    try { if (acquired) db.exec('ROLLBACK'); } finally { db.close(); }
+    try {
+      if (acquired) db.exec('ROLLBACK');
+    } finally {
+      db.close();
+    }
   }
 }
 
@@ -340,13 +401,19 @@ type SoulProposalHooks = {
 };
 
 /** Stage provenance under the shared writer lock before mutating the file. */
-export function applySoulMemoryProposal(update: SoulMemoryUpdate, hooks: SoulProposalHooks,
-  rawEnv: NodeJS.ProcessEnv = process.env): SoulMemory {
+export function applySoulMemoryProposal(
+  update: SoulMemoryUpdate,
+  hooks: SoulProposalHooks,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): SoulMemory {
   return withSoulMemoryLock(rawEnv, () => updateSoulMemoryUnlocked(update, rawEnv, hooks));
 }
 
-function updateSoulMemoryUnlocked(update: SoulMemoryUpdate, rawEnv: NodeJS.ProcessEnv,
-  hooks?: SoulProposalHooks): SoulMemory {
+function updateSoulMemoryUnlocked(
+  update: SoulMemoryUpdate,
+  rawEnv: NodeJS.ProcessEnv,
+  hooks?: SoulProposalHooks,
+): SoulMemory {
   const memoryPath = getSoulMemoryPath(rawEnv);
   const loaded = loadSoulMemory(rawEnv);
 
@@ -364,7 +431,8 @@ function updateSoulMemoryUnlocked(update: SoulMemoryUpdate, rawEnv: NodeJS.Proce
     );
   }
 
-  if (hooks && !loaded) throw new Error('proposal application requires an existing, valid soul memory');
+  if (hooks && !loaded)
+    throw new Error('proposal application requires an existing, valid soul memory');
   const current = loaded ?? emptySoulMemory();
   const beforeJson = hooks ? JSON.stringify(current) : '';
 
@@ -402,12 +470,29 @@ function updateSoulMemoryUnlocked(update: SoulMemoryUpdate, rawEnv: NodeJS.Proce
 
   if (update.context) {
     if (update.context.activeWork !== undefined) {
-      current.context.activeWork = update.context.activeWork;
+      // An item addressed to the operator does not belong in the
+      // agent's own work field. It is moved, not rejected: the operator
+      // still gets their to-do, and the agent's work list stops
+      // carrying instructions it must not act on.
+      const split = splitOperatorAddressedNote(update.context.activeWork);
+      current.context.activeWork = split.activeWork;
+      if (split.operatorTodo.length > 0) {
+        current.context.operatorTodo = dedupeAppend(
+          current.context.operatorTodo ?? [],
+          split.operatorTodo,
+        );
+      }
     }
     if (update.context.recentDecisions) {
       current.context.recentDecisions = dedupeAppend(
         current.context.recentDecisions,
         update.context.recentDecisions,
+      );
+    }
+    if (update.context.operatorTodo) {
+      current.context.operatorTodo = dedupeAppend(
+        current.context.operatorTodo ?? [],
+        update.context.operatorTodo,
       );
     }
   }
@@ -420,13 +505,18 @@ function updateSoulMemoryUnlocked(update: SoulMemoryUpdate, rawEnv: NodeJS.Proce
 }
 
 /** Refuse rollback if any other writer changed memory since the application. */
-export function rollbackSoulMemoryProposal(expectedAfterHash: string, beforeJson: string,
-  hooks: { stage: () => void; complete: () => void }, rawEnv: NodeJS.ProcessEnv = process.env): void {
+export function rollbackSoulMemoryProposal(
+  expectedAfterHash: string,
+  beforeJson: string,
+  hooks: { stage: () => void; complete: () => void },
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): void {
   withSoulMemoryLock(rawEnv, () => {
     const current = loadSoulMemory(rawEnv);
     if (!current) throw new Error('rollback requires existing valid soul memory');
     const hash = createHash('sha256').update(JSON.stringify(current)).digest('hex');
-    if (hash !== expectedAfterHash) throw new Error('soul memory changed since application; rollback refused');
+    if (hash !== expectedAfterHash)
+      throw new Error('soul memory changed since application; rollback refused');
     const before = soulMemorySchema.parse(JSON.parse(beforeJson));
     hooks.stage();
     writeSoulMemoryUnlocked(before, rawEnv);
@@ -435,8 +525,10 @@ export function rollbackSoulMemoryProposal(expectedAfterHash: string, beforeJson
 }
 
 /** Inspect under the same lock used by all supported Node and Rust writers. */
-export function inspectSoulMemoryAtomically<T>(inspect: (currentJson: string) => T,
-  rawEnv: NodeJS.ProcessEnv = process.env): T {
+export function inspectSoulMemoryAtomically<T>(
+  inspect: (currentJson: string) => T,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): T {
   return withSoulMemoryLock(rawEnv, () => {
     const current = loadSoulMemory(rawEnv);
     if (!current) throw new Error('valid soul memory is required for reconciliation');
