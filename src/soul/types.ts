@@ -90,6 +90,35 @@ export interface SoulMemorySelf {
 export interface SoulMemoryContext {
   activeWork?: string;
   recentDecisions: string[];
+  /**
+   * Items the OPERATOR has to do — NOT work for the agent.
+   *
+   * WHY THIS IS A SEPARATE FIELD
+   * ---------------------------
+   * Measured 2026-11-21 03:05 on this host: the operator sent the
+   * one-word greeting "Yo" on Telegram. The agent burned SIXTEEN tool
+   * calls (grep / exec / code_read) and hit the tool-call limit,
+   * because the startup context it received carried a note that said
+   * "Do zrobienia dla operatora: send one message to @memphisagent_bot
+   * and check 'telegram.inbound'".
+   *
+   * The note was addressed to the OPERATOR. The agent read it as its own
+   * assignment, because `activeWork` is a single free-text field and
+   * nothing in the prompt said which of the two it was looking at. The
+   * reply came back as the generic "I stopped at the tool limit" notice
+   * instead of an answer to "Yo".
+   *
+   * This is the same class as `MEMPHIS_ENV_PATH`: a CONVENTION with no
+   * ENFORCEMENT. "Do zrobienia dla operatora" was a phrase I wrote, and
+   * the phrase is not a contract — nothing checked it, and the model
+   * cannot be expected to parse Polish prose for the intended
+   * recipient.
+   *
+   * So the distinction becomes STRUCTURAL: operator-facing items live in
+   * their own field, the prompt labels them as the operator's, and the
+   * agent is told plainly that they are not its task.
+   */
+  operatorTodo?: string[];
 }
 
 export interface SoulMemory {
@@ -150,7 +179,7 @@ export const soulManifestSchema = z.object({
     autoApproveReflections: z.boolean(),
     requirePassphraseForTier2: z.boolean(),
     passphraseHash: z.string().optional(),
-  tier2AuthMode: z.enum(['operator', 'separate']).optional(),
+    tier2AuthMode: z.enum(['operator', 'separate']).optional(),
     snapshotBeforeEvolution: z.boolean(),
   }),
   mode: autonomyModeSchema.default('balanced'),
@@ -177,6 +206,7 @@ export const soulMemorySelfSchema = z.object({
 export const soulMemoryContextSchema = z.object({
   activeWork: z.string().optional(),
   recentDecisions: z.array(z.string()).default([]),
+  operatorTodo: z.array(z.string()).optional(),
 });
 
 export const soulMemorySchema = z.object({
@@ -279,6 +309,7 @@ export const soulMemoryUpdateSchema = z
       .object({
         activeWork: z.string().optional(),
         recentDecisions: z.array(z.string()).optional(),
+        operatorTodo: z.array(z.string()).optional(),
       })
       .strict()
       .optional(),

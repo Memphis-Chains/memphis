@@ -580,6 +580,7 @@ async function handleSoulShow(context: CliContext): Promise<boolean> {
           preferences: memory.user.preferences.length,
           learnings: memory.self.learnings.length,
           activeWork: memory.context.activeWork ?? null,
+          operatorTodo: memory.context.operatorTodo ?? [],
         }
       : null,
   };

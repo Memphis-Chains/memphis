@@ -1516,20 +1516,26 @@ export function createMemphisMcpServer(
     server.registerTool(
       'memphis_self_modify',
       {
-        description: 'Submit a code-change request for local operator review; do not send a password',
+        description:
+          'Submit a code-change request for local operator review; do not send a password',
         inputSchema: registryMcpInputSchema('memphis_self_modify'),
       },
       withApprovalGate('memphis_self_modify', selfModifyPolicy, approvals, async (args) => {
-        const request = evolveDeps.sessionRepo.requestStore().create(
-          resolveInstallRoot({ rawEnv }), {
+        const request = evolveDeps.sessionRepo
+          .requestStore()
+          .create(resolveInstallRoot({ rawEnv }), {
             intent: requiredStringArg(args, 'intent'),
             files: requiredStringArrayArg(args, 'files'),
             changes: requiredStringRecordArg(args, 'changes'),
             plan_id: optionalStringArg(args, 'plan_id'),
             step_idx: optionalNonnegativeIntegerArg(args, 'step_idx'),
           });
-        const result = { status: 'operator-review-required', requestId: request.id, digest: request.digest,
-          action: `Run memphis evolve prepare ${request.id} in a local terminal.` };
+        const result = {
+          status: 'operator-review-required',
+          requestId: request.id,
+          digest: request.digest,
+          action: `Run memphis evolve prepare ${request.id} in a local terminal.`,
+        };
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
           structuredContent: toJsonRecord(result),
