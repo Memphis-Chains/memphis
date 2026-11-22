@@ -1,0 +1,65 @@
+{
+  "$comment": "Parity fixture: the block hash as the RUST core computes it. The hashes in this file were produced by memphis_core::hash::compute_hash and are checked by crates/memphis-core/tests/chain_hash_parity.rs (core side) and tests/unit/chain-hash-parity.test.ts (TypeScript side). If the two implementations ever disagree, one of those two tests fails. Do not hand-edit the hashes: regenerate them with the core.",
+  "blocks": [
+    {
+      "index": 0,
+      "timestamp": "2026-11-22T10:00:00Z",
+      "chain": "journal",
+      "data": {
+        "type": "journal",
+        "content": "a plain journal entry",
+        "tags": [
+          "parity"
+        ]
+      },
+      "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "hash": "4b9fa3a34975e5c81d1b44d55defa45cc2e189662fe5e7a1d4cfafd2526b5161"
+    },
+    {
+      "index": 1,
+      "timestamp": "2026-11-22T10:00:01Z",
+      "chain": "journal",
+      "data": {
+        "type": "journal",
+        "content": "a block with fields the hash does not cover",
+        "tags": [
+          "parity",
+          "extra-fields"
+        ],
+        "source": "typescript",
+        "turn_id": "fixture-2",
+        "consent": "local-only"
+      },
+      "prev_hash": "4b9fa3a34975e5c81d1b44d55defa45cc2e189662fe5e7a1d4cfafd2526b5161",
+      "hash": "1e257cc29c0ae892225b4b46434d484f96534a018dd78f4376bfff3525a9c9a7"
+    },
+    {
+      "index": 2,
+      "timestamp": "2026-11-22T10:00:02Z",
+      "chain": "system",
+      "data": {
+        "type": "system_event",
+        "kind": "parity.fixture",
+        "content": "a block with no tags at all",
+        "tags": []
+      },
+      "prev_hash": "1e257cc29c0ae892225b4b46434d484f96534a018dd78f4376bfff3525a9c9a7",
+      "hash": "a214eb396bc2235c30db68ddb1eda7512c056d2e05a93a52dff78ed9905a50c3"
+    },
+    {
+      "index": 3,
+      "timestamp": "2026-11-22T10:00:03Z",
+      "chain": "insights",
+      "data": {
+        "type": "insight",
+        "content": "zażółć gęślą jaźń — emoji 🎯, a quote \", a backslash \\, and\na newline",
+        "tags": [
+          "parity",
+          "unicode"
+        ]
+      },
+      "prev_hash": "a214eb396bc2235c30db68ddb1eda7512c056d2e05a93a52dff78ed9905a50c3",
+      "hash": "fbe9a0951552d05bcc7091abbc4222d6395309d8527a8d4bcafc0c8147e9fd67"
+    }
+  ]
+}

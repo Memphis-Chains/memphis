@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 
 import {
@@ -18,8 +17,8 @@ import {
   type BridgeResolution,
 } from './napi-contract.js';
 import { getChainPath, getReadableChainPaths, normalizeChainName } from '../../config/paths.js';
+import { canonicalHash } from '../../core/chain-hash.js';
 import { normalizeDecisionBlockData } from '../../core/decision-chain.js';
-import { stableStringify } from '../../core/stable-stringify.js';
 import type { Block } from '../../memory/chain.js';
 import { resolveRustBridgePath } from '../runtime/install-root.js';
 
@@ -53,12 +52,6 @@ interface ResolvedChainBridge {
   embed_search?: (query: string, topK?: number) => string;
   soul_replay?: (chainName: string, blocksJson: string) => string;
   soul_loop_step?: (stateJson: string, actionJson: string, limitsJson?: string) => string;
-}
-
-interface CanonicalHashData {
-  type: string;
-  content: string;
-  tags: string[];
 }
 
 interface SoulReplayBlockData {
@@ -178,14 +171,6 @@ function normalizeData(data: Record<string, unknown>): NapiBlockData {
   };
 }
 
-function toCanonicalHashData(data: NapiBlockData): CanonicalHashData {
-  return {
-    type: data.type,
-    content: data.content,
-    tags: [...data.tags],
-  };
-}
-
 function toNapiBlock(
   chain: string,
   index: number,
@@ -195,13 +180,19 @@ function toNapiBlock(
   const normalizedChain = normalizeChainName(chain) ?? chain;
   const timestamp = new Date().toISOString();
   const normalized = normalizeData(data);
-  const hashPayload = stableStringify({
+
+  // The canonical hash has ONE implementation: `core/chain-hash.ts`.
+  //
+  // This module used to build the payload and hash it inline, with its own
+  // copy of the three-field projection. That is a second rule for one
+  // thing, and the copy had no `block_type` fallback at all.
+  const hashPayload = {
     index,
     timestamp,
     chain: normalizedChain,
-    data: toCanonicalHashData(normalized),
+    data: normalized,
     prev_hash: prevHash,
-  });
+  };
 
   return {
     index,
@@ -209,7 +200,7 @@ function toNapiBlock(
     chain: normalizedChain,
     data: normalized,
     prev_hash: prevHash,
-    hash: createHash('sha256').update(hashPayload).digest('hex'),
+    hash: canonicalHash(hashPayload),
   };
 }
 
