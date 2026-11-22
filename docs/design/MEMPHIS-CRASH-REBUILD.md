@@ -638,6 +638,21 @@ mode this repository already has a postmortem about.
    first comparison had rejected. See `cfada12478`.
 3. **The signature schemes still differ** — ed25519 in Rust,
    RSA/SHA-256 in `src/security/integrity.ts`.
+   **Closed 2026-11-22.** The file was the last copy of a superseded
+   contract, and nothing used it: measured on this host, the only import
+   of `src/security/integrity.ts` in the whole repository was its own
+   test. The block format carries no signature at all — 0 of 12 393 chain
+   files on disk contain a `signature` or a `publicKey` field, and the
+   block shape is `{chain, data, hash, index, prev_hash, timestamp}`.
+   The dead module hashed `{index, timestamp, data, previousHash}` — a
+   field the real blocks do not have, and no `chain` — so its verifier
+   would have declared EVERY block on disk corrupt. Measured on
+   `chains/collective/000001.json`: stored hash `65040d65…`, dead module
+   `659247eb…` (MISMATCH), canonical `canonicalHash` `65040d65…`
+   (MATCH). The module and the test that protected the fiction are gone;
+   `docs/dev/SECURITY-GUIDE.md` now points at the canonical hash instead.
+   Blocks are not signed — they are LINKED, and the link is what the
+   chain verify checks.
 4. **The `system` chain still grows without bound** (15 730 blocks,
    62 MB, ~100–280/day from scheduler events). Chain rotation exists
    and is not enabled. Every boot validates every block of it.
