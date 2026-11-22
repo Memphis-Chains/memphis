@@ -13,6 +13,62 @@ export interface InsightReport {
   summary: string;
 }
 
+/**
+ * The evidence an insight keeps: a REFERENCE to the block it came from,
+ * not a copy of the block.
+ *
+ * ## Why
+ *
+ * `ModelEInsight.evidence` is `Block[]` — the complete source block, with
+ * its complete `data.content`. The `insights` chain stored those insights
+ * verbatim, so every generated insight carried up to five full copies of
+ * blocks that already live, in full, in their own chains. The chain grew
+ * without bound because every run copied its sources into itself.
+ *
+ * Measured on the operator's host: the `insights` chain held 33.4 MB
+ * across 402 blocks. 13.2 MB of that was `evidence[].data`, and another
+ * 14.1 MB was the block-level `content` string — which the chain adapter
+ * builds by serialising the whole payload, so the duplicated evidence was
+ * stored twice over.
+ *
+ * A reference is enough: the block is still there, in the chain it came
+ * from, under the hash it was written with.
+ */
+export interface InsightEvidenceReference {
+  chain: string;
+  index: number;
+  hash: string;
+  prev_hash: string;
+  timestamp: string;
+  title: string;
+}
+
+/** How much of a source block's text a reference keeps. */
+const EVIDENCE_TITLE_LIMIT = 120;
+
+function evidenceTitle(block: Block): string {
+  const data = (block.data ?? {}) as Record<string, unknown>;
+  const title = typeof data.title === 'string' ? data.title.trim() : '';
+  if (title) return title.slice(0, EVIDENCE_TITLE_LIMIT);
+  const content = typeof data.content === 'string' ? data.content : '';
+  const firstLine = content.split('\n')[0] ?? '';
+  return firstLine.slice(0, EVIDENCE_TITLE_LIMIT);
+}
+
+/**
+ * Reduce one source block to the reference that identifies it.
+ */
+export function toEvidenceReference(block: Block): InsightEvidenceReference {
+  return {
+    chain: block.chain ?? 'journal',
+    index: block.index ?? 0,
+    hash: block.hash ?? '',
+    prev_hash: block.prev_hash ?? '',
+    timestamp: block.timestamp ?? '',
+    title: evidenceTitle(block),
+  };
+}
+
 export class InsightGenerator {
   private readonly synthesizer: KnowledgeSynthesizer;
   private readonly discovery: ConnectionDiscovery;
@@ -138,12 +194,22 @@ export class InsightGenerator {
     insights: ModelEInsight[],
     metadata: Record<string, unknown> = {},
   ): Promise<void> {
+    // The stored form keeps a REFERENCE to each evidence block, not the
+    // block. The report the caller receives still carries the full
+    // evidence — only the persisted copy is slimmed.
+    //
+    // `evidenceFormat` says which shape is on disk, so a reader never has
+    // to guess whether `evidence[].data` is there.
     await this.store.append('insights', {
       type: 'insight',
       source: 'insight-generator',
       window,
       count: insights.length,
-      insights,
+      evidenceFormat: 'reference',
+      insights: insights.map((insight) => ({
+        ...insight,
+        evidence: insight.evidence.map(toEvidenceReference),
+      })),
       metadata,
       timestamp: new Date().toISOString(),
       tags: ['insight-generator', 'insights', window],
