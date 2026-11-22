@@ -144,7 +144,17 @@ pub(crate) fn ensure_chat_tables(conn: &Connection) -> Result<(), OperatorError>
     "#,
     )
     .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
-    for (name, declaration) in [("partial_text", "TEXT NOT NULL DEFAULT ''"), ("partial_truncated", "INTEGER NOT NULL DEFAULT 0")] {
+    // The lease columns carry the identity of the process that owns a
+    // `running` checkpoint. Without them a killed process leaves a row
+    // that refuses every later turn in the session forever — the wedge
+    // documented in `chat_lease.rs`.
+    for (name, declaration) in [
+        ("partial_text", "TEXT NOT NULL DEFAULT ''"),
+        ("partial_truncated", "INTEGER NOT NULL DEFAULT 0"),
+        ("owner_pid", "INTEGER"),
+        ("owner_boot_id", "TEXT"),
+        ("owner_start_time", "INTEGER"),
+    ] {
         let has_column = {
             let mut statement = conn.prepare("PRAGMA table_info(operator_turn_checkpoints)")
                 .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
@@ -190,36 +200,204 @@ pub(crate) fn save_turn_checkpoint(
     if json.len() > 4 * 1024 * 1024 {
         return Err(OperatorError::Message("turn checkpoint exceeds 4 MiB; operator review required".into()));
     }
+    // A `running` checkpoint records the identity of its owner, so a
+    // checkpoint left behind by a killed process can be told apart from
+    // one that belongs to a live turn.
+    let owner = crate::chat_lease::current_identity();
     conn.execute(
-        "INSERT INTO operator_turn_checkpoints (id, session_id, status, pending_json, updated_at) VALUES (?1, ?2, ?3, ?4, ?5) \
-         ON CONFLICT(id) DO UPDATE SET status=excluded.status, pending_json=excluded.pending_json, updated_at=excluded.updated_at",
-        params![id, session_id, status, json, utc_now()],
+        "INSERT INTO operator_turn_checkpoints (id, session_id, status, pending_json, updated_at, owner_pid, owner_boot_id, owner_start_time) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+         ON CONFLICT(id) DO UPDATE SET status=excluded.status, pending_json=excluded.pending_json, updated_at=excluded.updated_at, \
+         owner_pid=excluded.owner_pid, owner_boot_id=excluded.owner_boot_id, owner_start_time=excluded.owner_start_time",
+        params![
+            id,
+            session_id,
+            status,
+            json,
+            utc_now(),
+            owner.pid,
+            owner.boot_id,
+            owner.start_time as i64,
+        ],
     ).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
     Ok(())
 }
 
-pub(crate) fn incomplete_turn_summary(conn: &Connection, session_id: &str, current_turn_id: &str) -> Result<String, OperatorError> {
+/// Reclaim checkpoints whose owning process is gone.
+///
+/// A `running` checkpoint is only evidence of a live turn while its owner
+/// is alive. When the owner died — a `SIGKILL`, an OOM kill, a reboot —
+/// the row is a leftover, and it used to refuse every later turn in the
+/// session forever. The operator's own remedy (killing the process) was
+/// what created the next leftover.
+///
+/// Reclaiming is safe: the row is marked `abandoned`, not deleted, so the
+/// audit trail of what happened survives. Whether the abandoned turn had
+/// side effects is decided separately, by the unsettled-operations query
+/// — which is the only signal that actually matters.
+pub(crate) fn reclaim_abandoned_turns(conn: &Connection, session_id: &str) -> Result<usize, OperatorError> {
     let mut statement = conn.prepare(
-        "SELECT id, status FROM operator_turn_checkpoints WHERE session_id=? AND id<>? AND status IN ('running','interrupted') ORDER BY updated_at DESC LIMIT 3",
+        "SELECT id, owner_pid, owner_boot_id, owner_start_time FROM operator_turn_checkpoints \
+         WHERE session_id=? AND status='running'",
     ).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
-    let rows = statement.query_map(params![session_id, current_turn_id], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    let rows = statement.query_map(params![session_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, Option<i64>>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, Option<i64>>(3)?,
+        ))
     }).map_err(|error| OperatorError::Sqlite(error.to_string()))?
       .collect::<Result<Vec<_>, _>>().map_err(|error| OperatorError::Sqlite(error.to_string()))?;
-    if rows.is_empty() { return Ok(String::new()); }
-    let mut entries = Vec::new();
-    for (id, status) in &rows {
-        entries.push(format!("- {id} [{status}]"));
-        let mut operations = conn.prepare(
-            "SELECT tool_name, status FROM operator_tool_operations WHERE session_id=? AND turn_id=? ORDER BY created_at ASC LIMIT 20",
+    drop(statement);
+
+    let mut reclaimed = 0usize;
+    for (id, pid, boot_id, start_time) in rows {
+        // A checkpoint with no recorded owner predates the lease. It cannot
+        // be proven live, and it cannot be proven dead either. Treat it as
+        // abandoned: the alternative is the permanent wedge this function
+        // exists to remove.
+        let owner_alive = match (pid, boot_id, start_time) {
+            (Some(pid), Some(boot_id), Some(start_time)) => {
+                crate::chat_lease::identity_is_alive(&crate::chat_lease::ProcessIdentity {
+                    pid: pid as i32,
+                    boot_id,
+                    start_time: start_time as u64,
+                })
+            }
+            _ => false,
+        };
+        if owner_alive {
+            continue;
+        }
+        let updated = conn.execute(
+            "UPDATE operator_turn_checkpoints SET status='abandoned', updated_at=? WHERE id=? AND status='running'",
+            params![utc_now(), id],
         ).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
-        let operations = operations.query_map(params![session_id, id], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        reclaimed += updated;
+    }
+    Ok(reclaimed)
+}
+
+/// One turn that may have left work behind.
+#[derive(Debug, Clone)]
+pub struct RecoveryTurnSummary {
+    pub id: String,
+    pub status: String,
+    pub updated_at: String,
+    pub operations: Vec<RecoveryOperationSummary>,
+}
+
+/// One tool operation inside a recovery turn.
+#[derive(Debug, Clone)]
+pub struct RecoveryOperationSummary {
+    pub tool_name: String,
+    pub status: String,
+}
+
+/// The turns in a session that hold an operation with no settled outcome.
+///
+/// This is the ONE definition of "unfinished work". The recovery guard
+/// reads it, the console's `/recovery` command reads it, and the
+/// acknowledgement path reads it. Three readers, one query.
+///
+/// A turn that failed without dispatching a tool is not unfinished work:
+/// there is nothing that could have been half-applied. A turn whose
+/// operation has a settled outcome is not unfinished work either. Only a
+/// dispatched-and-unanswered operation qualifies.
+pub fn list_recovery_turns(
+    conn: &Connection,
+    session_id: &str,
+) -> Result<Vec<RecoveryTurnSummary>, OperatorError> {
+    let mut statement = conn.prepare(
+        "SELECT cp.id, cp.status, cp.updated_at FROM operator_turn_checkpoints cp \
+         WHERE cp.session_id=? \
+           AND cp.status IN ('running','interrupted','blocked','abandoned') \
+           AND EXISTS (SELECT 1 FROM operator_tool_operations op \
+                        WHERE op.turn_id=cp.id AND op.status IN ('started','unknown') AND op.reviewed_at IS NULL) \
+         ORDER BY cp.updated_at DESC LIMIT 20",
+    ).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+    let turns = statement.query_map(params![session_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    }).map_err(|error| OperatorError::Sqlite(error.to_string()))?
+      .collect::<Result<Vec<_>, _>>().map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+    drop(statement);
+
+    let mut summaries = Vec::with_capacity(turns.len());
+    for (id, status, updated_at) in turns {
+        let mut operations_statement = conn.prepare(
+            "SELECT tool_name, status FROM operator_tool_operations \
+             WHERE session_id=? AND turn_id=? AND status IN ('started','unknown') AND reviewed_at IS NULL \
+             ORDER BY created_at ASC LIMIT 20",
+        ).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+        let operations = operations_statement.query_map(params![session_id, id], |row| {
+            Ok(RecoveryOperationSummary {
+                tool_name: row.get(0)?,
+                status: row.get(1)?,
+            })
         }).map_err(|error| OperatorError::Sqlite(error.to_string()))?
           .collect::<Result<Vec<_>, _>>().map_err(|error| OperatorError::Sqlite(error.to_string()))?;
-        for (name, outcome) in operations {
-            let safe_name: String = name.chars().filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_').take(80).collect();
-            entries.push(format!("  - {safe_name} [{outcome}]"));
+        summaries.push(RecoveryTurnSummary {
+            id,
+            status,
+            updated_at,
+            operations,
+        });
+    }
+    Ok(summaries)
+}
+
+/// Summarise earlier turns that may have left work behind.
+///
+/// ## What this used to say, and why it was wrong
+///
+/// The original query was:
+///
+/// ```sql
+/// SELECT id, status FROM operator_turn_checkpoints
+///  WHERE session_id=? AND id<>? AND status IN ('running','interrupted')
+/// ```
+///
+/// That treats *the existence of a failed turn* as evidence that a side
+/// effect may be outstanding. It is not evidence of anything. A turn that
+/// failed because the provider timed out, because the prompt exceeded the
+/// context window, or because the model asked for a tool that does not
+/// exist, dispatched **no** tool at all — there is nothing that could have
+/// been half-applied.
+///
+/// The consequence was that one ordinary failure permanently disabled every
+/// side-effecting tool in the session. Measured on the operator's host:
+/// 25 of the 46 wedged checkpoints had **zero** operations. They blocked
+/// the agent because they had failed, not because anything had been
+/// written.
+///
+/// ## What it says now
+///
+/// The unfinished turns are the ones [`list_recovery_turns`] finds, and
+/// that is the same list the console shows the operator. One definition,
+/// three readers.
+pub(crate) fn incomplete_turn_summary(conn: &Connection, session_id: &str, current_turn_id: &str) -> Result<String, OperatorError> {
+    let summaries = list_recovery_turns(conn, session_id)?;
+    let relevant: Vec<&RecoveryTurnSummary> = summaries
+        .iter()
+        .filter(|summary| summary.id != current_turn_id)
+        .collect();
+    if relevant.is_empty() { return Ok(String::new()); }
+    let mut entries = Vec::new();
+    for summary in relevant {
+        entries.push(format!("- {} [{}] at {}", summary.id, summary.status, summary.updated_at));
+        for operation in &summary.operations {
+            let safe_name: String = operation
+                .tool_name
+                .chars()
+                .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+                .take(80)
+                .collect();
+            entries.push(format!("  - {safe_name} [{}]", operation.status));
         }
     }
     let entries = entries.join("\n");
@@ -307,6 +485,7 @@ pub(crate) fn drop_orphaned_tool_rows(rows: Vec<StoredChatMessage>) -> Vec<Store
         .collect()
 }
 
+#[cfg(test)]
 pub(crate) fn persist_chat_messages(
     conn: &Connection,
     session_id: &str,
@@ -436,13 +615,18 @@ pub(crate) fn row_to_chat_message(row: &StoredChatMessage) -> Option<ChatMessage
 #[cfg(test)]
 mod checkpoint_tests {
     use super::*;
-    use crate::chat_operations::ensure_operation_tables;
+    use crate::chat_operations::{ensure_operation_tables, record_operation_started};
 
-    #[test]
-    fn guard_marks_early_failure_interrupted_and_excludes_current_turn() {
+    fn in_memory() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         ensure_chat_tables(&conn).unwrap();
         ensure_operation_tables(&conn).unwrap();
+        conn
+    }
+
+    #[test]
+    fn guard_marks_early_failure_interrupted() {
+        let conn = in_memory();
         save_turn_checkpoint(&conn, "first", "session", "running", &[]).unwrap();
         {
             let _guard = RunningCheckpointGuard::new(&conn, "first");
@@ -450,14 +634,127 @@ mod checkpoint_tests {
             assert!(save_turn_checkpoint(&conn, "second", "session", "running", &[]).is_err());
         }
         save_turn_checkpoint(&conn, "second", "session", "running", &[]).unwrap();
-        let summary = incomplete_turn_summary(&conn, "session", "second").unwrap();
-        assert!(summary.contains("first [interrupted]"));
-        assert!(!summary.contains("second"));
         save_turn_checkpoint(&conn, "second", "session", "completed", &[]).unwrap();
         { let _guard = RunningCheckpointGuard::new(&conn, "second"); }
         let status: String = conn.query_row(
             "SELECT status FROM operator_turn_checkpoints WHERE id='second'", [], |row| row.get(0),
         ).unwrap();
         assert_eq!(status, "completed");
+    }
+
+    /// The wedge fix.
+    ///
+    /// A turn that failed before dispatching any tool has no side effect
+    /// that could be outstanding. It must therefore NOT appear in the
+    /// incomplete-turn summary, and it must NOT arm the recovery guard.
+    ///
+    /// Before the fix this was the other way round: the mere existence of
+    /// an interrupted turn disabled every side-effecting tool in the
+    /// session. Measured on the operator's host, 25 of the 46 wedged
+    /// checkpoints had zero operations — they blocked the agent because
+    /// they had failed, not because anything had been written.
+    #[test]
+    fn a_failed_turn_without_operations_does_not_arm_the_guard() {
+        let conn = in_memory();
+        save_turn_checkpoint(&conn, "first", "session", "running", &[]).unwrap();
+        {
+            let _guard = RunningCheckpointGuard::new(&conn, "first");
+        }
+        let status: String = conn.query_row(
+            "SELECT status FROM operator_turn_checkpoints WHERE id='first'", [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(status, "interrupted");
+
+        let summary = incomplete_turn_summary(&conn, "session", "current").unwrap();
+        assert!(
+            summary.is_empty(),
+            "a turn with no operations must not be listed as incomplete: {summary}"
+        );
+    }
+
+    /// The other half of the wedge fix: a turn that DID dispatch a tool
+    /// and never got an answer for it is genuine unfinished business, and
+    /// it must still be reported.
+    #[test]
+    fn a_failed_turn_with_an_unsettled_operation_is_reported() {
+        let conn = in_memory();
+        save_turn_checkpoint(&conn, "first", "session", "running", &[]).unwrap();
+        {
+            let _guard = RunningCheckpointGuard::new(&conn, "first");
+        }
+        record_operation_started(
+            &conn,
+            "session",
+            "call-1",
+            "memphis_journal",
+            "{}",
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE operator_tool_operations SET turn_id='first' WHERE session_id='session'",
+            [],
+        )
+        .unwrap();
+
+        let summary = incomplete_turn_summary(&conn, "session", "current").unwrap();
+        assert!(
+            summary.contains("first [interrupted]"),
+            "a turn with an unsettled operation must be listed: {summary}"
+        );
+    }
+
+    /// The lease fix: a `running` checkpoint left behind by a process that
+    /// no longer exists must be reclaimed automatically. Otherwise one
+    /// `kill -9` refuses every later turn in the session forever — and the
+    /// operator's remedy, killing the process, creates the next one.
+    #[test]
+    fn a_running_checkpoint_whose_owner_is_gone_is_reclaimed() {
+        let conn = in_memory();
+        // PID 4194304 is above the default pid_max, so it cannot exist.
+        conn.execute(
+            "INSERT INTO operator_turn_checkpoints (id, session_id, status, pending_json, updated_at, owner_pid, owner_boot_id, owner_start_time) \
+             VALUES ('stale', 'session', 'running', '[]', '2026-01-01T00:00:00Z', 4194304, 'boot', 1)",
+            [],
+        )
+        .unwrap();
+
+        let reclaimed = reclaim_abandoned_turns(&conn, "session").unwrap();
+        assert_eq!(reclaimed, 1);
+        let status: String = conn.query_row(
+            "SELECT status FROM operator_turn_checkpoints WHERE id='stale'", [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(status, "abandoned");
+    }
+
+    /// The counterpart: a turn that belongs to a live process must not be
+    /// reclaimed, or two turns would run at once.
+    #[test]
+    fn a_running_checkpoint_owned_by_a_live_process_is_kept() {
+        let conn = in_memory();
+        save_turn_checkpoint(&conn, "live", "session", "running", &[]).unwrap();
+
+        let reclaimed = reclaim_abandoned_turns(&conn, "session").unwrap();
+        assert_eq!(reclaimed, 0);
+        let status: String = conn.query_row(
+            "SELECT status FROM operator_turn_checkpoints WHERE id='live'", [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(status, "running");
+    }
+
+    /// A checkpoint written before the lease existed carries no owner. It
+    /// cannot be proven live, and leaving it would reproduce the wedge, so
+    /// it is reclaimed.
+    #[test]
+    fn a_running_checkpoint_without_an_owner_is_reclaimed() {
+        let conn = in_memory();
+        conn.execute(
+            "INSERT INTO operator_turn_checkpoints (id, session_id, status, pending_json, updated_at) \
+             VALUES ('legacy', 'session', 'running', '[]', '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+
+        let reclaimed = reclaim_abandoned_turns(&conn, "session").unwrap();
+        assert_eq!(reclaimed, 1);
     }
 }

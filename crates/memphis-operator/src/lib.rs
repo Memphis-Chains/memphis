@@ -4,6 +4,7 @@ mod chat_basal;
 mod chat_basal_prompt;
 mod chat_context_guard;
 mod chat_guards;
+mod chat_lease;
 mod chat_memory;
 mod chat_operations;
 mod chat_prompt;
@@ -53,3 +54,10 @@ pub use code_read_range::{resolve_code_read_range, CodeReadRange};
 /// against `tests/fixtures/chain-verify-contract.json`, the same fixture
 /// the TypeScript arm is checked against.
 pub use chat_memory::{is_chain_backup_directory, is_scannable_chain_directory_name};
+/// The chains a tool may append to when the operator names one explicitly.
+///
+/// Exported so the contract test can check the native arm against
+/// `tests/fixtures/journal-target-chains-contract.json`, the same fixture
+/// the TypeScript arm is checked against. The fixture is what stops the
+/// two copies of this list from drifting apart.
+pub use chat_memory::{is_journal_target_chain, JOURNAL_TARGET_CHAINS};

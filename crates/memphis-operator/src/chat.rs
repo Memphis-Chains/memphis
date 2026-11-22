@@ -18,12 +18,12 @@ use crate::chat_operations::{
 use crate::chat_prompt::build_runtime_system_prompt;
 use crate::chat_session::{
     ensure_chat_tables, incomplete_turn_summary, load_chat_rows, normalize_session_id, open_sqlite_rw,
-    persist_chat_messages_and_complete, row_to_chat_message, save_partial_turn_text, save_turn_checkpoint,
-    transcript_from_row, MessageToPersist, RunningCheckpointGuard,
+    persist_chat_messages_and_complete, reclaim_abandoned_turns, row_to_chat_message, save_partial_turn_text,
+    save_turn_checkpoint, transcript_from_row, MessageToPersist, RunningCheckpointGuard,
 };
 use crate::chat_streaming::{ensure_chat_not_cancelled, StreamingOutputGuard};
 use crate::chat_tool_catalog::{max_tool_tier_from_env, native_tool_definitions, tool_tier};
-use crate::chat_tool_executor::{cut_on_char_boundary, execute_native_tool, execute_native_tool_for_turn, native_tool_result_failed};
+use crate::chat_tool_executor::{execute_native_tool_for_turn, native_tool_result_failed};
 use crate::{
     provider::{
         configured_provider_statuses, resolve_provider, ChatMessage, ChatRequestOptions,
@@ -287,13 +287,21 @@ impl OperatorRuntime {
         let conn = open_sqlite_rw(&self.config.database_path)?;
         ensure_chat_tables(&conn)?;
         ensure_operation_tables(&conn)?;
+        // Reclaim checkpoints whose owning process is gone.
+        //
+        // A `running` row left behind by a killed process used to refuse
+        // every later turn in this session, forever — and the session id
+        // is fixed (`primary::operator:local`), so the operator's own
+        // remedy, killing the process, created the next one. The row is
+        // only evidence of a live turn while its owner is alive.
+        reclaim_abandoned_turns(&conn, &session_id)?;
         let running: bool = conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM operator_turn_checkpoints WHERE session_id=? AND status='running')",
             [&session_id], |row| row.get(0),
         ).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
         if running {
             return Err(OperatorError::Message(
-                "a turn is active or was interrupted unexpectedly; inspect `memphis recovery list` before continuing".into(),
+                "a turn is active in this session; inspect `memphis recovery list` before continuing".into(),
             ));
         }
         let mut pending = vec![MessageToPersist {
@@ -650,7 +658,7 @@ fn run_turn(
             }
             let request_context = crate::context::provider_context(&guard.messages);
             let mut attempt = 0_u8;
-            let (mut completion, mut stream_guard, mut think_stripper) = loop {
+            let (mut completion, mut stream_guard, think_stripper) = loop {
             let mut stream_guard = StreamingOutputGuard::new();
             let mut think_stripper = ThinkStripper::new();
             let mut stream_stats = None;
@@ -1103,6 +1111,7 @@ mod tests {
         drop_orphaned_tool_rows, load_chat_rows, persist_chat_messages, StoredChatMessage,
         DEFAULT_CHAT_SESSION_ID,
     };
+    use crate::chat_tool_executor::{cut_on_char_boundary, execute_native_tool};
     use crate::provider::ChatToolCall;
     use std::path::PathBuf;
     use std::sync::{

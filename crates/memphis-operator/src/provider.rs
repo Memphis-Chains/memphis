@@ -2159,7 +2159,6 @@ fn build_tools_json(tools: &[ChatToolDefinition]) -> Vec<Value> {
 }
 
 const MINIMAX_M31_FLASH_MODEL: &str = "MiniMax-M3.1-Flash";
-const MINIMAX_M3_RECOMMENDED_COMPLETION_TOKENS: u32 = 131_072;
 const MINIMAX_M3_MAX_COMPLETION_TOKENS: u32 = 524_288;
 
 /// The reasoning effort the native MiniMax path uses when the operator

@@ -32,6 +32,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 use serde_json::json;
@@ -46,6 +47,30 @@ const LOG_FILE_NAME: &str = "tui-errors.jsonl";
 /// a short prefix, so storing megabytes of it would bloat the log
 /// without adding diagnostic value.
 const MAX_ERROR_CHARS: usize = 4096;
+
+/// Serializes appends made from this process.
+///
+/// The file is opened with `O_APPEND`, so each `write` lands at the end of
+/// the file — but `writeln!` on a `File` issues **one `write` syscall per
+/// format fragment**, not one per line. Two writers therefore interleave
+/// *inside* a record and produce a line that is not valid JSON.
+///
+/// That is not hypothetical: 80 of the 252 lines in this file on the
+/// operator's host were unparseable, e.g.
+///
+/// ```text
+/// {{""presentedpresented""::"fatal","raw":"unexpected renderer invariant violation"",…
+/// ```
+///
+/// which is two records spliced together. The file that exists to
+/// diagnose failures was destroying them.
+///
+/// Two defences, because there are two ways to lose the race:
+///
+/// - the mutex, for threads inside this process;
+/// - the single `write_all` of a fully-built line, for other processes
+///   appending to the same file.
+static APPEND_LOCK: Mutex<()> = Mutex::new(());
 
 /// Which TUI surface produced the error.
 ///
@@ -116,10 +141,22 @@ fn record_error_at(
         "presented": presented,
     });
 
+    // Build the whole line first, then write it with ONE syscall.
+    //
+    // `writeln!(file, "{record}")` would emit the line in several `write`
+    // calls, and another writer could land between them. A single
+    // `write_all` of a complete line is one atomic append.
+    let mut line = match serde_json::to_string(&record) {
+        Ok(encoded) => encoded,
+        Err(_) => return,
+    };
+    line.push('\n');
+
+    let _guard = APPEND_LOCK.lock();
     let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) else {
         return;
     };
-    let _ = writeln!(file, "{record}");
+    let _ = file.write_all(line.as_bytes());
     let _ = file.flush();
 }
 
@@ -207,6 +244,58 @@ mod tests {
         let impossible = blocker.join("deeper").join(LOG_FILE_NAME);
 
         record_error_at(Some(&impossible), "native-chat", "boom", None);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The corruption bug, as a test.
+    ///
+    /// Before the fix, `writeln!` emitted each line in several `write`
+    /// syscalls and concurrent appends spliced records into each other:
+    /// 80 of 252 lines in the operator's live log were unparseable. Every
+    /// line must survive concurrent writers intact.
+    #[test]
+    fn concurrent_appends_produce_parseable_lines() {
+        let dir = std::env::temp_dir().join(format!("memphis-tui-errlog-race-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(LOG_FILE_NAME);
+
+        const WRITERS: usize = 8;
+        const PER_WRITER: usize = 25;
+
+        let mut handles = Vec::new();
+        for writer in 0..WRITERS {
+            let path = path.clone();
+            handles.push(std::thread::spawn(move || {
+                for index in 0..PER_WRITER {
+                    // A payload long enough to span several `write` calls,
+                    // which is what made the old implementation corrupt.
+                    let body = format!("writer-{writer} record-{index} {}", "x".repeat(512));
+                    record_error_at(
+                        Some(&path),
+                        "native-chat",
+                        &body,
+                        Some("fatal"),
+                    );
+                }
+            }));
+        }
+        for handle in handles {
+            handle.join().expect("writer thread");
+        }
+
+        let contents = fs::read_to_string(&path).expect("log file should exist");
+        let lines: Vec<&str> = contents.lines().collect();
+        assert_eq!(
+            lines.len(),
+            WRITERS * PER_WRITER,
+            "every append must survive as its own line"
+        );
+        for (index, line) in lines.iter().enumerate() {
+            serde_json::from_str::<serde_json::Value>(line)
+                .unwrap_or_else(|error| panic!("line {index} is not valid JSON: {error}\n{line}"));
+        }
 
         let _ = fs::remove_dir_all(&dir);
     }
