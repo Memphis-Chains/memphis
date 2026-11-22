@@ -144,19 +144,61 @@ which is exactly what ADR-011's Layer 1 extraction makes possible.
    descriptions), so BOTH surfaces teach it. It used to exist only in the cockpit's
    hand-written schema.
 
+## What was closed, and what closing it taught
+
+Three of the five declared divergences are closed as of 2026-11-22, each with a
+falsifier. What the closure taught is more useful than the closure itself.
+
+| Divergence | Closed by | The difference it hid |
+| --- | --- | --- |
+| `memphis_journal` ignored `chain` | the native journal validates the name against `JOURNAL_TARGET_CHAINS` and appends to it | the memory id, the exact-search key and the embed tags all followed "journal" |
+| `memphis_chain_query` read neither `offset` nor `blockType` | the native arm runs the gateway's ORDER: window → offset → filters → limit | `contains` was a contiguous substring where the gateway tokenises the query (decision #190); `tag` matched case-insensitively where the gateway matches exactly |
+| `memphis_classify` read only the object form of `criteria` | ONE normalisation, shared, checked from both arms against ONE fixture | a non-string description was DROPPED where the gateway stringifies it — which could turn two options into one |
+
+**The contract artifact covers the INPUT SHAPE. It never covered the ANSWER.**
+Every divergence above was about argument names, and each one turned out to hide
+a difference in what the tool ANSWERS — the filters, the normalisation, the
+order. A schema that matches on both sides is not a guarantee that the two
+surfaces answer the same way.
+
+So the closure added a SECOND axis: a behaviour contract. The first one is
+`tests/fixtures/classify-criteria-contract.json`, read by both arms
+(`tests/unit/classify-criteria-contract.test.ts` and
+`crates/memphis-operator/tests/classify_criteria_contract.rs`) — the pattern the
+journal-target allowlist already uses, applied to a rule that had been copied
+rather than shared. The rule now lives in ONE function per arm and is checked
+against ONE table of cases.
+
+### The one difference this ADR does NOT close
+
+An object's INSERTION order. The gateway keeps it; a `serde_json::Map` is
+sorted. The two agree whenever the keys are already sorted, and they differ
+only for an object whose keys are not — and then only under `orders: 1`, the
+mode the BASAL service documents as order-sensitive ("Render the options IN THIS
+ORDER", `basal_cpu.py`).
+
+Closing it means giving the crate an order-preserving JSON map, which changes
+how every block is serialised — and the canonical hash is computed over that
+serialisation, so it is not a change to make while closing a divergence. It is
+recorded here rather than hidden in a helper.
+
+**Falsifier:** a classification over an object whose keys are not in sorted
+order, with `orders: 1`, answered differently by the cockpit than by the
+gateway.
+
 ## What is deliberately NOT decided here
 
 The five declared divergences stay declared. They are recorded in the artifact with the
 reason and the work that closes each one, because a schema that promises what the surface
 cannot execute is the same class of bug as one that promises the wrong argument names:
 
-| Tool | The gap | What closes it |
-| --- | --- | --- |
-| `memphis_journal` | the registry declares `chain`; the native journal ignores it | plumb the chain through `run_native_journal`, validated by `is_journal_target_chain` — the machinery is already in the crate |
-| `memphis_case_append` | the registry accepts the flat case fields; the native arm reads only `entry` | accept the flat form natively, mirroring the gateway's `normalizeCaseAppendInput` |
-| `memphis_chain_query` | the registry declares `offset` and `blockType`; the native arm reads neither | apply both natively, mirroring the gateway tool |
-| `memphis_classify` | the registry's `criteria` is a union; the native arm reads only the object form | accept the array form natively, mirroring the gateway's `normalizeCriteria` |
-| `memphis_self_modify` | same name, two different operations | implement the registry semantics natively, or rename the native operation so the name stops lying |
+| Tool | The gap | What closes it | State |
+| --- | --- | --- | --- |
+| `memphis_journal` | the registry declares `chain`; the native journal ignores it | plumb the chain through `run_native_journal`, validated by `is_journal_target_chain` | **closed** 2026-11-22 |
+| `memphis_chain_query` | the registry declares `offset` and `blockType`; the native arm reads neither | apply both natively, mirroring the gateway tool | **closed** 2026-11-22 |
+| `memphis_classify` | the registry's `criteria` is a union; the native arm reads only the object form | accept the array form natively, mirroring the gateway's `normalizeCriteria` | **closed** 2026-11-22 |
+| `memphis_case_append` | the registry accepts the flat case fields; the native arm reads only `entry` | accept the flat form natively, mirroring the gateway's `normalizeCaseAppendInput` | open |
+| `memphis_self_modify` | same name, two different operations | implement the registry semantics natively, or rename the native operation so the name stops lying | open |
 
 Closing them is mechanical except the last one, which is a decision about what the cockpit
 is for. It is not this ADR's to make silently.

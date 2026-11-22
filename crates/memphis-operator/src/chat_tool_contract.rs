@@ -160,6 +160,83 @@ pub(crate) const NATIVE_TOOL_CONTRACT_JSON: &str = r#"{
       }
     },
     {
+      "name": "memphis_classify",
+      "description": "Advisory typed decision via the local BASAL service: choice, yes/no or score with validated probabilities. Classes are supplied in criteria. auto means the caller's confidence threshold passed and the service did not defer or report unvalidated calibration; it grants no tool permissions and guarantees no domain error rate. Re-evaluate thresholds after changing model or backend. Historical CPU calls took 70-140 seconds; use measured latency rather than assuming an interactive response. Requires the separately running local service.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32000,
+            "description": "The text to classify: a message, a document, a case file"
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "What to decide about it, in plain language"
+          },
+          "criteria": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              {
+                "minItems": 2,
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ],
+            "description": "Options as {key: description} pairs. The model reads the descriptions, so they carry the meaning. Needs at least 2 and at most 10 entries. Send a bare object like {\"cards\": \"Reklamacje kart\"} — not {\"item\": [...] }."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "choice",
+              "noul",
+              "score"
+            ],
+            "description": "choice (default), noul (yes/no), or score; score objects require ordinal keys 0..n-1"
+          },
+          "threshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Advisory confidence threshold from 0 to 1. Explicit policy overrides the service default; never grants action permissions."
+          },
+          "orders": {
+            "anyOf": [
+              {
+                "type": "number",
+                "const": 1
+              },
+              {
+                "type": "number",
+                "const": 2
+              }
+            ],
+            "description": "1 = one forward pass, faster but order-sensitive; 2 = averaged over both option orders, invariant to ordering"
+          }
+        },
+        "required": [
+          "state",
+          "question",
+          "criteria"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "memphis_code_read",
       "description": "Read any file on the host (read-only; vault material refused)",
       "input_schema": {
@@ -656,11 +733,6 @@ pub(crate) const NATIVE_TOOL_CONTRACT_JSON: &str = r#"{
       "name": "memphis_case_append",
       "reason": "the registry accepts both `{entry}` and the flat case fields; the native executor reads only `entry`",
       "closure": "accept the flat form in the native arm, mirroring the gateway's normalizeCaseAppendInput"
-    },
-    {
-      "name": "memphis_classify",
-      "reason": "the registry's `criteria` is a union (an object of labels, or an array of 2-10 labels); the native executor reads only the object form",
-      "closure": "accept the array form in the native arm, mirroring the gateway normalizeCriteria"
     },
     {
       "name": "memphis_self_modify",

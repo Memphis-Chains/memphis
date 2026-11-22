@@ -19,8 +19,8 @@ use serde_json::{json, Value};
 
 use crate::brave_search::{search as run_brave_search, BraveSearchInput};
 use crate::chat_basal::{
-    basal_threshold_from_service, classify_reply_to_json, read_basal_json, BASAL_DEFAULT_URL,
-    BASAL_TIMEOUT_SECS,
+    basal_threshold_from_service, classify_reply_to_json, normalize_classify_criteria,
+    read_basal_json, BASAL_DEFAULT_URL, BASAL_TIMEOUT_SECS,
 };
 use crate::chat_guards::{
     build_wrapped_segment, emit_runtime_security_event, scan_code_change_content, sha256_hex,
@@ -1305,36 +1305,6 @@ fn execute_native_tool_inner(
                 })?
                 .to_string();
 
-            let criteria = call
-                .arguments
-                .get("criteria")
-                .and_then(Value::as_object)
-                .ok_or_else(|| {
-                    OperatorError::Message(
-                        "memphis_classify requires criteria as a {key: description} object"
-                            .to_string(),
-                    )
-                })?;
-            let options: Vec<(String, String)> = criteria
-                .iter()
-                .filter_map(|(key, value)| {
-                    value
-                        .as_str()
-                        .map(|description| (key.clone(), description.to_string()))
-                })
-                .collect();
-            if options.len() < 2 {
-                return Err(OperatorError::Message(
-                    "memphis_classify requires at least two criteria options; one option carries no decision".to_string(),
-                ));
-            }
-            if options.len() > 10 {
-                return Err(OperatorError::Message(format!(
-                    "memphis_classify supports at most 10 options, got {}",
-                    options.len()
-                )));
-            }
-
             let question_type = match call.arguments.get("type") {
                 None => "choice",
                 Some(Value::String(value))
@@ -1349,6 +1319,19 @@ fn execute_native_tool_inner(
                 }
             }
             .to_string();
+
+            // The criteria are normalised by the shared rule, so the
+            // cockpit and the gateway turn the same criteria into the
+            // same options — the object form AND the array form.
+            let criteria_value = call.arguments.get("criteria").ok_or_else(|| {
+                OperatorError::Message(
+                    "memphis_classify requires criteria as a {key: description} object or an array of labels".to_string(),
+                )
+            })?;
+            let options: Vec<(String, String)> =
+                normalize_classify_criteria(criteria_value, &question_type)
+                    .map_err(OperatorError::Message)?;
+
             if question_type == "score"
                 && options
                     .iter()

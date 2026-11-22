@@ -97,12 +97,6 @@ const DIVERGENCES: Record<string, { reason: string; closure: string }> = {
     closure:
       "accept the flat form in the native arm, mirroring the gateway's normalizeCaseAppendInput",
   },
-  memphis_classify: {
-    reason:
-      "the registry's `criteria` is a union (an object of labels, or an array of 2-10 labels); the native executor reads only the object form",
-    closure:
-      'accept the array form in the native arm, mirroring the gateway normalizeCriteria',
-  },
   memphis_self_modify: {
     reason:
       'under one name the registry means "apply changes to many files, with a snapshot and a test run"; the native tool writes ONE file. Same name, two different operations.',
