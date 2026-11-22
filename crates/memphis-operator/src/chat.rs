@@ -17,9 +17,10 @@ use crate::chat_operations::{
 };
 use crate::chat_prompt::build_runtime_system_prompt;
 use crate::chat_session::{
-    ensure_chat_tables, incomplete_turn_summary, load_chat_rows, normalize_session_id, open_sqlite_rw,
-    persist_chat_messages_and_complete, reclaim_abandoned_turns, row_to_chat_message, save_partial_turn_text,
-    save_turn_checkpoint, transcript_from_row, MessageToPersist, RunningCheckpointGuard,
+    ensure_chat_tables, incomplete_turn_summary, load_chat_rows, normalize_session_id,
+    open_sqlite_rw, persist_chat_messages_and_complete, reclaim_abandoned_turns,
+    row_to_chat_message, save_partial_turn_text, save_turn_checkpoint, transcript_from_row,
+    MessageToPersist, RunningCheckpointGuard,
 };
 use crate::chat_streaming::{ensure_chat_not_cancelled, StreamingOutputGuard};
 use crate::chat_tool_catalog::{max_tool_tier_from_env, native_tool_definitions, tool_tier};
@@ -314,11 +315,19 @@ impl OperatorRuntime {
             provider: None,
             model: None,
         }];
-        let checkpoint_id: String = conn.query_row("SELECT lower(hex(randomblob(16)))", [], |row| row.get(0))
+        let checkpoint_id: String = conn
+            .query_row("SELECT lower(hex(randomblob(16)))", [], |row| row.get(0))
             .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
-        if let Err(error) = save_turn_checkpoint(&conn, &checkpoint_id, &session_id, "running", &pending) {
-            if error.to_string().contains("UNIQUE constraint failed: operator_turn_checkpoints.session_id") {
-                return Err(OperatorError::Message("another turn started in this session; inspect `memphis recovery list`".into()));
+        if let Err(error) =
+            save_turn_checkpoint(&conn, &checkpoint_id, &session_id, "running", &pending)
+        {
+            if error
+                .to_string()
+                .contains("UNIQUE constraint failed: operator_turn_checkpoints.session_id")
+            {
+                return Err(OperatorError::Message(
+                    "another turn started in this session; inspect `memphis recovery list`".into(),
+                ));
             }
             return Err(error);
         }
@@ -379,9 +388,7 @@ impl OperatorRuntime {
                 .config
                 .env("MINIMAX_MAX_COMPLETION_TOKENS")
                 .and_then(|value| value.parse::<u32>().ok())
-                .or_else(|| {
-                    chat_max_tokens_explicit().and_then(|value| u32::try_from(value).ok())
-                })
+                .or_else(|| chat_max_tokens_explicit().and_then(|value| u32::try_from(value).ok()))
                 // Keep the generic 2048 default out of MiniMax Flash.
                 .or(Some(32_768)),
         };
@@ -426,7 +433,9 @@ impl OperatorRuntime {
                 "[recovery] Earlier work is incomplete. Side-effecting tools are paused. Inspect it with `memphis recovery list` before operator acknowledgement.\n{incomplete}\n{unsettled}\n"
             )));
         }
-        let user_content = if !recovery_guard { wrapped_user } else {
+        let user_content = if !recovery_guard {
+            wrapped_user
+        } else {
             format!("{wrapped_user}\n\n<unsettled_operations>\n{unsettled}\n{incomplete}\n</unsettled_operations>")
         };
         pending[0].content = user_content.clone();
@@ -459,47 +468,61 @@ impl OperatorRuntime {
         let mut last_partial_save = std::time::Instant::now();
         let mut partial_save_failed = false;
         let turn_result = {
-          let mut tracked_chunk = |event: ChatStreamEvent| {
-            if let ChatStreamEvent::Text(text) = &event {
-                const MAX_PARTIAL_BYTES: usize = 128 * 1024;
-                let available = MAX_PARTIAL_BYTES.saturating_sub(partial_text.len());
-                let mut end = text.len().min(available);
-                while end > 0 && !text.is_char_boundary(end) { end -= 1; }
-                partial_text.push_str(&text[..end]);
-                partial_truncated |= end < text.len();
-                if !partial_save_failed && (partial_text.len().saturating_sub(last_saved_bytes) >= 4096
-                    || last_partial_save.elapsed() >= std::time::Duration::from_secs(1)) {
-                    if save_partial_turn_text(&conn, &checkpoint_id, &partial_text, partial_truncated).is_err() {
-                        partial_save_failed = true;
-                        on_chunk(ChatStreamEvent::Text("[recovery] Could not save partial output; progress may be lost.\n".into()));
-                    } else {
-                        last_saved_bytes = partial_text.len();
-                        last_partial_save = std::time::Instant::now();
+            let mut tracked_chunk = |event: ChatStreamEvent| {
+                if let ChatStreamEvent::Text(text) = &event {
+                    const MAX_PARTIAL_BYTES: usize = 128 * 1024;
+                    let available = MAX_PARTIAL_BYTES.saturating_sub(partial_text.len());
+                    let mut end = text.len().min(available);
+                    while end > 0 && !text.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    partial_text.push_str(&text[..end]);
+                    partial_truncated |= end < text.len();
+                    if !partial_save_failed
+                        && (partial_text.len().saturating_sub(last_saved_bytes) >= 4096
+                            || last_partial_save.elapsed() >= std::time::Duration::from_secs(1))
+                    {
+                        if save_partial_turn_text(
+                            &conn,
+                            &checkpoint_id,
+                            &partial_text,
+                            partial_truncated,
+                        )
+                        .is_err()
+                        {
+                            partial_save_failed = true;
+                            on_chunk(ChatStreamEvent::Text(
+                                "[recovery] Could not save partial output; progress may be lost.\n"
+                                    .into(),
+                            ));
+                        } else {
+                            last_saved_bytes = partial_text.len();
+                            last_partial_save = std::time::Instant::now();
+                        }
                     }
                 }
-            }
-            on_chunk(event);
-          };
-          run_turn(
-            self,
-            &conn,
-            session_id.as_str(),
-            &checkpoint_id,
-            cancel_flag,
-            &provider_runtime,
-            &options,
-            &tool_definitions,
-            max_tier,
-            &mut messages,
-            &mut pending,
-            &mut in_flight_operations,
-            &mut tool_calls_used,
-            &mut errors,
-            &mut error_trail,
-            recovery_guard,
-            &mut blocked_by_recovery,
-            &mut tracked_chunk,
-          )
+                on_chunk(event);
+            };
+            run_turn(
+                self,
+                &conn,
+                session_id.as_str(),
+                &checkpoint_id,
+                cancel_flag,
+                &provider_runtime,
+                &options,
+                &tool_definitions,
+                max_tier,
+                &mut messages,
+                &mut pending,
+                &mut in_flight_operations,
+                &mut tool_calls_used,
+                &mut errors,
+                &mut error_trail,
+                recovery_guard,
+                &mut blocked_by_recovery,
+                &mut tracked_chunk,
+            )
         };
         // The turn itself, measured. The TypeScript gateway records this
         // span; without it here, `p99_turn_duration_ms` and
@@ -545,7 +568,11 @@ impl OperatorRuntime {
 
         if turn_result.is_err() {
             save_partial_turn_text(&conn, &checkpoint_id, &partial_text, partial_truncated)?;
-            let status = if blocked_by_recovery { "blocked" } else { "interrupted" };
+            let status = if blocked_by_recovery {
+                "blocked"
+            } else {
+                "interrupted"
+            };
             save_turn_checkpoint(&conn, &checkpoint_id, &session_id, status, &pending)?;
         }
 
@@ -569,12 +596,19 @@ impl OperatorRuntime {
 /// A short nonsecret description of a tool action while it is running.
 /// Only known executable names are shown; arguments may contain secrets.
 fn safe_tool_action_detail(call: &crate::provider::ChatToolCall) -> String {
-    if call.name != "memphis_exec" { return String::new(); }
-    let executable = call.arguments.get("command").and_then(|v| v.as_str())
+    if call.name != "memphis_exec" {
+        return String::new();
+    }
+    let executable = call
+        .arguments
+        .get("command")
+        .and_then(|v| v.as_str())
         .and_then(|s| s.split_whitespace().next())
-        .and_then(|s| s.rsplit('/').next()).unwrap_or("");
+        .and_then(|s| s.rsplit('/').next())
+        .unwrap_or("");
     match executable {
-        "git" | "cargo" | "npm" | "node" | "python" | "python3" | "rg" | "ls" | "find" | "cat" | "pwd" | "curl" => executable.to_string(),
+        "git" | "cargo" | "npm" | "node" | "python" | "python3" | "rg" | "ls" | "find" | "cat"
+        | "pwd" | "curl" => executable.to_string(),
         _ => String::new(),
     }
 }
@@ -659,126 +693,173 @@ fn run_turn(
             let request_context = crate::context::provider_context(&guard.messages);
             let mut attempt = 0_u8;
             let (mut completion, mut stream_guard, think_stripper) = loop {
-            let mut stream_guard = StreamingOutputGuard::new();
-            let mut think_stripper = ThinkStripper::new();
-            let mut stream_stats = None;
-            let mut saw_text = false;
-            let mut stream_sink = |event: ChatStreamEvent| match event {
-                ChatStreamEvent::Text(chunk) => {
-                    saw_text = true;
-                    // Reasoning-model <think>…</think> blocks are the model's
-                    // internal deliberation and must not reach the TUI. Strip
-                    // them out of the live stream before StreamingOutputGuard
-                    // sees them so the operator only watches the final answer
-                    // render.
-                    let visible = think_stripper.push(chunk.as_str());
-                    if visible.is_empty() {
-                        return;
-                    }
-                    let mut emit_text = |text: &str| {
-                        on_chunk(ChatStreamEvent::Text(text.to_string()));
-                    };
-                    stream_guard.push(visible.as_str(), &mut emit_text);
-                }
-                ChatStreamEvent::Usage(usage) => on_chunk(ChatStreamEvent::Usage(usage)),
-                ChatStreamEvent::StreamStats(stats) => stream_stats = Some(stats),
-                // A provider never reports a tool call — the chat loop
-                // does, after the call has already run.
-                ChatStreamEvent::Tool { .. } => {}
-                // The provider's own tool-call bookkeeping is not the
-                // chat loop's: the loop emits the real `ToolStarted`
-                // when it actually runs a tool. Forwarding the
-                // provider's copy would show a pending call that no
-                // completion ever matches.
-                ChatStreamEvent::ToolStarted { .. } => {}
-                // A truncated answer is the operator's business: it
-                // must reach the surface, otherwise a cut-off answer
-                // renders like a finished one.
-                ChatStreamEvent::Truncated { reason } => {
-                    on_chunk(ChatStreamEvent::Truncated { reason })
-                }
-            };
-            // One provider completion, measured. The TypeScript gateway
-            // records this span; without it here, `provider_error_rate`
-            // reads the gateway's last measurement instead of the
-            // cockpit's, and the report says "no provider.completion
-            // spans in window" for the surface the operator actually
-            // uses.
-            let breaker_permit = crate::provider_breaker::admit(&runtime.config, provider_runtime.name())?;
-            let reservation = if crate::provider_budget::configured(&runtime.config, provider_runtime.name())? {
-                let bytes = serde_json::to_vec(&(options.system_prompt.as_ref(), &request_context, tool_definitions))
-                    .map_err(|error| OperatorError::Json(error.to_string()))?.len() as u64;
-                let output = if provider_runtime.name() == "minimax" && effective_model.to_ascii_lowercase().contains("m3") {
-                    options.minimax_max_completion_tokens.or(options.max_tokens).unwrap_or(32_768).clamp(1, 524_288)
-                } else { options.max_tokens.unwrap_or(2_048) };
-                crate::provider_budget::reserve(conn, &runtime.config, provider_runtime.name(),
-                    bytes.saturating_add(u64::from(output)).saturating_add(1_024))?
-            } else { None };
-            let provider_started = std::time::Instant::now();
-            let provider_result = provider_runtime.chat_stream_with_cancel(
-                &request_context,
-                &options,
-                &tool_definitions,
-                cancel_flag,
-                &mut stream_sink,
-            );
-            drop(stream_sink);
-            breaker_permit.record(&provider_result);
-            if let Some(reservation) = reservation {
-                let usage = provider_result.as_ref().ok().and_then(|completion| completion.token_usage.as_ref());
-                crate::provider_budget::settle(conn, &reservation,
-                    usage.map(|value| value.total_tokens), usage.map(|value| value.estimated).unwrap_or(true))?;
-            }
-            let provider_elapsed = provider_started.elapsed().as_millis() as u64;
-            match provider_result {
-                Ok(completion) => {
-                    crate::telemetry::record_provider_completion_for_turn(
-                        &runtime.config,
-                        provider_runtime.name(),
-                        completion.model.as_str(),
-                        tool_definitions.len(),
-                        request_context.len(),
-                        provider_elapsed,
-                        false,
-                        None,
-                        Some(checkpoint_id),
-                        stream_stats.as_ref(),
-                    );
-                    break (completion, stream_guard, think_stripper);
-                }
-                Err(error) => {
-                    crate::telemetry::record_provider_completion_for_turn(
-                        &runtime.config,
-                        provider_runtime.name(),
-                        options.model.as_deref().unwrap_or("unknown"),
-                        tool_definitions.len(),
-                        request_context.len(),
-                        provider_elapsed,
-                        true,
-                        Some(if matches!(&error, OperatorError::ProviderStreamTimeout) { "provider stream timeout" } else { "provider call failed" }),
-                        Some(checkpoint_id),
-                        stream_stats.as_ref(),
-                    );
-                    let transient = matches!(&error,
-                        OperatorError::ProviderStreamTimeout |
-                        OperatorError::ProviderTransport { transient: true, .. } |
-                        OperatorError::ProviderHttp { status: 500 | 502 | 503 | 504, .. }
-                    );
-                    // Retry a completion only before any response bytes or
-                    // text. The already-executed tool loop is never replayed.
-                    let no_stream_bytes = stream_stats.as_ref().is_none_or(|stats| stats.bytes == 0);
-                    if attempt == 0 && transient && !saw_text && no_stream_bytes {
-                        attempt += 1;
-                        on_chunk(ChatStreamEvent::Text("[recovery] Provider unavailable before output; retrying once.\n".into()));
-                        for _ in 0..10 {
-                            ensure_chat_not_cancelled(cancel_flag)?;
-                            std::thread::sleep(std::time::Duration::from_millis(25));
+                let mut stream_guard = StreamingOutputGuard::new();
+                let mut think_stripper = ThinkStripper::new();
+                let mut stream_stats = None;
+                let mut saw_text = false;
+                let mut stream_sink = |event: ChatStreamEvent| match event {
+                    ChatStreamEvent::Text(chunk) => {
+                        saw_text = true;
+                        // Reasoning-model <think>…</think> blocks are the model's
+                        // internal deliberation and must not reach the TUI. Strip
+                        // them out of the live stream before StreamingOutputGuard
+                        // sees them so the operator only watches the final answer
+                        // render.
+                        let visible = think_stripper.push(chunk.as_str());
+                        if visible.is_empty() {
+                            return;
                         }
-                        continue;
+                        let mut emit_text = |text: &str| {
+                            on_chunk(ChatStreamEvent::Text(text.to_string()));
+                        };
+                        stream_guard.push(visible.as_str(), &mut emit_text);
                     }
-                    return Err(error);
+                    ChatStreamEvent::Usage(usage) => on_chunk(ChatStreamEvent::Usage(usage)),
+                    ChatStreamEvent::StreamStats(stats) => stream_stats = Some(stats),
+                    // A provider never reports a tool call — the chat loop
+                    // does, after the call has already run.
+                    ChatStreamEvent::Tool { .. } => {}
+                    // The provider's own tool-call bookkeeping is not the
+                    // chat loop's: the loop emits the real `ToolStarted`
+                    // when it actually runs a tool. Forwarding the
+                    // provider's copy would show a pending call that no
+                    // completion ever matches.
+                    ChatStreamEvent::ToolStarted { .. } => {}
+                    // A truncated answer is the operator's business: it
+                    // must reach the surface, otherwise a cut-off answer
+                    // renders like a finished one.
+                    ChatStreamEvent::Truncated { reason } => {
+                        on_chunk(ChatStreamEvent::Truncated { reason })
+                    }
+                };
+                // One provider completion, measured. The TypeScript gateway
+                // records this span; without it here, `provider_error_rate`
+                // reads the gateway's last measurement instead of the
+                // cockpit's, and the report says "no provider.completion
+                // spans in window" for the surface the operator actually
+                // uses.
+                let breaker_permit =
+                    crate::provider_breaker::admit(&runtime.config, provider_runtime.name())?;
+                let reservation = if crate::provider_budget::configured(
+                    &runtime.config,
+                    provider_runtime.name(),
+                )? {
+                    let bytes = serde_json::to_vec(&(
+                        options.system_prompt.as_ref(),
+                        &request_context,
+                        tool_definitions,
+                    ))
+                    .map_err(|error| OperatorError::Json(error.to_string()))?
+                    .len() as u64;
+                    let output = if provider_runtime.name() == "minimax"
+                        && effective_model.to_ascii_lowercase().contains("m3")
+                    {
+                        options
+                            .minimax_max_completion_tokens
+                            .or(options.max_tokens)
+                            .unwrap_or(32_768)
+                            .clamp(1, 524_288)
+                    } else {
+                        options.max_tokens.unwrap_or(2_048)
+                    };
+                    crate::provider_budget::reserve(
+                        conn,
+                        &runtime.config,
+                        provider_runtime.name(),
+                        bytes
+                            .saturating_add(u64::from(output))
+                            .saturating_add(1_024),
+                    )?
+                } else {
+                    None
+                };
+                let provider_started = std::time::Instant::now();
+                let provider_result = provider_runtime.chat_stream_with_cancel(
+                    &request_context,
+                    &options,
+                    &tool_definitions,
+                    cancel_flag,
+                    &mut stream_sink,
+                );
+                drop(stream_sink);
+                breaker_permit.record(&provider_result);
+                if let Some(reservation) = reservation {
+                    let usage = provider_result
+                        .as_ref()
+                        .ok()
+                        .and_then(|completion| completion.token_usage.as_ref());
+                    crate::provider_budget::settle(
+                        conn,
+                        &reservation,
+                        usage.map(|value| value.total_tokens),
+                        usage.map(|value| value.estimated).unwrap_or(true),
+                    )?;
                 }
-            }
+                let provider_elapsed = provider_started.elapsed().as_millis() as u64;
+                match provider_result {
+                    Ok(completion) => {
+                        crate::telemetry::record_provider_completion_for_turn(
+                            &runtime.config,
+                            provider_runtime.name(),
+                            completion.model.as_str(),
+                            tool_definitions.len(),
+                            request_context.len(),
+                            provider_elapsed,
+                            false,
+                            None,
+                            Some(checkpoint_id),
+                            stream_stats.as_ref(),
+                        );
+                        break (completion, stream_guard, think_stripper);
+                    }
+                    Err(error) => {
+                        crate::telemetry::record_provider_completion_for_turn(
+                            &runtime.config,
+                            provider_runtime.name(),
+                            options.model.as_deref().unwrap_or("unknown"),
+                            tool_definitions.len(),
+                            request_context.len(),
+                            provider_elapsed,
+                            true,
+                            Some(if matches!(&error, OperatorError::ProviderStreamTimeout) {
+                                "provider stream timeout"
+                            } else {
+                                "provider call failed"
+                            }),
+                            Some(checkpoint_id),
+                            stream_stats.as_ref(),
+                        );
+                        let transient = matches!(
+                            &error,
+                            OperatorError::ProviderStreamTimeout
+                                | OperatorError::ProviderTransport {
+                                    transient: true,
+                                    ..
+                                }
+                                | OperatorError::ProviderHttp {
+                                    status: 500 | 502 | 503 | 504,
+                                    ..
+                                }
+                        );
+                        // Retry a completion only before any response bytes or
+                        // text. The already-executed tool loop is never replayed.
+                        let no_stream_bytes =
+                            stream_stats.as_ref().is_none_or(|stats| stats.bytes == 0);
+                        if attempt == 0 && transient && !saw_text && no_stream_bytes {
+                            attempt += 1;
+                            on_chunk(ChatStreamEvent::Text(
+                                "[recovery] Provider unavailable before output; retrying once.\n"
+                                    .into(),
+                            ));
+                            for _ in 0..10 {
+                                ensure_chat_not_cancelled(cancel_flag)?;
+                                std::thread::sleep(std::time::Duration::from_millis(25));
+                            }
+                            continue;
+                        }
+                        return Err(error);
+                    }
+                }
             };
             let mut emit_text = |text: &str| {
                 on_chunk(ChatStreamEvent::Text(text.to_string()));
@@ -871,11 +952,19 @@ fn run_turn(
                 // Model-generated call IDs cannot prove idempotence. Default
                 // unknown tools to side-effecting until the operator reviews
                 // the earlier incomplete turn.
-                let read_only = matches!(tool_call.name.as_str(),
-                    "memphis_recall" | "memphis_search" | "memphis_health" |
-                    "memphis_soul_read" | "memphis_case_query" | "memphis_vault_list" |
-                    "memphis_chain_query" | "memphis_chain_verify" | "memphis_code_read" |
-                    "memphis_grep" | "memphis_glob"
+                let read_only = matches!(
+                    tool_call.name.as_str(),
+                    "memphis_recall"
+                        | "memphis_search"
+                        | "memphis_health"
+                        | "memphis_soul_read"
+                        | "memphis_case_query"
+                        | "memphis_vault_list"
+                        | "memphis_chain_query"
+                        | "memphis_chain_verify"
+                        | "memphis_code_read"
+                        | "memphis_grep"
+                        | "memphis_glob"
                 );
                 if recovery_guard && !read_only {
                     *blocked_by_recovery = true;
@@ -920,7 +1009,11 @@ fn run_turn(
                     detail: safe_tool_action_detail(&tool_call),
                 });
                 let (tool_display, tool_payload) = match execute_native_tool_for_turn(
-                    runtime, &tool_call, max_tier, Some(checkpoint_id), cancel_flag,
+                    runtime,
+                    &tool_call,
+                    max_tier,
+                    Some(checkpoint_id),
+                    cancel_flag,
                 ) {
                     Ok(result) => {
                         tool_failed = native_tool_result_failed(&tool_call.name, &result.1);
@@ -929,7 +1022,11 @@ fn run_turn(
                         result
                     }
                     Err(error @ OperatorError::ToolOutcomeUnknown(_)) => {
-                        record_operation_unknown(&conn, &operation_id, "tool outcome unknown; operator review required")?;
+                        record_operation_unknown(
+                            &conn,
+                            &operation_id,
+                            "tool outcome unknown; operator review required",
+                        )?;
                         in_flight_operations.retain(|id| id != &operation_id);
                         return Err(error);
                     }
@@ -937,7 +1034,8 @@ fn run_turn(
                         record_operation_unknown(&conn, &operation_id, "tool returned an error after dispatch; side effects cannot be ruled out")?;
                         in_flight_operations.retain(|id| id != &operation_id);
                         return Err(OperatorError::ToolOutcomeUnknown(format!(
-                            "{} returned an error after dispatch; operator review required", tool_call.name
+                            "{} returned an error after dispatch; operator review required",
+                            tool_call.name
                         )));
                     }
                     Err(error) => {
@@ -1116,7 +1214,11 @@ mod tests {
 
     #[test]
     fn safe_tool_detail_never_includes_command_arguments() {
-        let mut call = ChatToolCall { id: "x".into(), name: "memphis_exec".into(), arguments: json!({"command":"git status --example-sensitive-value"}) };
+        let mut call = ChatToolCall {
+            id: "x".into(),
+            name: "memphis_exec".into(),
+            arguments: json!({"command":"git status --example-sensitive-value"}),
+        };
         assert_eq!(safe_tool_action_detail(&call), "git");
         call.arguments = json!({"command":"unknown-tool secret"});
         assert!(safe_tool_action_detail(&call).is_empty());
@@ -1227,7 +1329,23 @@ mod tests {
         let prompt =
             build_runtime_system_prompt(&runtime, &tools).expect("build runtime system prompt");
 
-        assert!(prompt.contains("Available tools: memphis_journal"));
+        // The prompt must name the NATIVE tools. Which one comes first is
+        // not part of the contract: the list order changed when the
+        // schemas became a projection of the TypeScript registry (the
+        // registry's order), so the assertion names the whole set rather
+        // than one position in it.
+        let available = prompt
+            .split("Available tools: ")
+            .nth(1)
+            .and_then(|rest| rest.split('\n').next())
+            .unwrap_or_default();
+        for tool in &tools {
+            assert!(
+                available.contains(tool.name.as_str()),
+                "the prompt must list the native tool {} — it lists: {available}",
+                tool.name
+            );
+        }
         assert!(prompt.contains("\"toolSource\":\"native-rust-operator\""));
         assert!(prompt.contains("Before claiming that a chain is corrupt"));
         assert!(prompt.contains("call memphis_chain_verify in the same turn"));
@@ -2163,9 +2281,7 @@ mod tests {
         let archive = root.join("chains").join("journal.backup-1784913076785");
         fs::create_dir_all(&archive).expect("create the archive directory");
         fs::copy(
-            root.join("chains")
-                .join("journal")
-                .join("000001.json"),
+            root.join("chains").join("journal").join("000001.json"),
             archive.join("000001.json"),
         )
         .expect("copy the block into the archive");
@@ -3067,11 +3183,17 @@ mod tests {
 
         let result = execute_native_tool(&runtime, &call, 2).expect("proposal must be queued");
         assert!(result.1.contains("operator-review-required"));
-        assert!(!target.exists(), "native proposal must never write the file");
-        let db = rusqlite::Connection::open(&runtime.config.database_path).expect("request database");
-        let (payload, status): (String, String) = db.query_row(
-            "SELECT payload,status FROM evolve_requests", [], |row| Ok((row.get(0)?, row.get(1)?))
-        ).expect("queued request");
+        assert!(
+            !target.exists(),
+            "native proposal must never write the file"
+        );
+        let db =
+            rusqlite::Connection::open(&runtime.config.database_path).expect("request database");
+        let (payload, status): (String, String) = db
+            .query_row("SELECT payload,status FROM evolve_requests", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .expect("queued request");
         assert_eq!(status, "pending");
         assert!(payload.contains("self-modify-scan-probe.md"));
     }
@@ -3142,7 +3264,10 @@ mod tests {
         // check entirely.
         std::fs::write(
             &target,
-            (1..=5000).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n"),
+            (1..=5000)
+                .map(|n| format!("line {n}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
         )
         .expect("write probe file");
 
@@ -3281,8 +3406,8 @@ mod tests {
             }),
         };
 
-        let (_summary, payload) = execute_native_tool(&runtime, &call, 2)
-            .expect("the registry's shape must work");
+        let (_summary, payload) =
+            execute_native_tool(&runtime, &call, 2).expect("the registry's shape must work");
         let _ = std::fs::remove_dir_all(&probe_dir);
         assert!(
             payload.contains("\"count\":1"),
@@ -3311,8 +3436,8 @@ mod tests {
             arguments: json!({ "url": "http://169.254.169.254/latest/meta-data/" }),
         };
 
-        let error = execute_native_tool(&runtime, &call, 2)
-            .expect_err("a private target must be refused");
+        let error =
+            execute_native_tool(&runtime, &call, 2).expect_err("a private target must be refused");
         let message = error.to_string();
         assert!(
             message.contains("private/internal IP literal"),
@@ -3332,8 +3457,7 @@ mod tests {
             arguments: json!({ "url": "http://localhost:8080/health" }),
         };
 
-        let error = execute_native_tool(&runtime, &call, 2)
-            .expect_err("localhost must be refused");
+        let error = execute_native_tool(&runtime, &call, 2).expect_err("localhost must be refused");
         assert!(
             error.to_string().contains("URL blocked: localhost"),
             "the refusal must name the reason: {error}"

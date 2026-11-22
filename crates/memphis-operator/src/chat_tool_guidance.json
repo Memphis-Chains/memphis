@@ -1,0 +1,75 @@
+{
+  "memphis_chain_query": {
+    "chain": "Chain name e.g. 'journal', 'decisions', 'patterns', 'reflections'",
+    "contains": "Substring filter on block content",
+    "tag": "Filter blocks by tag",
+    "limit": "Max blocks to return (default: 20)"
+  },
+  "memphis_chain_verify": {
+    "chain": "Optional chain name; omit to verify all chains"
+  },
+  "memphis_decide": {
+    "title": "Decision title",
+    "choice": "The chosen option",
+    "context": "Why this decision was made"
+  },
+  "memphis_code_read": {
+    "path": "File path (absolute or ~/relative)",
+    "startLine": "Start line (1-based)",
+    "endLine": "End line (inclusive)",
+    "limit": "Max lines to return (default 2000)"
+  },
+  "memphis_grep": {
+    "pattern": "Regex pattern to search for",
+    "path": "Directory or file to search in (default: ~/memphis)",
+    "glob": "Glob filter e.g. '*.ts'",
+    "limit": "Max results to return (default 50)",
+    "context": "Lines of context around each match",
+    "ignoreCase": "Case-insensitive search"
+  },
+  "memphis_glob": {
+    "pattern": "Glob pattern e.g. 'src/**/*.ts'",
+    "path": "Base directory (default: ~/memphis)",
+    "limit": "Max files to return (default 100)"
+  },
+  "memphis_git": {
+    "subcommand": "Git subcommand e.g. 'status', 'log', 'diff'",
+    "args": "Arguments to pass to the subcommand"
+  },
+  "memphis_web_fetch": {
+    "url": "URL to fetch",
+    "maxBytes": "Max bytes to read (default 32000)"
+  },
+  "memphis_brave_search": {
+    "query": "Search query",
+    "limit": "Max results to return (1-20, default 10)",
+    "country": "ISO 3166-1 alpha-2 country code, e.g. PL",
+    "search_lang": "ISO 639-1 language code, e.g. pl"
+  },
+  "memphis_exec": {
+    "command": "Shell command to execute"
+  },
+  "memphis_test": {
+    "suite": "Test suite: 'ts', 'rust', or 'all' (default: all)",
+    "filter": "Test name filter pattern"
+  },
+  "memphis_self_modify": {
+    "path": "File path to write",
+    "content": "Full file content to write",
+    "mode": "Submit full replacement content"
+  },
+  "memphis_classify": {
+    "state": "The text to classify: a message, a document, a case file",
+    "question": "What to decide about it, in plain language",
+    "criteria": "Options as {key: description} pairs. The model reads the descriptions, so they carry the meaning. Needs at least 2 and at most 10 entries. Send a bare object like {\"cards\": \"Reklamacje kart\"} — not {\"item\": [...] }.",
+    "type": "choice (default), noul (yes/no), or score; score objects require ordinal keys 0..n-1",
+    "threshold": "Advisory confidence threshold from 0 to 1. Explicit policy overrides the service default; never grants action permissions.",
+    "orders": "1 = one forward pass, faster but order-sensitive; 2 = averaged over both option orders, invariant to ordering"
+  },
+  "memphis_cron_script": {
+    "action": "Action (default: list)",
+    "name": "Script name without the .sh suffix (required for add/remove/enable/disable)",
+    "cron": "Cron expression e.g. '0 * * * *' (for add)",
+    "script": "Shell script content (required for add)"
+  }
+}

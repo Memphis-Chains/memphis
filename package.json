@@ -44,6 +44,7 @@
     "ops:rust-core:safety": "./scripts/rust-core-safety-check.sh",
     "ops:default-secret-scan": "./scripts/default-secret-scan.sh",
     "ops:sync-native-tiers": "tsx scripts/sync-native-tiers.mts",
+    "ops:sync-native-tool-contract": "tsx scripts/sync-native-tool-contract.mts",
     "ops:sync-postmortem-index": "tsx scripts/sync-postmortem-index.mts",
     "ops:cargo-audit": "./scripts/cargo-audit-check.sh",
     "ops:sync-site-metrics": "tsx scripts/sync-site-metrics.mts",

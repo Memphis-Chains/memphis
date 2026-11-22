@@ -6,8 +6,8 @@ import { describe, expect, it } from 'vitest';
 import { NATIVE_TOOL_CONTRACTS, getToolContract } from '../../src/gateway/tool-contract.js';
 import { createInProcessToolExecutor } from '../../src/gateway/tool-executor.js';
 import { TOOL_REGISTRY } from '../../src/gateway/tool-registry.js';
+import { readNativeCatalog } from '../helpers/native-tool-catalog.js';
 
-const RUST_CATALOG = resolve('crates/memphis-operator/src/chat_tool_catalog.rs');
 const RUST_EXECUTOR = resolve('crates/memphis-operator/src/chat_tool_executor.rs');
 
 describe('the two cron surfaces', () => {
@@ -50,10 +50,15 @@ describe('the two cron surfaces', () => {
   });
 
   it('renames the native catalog entry and its dispatcher arm together', () => {
-    const catalog = readFileSync(RUST_CATALOG, 'utf8');
+    // Since ADR-012 the catalog entry is projected from the registry, so
+    // the name lives in the generated contract rather than in a hand-written
+    // schema. The dispatcher arm is still hand-written, and it is the arm
+    // that decides which name actually runs.
+    const catalog = readNativeCatalog();
+    expect(catalog.advertised).toContain('memphis_cron_script');
+    expect(catalog.advertised).not.toContain('memphis_cron');
+
     const executor = readFileSync(RUST_EXECUTOR, 'utf8');
-    expect(catalog).toContain('name: "memphis_cron_script"');
-    expect(catalog).not.toContain('name: "memphis_cron"');
     expect(executor).toContain('"memphis_cron_script" =>');
     expect(executor).not.toContain('"memphis_cron" =>');
   });

@@ -28,7 +28,16 @@ export const SOUL_TOOLS = {
     name: 'memphis_soul_write',
     tier: 0,
     capabilities: ['write'],
-    description: 'Update soul memory',
+    // The bare-array rule lives HERE, in the registry, because the
+    // registry is what every surface renders. It used to live only in the
+    // native cockpit's hand-written schema, so the model was taught it on
+    // one surface and not on the other — and the shape it invents when it
+    // is not taught is `{"item": [...]}`, which the runtime rejects. That
+    // shape reached `run_soul_write` 18 times in the chat history and was
+    // the payload the pre-fd008ea merge clobbered silently (decision
+    // #322). One rule, both surfaces.
+    description:
+      'Update soul memory — send arrays as bare JSON arrays, never wrapped in an object: {"self":{"learnings":["a"]}}, NOT {"self":{"learnings":{"item":["a"]}}}',
     inputSchema: z
       .object({
         updates: z
@@ -40,25 +49,65 @@ export const SOUL_TOOLS = {
             // a soul update may contain.
             user: z
               .object({
-                name: z.string().optional(),
-                languages: z.array(z.string()).optional(),
-                preferences: z.array(z.string()).optional(),
-                expertise: z.array(z.string()).optional(),
-                integrations: z.array(z.string()).optional(),
+                name: z.string().optional().describe('Operator display name.'),
+                languages: z
+                  .array(z.string())
+                  .optional()
+                  .describe(
+                    'Languages the operator writes in. Send a bare JSON array like ["first", "second"] — never {"item": [...]}.',
+                  ),
+                preferences: z
+                  .array(z.string())
+                  .optional()
+                  .describe(
+                    'How the operator wants work done. Send a bare JSON array like ["first", "second"] — never {"item": [...]}.',
+                  ),
+                expertise: z
+                  .array(z.string())
+                  .optional()
+                  .describe(
+                    'Domains the operator works in. Send a bare JSON array like ["first", "second"] — never {"item": [...]}.',
+                  ),
+                integrations: z
+                  .array(z.string())
+                  .optional()
+                  .describe(
+                    'External systems the operator uses. Send a bare JSON array like ["first", "second"] — never {"item": [...]}.',
+                  ),
               })
               .optional(),
             self: z
               .object({
-                personality: z.string().optional(),
-                strengths: z.array(z.string()).optional(),
-                learnings: z.array(z.string()).optional(),
-                evolvedCapabilities: z.array(z.string()).optional(),
+                personality: z.string().optional().describe('Agent personality summary.'),
+                strengths: z
+                  .array(z.string())
+                  .optional()
+                  .describe(
+                    'Demonstrated strengths. Send a bare JSON array like ["first", "second"] — never {"item": [...]}.',
+                  ),
+                learnings: z
+                  .array(z.string())
+                  .optional()
+                  .describe(
+                    'Lessons learned, each one a complete sentence. Send a bare JSON array like ["first", "second"] — never {"item": [...]}.',
+                  ),
+                evolvedCapabilities: z
+                  .array(z.string())
+                  .optional()
+                  .describe(
+                    'Capabilities gained through evolution. Send a bare JSON array like ["first", "second"] — never {"item": [...]}.',
+                  ),
               })
               .optional(),
             context: z
               .object({
-                activeWork: z.string().optional(),
-                recentDecisions: z.array(z.string()).optional(),
+                activeWork: z.string().optional().describe('One line on the current task.'),
+                recentDecisions: z
+                  .array(z.string())
+                  .optional()
+                  .describe(
+                    'Short summaries of recent decisions. Send a bare JSON array like ["first", "second"] — never {"item": [...]}.',
+                  ),
               })
               .optional(),
           })
