@@ -42,7 +42,7 @@ fn err(msg: impl Into<String>) -> String {
     .unwrap_or_else(|_| "{\"ok\":false,\"error\":\"unknown\"}".to_string())
 }
 
-#[napi(js_name = "bridge_manifest")]
+#[napi(catch_unwind, js_name = "bridge_manifest")]
 pub fn bridge_manifest() -> String {
     ok(serde_json::json!({
         "name": "memphis-napi",
@@ -358,14 +358,14 @@ fn get_embed_pipeline() -> Result<&'static Mutex<EmbedPipeline>, String> {
     Ok(EMBED_PIPELINE.get_or_init(|| Mutex::new(pipeline)))
 }
 
-#[napi(js_name = "embed_index_metadata")]
+#[napi(catch_unwind, js_name = "embed_index_metadata")]
 pub fn embed_index_metadata(path: String) -> String {
     ok(memphis_embed::metadata::inspect_index(
         std::path::Path::new(&path),
     ))
 }
 
-#[napi(js_name = "chain_validate")]
+#[napi(catch_unwind, js_name = "chain_validate")]
 pub fn chain_validate(block_json: String, prev_json: Option<String>) -> String {
     let block: Block = match serde_json::from_str(&block_json) {
         Ok(v) => v,
@@ -407,7 +407,7 @@ pub fn chain_validate(block_json: String, prev_json: Option<String>) -> String {
     }
 }
 
-#[napi(js_name = "chain_append")]
+#[napi(catch_unwind, js_name = "chain_append")]
 pub fn chain_append(chain_json: String, block_json: String) -> String {
     let mut blocks: Vec<Block> = match serde_json::from_str(&chain_json) {
         Ok(v) => v,
@@ -455,7 +455,7 @@ pub fn chain_append(chain_json: String, block_json: String) -> String {
     ok(serde_json::json!({ "appended": true, "length": blocks.len(), "chain": blocks }))
 }
 
-#[napi(js_name = "chain_query")]
+#[napi(catch_unwind, js_name = "chain_query")]
 pub fn chain_query(chain_json: String, contains: Option<String>, tag: Option<String>) -> String {
     let blocks: Vec<Block> = match serde_json::from_str(&chain_json) {
         Ok(v) => v,
@@ -485,7 +485,7 @@ pub fn chain_query(chain_json: String, contains: Option<String>, tag: Option<Str
     ok(serde_json::json!({ "count": result.len(), "blocks": result }))
 }
 
-#[napi(js_name = "vault_init_json")]
+#[napi(catch_unwind, js_name = "vault_init_json")]
 pub fn vault_init_json(request_json: String) -> String {
     let req: VaultInitRequest = match serde_json::from_str(&request_json) {
         Ok(v) => v,
@@ -498,7 +498,7 @@ pub fn vault_init_json(request_json: String) -> String {
     }
 }
 
-#[napi(js_name = "embed_store")]
+#[napi(catch_unwind, js_name = "embed_store")]
 pub fn embed_store(id: String, text: String, tags_json: Option<String>) -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
@@ -538,7 +538,7 @@ pub fn embed_store(id: String, text: String, tags_json: Option<String>) -> Strin
 /// index (atomic rename of the full serialized payload) on every call.
 /// For a 6326-block rebuild that's ~290 GB of cumulative writes — the
 /// bug operator hit on 2026-05-10.
-#[napi(js_name = "embed_store_many")]
+#[napi(catch_unwind, js_name = "embed_store_many")]
 pub fn embed_store_many(items_json: String) -> String {
     let items: Vec<EmbedStoreItem> = match serde_json::from_str(&items_json) {
         Ok(v) => v,
@@ -588,7 +588,7 @@ pub fn embed_store_many(items_json: String) -> String {
 /// error rather than swallowing it (`embed_store`'s best-effort path
 /// keeps the live-write loop quiet on flapping disks; bulk rebuilders
 /// need to hear about ENOSPC / EROFS / permission denied).
-#[napi(js_name = "embed_flush")]
+#[napi(catch_unwind, js_name = "embed_flush")]
 pub fn embed_flush() -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
@@ -610,7 +610,7 @@ pub fn embed_flush() -> String {
     }
 }
 
-#[napi(js_name = "embed_search")]
+#[napi(catch_unwind, js_name = "embed_search")]
 pub fn embed_search(query: String, top_k: Option<u32>, tags_json: Option<String>) -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
@@ -652,7 +652,7 @@ pub fn embed_search(query: String, top_k: Option<u32>, tags_json: Option<String>
     }
 }
 
-#[napi(js_name = "embed_search_tuned")]
+#[napi(catch_unwind, js_name = "embed_search_tuned")]
 pub fn embed_search_tuned(query: String, top_k: Option<u32>, tags_json: Option<String>) -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
@@ -694,7 +694,7 @@ pub fn embed_search_tuned(query: String, top_k: Option<u32>, tags_json: Option<S
     }
 }
 
-#[napi(js_name = "embed_reset")]
+#[napi(catch_unwind, js_name = "embed_reset")]
 pub fn embed_reset() -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
@@ -720,7 +720,7 @@ pub fn embed_reset() -> String {
 /// `embed_reset` (above) keeps its current "wipe and persist" semantics
 /// for the CLI subcommand and doctor diagnostics, where the operator
 /// explicitly wants the on-disk file emptied.
-#[napi(js_name = "embed_clear_in_memory")]
+#[napi(catch_unwind, js_name = "embed_clear_in_memory")]
 pub fn embed_clear_in_memory() -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
@@ -747,7 +747,7 @@ pub fn embed_clear_in_memory() -> String {
 /// count, persistence_enabled, persistence_load_state}`. When the pipeline
 /// was never initialized there is nothing to discard and the call
 /// reports `{discarded: false, was_initialized: false}`.
-#[napi(js_name = "embed_discard_replacement")]
+#[napi(catch_unwind, js_name = "embed_discard_replacement")]
 pub fn embed_discard_replacement() -> String {
     let Some(pipeline_mutex) = EMBED_PIPELINE.get() else {
         // Nothing was ever initialized: there is no replacement in
@@ -808,7 +808,7 @@ pub fn embed_discard_replacement() -> String {
 /// Idempotent: calling twice is safe; second call finds the pipeline
 /// empty and does nothing. Called from `performGracefulShutdown()`
 /// between PULSE flush and `exitFn()` per graceful-shutdown.ts step 4.5.
-#[napi(js_name = "embed_shutdown")]
+#[napi(catch_unwind, js_name = "embed_shutdown")]
 pub fn embed_shutdown() -> String {
     let result = match EMBED_PIPELINE.get() {
         Some(pipeline_mutex) => match pipeline_mutex.lock() {
@@ -856,7 +856,7 @@ pub fn embed_shutdown() -> String {
     result
 }
 
-#[napi(js_name = "soul_loop_step")]
+#[napi(catch_unwind, js_name = "soul_loop_step")]
 pub fn soul_loop_step(
     state_json: String,
     action_json: String,
@@ -893,7 +893,7 @@ pub fn soul_loop_step(
     }
 }
 
-#[napi(js_name = "soul_replay")]
+#[napi(catch_unwind, js_name = "soul_replay")]
 pub fn soul_replay(chain_name: String, blocks_json: String) -> String {
     let blocks: Vec<Block> = match serde_json::from_str(&blocks_json) {
         Ok(v) => v,
@@ -906,7 +906,7 @@ pub fn soul_replay(chain_name: String, blocks_json: String) -> String {
 
 // ── Case-based chain functions ────────────────────────────────────────
 
-#[napi(js_name = "case_append")]
+#[napi(catch_unwind, js_name = "case_append")]
 pub fn case_append(chain_json: String, entry_json: String, index_db_path: String) -> String {
     use memphis_case_index::CaseIndex;
     use memphis_core::block::{BlockData, BlockType};
@@ -989,7 +989,7 @@ pub fn case_append(chain_json: String, entry_json: String, index_db_path: String
     }))
 }
 
-#[napi(js_name = "case_query")]
+#[napi(catch_unwind, js_name = "case_query")]
 pub fn case_query(query_json: String, index_db_path: String) -> String {
     use memphis_case_index::CaseIndex;
     use memphis_core::case_entry::CaseQuery;
@@ -1013,7 +1013,7 @@ pub fn case_query(query_json: String, index_db_path: String) -> String {
     }
 }
 
-#[napi(js_name = "case_rebuild")]
+#[napi(catch_unwind, js_name = "case_rebuild")]
 pub fn case_rebuild(blocks_json: String, index_db_path: String) -> String {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         case_rebuild_inner(blocks_json, index_db_path)
@@ -1059,7 +1059,7 @@ fn pathbuf_to_string(p: std::path::PathBuf) -> Result<String, String> {
         .ok_or_else(|| "resolved path is not valid UTF-8".to_string())
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_resolve_data_dir(env_json: String, cwd: String) -> String {
     let env = match parse_env_json(&env_json) {
         Ok(env) => env,
@@ -1072,7 +1072,7 @@ pub fn paths_resolve_data_dir(env_json: String, cwd: String) -> String {
     }
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_resolve_vault_state(env_json: String, cwd: String) -> String {
     let env = match parse_env_json(&env_json) {
         Ok(env) => env,
@@ -1085,7 +1085,7 @@ pub fn paths_resolve_vault_state(env_json: String, cwd: String) -> String {
     }
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_resolve_vault_entries(env_json: String, cwd: String) -> String {
     let env = match parse_env_json(&env_json) {
         Ok(env) => env,
@@ -1098,7 +1098,7 @@ pub fn paths_resolve_vault_entries(env_json: String, cwd: String) -> String {
     }
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_resolve_chains_dir(env_json: String, cwd: String) -> String {
     let env = match parse_env_json(&env_json) {
         Ok(env) => env,
@@ -1111,7 +1111,7 @@ pub fn paths_resolve_chains_dir(env_json: String, cwd: String) -> String {
     }
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_resolve_chain_path(env_json: String, cwd: String, chain_name: String) -> String {
     let env = match parse_env_json(&env_json) {
         Ok(env) => env,
@@ -1124,7 +1124,7 @@ pub fn paths_resolve_chain_path(env_json: String, cwd: String, chain_name: Strin
     }
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_resolve_embed_index(env_json: String, cwd: String) -> String {
     let env = match parse_env_json(&env_json) {
         Ok(env) => env,
@@ -1137,7 +1137,7 @@ pub fn paths_resolve_embed_index(env_json: String, cwd: String) -> String {
     }
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_resolve_case_index(env_json: String, cwd: String) -> String {
     let env = match parse_env_json(&env_json) {
         Ok(env) => env,
@@ -1150,7 +1150,7 @@ pub fn paths_resolve_case_index(env_json: String, cwd: String) -> String {
     }
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_resolve_database_path(env_json: String, cwd: String) -> String {
     let env = match parse_env_json(&env_json) {
         Ok(env) => env,
@@ -1163,7 +1163,7 @@ pub fn paths_resolve_database_path(env_json: String, cwd: String) -> String {
     }
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_normalize_chain_name(input: String) -> String {
     ok(memphis_paths::normalize_chain_name(&input).to_string())
 }
@@ -1177,7 +1177,7 @@ pub fn paths_normalize_chain_name(input: String) -> String {
 // Buffer on the JS side automatically (napi v3). Don't switch to
 // hex-encoded strings — large exports (10MB+) pay 2x memory + 100ms
 // parse penalty for nothing.
-#[napi]
+#[napi(catch_unwind)]
 pub fn mv2_export(records_json: String, include_tracks_json: String) -> String {
     use memphis_export::{Mv2Record, Mv2Writer, Track};
 
@@ -1224,7 +1224,7 @@ pub fn mv2_export(records_json: String, include_tracks_json: String) -> String {
     })
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn mv2_inspect(bytes_hex: String) -> String {
     use memphis_export::Mv2Reader;
 

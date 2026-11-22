@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { dirname } from 'node:path';
 
+import { callBridge } from './bridge-envelope.js';
 import {
   hasRequiredBridgeExports,
   loadPlatformAwareBridge,
@@ -136,12 +137,6 @@ interface ResolvedLegacyVaultBridge {
   vault_init_json?: (requestJson: string) => string;
   vault_encrypt?: (key: string, plaintext: string) => string;
   vault_decrypt?: (entryJson: string) => string;
-}
-
-interface BridgeEnvelope<T> {
-  ok: boolean;
-  data?: T;
-  error?: string;
 }
 
 // v1 format: plaintext base64 master key (no version field)
@@ -475,17 +470,6 @@ function convertToJsVaultEntry(entry: VaultEntry, rawEnv: NodeJS.ProcessEnv): Js
   return result.entry;
 }
 
-function parseEnvelope<T>(raw: string): T {
-  const out = JSON.parse(raw) as BridgeEnvelope<T>;
-  if (!out.ok) {
-    throw new Error(out.error ?? 'rust bridge error');
-  }
-  if (out.data === undefined) {
-    throw new Error('rust bridge returned empty data');
-  }
-  return out.data;
-}
-
 export function getRustVaultAdapterStatus(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): RustVaultAdapterStatus {
@@ -652,9 +636,10 @@ function initializeVaultUnderLock(
     return { version: 1, did: result.did };
   }
 
-  if (typeof bridge.legacyContract.vault_init_json === 'function') {
-    const result = parseEnvelope<unknown>(
-      bridge.legacyContract.vault_init_json(JSON.stringify(input)),
+  const legacyInitJson = bridge.legacyContract.vault_init_json;
+  if (typeof legacyInitJson === 'function') {
+    const result = callBridge<unknown>('vault_init_json', () =>
+      legacyInitJson(JSON.stringify(input)),
     );
     // A TS type assertion does not strip private fields from a legacy ABI result.
     // Keep the public result explicit; the Rust compatibility payload is unchanged.
