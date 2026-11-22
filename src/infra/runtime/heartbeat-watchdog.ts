@@ -17,13 +17,16 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import os from 'node:os';
 import path from 'node:path';
 
-import { MEMPHIS_AGENT_NAME } from '../../config/env-registry.js';
+import { MEMPHIS_AGENT_NAME, LOG_LEVEL } from '../../config/env-registry.js';
 import { getConfigPath } from '../../config/paths.js';
 import { getActiveSurfacesSnapshot } from '../../core/surface-presence.js';
 import type { PulseEntry, PulseEventType } from '../../soul/types.js';
+import { createPinoLogger } from '../logging/pino.js';
 import { getChainAdapterStatus } from '../storage/chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 import { getRustVaultAdapterStatus } from '../storage/rust-vault-adapter.js';
+
+const watchdogLog = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
 
 export type WatchdogHealth = 'healthy' | 'degraded' | 'unhealthy';
 
@@ -72,7 +75,17 @@ export class HeartbeatWatchdog {
   /** Start the watchdog timer. */
   start(): void {
     if (this.timer) return;
-    this.timer = setInterval(() => void this.tick(), this.intervalMs);
+    // `void this.tick()` discards the promise, so a rejection would reach
+    // the process-level `unhandledRejection` handler. The timer callback
+    // owns the rejection instead of the process.
+    this.timer = setInterval(() => {
+      void this.tick().catch((err) => {
+        watchdogLog.warn(
+          { err, event: 'watchdog.tick.failed' },
+          'watchdog tick failed; the runtime keeps serving',
+        );
+      });
+    }, this.intervalMs);
     // Unref so the watchdog doesn't prevent process exit
     if (typeof this.timer === 'object' && 'unref' in this.timer) {
       this.timer.unref();
@@ -109,10 +122,27 @@ export class HeartbeatWatchdog {
     if (stateChanged) {
       const previous = this.currentHealth;
       this.currentHealth = health;
-      this.onStateChange?.(previous, health, heartbeat);
+      // The observers are notifications, not the measurement. A throwing
+      // observer must not fail the watchdog — the watchdog's whole job
+      // is to notice that something else is broken.
+      try {
+        this.onStateChange?.(previous, health, heartbeat);
+      } catch (err) {
+        watchdogLog.warn(
+          { err, event: 'watchdog.state_observer.failed' },
+          'watchdog state observer threw; the health check itself succeeded',
+        );
+      }
     }
 
-    this.onHeartbeat?.(heartbeat);
+    try {
+      this.onHeartbeat?.(heartbeat);
+    } catch (err) {
+      watchdogLog.warn(
+        { err, event: 'watchdog.heartbeat_observer.failed' },
+        'watchdog heartbeat observer threw; the health check itself succeeded',
+      );
+    }
 
     // Write PULSE on state changes or every 10 ticks (~10 minutes at default interval)
     if (stateChanged || this.tickCount % 10 === 0) {
