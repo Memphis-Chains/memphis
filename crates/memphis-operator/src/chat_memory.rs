@@ -140,6 +140,28 @@ fn write_soul_memory_atomic(path: &Path, value: &Value) -> Result<(), OperatorEr
 pub(crate) const GENESIS_PREV_HASH: &str =
     "0000000000000000000000000000000000000000000000000000000000000000";
 
+/// The chains a tool may append to when the operator names one explicitly.
+///
+/// Issue #645: there was no way to append to the soul chain — the only
+/// writer was an internal memory event, so an explicit entry meant
+/// hand-computing a chain hash and writing the block file by hand.
+///
+/// The TypeScript arm carries the same list in
+/// `src/memory/chain-catalog.ts` — `JOURNAL_TARGET_CHAINS`. Both are
+/// checked against `tests/fixtures/journal-target-chains-contract.json`,
+/// so the two arms cannot drift apart silently.
+///
+/// `system` and `security` are deliberately absent: they are written by
+/// the runtime's own audit path, which refuses writes from processes
+/// that have not opted in.
+pub const JOURNAL_TARGET_CHAINS: &[&str] =
+    &["journal", "soul", "reflections", "cases", "patterns"];
+
+/// Is this chain one a tool may write to on the operator's request?
+pub fn is_journal_target_chain(name: &str) -> bool {
+    JOURNAL_TARGET_CHAINS.contains(&name)
+}
+
 pub(crate) fn run_native_journal(
     runtime: &OperatorRuntime,
     content: &str,

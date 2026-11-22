@@ -251,6 +251,7 @@ pub(crate) fn record_span(
 
 /// Record a native tool call in the same shape the TypeScript agent loop
 /// emits, so one evaluator can read both surfaces.
+#[cfg(test)]
 pub(crate) fn record_tool_call(
     config: &OperatorConfig,
     tool_name: &str,
@@ -310,6 +311,7 @@ pub(crate) fn record_tool_call_for_turn(
 /// spans in window — last turn.dispatch span 3d ago" while the operator
 /// was talking to the cockpit every day. The TypeScript gateway emits
 /// the span; the native arm did not.
+#[cfg(test)]
 pub(crate) fn record_turn_dispatch(
     config: &OperatorConfig,
     session_id: &str,
@@ -360,6 +362,7 @@ pub(crate) fn record_turn_dispatch_for_turn(
 /// with status=error, so without this span the cockpit's provider
 /// failures are invisible: the report would keep quoting the gateway's
 /// last measurement, or say "no provider.completion spans in window".
+#[cfg(test)]
 pub(crate) fn record_provider_completion(
     config: &OperatorConfig,
     provider: &str,

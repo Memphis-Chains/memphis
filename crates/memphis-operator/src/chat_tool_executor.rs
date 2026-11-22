@@ -228,6 +228,7 @@ fn run_bounded_process(
     })
 }
 
+#[cfg(test)]
 pub(crate) fn execute_native_tool(
     runtime: &OperatorRuntime,
     call: &ChatToolCall,
@@ -899,7 +900,7 @@ fn execute_native_tool_inner(
                     .map_err(|e| OperatorError::Message(format!("web_fetch read failed: {}", e)))?;
                 break;
             }
-            let mut body = cut_on_char_boundary(&raw, max_bytes);
+            let body = cut_on_char_boundary(&raw, max_bytes);
 
             let truncated = raw.len() >= max_bytes;
             let json = serde_json::json!({

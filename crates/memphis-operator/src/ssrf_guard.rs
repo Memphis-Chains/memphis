@@ -23,12 +23,22 @@
 
 use std::net::{IpAddr, ToSocketAddrs};
 
-/// Whether the operator opened the private network for this surface.
-pub fn allow_private_network() -> bool {
-    parse_private_network_flag(
-        std::env::var("MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK").ok().as_deref(),
-    )
-}
+// NOTE: this module once also exposed `allow_private_network()`,
+// `assert_url_shape_safe()`, `assert_host_safe()` and `assert_url_safe()`
+// — the variants that read the private-network policy from the PROCESS
+// ENVIRONMENT. They were dead code, and the module's own reasoning says
+// why they must not come back:
+//
+//   the environment is global and the tests of one binary run in
+//   parallel, so a test that set MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK
+//   would change the behaviour of every other test running at that
+//   moment. The operator's own `.env` sets that variable, and it is
+//   exported into the environment the tests run in — so every rule this
+//   guard exists to enforce had NO coverage on the operator's machine:
+//   green because the guard was disabled, not because it worked.
+//
+// A convenience wrapper that silently disables the guard is worse than
+// no wrapper. The policy is always an argument now.
 
 /// Whether the operator opened the private network, read from the
 /// runtime configuration rather than from the process environment.
@@ -222,11 +232,6 @@ pub fn parse_url_shape(raw: &str) -> Result<UrlShape, String> {
     })
 }
 
-/// The first-pass check: the shape of the URL, before any DNS.
-pub fn assert_url_shape_safe(raw: &str) -> Result<UrlShape, String> {
-    assert_url_shape_safe_with(raw, allow_private_network())
-}
-
 /// The shape check with the private-network policy passed in.
 ///
 /// The policy is an argument, not a read of the process environment: the
@@ -259,14 +264,6 @@ pub fn assert_url_shape_safe_with(raw: &str, allow_private: bool) -> Result<UrlS
         ));
     }
     Ok(shape)
-}
-
-/// Resolve the host and refuse any address the tool must not reach.
-///
-/// A public name pointed at an internal address is the case this
-/// catches; a literal address never gets this far.
-pub fn assert_host_safe(host: &str) -> Result<(), String> {
-    assert_host_safe_with(host, allow_private_network())
 }
 
 /// The host check with the private-network policy passed in.
@@ -304,13 +301,6 @@ pub fn assert_host_safe_with(host: &str, allow_private: bool) -> Result<(), Stri
         }
     }
     Ok(())
-}
-
-/// The whole check: the shape of the URL, then the host behind it.
-pub fn assert_url_safe(raw: &str) -> Result<UrlShape, String> {
-    let shape = assert_url_shape_safe(raw)?;
-    assert_host_safe(&shape.host)?;
-    Ok(shape)
 }
 
 /// The whole check with the private-network policy passed in.

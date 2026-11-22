@@ -131,6 +131,7 @@ pub(crate) fn ensure_operation_tables(conn: &Connection) -> Result<(), OperatorE
 
 /// Record that a tool is about to run. Written before dispatch so a crash
 /// during the tool leaves a `started` row rather than no row at all.
+#[cfg(test)]
 pub(crate) fn record_operation_started(
     conn: &Connection,
     session_id: &str,
@@ -225,6 +226,7 @@ fn update_operation(
 }
 
 /// Operations of one session, newest first.
+#[cfg(test)]
 pub(crate) fn load_session_operations(
     conn: &Connection,
     session_id: &str,
