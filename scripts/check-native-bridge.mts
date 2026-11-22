@@ -30,6 +30,13 @@
  * 3. It is the same file as the release build the service installs —
  *    `target/release/libmemphis_napi.so`. Two artifacts that differ are
  *    the split brain.
+ * 4. Every N-API export is panic-proof. A Rust panic that unwinds
+ *    across the FFI boundary into an `extern "C"` symbol ABORTS the
+ *    process, and a JavaScript `try`/`catch` cannot intercept it. That
+ *    was the crash of 2026-09-22 (docs/design/MEMPHIS-CRASH-REBUILD.md
+ *    §2.2): 36 of the 37 exports had no protection. The protection is
+ *    `#[napi(catch_unwind)]`, and until now it was a CONVENTION — every
+ *    export carried it and nothing checked.
  *
  * A failure means: rebuild the bridge (`npm run build:rust:release`).
  *
@@ -41,6 +48,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
 import { bridgeDependencyClosure, newestBridgeSource } from './lib/native-bridge-graph.mts';
+import { findUnprotectedExports } from './lib/napi-panic-safety.mts';
 
 const REPO_ROOT = resolve('.');
 const CRATES_DIR = join(REPO_ROOT, 'crates');
@@ -53,6 +61,9 @@ interface Finding {
 }
 
 const findings: Finding[] = [];
+
+// The rule itself lives in a library so it can be tested directly:
+// `tests/unit/napi-panic-safety.test.ts`.
 
 /** Content hash — the shipped bridge is a copy, so timestamps lie. */
 function hashFile(path: string): string {
@@ -103,6 +114,22 @@ if (!existsSync(SHIPPED_BRIDGE)) {
         hint: 'run `npm run build:rust:release` — the shipped bridge was never refreshed',
       });
     }
+  }
+}
+
+const BRIDGE_SOURCE = join(CRATES_DIR, 'memphis-napi', 'src', 'lib.rs');
+
+if (existsSync(BRIDGE_SOURCE)) {
+  const unprotected = findUnprotectedExports(readFileSync(BRIDGE_SOURCE, 'utf8'));
+  if (unprotected.length > 0) {
+    findings.push({
+      problem:
+        `N-API export(s) without panic protection: ${unprotected.join(', ')} — ` +
+        'a Rust panic in one of them aborts the whole process, and JavaScript cannot catch it',
+      hint:
+        'add `catch_unwind` to the attribute: #[napi(catch_unwind, js_name = "...")] — ' +
+        'this is the crash of 2026-09-22 (docs/design/MEMPHIS-CRASH-REBUILD.md §2.2)',
+    });
   }
 }
 
