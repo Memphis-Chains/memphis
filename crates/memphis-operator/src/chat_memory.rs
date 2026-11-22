@@ -612,6 +612,14 @@ pub(crate) fn read_chain_blocks(chain_dir: &Path) -> Result<Vec<GenericChainBloc
     entries.sort_by_key(|entry| entry.file_name());
 
     let mut blocks = Vec::new();
+    // A rotated chain CONTINUES an archived prefix instead of starting at
+    // genesis. The marker carries the head of the archive, so the link
+    // from the live chain to the archive can be proven.
+    //
+    // Without this the validator rejected every rotated chain with
+    // "missing genesis block", which is why rotation was never enabled.
+    // See `chat_rotation_head.rs`.
+    let rotation_head = crate::chat_rotation_head::read_chain_rotation_head(chain_dir);
     for entry in entries {
         let value = serde_json::from_slice::<Value>(
             &fs::read(entry.path()).map_err(|error| OperatorError::Io(error.to_string()))?,
@@ -641,16 +649,31 @@ pub(crate) fn read_chain_blocks(chain_dir: &Path) -> Result<Vec<GenericChainBloc
                 .unwrap_or_default()
                 .to_string(),
         };
+        if blocks.is_empty() {
+            if crate::chat_rotation_head::is_valid_chain_start(
+                rotation_head.as_ref(),
+                block.index as i64,
+                block.prev_hash.as_str(),
+            ) {
+                verify_block_hash(&block)?;
+                blocks.push(block);
+                continue;
+            }
+        }
         validate_generic_block(&block, blocks.last())?;
         blocks.push(block);
     }
     Ok(blocks)
 }
 
-pub(crate) fn validate_generic_block(
-    block: &GenericChainBlock,
-    previous: Option<&GenericChainBlock>,
-) -> Result<(), OperatorError> {
+/// Verify the hash of one block against its canonical form.
+///
+/// Split out of `validate_generic_block` because the first live block of
+/// a ROTATED chain is validated against the rotation head instead of a
+/// previous block — and its hash still has to be checked. A block whose
+/// hash does not match its content is a tampered block, whether it is the
+/// first of the chain or the thousandth.
+fn verify_block_hash(block: &GenericChainBlock) -> Result<(), OperatorError> {
     // Use the canonical 3-field form of `data` (type/content/tags), matching
     // the TS-side chain-adapter writer. Without this, TS-written blocks with
     // extra fields (source, turn_id, conversation_id, session_id, consent,
@@ -671,6 +694,19 @@ pub(crate) fn validate_generic_block(
             block.chain, block.index
         )));
     }
+    Ok(())
+}
+
+pub(crate) fn validate_generic_block(
+    block: &GenericChainBlock,
+    previous: Option<&GenericChainBlock>,
+) -> Result<(), OperatorError> {
+    // Use the canonical 3-field form of `data` (type/content/tags), matching
+    // the TS-side chain-adapter writer. Without this, TS-written blocks with
+    // extra fields (source, turn_id, conversation_id, session_id, consent,
+    // ...) fail validation here with `chain integrity check failed for
+    // {chain}:{index} hash mismatch` even though they are valid.
+    verify_block_hash(block)?;
     match previous {
         None => {
             if block.index != 0 && block.index != 1 {

@@ -9,6 +9,11 @@ import * as chainCrypto from 'node:crypto';
 import { lstatSync, readdirSync } from 'node:fs';
 
 import { writeBlockAtomic } from './chain-file-io.js';
+import {
+  isValidChainStart,
+  readChainRotationHead,
+  ROTATION_HEAD_FILENAME,
+} from './chain-rotation-head.js';
 import { assertChainWriteAllowed } from './chain-write-guard.js';
 import { withChainWriteLock } from './chain-write-lock.js';
 import {
@@ -764,11 +769,28 @@ async function readAndValidateChainBlocks(
     }
 
     if (blocks.length === 0) {
+      // The chain may CONTINUE an archived prefix instead of starting at
+      // genesis. Rotation archives the old blocks and leaves a marker
+      // with the head of the archive; the first live block then links to
+      // that head, and the chain's history stays provable.
+      //
+      // Without this the validators rejected every rotated chain with
+      // "missing genesis block", which is why rotation was never
+      // enabled. See `src/infra/storage/chain-rotation-head.ts`.
+      const head = await readChainRotationHead(chainsDir);
+      if (isValidChainStart(head, current.index, current.prev_hash)) {
+        blocks.push(current);
+        continue;
+      }
       // Accept index 0 or 1 as valid genesis (Rust uses index 0, TS uses index 1)
       if (current.index !== 0 && current.index !== 1) {
         throw new Error(
           `chain '${chainName}' integrity check failed at block ${current.index} (${file}): ` +
-            `missing genesis block (chain must start at index 0 or 1)`,
+            `missing genesis block (chain must start at index 0 or 1` +
+            (head
+              ? `, or continue the archived prefix recorded in ${ROTATION_HEAD_FILENAME}`
+              : '') +
+            `)`,
         );
       }
       // For index=0 genesis: prev_hash must be GENESIS_PREV_HASH

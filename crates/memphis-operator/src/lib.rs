@@ -8,6 +8,7 @@ mod chat_lease;
 mod chat_memory;
 mod chat_operations;
 mod chat_prompt;
+pub mod chat_rotation_head;
 mod chat_session;
 mod chat_streaming;
 mod chat_tool_catalog;
@@ -61,3 +62,10 @@ pub use chat_memory::{is_chain_backup_directory, is_scannable_chain_directory_na
 /// the TypeScript arm is checked against. The fixture is what stops the
 /// two copies of this list from drifting apart.
 pub use chat_memory::{is_journal_target_chain, JOURNAL_TARGET_CHAINS};
+/// The rotation head contract — the marker that lets a rotated chain
+/// prove that it continues an archived prefix.
+///
+/// Exported so the contract test can check the native arm against
+/// `tests/fixtures/chain-rotation-head-contract.json`, the same fixture
+/// the TypeScript arm is checked against.
+pub use chat_rotation_head::{is_valid_chain_start, parse_chain_rotation_head, ChainRotationHead};
