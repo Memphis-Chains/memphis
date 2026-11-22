@@ -669,6 +669,29 @@ mode this repository already has a postmortem about.
 5. **The chain-name allowlist has two rules** — `SAFE_CHAIN_NAME` in
    TypeScript, ad-hoc predicates in Rust — with no parity fixture, the
    same defect §4 just fixed for the journal list.
+   **Closed 2026-11-22.** The parity fixture DID exist
+   (`tests/fixtures/chain-verify-contract.json`, read by
+   `tests/unit/mcp-chain-verify-contract.test.ts` and
+   `crates/memphis-operator/tests/chain_verify_contract.rs`) — which is
+   why this item was worded wrong. The real defect was NARROWER and
+   nastier: the corpus had twelve cases and none of them reached a shape
+   where the two rules differ, so both runners were GREEN while the rules
+   still disagreed.
+   Measured on this host over the real chain directories plus the edges:
+   the native arm accepted shapes the TypeScript registry refuses — a
+   plain name of sixty-five characters (`SAFE_CHAIN_NAME` caps it at
+   sixty-four) and a dated archive stamp that is not the
+   `YYYY-MM-DDTHH-MM-SS-mmmZ` form (the native rule asked only for
+   twenty-four characters ending in `Z` and containing a `T`). Two
+   directories, two arms, two answers.
+   The registry is the authority, so the native rule now matches it: the
+   plain-name limit, the dated stamp checked POSITION BY POSITION, and
+   the write-side validation (`validate_chain_name`) sharing the same
+   limit — it had none. The corpus grew to seventeen cases and reaches
+   both shapes; the Rust runner fails on them without the fix.
+   The lesson is the same one §2 and §4 taught: a gate is only as good
+   as the corpus it runs over, and a corpus nobody re-examines is a gate
+   that has stopped measuring.
 6. **The `insights` chain is 32 MB across 402 blocks.** Whatever writes
    it is writing payloads three orders of magnitude larger than a
    journal block.
