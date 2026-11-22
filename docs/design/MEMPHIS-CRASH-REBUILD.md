@@ -606,6 +606,18 @@ mode this repository already has a postmortem about.
    duplication; it did not remove the duplication. Collapsing them is
    the next stage, and it is the stage that needs the operator's
    decision about which arm survives.
+   **Partly closed 2026-11-22.** Inside the TypeScript arm the tool
+   CONTRACT is now one copy instead of three. The registry holds it;
+   the MCP server and the gateway executor derive their schemas from
+   it. 48 inline MCP schemas and 52 inline executor schemas are gone,
+   and the schema audit went from 40 divergences — a missing argument,
+   a wrong type, 38 differing constraints — to 0 across registry,
+   executor and MCP for all 64 tools. The divergence that bit was
+   `memphis_journal`: the gateway silently dropped the `chain`
+   argument, so the same call wrote to two different chains depending
+   on the surface. What remains is the SPLIT itself — the Rust operator
+   implements the same tools natively — and that still needs the
+   operator's decision about which arm survives.
 2. **The block hash had four implementations** in TypeScript
    (`rust-chain-adapter.ts`, `chain-canonical.ts`, `chain-adapter.ts` ×
    3, `security/integrity.ts`) against one in Rust. The Rust core is
@@ -675,6 +687,19 @@ validated and ignored, and the insights chain stored its duplicated
 evidence twice over because the chain adapter serialises the whole
 payload into `content`. Finding the copies was the work; the gates that
 now compare them are what keeps them from coming back.
+
+A later pass of the same day found the same shape in the skills. A
+skill lived in the repository and again in the runtime, with no
+manifest anywhere, so `memphis skills show halt-aware-destructive-ops`
+answered "manifest not found" for the guard every destructive operation
+passes through — and the runtime copy of `usb-grabber-feed` was the
+stale one of the two. The repository is now the single source of truth
+for every skill, the runtime holds a materialization of it, and the
+runtime audit grew a `skill-catalog` check that fails when a repository
+skill is invisible to the runtime or when the two copies differ. The
+`memphis_commit_culture` stub went the other way: a tool that never
+existed, described by an interface document with no implementation,
+which is what "remove what only looks like work" looks like.
 
 ---
 
