@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "memphis-hotfix",
+  "name": "Memphis Hotfix",
+  "description": "Drive a Memphis hotfix end-to-end with the cross-layer grid as a forcing function. Use when a bug may touch more than one layer — Rust core, NAPI bridge, TS host, CLI, doctor/status, tests — and paste the filled grid into the PR body. Skipping the grid is the number one source of dead-end fixes.",
+  "tags": ["coding", "debugging", "hotfix", "tests"],
+  "tools": ["memphis_code_read", "memphis_git", "memphis_grep", "memphis_test"],
+  "workflow": [
+    "COLLECT: state the scope in one sentence, quote the operator where possible, and name the references (PR numbers, memory entries, postmortems) that anchor the fix.",
+    "GRID: walk every row of the cross-layer grid — Rust core, NAPI bridge, TS host, CLI, Tauri, doctor/status, tests — and mark each one ✅ (touches), – (does not) or 🔧 (transparent rebuild). A row without a verdict is an unfinished grid.",
+    "IMPLEMENT: make the change, narrow first, then broaden the test run.",
+    "VERIFY: run the tests for the touched surface, then the wider suite.",
+    "REPORT: paste the grid into the PR body and state what changed, what was verified and what risk remains."
+  ],
+  "promptHints": [
+    "Ask the operator before coding when scope or affected layers are unclear.",
+    "A Rust change means the NAPI bridge row is 🔧 — the binary has to be rebuilt, and that is the memphis-rebuild-rust skill.",
+    "The tests row is ✅ always: at minimum a regression test for the bug being fixed."
+  ],
+  "examples": [
+    {
+      "prompt": "Napraw crash po zmianie w crates",
+      "outcome": "The skill fills the cross-layer grid first, so the Rust change, the NAPI rebuild, the TS rendering and the doctor hook are all decided before code is written."
+    }
+  ],
+  "notes": [
+    "Memphis spans Rust core → NAPI bridge → TS host → CLI, TUI, HTTP, MCP and Telegram surfaces. A bug that looks Rust-only almost always has a TS-side rendering and a test grid.",
+    "Tier 0: no vault and no passphrase."
+  ]
+}

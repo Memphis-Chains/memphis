@@ -14,6 +14,7 @@
  * between this and the six gates it replaces.
  */
 
+import type { SkillFact } from './skill-facts.js';
 import type { AuditCheckResult } from './types.js';
 
 const PASS: AuditCheckResult['verdict'] = 'success';
@@ -507,6 +508,131 @@ export function checkPostmortemStatus(input: PostmortemStatusInput): AuditCheckR
   };
 }
 
+/* ------------------------------------------------------------------ */
+/* S9 · one truth for the skills                                      */
+/* ------------------------------------------------------------------ */
+
+export interface SkillCatalogInput {
+  /** The skills the repository declares (`skills/<id>/`). */
+  readonly repoSkills: readonly SkillFact[];
+  /** The skills materialized in the runtime catalog (`~/.memphis/skills/catalog/<id>/`). */
+  readonly catalogSkills: readonly SkillFact[];
+  /** The skills registered as installed (`~/.memphis/skills/installed/<id>/`). */
+  readonly installedSkills: readonly SkillFact[];
+}
+
+/**
+ * The skills are one truth, and the runtime holds the copy of it.
+ *
+ * What is drift:
+ *   - a repository skill that the runtime does not know. The MCP
+ *     server reads the runtime catalog, so such a skill is INVISIBLE:
+ *     `memphis skills show` answers "manifest not found" and no tool
+ *     can reach it. Measured on this host before this check existed:
+ *     the HALT skill — the guard every destructive operation goes
+ *     through — was one of them.
+ *   - a repository skill with no manifest at all. It cannot be
+ *     materialized, so it can never reach the runtime.
+ *   - a materialized copy whose content differs from the repository
+ *     copy. The copy is fine; the copy WITHOUT A COMPARISON is not.
+ *
+ * What is NOT drift:
+ *   - a skill that lives only in the runtime. Those are the operator's
+ *     host skills (`jdg-psa-plan-editor`, `vault-pat-verify`); the
+ *     repository is not obliged to carry them. They are reported, so
+ *     the reader can see where a skill lives.
+ */
+export function checkSkillCatalog(input: SkillCatalogInput): AuditCheckResult {
+  const title = 'the skills are one truth, and the runtime holds the copy';
+  if (input.repoSkills.length === 0) {
+    return {
+      id: 'skill-catalog',
+      title,
+      verdict: UNKNOWN,
+      summary: 'the repository skills directory could not be read',
+      details: [],
+    };
+  }
+
+  const catalog = new Map(input.catalogSkills.map((fact) => [fact.id, fact]));
+  const installed = new Map(input.installedSkills.map((fact) => [fact.id, fact]));
+
+  const details: string[] = [];
+  const missingFromCatalog: string[] = [];
+  const missingFromInstalled: string[] = [];
+  const drifted: string[] = [];
+  const withoutManifest: string[] = [];
+
+  for (const repoSkill of input.repoSkills) {
+    if (!repoSkill.manifestDigest) {
+      withoutManifest.push(repoSkill.id);
+      continue;
+    }
+
+    const catalogFact = catalog.get(repoSkill.id);
+    const installedFact = installed.get(repoSkill.id);
+    if (!catalogFact) {
+      missingFromCatalog.push(repoSkill.id);
+    }
+    if (!installedFact) {
+      missingFromInstalled.push(repoSkill.id);
+    }
+
+    // Compare against the installed copy when there is one — that is the
+    // copy the runtime actually serves — and against the catalog copy
+    // otherwise, so a half-materialized skill still reports its drift.
+    const runtimeFact = installedFact ?? catalogFact;
+    if (!runtimeFact) continue;
+
+    if (repoSkill.skillMdDigest !== runtimeFact.skillMdDigest) {
+      drifted.push(`${repoSkill.id} (SKILL.md differs)`);
+    }
+    if (repoSkill.manifestDigest !== runtimeFact.manifestDigest) {
+      drifted.push(`${repoSkill.id} (manifest differs)`);
+    }
+    if (runtimeFact.manifestUnreadable) {
+      drifted.push(`${repoSkill.id} (runtime manifest unreadable)`);
+    }
+  }
+
+  const repoIds = new Set(input.repoSkills.map((fact) => fact.id));
+  const runtimeOnly = [...new Set([...catalog.keys(), ...installed.keys()])]
+    .filter((id) => !repoIds.has(id))
+    .sort((left, right) => left.localeCompare(right));
+
+  if (withoutManifest.length > 0) {
+    details.push(`no manifest, so it can never reach the runtime: ${withoutManifest.join(', ')}`);
+  }
+  if (missingFromCatalog.length > 0) {
+    details.push(
+      `in the repository but not in the runtime catalog — invisible to the MCP server: ${missingFromCatalog.join(', ')}`,
+    );
+  }
+  if (missingFromInstalled.length > 0) {
+    details.push(`in the repository but not installed: ${missingFromInstalled.join(', ')}`);
+  }
+  if (drifted.length > 0) {
+    details.push(`the runtime copy differs from the repository copy: ${drifted.join(', ')}`);
+  }
+  if (runtimeOnly.length > 0) {
+    details.push(`living only in the runtime (operator host skills): ${runtimeOnly.join(', ')}`);
+  }
+
+  const failed =
+    withoutManifest.length > 0 ||
+    missingFromCatalog.length > 0 ||
+    missingFromInstalled.length > 0 ||
+    drifted.length > 0;
+
+  return {
+    id: 'skill-catalog',
+    title,
+    verdict: failed ? FAIL : PASS,
+    summary: `repo=${input.repoSkills.length} catalog=${input.catalogSkills.length} installed=${input.installedSkills.length} drift=${drifted.length || 'none'} invisible=${missingFromCatalog.length || 'none'}`,
+    details,
+  };
+}
+
 export const AUDIT_CHECK_IDS = [
   'chain-registry',
   'block-vocabulary',
@@ -516,4 +642,5 @@ export const AUDIT_CHECK_IDS = [
   'branch-boundary',
   'gate-coverage',
   'postmortem-status',
+  'skill-catalog',
 ] as const;

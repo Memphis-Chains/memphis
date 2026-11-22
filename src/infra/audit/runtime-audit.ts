@@ -37,13 +37,15 @@ import {
   checkGateCoverage,
   checkHealthReporting,
   checkPostmortemStatus,
+  checkSkillCatalog,
   checkSloReporting,
   type UnreadableBlock,
 } from './checks.js';
 import { readPostmortemCorpus } from './postmortem-corpus.js';
+import { readSkillFact, type SkillFact } from './skill-facts.js';
 import { inventoryUnitFiles, listUnitsUnderTest } from './systemd-unit-scope.js';
 import { worstVerdict, type AuditCheckResult, type RuntimeAuditReport } from './types.js';
-import { getChainPath } from '../../config/paths.js';
+import { getChainPath, getSkillsPath } from '../../config/paths.js';
 import { runMemphisSloStatus } from '../../mcp/tools/slo-status.js';
 import {
   getChainNames,
@@ -629,6 +631,50 @@ async function collectPostmortemStatus(repoRoot: string | null): Promise<{
 }
 
 /* ------------------------------------------------------------------ */
+/* the skills                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Read every skill directory under a root.
+ *
+ * A directory is a skill when it holds a `SKILL.md`. The manifest is
+ * NOT required for the directory to be a skill — a skill without a
+ * manifest is exactly the hole this measurement has to see, so it must
+ * still be listed.
+ */
+async function collectSkillFacts(root: string): Promise<SkillFact[]> {
+  const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
+  const dirs = entries.filter((entry) => entry.isDirectory() || entry.isSymbolicLink());
+  const facts: SkillFact[] = [];
+  for (const entry of dirs) {
+    const skillDir = path.join(root, entry.name);
+    const hasSkillMd = await fs
+      .stat(path.join(skillDir, 'SKILL.md'))
+      .then(() => true)
+      .catch(() => false);
+    if (!hasSkillMd) continue;
+    facts.push(await readSkillFact(skillDir, entry.name));
+  }
+  return facts.sort((left, right) => left.id.localeCompare(right.id));
+}
+
+async function collectSkillCatalog(
+  rawEnv: NodeJS.ProcessEnv,
+  repoRoot: string | null,
+): Promise<{
+  repoSkills: SkillFact[];
+  catalogSkills: SkillFact[];
+  installedSkills: SkillFact[];
+}> {
+  const skillsRoot = getSkillsPath(rawEnv);
+  return {
+    repoSkills: repoRoot ? await collectSkillFacts(path.join(repoRoot, 'skills')) : [],
+    catalogSkills: await collectSkillFacts(path.join(skillsRoot, 'catalog')),
+    installedSkills: await collectSkillFacts(path.join(skillsRoot, 'installed')),
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* the audit                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -660,6 +706,7 @@ export async function runRuntimeAudit(
   const branchFacts = await collectBranchBoundary(repoRoot);
   const gateFacts = await collectGateCoverage(repoRoot);
   const postmortemFacts = await collectPostmortemStatus(repoRoot);
+  const skillFacts = await collectSkillCatalog(rawEnv, repoRoot);
 
   const checks: AuditCheckResult[] = [
     checkChainRegistry(registryFacts),
@@ -678,6 +725,7 @@ export async function runRuntimeAudit(
     checkBranchBoundary(branchFacts),
     checkGateCoverage(gateFacts),
     checkPostmortemStatus(postmortemFacts),
+    checkSkillCatalog(skillFacts),
   ];
 
   const overall = worstVerdict(checks.map((check) => check.verdict));
