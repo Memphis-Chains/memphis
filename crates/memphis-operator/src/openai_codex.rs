@@ -153,7 +153,11 @@ fn read_account_model_catalog_at(codex_home: &Path) -> Option<Vec<CodexAccountMo
         .iter()
         .filter_map(|entry| {
             let record = entry.as_object()?;
-            let slug = record.get("slug").and_then(Value::as_str)?.trim().to_string();
+            let slug = record
+                .get("slug")
+                .and_then(Value::as_str)?
+                .trim()
+                .to_string();
             if slug.is_empty() {
                 return None;
             }
@@ -1054,7 +1058,10 @@ mod tests {
 
         let models = read_account_model_catalog(&config).expect("catalog");
         assert_eq!(
-            models.iter().map(|model| model.slug.as_str()).collect::<Vec<_>>(),
+            models
+                .iter()
+                .map(|model| model.slug.as_str())
+                .collect::<Vec<_>>(),
             vec!["gpt-6.1-sol", "gpt-6-astra", "gpt-reserve"]
         );
         // 500000 granted pool * 95% share = 475000 usable tokens.

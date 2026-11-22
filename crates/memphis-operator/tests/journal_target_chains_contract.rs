@@ -26,11 +26,15 @@ const FIXTURE: &str = include_str!("../../../tests/fixtures/journal-target-chain
 
 #[test]
 fn the_native_arm_agrees_with_the_contract() {
-    let fixture: Value = serde_json::from_str(FIXTURE).expect("the contract fixture must be valid JSON");
+    let fixture: Value =
+        serde_json::from_str(FIXTURE).expect("the contract fixture must be valid JSON");
     let expected = fixture["chains"]
         .as_array()
         .expect("the contract fixture must hold a chains array");
-    assert!(!expected.is_empty(), "the contract fixture must not be empty");
+    assert!(
+        !expected.is_empty(),
+        "the contract fixture must not be empty"
+    );
 
     let actual: Vec<&str> = JOURNAL_TARGET_CHAINS.to_vec();
     let expected: Vec<String> = expected
@@ -44,8 +48,7 @@ fn the_native_arm_agrees_with_the_contract() {
         .collect();
 
     assert_eq!(
-        actual,
-        expected,
+        actual, expected,
         "the native journal-target allowlist disagrees with the contract"
     );
 }

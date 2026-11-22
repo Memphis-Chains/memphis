@@ -6,8 +6,8 @@
 //! A change in one arm that the other does not share fails a test in
 //! BOTH languages — that is the whole point of the table.
 
-use std::collections::BTreeMap;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 
 use memphis_operator::brave_search::{search_with, BraveSearchInput};
 use serde_json::Value;
@@ -64,7 +64,9 @@ fn query_params(url: &str) -> BTreeMap<String, String> {
 fn the_native_arm_agrees_with_the_typescript_arm() {
     let fixture: Value =
         serde_json::from_str(FIXTURE).expect("the contract fixture must be valid JSON");
-    let cases = fixture["cases"].as_array().expect("the fixture must carry cases");
+    let cases = fixture["cases"]
+        .as_array()
+        .expect("the fixture must carry cases");
     assert!(!cases.is_empty(), "the contract table must not be empty");
 
     let mut failures: Vec<String> = Vec::new();

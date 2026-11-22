@@ -266,11 +266,7 @@ pub type Fetcher<'a> = &'a dyn Fn(&str, &str) -> Result<(u16, String), String>;
 /// This is the shared contract: the TypeScript arm's tool function and
 /// this function must answer the same way for the same input and the
 /// same response.
-pub fn search_with(
-    input: &BraveSearchInput,
-    key: &str,
-    fetcher: Fetcher<'_>,
-) -> BraveSearchOutput {
+pub fn search_with(input: &BraveSearchInput, key: &str, fetcher: Fetcher<'_>) -> BraveSearchOutput {
     let limit = resolve_limit(input.limit);
 
     // The order of the refusals is the TypeScript arm's order: the query
@@ -292,7 +288,10 @@ pub fn search_with(
     let (status, body) = match fetcher(&url, key) {
         Ok(response) => response,
         Err(message) => {
-            return BraveSearchOutput::failure(&input.query, format!("Brave Search failed: {message}"))
+            return BraveSearchOutput::failure(
+                &input.query,
+                format!("Brave Search failed: {message}"),
+            )
         }
     };
 
@@ -330,9 +329,7 @@ pub fn search(config: &OperatorConfig, input: &BraveSearchInput) -> BraveSearchO
     let raw = config.env(KEY_ENV).unwrap_or_default().trim().to_string();
     let effective = resolve_credential(config, &raw);
     let timeout_ms = brave_timeout_ms();
-    search_with(input, &effective, &|url, key| {
-        fetch(url, key, timeout_ms)
-    })
+    search_with(input, &effective, &|url, key| fetch(url, key, timeout_ms))
 }
 
 /// Turn a configured value into a usable credential.

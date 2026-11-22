@@ -49,13 +49,18 @@ struct SoulMemoryLock(rusqlite::Connection);
 
 impl SoulMemoryLock {
     fn acquire(path: &Path) -> Result<Self, OperatorError> {
-        let parent = path.parent().ok_or_else(|| OperatorError::Io("soul memory has no parent".into()))?;
+        let parent = path
+            .parent()
+            .ok_or_else(|| OperatorError::Io("soul memory has no parent".into()))?;
         fs::create_dir_all(parent).map_err(|error| OperatorError::Io(error.to_string()))?;
         let mut legacy_name = path.as_os_str().to_os_string();
         legacy_name.push(".lock");
         let legacy_path = PathBuf::from(legacy_name);
         let reject_legacy = || match fs::symlink_metadata(&legacy_path) {
-            Ok(_) => Err(OperatorError::Io(format!("legacy soul-memory lock exists: {}; operator inspection required", legacy_path.display()))),
+            Ok(_) => Err(OperatorError::Io(format!(
+                "legacy soul-memory lock exists: {}; operator inspection required",
+                legacy_path.display()
+            ))),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
             Err(error) => Err(OperatorError::Io(error.to_string())),
         };
@@ -65,21 +70,40 @@ impl SoulMemoryLock {
         let lock_path = PathBuf::from(lock_name);
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
-        #[cfg(unix)] { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
         match options.open(&lock_path) {
             Ok(file) => drop(file),
             Err(error) if error.kind() == ErrorKind::AlreadyExists => (),
             Err(error) => return Err(OperatorError::Io(error.to_string())),
         }
-        let metadata = fs::symlink_metadata(&lock_path).map_err(|e| OperatorError::Io(e.to_string()))?;
-        if !metadata.is_file() { return Err(OperatorError::Io(format!("unsafe soul-memory lock file: {}", lock_path.display()))); }
-        #[cfg(unix)] {
-            use std::os::unix::fs::PermissionsExt;
-            if metadata.permissions().mode() & 0o077 != 0 { return Err(OperatorError::Io(format!("unsafe soul-memory lock file: {}", lock_path.display()))); }
+        let metadata =
+            fs::symlink_metadata(&lock_path).map_err(|e| OperatorError::Io(e.to_string()))?;
+        if !metadata.is_file() {
+            return Err(OperatorError::Io(format!(
+                "unsafe soul-memory lock file: {}",
+                lock_path.display()
+            )));
         }
-        let db = rusqlite::Connection::open(&lock_path).map_err(|e| OperatorError::Io(e.to_string()))?;
-        db.busy_timeout(std::time::Duration::from_secs(5)).map_err(|e| OperatorError::Io(e.to_string()))?;
-        db.execute_batch("BEGIN IMMEDIATE").map_err(|e| OperatorError::Io(e.to_string()))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if metadata.permissions().mode() & 0o077 != 0 {
+                return Err(OperatorError::Io(format!(
+                    "unsafe soul-memory lock file: {}",
+                    lock_path.display()
+                )));
+            }
+        }
+        let db =
+            rusqlite::Connection::open(&lock_path).map_err(|e| OperatorError::Io(e.to_string()))?;
+        db.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e| OperatorError::Io(e.to_string()))?;
+        db.execute_batch("BEGIN IMMEDIATE")
+            .map_err(|e| OperatorError::Io(e.to_string()))?;
         reject_legacy()?;
         Ok(Self(db))
     }
@@ -94,12 +118,20 @@ impl Drop for SoulMemoryLock {
 }
 
 fn write_soul_memory_atomic(path: &Path, value: &Value) -> Result<(), OperatorError> {
-    let parent = path.parent().ok_or_else(|| OperatorError::Io("soul memory has no parent".into()))?;
-    let bytes = serde_json::to_vec_pretty(value).map_err(|error| OperatorError::Json(error.to_string()))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| OperatorError::Io("soul memory has no parent".into()))?;
+    let bytes =
+        serde_json::to_vec_pretty(value).map_err(|error| OperatorError::Json(error.to_string()))?;
     let nonce = TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_nanos()).unwrap_or(0);
-    let temporary = parent.join(format!(".soul-memory.tmp-{}-{nanos}-{nonce}", std::process::id()));
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or(0);
+    let temporary = parent.join(format!(
+        ".soul-memory.tmp-{}-{nanos}-{nonce}",
+        std::process::id()
+    ));
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -107,16 +139,22 @@ fn write_soul_memory_atomic(path: &Path, value: &Value) -> Result<(), OperatorEr
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options.open(&temporary).map_err(|error| OperatorError::Io(error.to_string()))?;
+    let mut file = options
+        .open(&temporary)
+        .map_err(|error| OperatorError::Io(error.to_string()))?;
     let result = (|| -> Result<(), OperatorError> {
-        file.write_all(&bytes).map_err(|error| OperatorError::Io(error.to_string()))?;
-        file.sync_all().map_err(|error| OperatorError::Io(error.to_string()))?;
+        file.write_all(&bytes)
+            .map_err(|error| OperatorError::Io(error.to_string()))?;
+        file.sync_all()
+            .map_err(|error| OperatorError::Io(error.to_string()))?;
         // Match the existing TypeScript snapshot ring while holding the same lock.
         if path.exists() {
             for index in (1..8).rev() {
                 let source = format!("{}.bak-{index}", path.display());
                 let target = format!("{}.bak-{}", path.display(), index + 1);
-                if Path::new(&source).exists() { let _ = fs::rename(source, target); }
+                if Path::new(&source).exists() {
+                    let _ = fs::rename(source, target);
+                }
             }
             let backup = format!("{}.bak-1", path.display());
             if fs::copy(path, &backup).is_ok() {
@@ -129,10 +167,14 @@ fn write_soul_memory_atomic(path: &Path, value: &Value) -> Result<(), OperatorEr
         }
         fs::rename(&temporary, path).map_err(|error| OperatorError::Io(error.to_string()))?;
         #[cfg(unix)]
-        fs::File::open(parent).and_then(|dir| dir.sync_all()).map_err(|error| OperatorError::Io(error.to_string()))?;
+        fs::File::open(parent)
+            .and_then(|dir| dir.sync_all())
+            .map_err(|error| OperatorError::Io(error.to_string()))?;
         Ok(())
     })();
-    if result.is_err() { let _ = fs::remove_file(&temporary); }
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
     result
 }
 
@@ -154,8 +196,7 @@ pub(crate) const GENESIS_PREV_HASH: &str =
 /// `system` and `security` are deliberately absent: they are written by
 /// the runtime's own audit path, which refuses writes from processes
 /// that have not opted in.
-pub const JOURNAL_TARGET_CHAINS: &[&str] =
-    &["journal", "soul", "reflections", "cases", "patterns"];
+pub const JOURNAL_TARGET_CHAINS: &[&str] = &["journal", "soul", "reflections", "cases", "patterns"];
 
 /// Is this chain one a tool may write to on the operator's request?
 pub fn is_journal_target_chain(name: &str) -> bool {
@@ -560,11 +601,7 @@ fn create_unique_temp_file(
 /// stay untouched. The temp file is removed after the attempt, whether
 /// it won or lost, so a scratch file never survives to be mistaken for
 /// a chain block.
-fn publish_chain_block(
-    chain_dir: &Path,
-    index: u64,
-    bytes: &[u8],
-) -> Result<(), OperatorError> {
+fn publish_chain_block(chain_dir: &Path, index: u64, bytes: &[u8]) -> Result<(), OperatorError> {
     let file_path = chain_dir.join(format!("{index:06}.json"));
     let tmp_path = create_unique_temp_file(chain_dir, index, bytes)?;
 

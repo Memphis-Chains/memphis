@@ -51,7 +51,11 @@ use std::net::{IpAddr, ToSocketAddrs};
 /// `MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK=true`, and it is exported
 /// into the environment the tests run in.
 pub fn allow_private_network_in(raw_env: &std::collections::HashMap<String, String>) -> bool {
-    parse_private_network_flag(raw_env.get("MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK").map(|v| v.as_str()))
+    parse_private_network_flag(
+        raw_env
+            .get("MEMPHIS_WEB_FETCH_ALLOW_PRIVATE_NETWORK")
+            .map(|v| v.as_str()),
+    )
 }
 
 fn parse_private_network_flag(value: Option<&str>) -> bool {
@@ -214,7 +218,9 @@ pub fn parse_url_shape(raw: &str) -> Result<UrlShape, String> {
         }
     } else {
         match host_port.rsplit_once(':') {
-            Some((host, port)) if port.chars().all(|c| c.is_ascii_digit()) && !port.is_empty() => host,
+            Some((host, port)) if port.chars().all(|c| c.is_ascii_digit()) && !port.is_empty() => {
+                host
+            }
             _ => host_port,
         }
     };
@@ -454,7 +460,8 @@ mod tests {
     #[test]
     fn a_private_ip_literal_is_refused() {
         assert_eq!(
-            assert_url_shape_safe_with("http://169.254.169.254/latest/meta-data/", false).unwrap_err(),
+            assert_url_shape_safe_with("http://169.254.169.254/latest/meta-data/", false)
+                .unwrap_err(),
             "URL blocked: private/internal IP literal (169.254.169.254)"
         );
         assert_eq!(
