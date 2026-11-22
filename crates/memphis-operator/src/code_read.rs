@@ -227,6 +227,14 @@ pub fn assert_write_contained(resolved: &Path, home: &Path) -> Result<(), String
 ///
 /// The walk follows every component that is a link, at any depth, and
 /// stops at 40 hops like the kernel does for a link loop.
+///
+/// PUBLIC because the write path needs it too: a request that names a
+/// symlink has to be resolved the same way the read path resolves it, and
+/// a second copy of this resolver is a rule that drifts.
+pub fn realpath_resolving(path: &Path) -> PathBuf {
+    realpath_resolving_links(path, 0)
+}
+
 fn realpath_resolving_links(path: &Path, depth: usize) -> PathBuf {
     if depth > 40 {
         return path.to_path_buf();

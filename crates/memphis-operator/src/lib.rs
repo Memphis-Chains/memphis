@@ -9,6 +9,7 @@ mod chat_memory;
 mod chat_operations;
 mod chat_prompt;
 pub mod chat_rotation_head;
+mod chat_self_modify;
 mod chat_session;
 mod chat_streaming;
 mod chat_tool_catalog;
@@ -68,6 +69,13 @@ pub use chat_memory::{is_journal_target_chain, JOURNAL_TARGET_CHAINS};
 /// `tests/fixtures/chain-rotation-head-contract.json`, the same fixture
 /// the TypeScript arm is checked against.
 pub use chat_rotation_head::{is_valid_chain_start, parse_chain_rotation_head, ChainRotationHead};
+/// The self-modify request contract — the registry's five arguments, the
+/// rules they obey and the canonical payload they become.
+///
+/// Exported so the contract test can check the native arm against
+/// `tests/fixtures/self-modify-contract.json`, the same fixture the
+/// TypeScript arm is checked against.
+pub use chat_self_modify::{canonical_self_modify_request, SelfModifyRequest};
 pub use code_read::{
     assert_not_blocked, assert_not_write_blocked, assert_within_read_roots, assert_within_roots,
     resolve_path, split_lines,

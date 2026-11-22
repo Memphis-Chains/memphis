@@ -15,7 +15,9 @@
 //! Measured 2026-11-22: before this file existed the cockpit advertised
 //! five tools with different arguments than the registry — including
 //! `memphis_self_modify`, which under one name meant "write one file"
-//! and under the other "apply changes to many files".
+//! and under the other "apply changes to many files". All five are
+//! closed: every tool here is projected from the registry, and the
+//! contract declares no divergence.
 
 /// The contract of every tool the native surface offers.
 pub(crate) const NATIVE_TOOL_CONTRACT_JSON: &str = r#"{
@@ -645,6 +647,54 @@ pub(crate) const NATIVE_TOOL_CONTRACT_JSON: &str = r#"{
       }
     },
     {
+      "name": "memphis_self_modify",
+      "description": "Submit a code-change request for local operator review",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "intent": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Operator-facing one-liner: what the change does"
+          },
+          "files": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Repository-relative paths to change"
+          },
+          "changes": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The complete new content of each path, keyed by that path"
+          },
+          "plan_id": {
+            "type": "string",
+            "description": "The self-coding plan this change belongs to"
+          },
+          "step_idx": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "The index of the plan step this change implements"
+          }
+        },
+        "required": [
+          "intent",
+          "files",
+          "changes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "memphis_soul_read",
       "description": "Read soul memory",
       "input_schema": {
@@ -827,11 +877,5 @@ pub(crate) const NATIVE_TOOL_CONTRACT_JSON: &str = r#"{
       }
     }
   ],
-  "divergences": [
-    {
-      "name": "memphis_self_modify",
-      "reason": "under one name the registry means \"apply changes to many files, with a snapshot and a test run\"; the native tool writes ONE file. Same name, two different operations.",
-      "closure": "implement the registry semantics natively, or rename the native operation so the name stops lying"
-    }
-  ]
+  "divergences": []
 }"#;

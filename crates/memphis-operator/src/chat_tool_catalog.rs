@@ -18,27 +18,26 @@
 //! in one place, so the policy a model sees and the policy the runtime
 //! enforces are reviewed together.
 
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::provider::ChatToolDefinition;
 
 /// The tools the native surface advertises.
 ///
-/// Two parts, and the difference between them is the point:
+/// Every tool is a PROJECTED tool: its schema comes from the TypeScript
+/// registry through `chat_tool_contract.rs` — a JSON projection of it,
+/// checked by this crate's own test against
+/// `tests/fixtures/native-tool-contract.json`.
 ///
-///   - the PROJECTED tools, whose schemas come from the TypeScript
-///     registry through `chat_tool_contract.rs` — a JSON projection of it,
-///     checked by this crate's own test against
-///     `tests/fixtures/native-tool-contract.json`;
-///   - the DIVERGENT tools, whose native implementation does not (yet)
-///     honour the registry, so they keep a schema that says what the
-///     native surface actually accepts.
-///
-/// Before the projection, the hand-written schemas were a second copy of
-/// the registry with nothing comparing them. Measured 2026-11-22: five of
-/// the 23 tools advertised different arguments than the registry, and
-/// `memphis_self_modify` under one name meant "write one file" and under
-/// the other "apply changes to many files".
+/// There used to be a second part: the DIVERGENT tools, whose native
+/// implementation did not honour the registry and so kept a hand-written
+/// schema saying what the native surface actually accepted. The last one
+/// was `memphis_self_modify`, which under one name meant "write one file"
+/// and under the other "apply changes to many files". Its native arm now
+/// implements the registry's semantics
+/// (`chat_self_modify.rs`), so the divergent list is empty — and a list
+/// that is empty is dead weight, so it is gone rather than kept as a
+/// placeholder for the next divergence.
 ///
 /// The contract is parsed once and cached: the cockpit builds its tool
 /// list per turn, and re-parsing it per turn would be waste.
@@ -54,7 +53,7 @@ pub(crate) fn native_tool_definitions() -> Vec<ChatToolDefinition> {
                 .and_then(Value::as_array)
                 .expect("the native tool contract must carry a tools array");
 
-            let mut definitions: Vec<ChatToolDefinition> = tools
+            tools
                 .iter()
                 .map(|tool| ChatToolDefinition {
                     name: tool
@@ -72,93 +71,9 @@ pub(crate) fn native_tool_definitions() -> Vec<ChatToolDefinition> {
                         .cloned()
                         .expect("a tool must carry an input schema"),
                 })
-                .collect();
-
-            definitions.extend(native_divergent_definitions());
-            definitions
+                .collect()
         })
         .clone()
-}
-
-/// The tools whose native implementation does NOT implement the registry's
-/// contract.
-///
-/// Measured 2026-11-22, five of the 23 native tools advertised different
-/// arguments than the registry does. For the other eighteen the executor
-/// already honoured the registry — their schemas are projected from it (see
-/// `chat_tool_contract.rs`). For these five it does not, so they keep a
-/// schema that says what the native surface ACTUALLY accepts, and the
-/// difference is declared in
-/// `tests/fixtures/native-tool-contract.json` with the reason and the work
-/// that closes it.
-///
-/// The native surface must not advertise what it cannot execute: a schema
-/// that promises `chain` and then writes to the default chain is the same
-/// class of bug as a schema that promises the wrong argument names.
-pub(crate) fn native_divergent_definitions() -> Vec<ChatToolDefinition> {
-    vec![
-        ChatToolDefinition {
-                name: "memphis_self_modify".to_string(),
-                description: "Submit a proposed complete file replacement for local operator review. No file is written until the operator runs evolve prepare in a local terminal; no password should be sent to the agent.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "path": { "type": "string", "description": "File path to write" },
-                        "content": { "type": "string", "description": "Full file content to write" },
-                        "mode": { "type": "string", "enum": ["write"], "description": "Submit full replacement content" }
-                    },
-                    "required": ["path", "content"]
-                }),
-            },
-    ]
-}
-
-pub(crate) fn case_entry_schema() -> Value {
-    json!({
-        "type": "object",
-        "description": "Case chain entry. case_type selects the variant and determines the other fields. Send arrays as bare JSON arrays, never wrapped in an object.",
-        "properties": {
-            "case_type": {
-                "type": "string",
-                "enum": [
-                    "nominative", "genitive", "dative", "accusative",
-                    "instrumental", "locative", "ablative", "vocative"
-                ],
-                "description": "Case entry type. Required by the serde-tagged enum."
-            },
-            "entity": { "type": "string", "description": "nominative/locative/ablative: the subject." },
-            "action": { "type": "string", "description": "nominative: what the entity did." },
-            "timestamp": { "type": "string", "description": "nominative: when it happened." },
-            "owner": { "type": "string", "description": "genitive: who holds it." },
-            "possessed": { "type": "string", "description": "genitive: what is held." },
-            "giver": { "type": "string", "description": "dative: who gives." },
-            "recipient": { "type": "string", "description": "dative: who receives." },
-            "object": { "type": "string", "description": "dative/accusative: the object acted on." },
-            "subject": { "type": "string", "description": "accusative: who acts." },
-            "verb": { "type": "string", "description": "accusative: the action performed." },
-            "actor": { "type": "string", "description": "instrumental: who acts." },
-            "instrument": { "type": "string", "description": "instrumental: the means used." },
-            "target": { "type": "string", "description": "instrumental/vocative: the recipient of the action." },
-            "location": { "type": "string", "description": "locative: where." },
-            "origin": { "type": "string", "description": "ablative: where from." },
-            "destination": { "type": "string", "description": "ablative: optional where to." },
-            "invoker": { "type": "string", "description": "vocative: who calls." },
-            "invocation": { "type": "string", "description": "vocative: the call itself." },
-            "content": { "type": "string", "description": "Free-text body for the entry." },
-            "chain": { "type": "string", "description": "Chain the entry belongs to." },
-            "kind": { "type": "string", "description": "Entry kind (bookkeeping)." },
-            "role": { "type": "string", "description": "Entry role (bookkeeping)." },
-            "source": { "type": "string", "description": "Where the entry came from." },
-            "requestId": { "type": "string", "description": "Request identifier (bookkeeping)." },
-            "action_kind": { "type": "string", "description": "Action label (bookkeeping)." },
-            "tags": {
-                "type": "array",
-                "items": { "type": "string" },
-                "description": "Tags. Bare JSON array — never {\"item\": [...]}.",
-                "examples": [["instance-council-response", "collective"]]
-            }
-        }
-    })
 }
 
 /// Tier for every tool the native surface exposes.
@@ -248,8 +163,18 @@ mod contract_tests {
         );
     }
 
+    /// Every native tool comes from the projection.
+    ///
+    /// The cockpit used to keep a hand-written schema for the tools whose
+    /// native implementation did not honour the registry, and the
+    /// difference was declared in the fixture. The last such tool,
+    /// `memphis_self_modify`, now implements the registry's semantics, so
+    /// there is nothing left to declare — and a tool that drifts back into
+    /// a second, hand-written schema must fail HERE rather than in
+    /// production, where the model would be taught a shape the surface
+    /// does not accept.
     #[test]
-    fn the_divergent_tools_are_declared_in_the_fixture() {
+    fn every_native_tool_comes_from_the_projection() {
         let document = fixture();
         let declared: Vec<&str> = document["divergences"]
             .as_array()
@@ -258,18 +183,11 @@ mod contract_tests {
             .filter_map(|entry| entry.get("name").and_then(Value::as_str))
             .collect();
 
-        let divergent = native_divergent_definitions();
-        let offered: Vec<&str> = divergent.iter().map(|tool| tool.name.as_str()).collect();
-
-        assert_eq!(
-            offered, declared,
-            "the tools the cockpit keeps its own schema for must be the ones the contract declares as divergent"
+        assert!(
+            declared.is_empty(),
+            "the cockpit's tools all implement the registry, so the contract must declare no divergence — found: {declared:?}"
         );
-    }
 
-    #[test]
-    fn the_projection_and_the_divergences_cover_every_native_tool() {
-        let document = fixture();
         let projected: Vec<&str> = document["tools"]
             .as_array()
             .expect("tools array")
@@ -277,19 +195,13 @@ mod contract_tests {
             .filter_map(|tool| tool.get("name").and_then(Value::as_str))
             .collect();
 
-        let divergent = native_divergent_definitions();
-        let mut offered: Vec<&str> = projected.clone();
-        offered.extend(divergent.iter().map(|tool| tool.name.as_str()));
+        let definitions = native_tool_definitions();
+        let advertised: Vec<&str> = definitions.iter().map(|tool| tool.name.as_str()).collect();
 
         assert_eq!(
-            offered.len(),
-            projected.len() + divergent.len(),
-            "no native tool may be offered twice"
+            advertised, projected,
+            "the cockpit must advertise exactly the projected tools"
         );
-        let mut unique = offered.clone();
-        unique.sort_unstable();
-        unique.dedup();
-        assert_eq!(unique.len(), offered.len(), "no native tool may be offered twice");
     }
 
     /// The cockpit's prose must describe fields that EXIST. A description

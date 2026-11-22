@@ -23,7 +23,7 @@ use crate::chat_basal::{
     read_basal_json, BASAL_DEFAULT_URL, BASAL_TIMEOUT_SECS,
 };
 use crate::chat_guards::{
-    build_wrapped_segment, emit_runtime_security_event, scan_code_change_content, sha256_hex,
+    build_wrapped_segment, sha256_hex,
 };
 use crate::chat_memory::{
     append_case_entry, append_generic_block, is_scannable_chain_directory_name,
@@ -31,12 +31,11 @@ use crate::chat_memory::{
     run_native_chain_query, run_native_journal, run_soul_read, run_soul_write,
     search_result_to_json, value_string_array, value_usize,
 };
+use crate::chat_self_modify::{assert_inside_runtime_root, canonical_self_modify_request};
 use crate::chat_tool_catalog::tool_tier;
 use crate::code_read::{
     assert_not_blocked as assert_code_read_path_not_blocked,
-    assert_not_write_blocked as assert_code_read_path_not_write_blocked,
     assert_within_read_roots as assert_code_read_within_read_roots,
-    assert_write_contained as assert_code_read_write_contained,
     resolve_path as resolve_code_read_path, split_lines as split_code_read_lines,
     CODE_READ_MAX_CONTENT_CHARS,
 };
@@ -1134,119 +1133,31 @@ fn execute_native_tool_inner(
             ))
         }
         "memphis_self_modify" => {
-            use std::fs;
+            // The registry's contract, applied natively: the same five
+            // arguments, the same rules, the same canonical payload the
+            // gateway queues. The cockpit used to accept {path, content,
+            // mode} under this name and write ONE file — a second
+            // operation under one name. The rule lives in
+            // `canonical_self_modify_request` (chat_self_modify.rs), and
+            // the case table in tests/fixtures/self-modify-contract.json
+            // checks it against the TypeScript arm.
+            let canonical = canonical_self_modify_request(&call.arguments)
+                .map_err(OperatorError::Message)?;
 
-            let path_str = call
-                .arguments
-                .get("path")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    OperatorError::Message("memphis_self_modify requires path".to_string())
-                })?;
-            let content = call
-                .arguments
-                .get("content")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    OperatorError::Message("memphis_self_modify requires content".to_string())
-                })?;
-            let mode = call
-                .arguments
-                .get("mode")
-                .and_then(Value::as_str)
-                .unwrap_or("write");
-
-            // Refuse before touching the filesystem. The MCP surface has
-            // run this scan since the code-change profile landed; the native
-            // tool did not, so content that gets refused over MCP would have
-            // been written verbatim here -- on the authoritative surface.
-            if let Err((pattern_id, reason)) = scan_code_change_content(content) {
-                emit_runtime_security_event(
-                    runtime,
-                    "content_scan.self_modify.blocked",
-                    "blocked",
-                    json!({
-                        "patternId": pattern_id,
-                        "reason": reason,
-                        "profile": "code-change",
-                        "path": path_str,
-                        "contentHash": sha256_hex(content.as_bytes()),
-                    }),
-                )?;
-                return Err(OperatorError::Message(format!(
-                    "Blocked self-modify content for {path_str}: {reason}"
-                )));
-            }
-
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-            let home_path = std::path::Path::new(&home);
-            // The rules the read path applies, in the same words: resolve
-            // the path the way the other arm resolves it, refuse the
-            // blocked segments by name, and refuse a target that leaves
-            // ~/memphis/ through a symlink.
-            //
-            // Checking only that the path sat under ~/memphis/ left the
-            // write path able to write .env, .git/ and node_modules/ --
-            // the very segments the read path refuses -- and to write
-            // through a symlink straight out of the workspace.
-            let resolved = resolve_code_read_path(path_str, home_path);
-            if let Err(reason) = assert_code_read_path_not_write_blocked(&resolved) {
-                return Err(OperatorError::Message(reason));
-            }
-            if let Err(reason) = assert_code_read_write_contained(&resolved, home_path) {
-                return Err(OperatorError::Message(reason));
+            // The native arm's own boundary: a queued request must not name
+            // a file that leaves the runtime repository through a symlink.
+            // The shared rule refuses a path that NAMES something outside;
+            // this refuses a path that POINTS there.
+            let root = fs::canonicalize(&runtime.config.runtime_root).map_err(|_| {
+                OperatorError::Message("runtime repository root is unavailable".into())
+            })?;
+            for file in &canonical.request.files {
+                assert_inside_runtime_root(&root, file).map_err(OperatorError::Message)?;
             }
 
             // Queue only a proposal. Operator authentication and all code
             // writes happen later in the local Node CLI, never in the model.
-            if call.arguments.get("passphrase").is_some() {
-                return Err(OperatorError::Message(
-                    "Do not send a passphrase to the agent; use local evolve prepare".into(),
-                ));
-            }
-            if mode != "write" {
-                return Err(OperatorError::Message(
-                    "Submit complete replacement content; append is not supported".into(),
-                ));
-            }
-            let root = fs::canonicalize(&runtime.config.runtime_root).map_err(|_| {
-                OperatorError::Message("runtime repository root is unavailable".into())
-            })?;
-            let relative = resolved
-                .strip_prefix(&runtime.config.runtime_root)
-                .map_err(|_| {
-                    OperatorError::Message("path is outside the active runtime repository".into())
-                })?;
-            let relative = relative
-                .to_str()
-                .ok_or_else(|| OperatorError::Message("path is not valid UTF-8".into()))?;
-            if relative.is_empty()
-                || relative.split('/').any(|part| {
-                    part.is_empty()
-                        || part.starts_with('.')
-                        || part == "dist"
-                        || part == "node_modules"
-                        || part == "vault"
-                })
-                || relative.contains('\\')
-            {
-                return Err(OperatorError::Message(
-                    "request contains a forbidden file path".into(),
-                ));
-            }
-            let mut changes = serde_json::Map::new();
-            changes.insert(relative.to_string(), Value::String(content.to_string()));
-            let payload = serde_json::to_string(&json!({
-                "intent": format!("Native proposal: {relative}"),
-                "files": [relative], "changes": changes,
-            }))
-            .map_err(|error| OperatorError::Json(error.to_string()))?;
-            if payload.len() > 1_048_576 {
-                return Err(OperatorError::Message(
-                    "evolution request exceeds one MiB".into(),
-                ));
-            }
-            let digest = sha256_hex(payload.as_bytes());
+            let digest = sha256_hex(canonical.payload.as_bytes());
             let db = crate::chat_session::open_sqlite_rw(&runtime.config.database_path)?;
             db.execute_batch("CREATE TABLE IF NOT EXISTS evolve_requests (id TEXT PRIMARY KEY, root TEXT NOT NULL, payload TEXT NOT NULL, digest TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','preparing','prepared','failed')), created_at TEXT NOT NULL, expires_at_ms INTEGER NOT NULL, session_id TEXT)")
                 .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
@@ -1259,7 +1170,7 @@ fn execute_native_tool_inner(
                 rusqlite::params![
                     id,
                     root.to_string_lossy().as_ref(),
-                    payload,
+                    canonical.payload,
                     digest,
                     "pending",
                     now.to_rfc3339(),

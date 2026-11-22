@@ -88,6 +88,7 @@ import {
   isToolEnabledByFeatureFlag,
 } from '../gateway/tool-registry.js';
 import { loadConfig } from '../infra/config/env.js';
+import { canonicalEvolveRequest } from '../infra/runtime/evolve-request.js';
 import { resolveInstallRoot } from '../infra/runtime/install-root.js';
 import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import { createSqliteClient, runMigrations } from '../infra/storage/sqlite/client.js';
@@ -203,15 +204,6 @@ function optionalBooleanArg(args: Record<string, unknown>, key: string): boolean
   return typeof value === 'boolean' ? value : undefined;
 }
 
-function optionalNonnegativeIntegerArg(
-  args: Record<string, unknown>,
-  key: string,
-): number | undefined {
-  const value = optionalNumberArg(args, key);
-  if (value === undefined) return undefined;
-  return Number.isInteger(value) && value >= 0 ? value : undefined;
-}
-
 function optionalIntegerInRangeArg(
   args: Record<string, unknown>,
   key: string,
@@ -232,29 +224,6 @@ function requiredStringArg(args: Record<string, unknown>, key: string): string {
     throw new Error(`MCP tool argument ${key} must be a string`);
   }
   return value;
-}
-
-function requiredStringArrayArg(args: Record<string, unknown>, key: string): string[] {
-  const value = args[key];
-  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
-    throw new Error(`MCP tool argument ${key} must be a string array`);
-  }
-  return value;
-}
-
-function requiredStringRecordArg(
-  args: Record<string, unknown>,
-  key: string,
-): Record<string, string> {
-  const value = args[key];
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error(`MCP tool argument ${key} must be a string record`);
-  }
-  const entries = Object.entries(value);
-  if (!entries.every(([, entryValue]) => typeof entryValue === 'string')) {
-    throw new Error(`MCP tool argument ${key} must be a string record`);
-  }
-  return Object.fromEntries(entries) as Record<string, string>;
 }
 
 /**
@@ -1290,13 +1259,10 @@ export function createMemphisMcpServer(
       withApprovalGate('memphis_self_modify', selfModifyPolicy, approvals, async (args) => {
         const request = evolveDeps.sessionRepo
           .requestStore()
-          .create(resolveInstallRoot({ rawEnv }), {
-            intent: requiredStringArg(args, 'intent'),
-            files: requiredStringArrayArg(args, 'files'),
-            changes: requiredStringRecordArg(args, 'changes'),
-            plan_id: optionalStringArg(args, 'plan_id'),
-            step_idx: optionalNonnegativeIntegerArg(args, 'step_idx'),
-          });
+          .create(
+            resolveInstallRoot({ rawEnv }),
+            canonicalEvolveRequest(args).request,
+          );
         const result = {
           status: 'operator-review-required',
           requestId: request.id,
