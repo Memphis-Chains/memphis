@@ -62,6 +62,16 @@ jobs:
         # reads the gateway refused. Regenerate, never hand-edit.
         run: npm run -s ops:sync-native-tiers -- --check
 
+      - name: Native tool contract matches the TypeScript registry
+        # The cockpit advertised its own copy of every tool's input schema,
+        # hand-written in Rust, and nothing compared the two. Measured
+        # 2026-11-22: five of the 23 native tools advertised different
+        # arguments than the registry, and `memphis_self_modify` under one
+        # name meant "write one file" and under the other "apply changes
+        # to many files". The contract is projected from the registry;
+        # regenerate, never hand-edit.
+        run: npm run -s ops:sync-native-tool-contract -- --check
+
       - name: Landing page metrics match measured values
         # The metric strip, the typed terminal and the noscript fallback all
         # quote one operator instance's block and chain counts. They were
