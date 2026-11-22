@@ -10,6 +10,20 @@ use memphis_embed::{
     set_shutdown_barrier, EmbedConfig, EmbedMode, EmbedPersistenceConfig,
     EmbedPersistenceLoadState, EmbedPipeline, ReplacementState,
 };
+// `napi-derive` does NOT generate the export registration when it expands
+// under `cfg(test)` — see `gen_fn_register` in napi-derive-backend, which
+// returns an empty token stream when `cfg!(test)` is true. The result is that
+// under `cargo test` nothing references these functions, and the dead-code
+// lint reports every one of them as unused.
+//
+// They are not unused. `src/infra/storage/rust-bridge-manifest.ts` and
+// `rust-vault-adapter.ts` map all six of them onto the JS surface, and the
+// production build -- where the registration IS generated -- exports them.
+// The lint is measuring the test build, not the code.
+//
+// The allow is scoped to `cfg(test)` on purpose: in a normal build the
+// registration exists and the lint has nothing to say.
+#[cfg_attr(test, allow(dead_code))]
 mod vault_bridge;
 
 use memphis_vault::types::VaultInitRequest;
