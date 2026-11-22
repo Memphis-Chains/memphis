@@ -258,6 +258,41 @@ export function getExportableByDefaultChains(): ChainName[] {
   return getChainNames().filter((name) => CHAIN_CATALOG[name].consentDefault === 'exportable');
 }
 
+/**
+ * The chains a tool may write to when the operator names one explicitly.
+ *
+ * Issue #645: the operator asked to append an entry to the soul chain
+ * and there was no way to do it. `memphis_journal` wrote to the journal,
+ * `memphis_soul_write` wrote to the config file, and the only writer to
+ * the soul chain was an internal memory event. The operator had to
+ * hand-compute a SHA-256 chain hash and write the block file by hand.
+ *
+ * This is the allowlist for that path. It is deliberately narrow: the
+ * chains an operator-facing tool may append to on request, and nothing
+ * else. `system` and `security` are audit-guarded
+ * (`AUDIT_GUARDED_CHAINS`) and are not here.
+ *
+ * The Rust arm carries the same list in
+ * `crates/memphis-operator/src/chat_memory.rs` — `JOURNAL_TARGET_CHAINS`.
+ * Both are checked against the same fixture,
+ * `tests/fixtures/journal-target-chains-contract.json`, so the two arms
+ * cannot drift apart silently.
+ */
+export const JOURNAL_TARGET_CHAINS = [
+  'journal',
+  'soul',
+  'reflections',
+  'cases',
+  'patterns',
+] as const;
+
+export type JournalTargetChain = (typeof JOURNAL_TARGET_CHAINS)[number];
+
+/** Is this chain one a tool may write to on the operator's request? */
+export function isJournalTargetChain(name: string): name is JournalTargetChain {
+  return (JOURNAL_TARGET_CHAINS as readonly string[]).includes(name);
+}
+
 export function getChainDefinition(name: string): ChainDefinition | undefined {
   // Codex follow-up on this PR: use Object.hasOwn to avoid prototype-chain
   // lookups returning inherited members (toString, __proto__, etc.) for

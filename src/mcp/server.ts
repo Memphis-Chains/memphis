@@ -401,16 +401,34 @@ export function createMemphisMcpServer(
         inputSchema: {
           content: z.string().min(1),
           tags: z.array(z.string()).optional(),
+          // Which chain to append to. Issue #645: the operator had no
+          // way to append to the soul chain at all. The allowlist lives
+          // in `JOURNAL_TARGET_CHAINS` and is enforced at the tool
+          // boundary (`runMemphisJournal`), so an unsupported chain is
+          // refused rather than written somewhere else.
+          //
+          // The enum here and the allowlist there must agree: the
+          // contract test in
+          // tests/unit/journal-target-chains-contract.test.ts checks
+          // this list against the same fixture the native arm reads.
+          chain: z
+            .enum(['journal', 'soul', 'reflections', 'cases', 'patterns'])
+            .optional(),
           approval_request_id: z.string().optional(),
         },
       },
-      withApprovalGate('memphis_journal', journalPolicy, approvals, async ({ content, tags }) => {
-        const result = await runMemphisJournal({ content, tags });
+      withApprovalGate(
+        'memphis_journal',
+        journalPolicy,
+        approvals,
+        async ({ content, tags, chain }) => {
+        const result = await runMemphisJournal({ content, tags, chain });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
           structuredContent: result as unknown as Record<string, unknown>,
         };
-      }),
+        },
+      ),
     );
   }
 
