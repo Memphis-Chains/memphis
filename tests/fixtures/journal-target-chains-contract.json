@@ -1,0 +1,4 @@
+{
+  "comment": "The chains a tool may append to when the operator names one explicitly. `system` and `security` are deliberately absent: they are written by the runtime's own audit path, which refuses writes from processes that have not opted in. Both arms — TypeScript (src/memory/chain-catalog.ts) and Rust (crates/memphis-operator/src/chat_memory.rs) — read THIS file, so the two lists cannot drift apart. The arms are tests/unit/journal-target-chains-contract.test.ts and crates/memphis-operator/tests/journal_target_chains_contract.rs.",
+  "chains": ["journal", "soul", "reflections", "cases", "patterns"]
+}
