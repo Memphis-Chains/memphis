@@ -220,18 +220,6 @@ pub(crate) fn case_entry_schema() -> Value {
     })
 }
 
-///
-/// The definitions come from `chat_tool_contract.rs` — a JSON projection
-/// of the TypeScript registry, checked by the operator crate's own test
-/// against `tests/fixtures/native-tool-contract.json`. The hand-written
-/// schemas that used to live here were a second copy of the registry:
-/// measured 2026-11-22, five of the 23 tools advertised different
-/// arguments than the registry does, and `memphis_self_modify` under one
-/// name meant "write one file" and under the other "apply changes to
-/// many files".
-///
-/// The contract is parsed once and cached: the cockpit builds its tool
-/// list per turn, and re-parsing 18 KB of JSON per turn would be waste.
 /// Tier for every tool the native surface exposes.
 ///
 /// GENERATED — do not edit by hand. Source of truth is
