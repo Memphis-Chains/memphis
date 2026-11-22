@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Rozmowa z Memphisem</title>
-  <meta name="description" content="Zadaj pytanie po polsku lokalnemu modelowi Memphisa." />
+  <meta name="description" content="Porozmawiaj po polsku z Memphisem. Wybierz MiniMax-M3 lub lokalnego Bielika." />
   <meta name="robots" content="index,follow" />
   <link rel="stylesheet" href="style.css" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -33,11 +33,16 @@
         <span class="title-accent">Memphis</span> Chat
       </h1>
       <p class="chat-sub">
-        Zadaj pytanie po polsku. Odpowiada model działający na komputerze Memphisa.
+        Zadaj pytanie po polsku. Wybierz, kto odpowie.
       </p>
       <div class="chat-meta">
-        <span class="pill">Do 10 wiadomości na godzinę z jednego adresu sieciowego</span>
+        <label for="mode">Model</label>
+        <select id="mode" aria-describedby="model-note">
+          <option value="auto">MiniMax-M3 przez internet</option>
+          <option value="local">Bielik lokalnie</option>
+        </select>
       </div>
+      <p class="chat-sub" id="model-note">Basal sprawdza pytanie na komputerze Memphisa. MiniMax otrzymuje wiadomość, dwie ostatnie wymiany i pasujący jawny fragment pamięci. Gdy usługa jest niedostępna, odpowiada lokalny Bielik.</p>
     </section>
 
     <section class="chat-window" aria-live="polite" aria-label="Historia rozmowy">
@@ -94,6 +99,6 @@
     </div>
   </footer>
 
-  <script src="chat.js?v=20261118" defer></script>
+  <script src="chat.js?v=20261119-2" defer></script>
 </body>
 </html>
