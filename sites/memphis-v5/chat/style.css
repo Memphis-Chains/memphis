@@ -155,7 +155,17 @@ textarea, input {
 .chat-meta {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+}
+.chat-meta select {
+  font: inherit;
+  color: var(--fg);
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color-scheme: dark;
 }
 .pill {
   font-family: var(--mono);
