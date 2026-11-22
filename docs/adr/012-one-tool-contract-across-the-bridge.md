@@ -146,7 +146,7 @@ which is exactly what ADR-011's Layer 1 extraction makes possible.
 
 ## What was closed, and what closing it taught
 
-Three of the five declared divergences are closed as of 2026-11-22, each with a
+Four of the five declared divergences are closed as of 2026-11-22, each with a
 falsifier. What the closure taught is more useful than the closure itself.
 
 | Divergence | Closed by | The difference it hid |
@@ -161,13 +161,16 @@ a difference in what the tool ANSWERS — the filters, the normalisation, the
 order. A schema that matches on both sides is not a guarantee that the two
 surfaces answer the same way.
 
-So the closure added a SECOND axis: a behaviour contract. The first one is
-`tests/fixtures/classify-criteria-contract.json`, read by both arms
-(`tests/unit/classify-criteria-contract.test.ts` and
-`crates/memphis-operator/tests/classify_criteria_contract.rs`) — the pattern the
-journal-target allowlist already uses, applied to a rule that had been copied
-rather than shared. The rule now lives in ONE function per arm and is checked
-against ONE table of cases.
+So the closure added a SECOND axis: a behaviour contract. Two of them so far:
+
+| Fixture | What it pins | Arms |
+| --- | --- | --- |
+| `tests/fixtures/classify-criteria-contract.json` | how `criteria` becomes options | `tests/unit/classify-criteria-contract.test.ts` · `crates/memphis-operator/tests/classify_criteria_contract.rs` |
+| `tests/fixtures/case-append-contract.json` | which entry a call carries — the wrapped form and the flat form | `tests/unit/case-append-contract.test.ts` · `crates/memphis-operator/tests/case_append_contract.rs` |
+
+Both use the pattern the journal-target allowlist already uses, applied to rules
+that had been COPIED rather than shared. Each rule now lives in ONE function per
+arm and is checked against ONE table of cases.
 
 ### The one difference this ADR does NOT close
 
@@ -197,7 +200,7 @@ cannot execute is the same class of bug as one that promises the wrong argument 
 | `memphis_journal` | the registry declares `chain`; the native journal ignores it | plumb the chain through `run_native_journal`, validated by `is_journal_target_chain` | **closed** 2026-11-22 |
 | `memphis_chain_query` | the registry declares `offset` and `blockType`; the native arm reads neither | apply both natively, mirroring the gateway tool | **closed** 2026-11-22 |
 | `memphis_classify` | the registry's `criteria` is a union; the native arm reads only the object form | accept the array form natively, mirroring the gateway's `normalizeCriteria` | **closed** 2026-11-22 |
-| `memphis_case_append` | the registry accepts the flat case fields; the native arm reads only `entry` | accept the flat form natively, mirroring the gateway's `normalizeCaseAppendInput` | open |
+| `memphis_case_append` | the registry accepts the flat case fields; the native arm reads only `entry` | ONE normalisation, shared, checked from both arms against ONE fixture | the hand-written schema advertised an `entry.tags` field the case entry DOES NOT HAVE — the block's tags are derived — so the model was taught to send a field the surface dropped | **closed** 2026-11-22 |
 | `memphis_self_modify` | same name, two different operations | implement the registry semantics natively, or rename the native operation so the name stops lying | open |
 
 Closing them is mechanical except the last one, which is a decision about what the cockpit
