@@ -586,6 +586,7 @@ mod tests {
         assert_eq!(parsed["errorMessage"], "502");
     }
 
+    #[test]
     fn failed_tool_calls_are_recorded_as_errors() {
         let dir = std::env::temp_dir().join(format!(
             "memphis-native-telemetry-err-{}",

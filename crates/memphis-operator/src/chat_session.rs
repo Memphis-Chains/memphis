@@ -485,15 +485,6 @@ pub(crate) fn drop_orphaned_tool_rows(rows: Vec<StoredChatMessage>) -> Vec<Store
         .collect()
 }
 
-#[cfg(test)]
-pub(crate) fn persist_chat_messages(
-    conn: &Connection,
-    session_id: &str,
-    messages: &[MessageToPersist],
-) -> Result<(), OperatorError> {
-    persist_chat_messages_and_complete(conn, session_id, messages, None)
-}
-
 pub(crate) fn persist_chat_messages_and_complete(
     conn: &Connection,
     session_id: &str,

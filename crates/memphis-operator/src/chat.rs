@@ -1095,22 +1095,16 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use memphis_core::case_entry::{CaseEntry, CaseQuery};
+    use memphis_core::case_entry::CaseEntry;
     use serde_json::Value;
 
     use crate::chat_basal::{classify_reply_to_json, parse_basal_threshold};
-    use crate::chat_guards::{
-        load_json_file, scan_code_change_content, scan_memory_content, secret_exfiltration_patterns,
-    };
+    use crate::chat_guards::{load_json_file, scan_memory_content};
     use crate::chat_memory::{
         append_generic_block, ensure_soul_manifest, read_chain_blocks, run_native_journal,
-        run_soul_read, run_soul_write, validate_soul_update_shape, SOUL_LIST_FIELDS,
-        SOUL_SCALAR_FIELDS, SOUL_SECTIONS,
+        run_soul_write, SOUL_LIST_FIELDS, SOUL_SCALAR_FIELDS, SOUL_SECTIONS,
     };
-    use crate::chat_session::{
-        drop_orphaned_tool_rows, load_chat_rows, persist_chat_messages, StoredChatMessage,
-        DEFAULT_CHAT_SESSION_ID,
-    };
+    use crate::chat_session::{drop_orphaned_tool_rows, StoredChatMessage};
     use crate::chat_tool_executor::{cut_on_char_boundary, execute_native_tool};
     use crate::provider::ChatToolCall;
     use std::path::PathBuf;
