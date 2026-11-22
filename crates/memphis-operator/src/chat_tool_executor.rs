@@ -354,7 +354,13 @@ fn execute_native_tool_inner(
                     OperatorError::Message("memphis_journal requires content".to_string())
                 })?;
             let tags = value_string_array(call.arguments.get("tags"));
-            let result = run_native_journal(runtime, content, tags)?;
+            // The chain travels with the call. It used to be dropped here,
+            // so the cockpit wrote to the journal chain while the gateway
+            // wrote to the chain the model asked for — the same call, two
+            // different results. The name is validated against
+            // `JOURNAL_TARGET_CHAINS` inside the tool.
+            let chain = call.arguments.get("chain").and_then(Value::as_str);
+            let result = run_native_journal(runtime, content, tags, chain)?;
             let json = serde_json::to_string(&result)
                 .map_err(|error| OperatorError::Json(error.to_string()))?;
             Ok((
@@ -2054,6 +2060,72 @@ mod tests {
         assert_eq!(output.exit_code, 0);
         assert!(output.truncated);
         assert!(output.stdout.len() <= 32_001);
+    }
+
+    /// The cockpit must honour the chain the model named.
+    ///
+    /// Before ADR-012 the native arm dropped the `chain` argument and
+    /// wrote to the journal chain, while the gateway wrote to the chain
+    /// that was asked for: the same call, two different results, on two
+    /// surfaces of the same product. The registry declares `chain`, so
+    /// the native side has to honour it.
+    #[test]
+    fn the_journal_writes_to_the_chain_the_model_named() {
+        let root = temp_root("journal-chain");
+        let runtime = runtime_for(&root);
+        let call = ChatToolCall {
+            id: "call-journal-chain".to_string(),
+            name: "memphis_journal".to_string(),
+            arguments: json!({ "content": "entry for the cases chain", "chain": "cases" }),
+        };
+
+        execute_native_tool(&runtime, &call, 2).expect("the journal write must succeed");
+
+        let chains = root.join("chains");
+        assert!(
+            chains.join("cases").exists(),
+            "the entry must land in the chain the model named; chains: {:?}",
+            std::fs::read_dir(&chains)
+                .map(|entries| {
+                    entries
+                        .filter_map(Result::ok)
+                        .map(|entry| entry.file_name())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        );
+        assert!(
+            !chains.join("journal").exists(),
+            "the entry must NOT also land in the default chain — that was the divergence"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// A chain a tool may not write to is refused, and refusing it must
+    /// write nothing.
+    ///
+    /// `system` and `security` are the runtime's own audit chains. A
+    /// model that could name one would write wherever it was pointed.
+    #[test]
+    fn the_journal_refuses_a_chain_a_tool_may_not_write() {
+        let root = temp_root("journal-refused-chain");
+        let runtime = runtime_for(&root);
+        let call = ChatToolCall {
+            id: "call-journal-refused".to_string(),
+            name: "memphis_journal".to_string(),
+            arguments: json!({ "content": "entry for an audit chain", "chain": "system" }),
+        };
+
+        let (_display, payload) = execute_native_tool(&runtime, &call, 2).expect("a refusal is an answer, not a crash");
+        assert!(
+            native_tool_result_failed(&call.name, &payload),
+            "the refusal must be reported as a failed tool result"
+        );
+        assert!(
+            !root.join("chains").join("system").exists(),
+            "a refused chain must not be written to"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

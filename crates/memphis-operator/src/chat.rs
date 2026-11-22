@@ -1412,6 +1412,7 @@ mod tests {
             &runtime,
             "Memphis exact recall stores this sentence",
             vec!["memory".to_string()],
+            None,
         )
         .expect("journal write");
         assert!(result.success);
@@ -3696,7 +3697,7 @@ mod tests {
             "Background context. ".repeat(30)
         );
         let written =
-            crate::chat_memory::run_native_journal(&runtime, &content, vec!["fixture".into()])
+            crate::chat_memory::run_native_journal(&runtime, &content, vec!["fixture".into()], None)
                 .unwrap();
         assert!(written.success);
         let reopened = runtime_for(&root);
@@ -3723,7 +3724,7 @@ mod tests {
         let root = temp_runtime_root("recall-chunk-source");
         let runtime = runtime_for(&root);
         let written =
-            crate::chat_memory::run_native_journal(&runtime, "AtlasMem current code: TUE.", vec![])
+            crate::chat_memory::run_native_journal(&runtime, "AtlasMem current code: TUE.", vec![], None)
                 .unwrap();
         assert!(written.success);
         let result = crate::runtime::MemoryQueryResult {
