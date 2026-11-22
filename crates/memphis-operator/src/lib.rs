@@ -30,6 +30,7 @@ mod text_truncation;
 mod think_stripper;
 
 pub use chat::{ChatExchange, ChatSessionView, ChatTranscriptEntry, JournalWriteResult};
+pub use chat_basal::normalize_classify_criteria;
 pub use chat_basal_prompt::BasalPromptClassification;
 pub use config::OperatorConfig;
 pub use provider::{

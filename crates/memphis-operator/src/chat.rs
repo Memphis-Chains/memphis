@@ -2336,13 +2336,45 @@ mod tests {
             .get("properties")
             .and_then(|properties| properties.get("criteria"))
             .expect("criteria must be described");
-        assert_eq!(criteria.get("type").and_then(Value::as_str), Some("object"));
+        // The registry declares `criteria` as a UNION: an object of
+        // labels, or an array of 2-10 labels. Both arms accept both
+        // (see `tests/fixtures/classify-criteria-contract.json`), so the
+        // advertised schema has to teach both — a schema that offers only
+        // the object form is how a model learned a form the cockpit
+        // refused.
+        let arms = criteria
+            .get("anyOf")
+            .and_then(Value::as_array)
+            .expect("criteria must declare both accepted forms");
+        assert_eq!(arms.len(), 2, "criteria must offer the object and the array form");
+        let object_form = arms
+            .iter()
+            .find(|arm| arm.get("type").and_then(Value::as_str) == Some("object"))
+            .expect("criteria must accept the object form");
         assert!(
-            criteria
+            object_form
                 .get("additionalProperties")
                 .and_then(Value::as_object)
                 .is_some(),
-            "criteria must declare the shape of its values"
+            "the object form must declare the shape of its values"
+        );
+        let array_form = arms
+            .iter()
+            .find(|arm| arm.get("type").and_then(Value::as_str) == Some("array"))
+            .expect("criteria must accept the array form");
+        assert!(
+            array_form.get("items").and_then(Value::as_object).is_some(),
+            "the array form must declare its item type"
+        );
+        assert_eq!(
+            array_form.get("minItems").and_then(Value::as_u64),
+            Some(2),
+            "the array form must declare its lower bound"
+        );
+        assert_eq!(
+            array_form.get("maxItems").and_then(Value::as_u64),
+            Some(10),
+            "the array form must declare its upper bound"
         );
         // Tier 2: it reaches the network, so it is not free to call.
         assert_eq!(tool_tier("memphis_classify"), 2);
@@ -2392,14 +2424,14 @@ mod tests {
                 "non-empty question",
             ),
             (
-                "one option carries no decision",
+                "requires at least two criteria options",
                 json!({ "state": "text", "question": "which one?", "criteria": {"a": "A"} }),
                 "at least two criteria options",
             ),
             (
-                "criteria as an array is not accepted here",
-                json!({ "state": "text", "question": "which one?", "criteria": ["A", "B"] }),
-                "criteria as a {key: description} object",
+                "criteria that are neither an object nor an array",
+                json!({ "state": "text", "question": "which one?", "criteria": "A" }),
+                "requires criteria as a {key: description} object or an array of labels",
             ),
             (
                 "unknown question type",

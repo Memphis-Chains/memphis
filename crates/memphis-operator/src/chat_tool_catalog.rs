@@ -109,28 +109,6 @@ pub(crate) fn native_divergent_definitions() -> Vec<ChatToolDefinition> {
                 }),
             },
         ChatToolDefinition {
-                name: "memphis_classify".to_string(),
-                description: "Advisory typed decision via the local BASAL service. Validates class probabilities and reports confidence, model, calibration and deferral. auto reports caller-threshold eligibility and honors deferral; it grants no action permissions or domain error-rate guarantee. Defaults use a bounded service threshold read with fallback0.93; explicit caller policy wins. Historical CPU calls took70-140seconds. Requires a separately running service.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "state": { "type": "string", "description": "The text to classify: a message, a document, a case file" },
-                        "question": { "type": "string", "description": "What to decide about it, in plain language" },
-                        "criteria": {
-                            "type": "object",
-                            "description": "Options as {key: description} pairs. The model reads the descriptions, so they carry the meaning. Needs at least 2 and at most 10 entries. Send a bare object like {\"cards\": \"Reklamacje kart\"} — not {\"item\": [...] }.",
-                            "additionalProperties": { "type": "string" },
-                            "minProperties": 2,
-                            "maxProperties": 10
-                        },
-                        "type": { "type": "string", "enum": ["choice", "noul", "score"], "description": "choice (default), noul (yes/no), or score; score objects require ordinal keys 0..n-1" },
-                        "threshold": { "type": "number", "description": "Advisory confidence threshold from 0 to 1. Explicit policy overrides the service default; never grants action permissions." },
-                        "orders": { "type": "number", "description": "1 = one forward pass, faster but order-sensitive; 2 = averaged over both option orders, invariant to ordering" }
-                    },
-                    "required": ["state", "question", "criteria"]
-                }),
-            },
-        ChatToolDefinition {
                 name: "memphis_self_modify".to_string(),
                 description: "Submit a proposed complete file replacement for local operator review. No file is written until the operator runs evolve prepare in a local terminal; no password should be sent to the agent.".to_string(),
                 input_schema: json!({
