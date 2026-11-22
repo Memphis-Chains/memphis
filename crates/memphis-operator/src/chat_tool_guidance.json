@@ -54,9 +54,11 @@
     "filter": "Test name filter pattern"
   },
   "memphis_self_modify": {
-    "path": "File path to write",
-    "content": "Full file content to write",
-    "mode": "Submit full replacement content"
+    "intent": "Operator-facing one-liner: what the change does",
+    "files": "Repository-relative paths to change",
+    "changes": "The complete new content of each path, keyed by that path",
+    "plan_id": "The self-coding plan this change belongs to",
+    "step_idx": "The index of the plan step this change implements"
   },
   "memphis_classify": {
     "state": "The text to classify: a message, a document, a case file",

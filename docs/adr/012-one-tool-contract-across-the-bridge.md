@@ -146,7 +146,7 @@ which is exactly what ADR-011's Layer 1 extraction makes possible.
 
 ## What was closed, and what closing it taught
 
-Four of the five declared divergences are closed as of 2026-11-22, each with a
+All five declared divergences are closed as of 2026-11-22, each with a
 falsifier. What the closure taught is more useful than the closure itself.
 
 | Divergence | Closed by | The difference it hid |
@@ -154,6 +154,32 @@ falsifier. What the closure taught is more useful than the closure itself.
 | `memphis_journal` ignored `chain` | the native journal validates the name against `JOURNAL_TARGET_CHAINS` and appends to it | the memory id, the exact-search key and the embed tags all followed "journal" |
 | `memphis_chain_query` read neither `offset` nor `blockType` | the native arm runs the gateway's ORDER: window → offset → filters → limit | `contains` was a contiguous substring where the gateway tokenises the query (decision #190); `tag` matched case-insensitively where the gateway matches exactly |
 | `memphis_classify` read only the object form of `criteria` | ONE normalisation, shared, checked from both arms against ONE fixture | a non-string description was DROPPED where the gateway stringifies it — which could turn two options into one |
+| `memphis_case_append` read only the wrapped form | ONE normalisation, shared, checked from both arms against ONE fixture | the hand-written schema advertised an `entry.tags` field the case entry DOES NOT HAVE — the block's tags are derived |
+| `memphis_self_modify` was a second operation under one name | the native arm implements the registry's semantics — ONE rule per language, checked from both arms against ONE fixture | there were **THREE** implementations, not two (below) |
+
+### The last row hid three implementations, not two
+
+The ADR described `memphis_self_modify` as a two-arm divergence. It was three:
+
+- the **MCP server** (`src/mcp/server.ts`) read the registry's five fields and handed
+  them to the store;
+- the **gateway's own executor**
+  (`src/gateway/tool-executor/domains/self-modify-tools.ts`) read the same five fields
+  but NORMALISED them first — it filtered junk out of `files` instead of refusing it,
+  and it carried a passphrase refusal the MCP arm did not;
+- the **native arm** accepted `{path, content, mode}` and wrote ONE file.
+
+So the row was not one contract plus one divergence; it was one contract and two
+divergences, one of them invisible because both TypeScript arms were "the TypeScript
+arm". The fix is one rule in one place per language — `canonicalEvolveRequest`
+(`src/infra/runtime/evolve-request.ts`) and `canonical_self_modify_request`
+(`crates/memphis-operator/src/chat_self_modify.rs`) — and the third arm calls the
+first one instead of re-reading the arguments.
+
+The canonical PAYLOAD is part of the contract: the fields in the registry's order, the
+changes keyed in the order of `files`, the optional plan reference present only when
+it was given. The same call therefore produces the same bytes — and the same digest —
+on every surface, so the operator sees one digest wherever the request was made.
 
 **The contract artifact covers the INPUT SHAPE. It never covered the ANSWER.**
 Every divergence above was about argument names, and each one turned out to hide
@@ -161,16 +187,44 @@ a difference in what the tool ANSWERS — the filters, the normalisation, the
 order. A schema that matches on both sides is not a guarantee that the two
 surfaces answer the same way.
 
-So the closure added a SECOND axis: a behaviour contract. Two of them so far:
+So the closure added a SECOND axis: a behaviour contract. Three of them so far:
 
 | Fixture | What it pins | Arms |
 | --- | --- | --- |
 | `tests/fixtures/classify-criteria-contract.json` | how `criteria` becomes options | `tests/unit/classify-criteria-contract.test.ts` · `crates/memphis-operator/tests/classify_criteria_contract.rs` |
 | `tests/fixtures/case-append-contract.json` | which entry a call carries — the wrapped form and the flat form | `tests/unit/case-append-contract.test.ts` · `crates/memphis-operator/tests/case_append_contract.rs` |
+| `tests/fixtures/self-modify-contract.json` | the request a call becomes — and its DIGEST | `tests/unit/self-modify-contract.test.ts` · `crates/memphis-operator/tests/self_modify_contract.rs` |
 
 Both use the pattern the journal-target allowlist already uses, applied to rules
 that had been COPIED rather than shared. Each rule now lives in ONE function per
 arm and is checked against ONE table of cases.
+
+The self-modify fixture pins the DIGEST, not just the shape. Its expected digests were
+computed by a third implementation (the generator of the fixture), so neither arm can
+satisfy the table by agreeing with itself — and a divergence in the bytes shows up as
+a digest mismatch rather than as a quiet difference in what the operator is shown.
+
+### The side finding: a dangling symlink was a door out of the repository
+
+Closing the last row surfaced a security hole that had nothing to do with the
+contract's shape — and the hole was on ONE side only, which is exactly what a
+contract test is for: the native arm refuses a path that leaves the repository,
+and the TypeScript arm did not.
+
+The TypeScript helper `realpathOrNearest` (`src/mcp/tools/fs-permission.ts`)
+resolves a path through symlinks, but `realpathSync` FAILS on a symlink whose
+target does not exist — and the helper then walked up to the nearest existing
+ancestor and re-appended the link's own NAME. So a dangling symlink inside the
+repository looked like a path inside the repository, while the write that
+followed it created the file outside. The native arm never had the hole: its
+resolver (`code_read::realpath_resolving`) walks the components and follows
+every link, whether or not the link's target exists.
+
+So the TypeScript arm now resolves a link even when its target is missing, and
+the native arm uses the resolver it already had rather than a second copy.
+
+**Falsifier:** a symlink inside the repository whose target does not exist and
+lies outside it, accepted by `validateFilePath` or queued by the native arm.
 
 ### The one difference this ADR does NOT close
 
@@ -191,8 +245,8 @@ gateway.
 
 ## What is deliberately NOT decided here
 
-The five declared divergences stay declared. They are recorded in the artifact with the
-reason and the work that closes each one, because a schema that promises what the surface
+The five declared divergences are CLOSED. They were recorded in the artifact with the
+reason and the work that closed each one, because a schema that promises what the surface
 cannot execute is the same class of bug as one that promises the wrong argument names:
 
 | Tool | The gap | What closes it | State |
@@ -201,10 +255,18 @@ cannot execute is the same class of bug as one that promises the wrong argument 
 | `memphis_chain_query` | the registry declares `offset` and `blockType`; the native arm reads neither | apply both natively, mirroring the gateway tool | **closed** 2026-11-22 |
 | `memphis_classify` | the registry's `criteria` is a union; the native arm reads only the object form | accept the array form natively, mirroring the gateway's `normalizeCriteria` | **closed** 2026-11-22 |
 | `memphis_case_append` | the registry accepts the flat case fields; the native arm reads only `entry` | ONE normalisation, shared, checked from both arms against ONE fixture | the hand-written schema advertised an `entry.tags` field the case entry DOES NOT HAVE — the block's tags are derived — so the model was taught to send a field the surface dropped | **closed** 2026-11-22 |
-| `memphis_self_modify` | same name, two different operations | implement the registry semantics natively, or rename the native operation so the name stops lying | open |
+| `memphis_self_modify` | same name, two different operations | implement the registry semantics natively — ONE rule per language, checked from both arms against ONE fixture that pins the digest | the row hid THREE implementations, not two: the MCP server, the gateway executor (which normalised before validating) and the native arm (`{path, content, mode}`, one file). The native arm now speaks the registry's vocabulary, and the divergent-tool list in the artifact is EMPTY | **closed** 2026-11-22 |
 
-Closing them is mechanical except the last one, which is a decision about what the cockpit
-is for. It is not this ADR's to make silently.
+The artifact's `divergences` list is now empty, and the cockpit's catalog carries no
+hand-written schema at all: every native tool is projected from the registry. The list
+of hand-written names stayed in the gate (`scripts/lib/native-tool-catalog.mts`) so the
+next divergence has to be DECLARED there rather than discovered in production.
+
+What is deliberately still open is the difference in WHEN the two arms refuse a path
+that leaves the repository: the native arm refuses it when the request is queued (it
+is the surface the operator drives from), the gateway refuses it when the operator
+prepares the request. The rule is the same; only the layer differs, and both refuse
+before anything is written.
 
 ## What this ADR does NOT do
 
@@ -224,7 +286,8 @@ is for. It is not this ADR's to make silently.
 | --- | --- |
 | The registry is the contract on both sides | `npm run -s ops:sync-native-tool-contract -- --check` passes while the cockpit advertises something the registry does not — i.e. a hand-written schema reappears in the cockpit |
 | The projection is current | the CI step fails on a registry change that was not re-projected |
-| The cockpit honours the contract | a native tool's advertised arguments are not the ones its executor reads — the five divergences are the known list, and the gate names a sixth if one appears |
+| The cockpit honours the contract | a native tool's advertised arguments are not the ones its executor reads — the artifact's `divergences` list is EMPTY now, so the gate names the first one that appears |
+| The two arms answer the same way | a case in `tests/fixtures/self-modify-contract.json` (or the other two behaviour fixtures) produces a different payload, a different digest or a different refusal on the two arms |
 | The Rust arm has to survive | the TypeScript stack gains token streaming, and the cockpit can be a thin client of the service — then this ADR's split is wrong and the operator's decision changes |
 
 ## Evidence index
@@ -238,6 +301,10 @@ Everything asserted above was measured on the operator host on 2026-11-22:
 - `tests/fixtures/native-tool-contract.json` — the agreed contract
 - `scripts/sync-native-tool-contract.mts` — the projection and the gate
 - `tests/unit/native-tool-contract.test.ts` — the TypeScript side of the gate
+- `tests/fixtures/self-modify-contract.json` — the behaviour contract of the self-modify
+  request, with the digests both arms must produce
+- `crates/memphis-operator/src/chat_self_modify.rs` — the native arm's rule
+- `src/infra/runtime/evolve-request.ts` — the TypeScript arm's rule
 - `src/providers/index.ts:284` — `stream: false`, the reason the cockpit keeps the Rust
   engine (ADR-011 F2)
 - `systemctl --user cat memphis.service` — the service runs the TypeScript arm

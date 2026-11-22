@@ -1197,7 +1197,7 @@ mod tests {
     use serde_json::Value;
 
     use crate::chat_basal::{classify_reply_to_json, parse_basal_threshold};
-    use crate::chat_guards::{load_json_file, scan_memory_content};
+    use crate::chat_guards::{load_json_file, scan_memory_content, sha256_hex};
     use crate::chat_memory::{
         append_generic_block, ensure_soul_manifest, read_chain_blocks, run_native_journal,
         run_soul_write, SOUL_LIST_FIELDS, SOUL_SCALAR_FIELDS, SOUL_SECTIONS,
@@ -3176,19 +3176,25 @@ mod tests {
     ///
     /// Asserts the refusal AND the absence of the file -- a scanner that
     /// reported the block after writing would pass a status-only check.
+    ///
+    /// The call carries the REGISTRY's arguments (`intent`, `files`,
+    /// `changes`), because the native arm now speaks the same vocabulary as
+    /// the gateway: under one name there is one operation.
     #[test]
     fn native_self_modify_refuses_content_the_mcp_surface_refuses() {
         let root = temp_runtime_root("native-self-modify-scan");
-        let runtime = runtime_for(root.as_path());
-        let target = root.as_path().join("should-not-exist.sh");
+        let mut runtime = runtime_for(root.as_path());
+        runtime.config.runtime_root = root.clone();
+        let relative = "should-not-exist.sh";
+        let target = root.join(relative);
 
         let call = ChatToolCall {
             id: "modify-call".to_string(),
             name: "memphis_self_modify".to_string(),
             arguments: json!({
-                "path": target.to_string_lossy(),
-                "content": "cat /srv/app/.env\n",
-                "mode": "write",
+                "intent": "read the env",
+                "files": [relative],
+                "changes": { relative: "cat /srv/app/.env\n" },
             }),
         };
 
@@ -3196,7 +3202,7 @@ mod tests {
             .expect_err("exfiltration-shaped content must be refused");
         let message = error.to_string();
         assert!(
-            message.contains("Blocked self-modify content"),
+            message.contains("request contains blocked content"),
             "expected a scan refusal, got: {message}"
         );
         assert!(
@@ -3208,24 +3214,26 @@ mod tests {
 
     /// Ordinary native proposals are queued for the local operator; the tool
     /// must not write the requested file or require a password from the model.
+    ///
+    /// The queued payload is the CANONICAL one -- the same bytes the
+    /// gateway queues, digested the same way -- so the operator sees one
+    /// digest wherever the request was made.
     #[test]
     fn native_self_modify_queues_ordinary_content_without_writing() {
         let root = temp_runtime_root("native-self-modify-allow");
         let mut runtime = runtime_for(root.as_path());
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-        let workspace = std::path::Path::new(&home).join("memphis");
-        std::fs::create_dir_all(&workspace).expect("workspace");
-        runtime.config.runtime_root = workspace.clone();
-        let target = workspace.join("self-modify-scan-probe.md");
+        runtime.config.runtime_root = root.clone();
+        let relative = "self-modify-scan-probe.md";
+        let target = root.join(relative);
         let _ = std::fs::remove_file(&target);
 
         let call = ChatToolCall {
             id: "modify-call".to_string(),
             name: "memphis_self_modify".to_string(),
             arguments: json!({
-                "path": target.to_string_lossy(),
-                "content": "# Notatka\n\nZwykly wpis bez wzorcow.\n",
-                "mode": "write",
+                "intent": "write a note",
+                "files": [relative],
+                "changes": { relative: "# Notatka\n\nZwykly wpis bez wzorcow.\n" },
             }),
         };
 
@@ -3237,13 +3245,22 @@ mod tests {
         );
         let db =
             rusqlite::Connection::open(&runtime.config.database_path).expect("request database");
-        let (payload, status): (String, String) = db
-            .query_row("SELECT payload,status FROM evolve_requests", [], |row| {
-                Ok((row.get(0)?, row.get(1)?))
+        let (payload, status, digest): (String, String, String) = db
+            .query_row("SELECT payload,status,digest FROM evolve_requests", [], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })
             .expect("queued request");
         assert_eq!(status, "pending");
-        assert!(payload.contains("self-modify-scan-probe.md"));
+        assert!(payload.contains(relative));
+        assert_eq!(
+            digest,
+            sha256_hex(payload.as_bytes()),
+            "the digest must be the digest of the stored bytes"
+        );
+        assert!(
+            !payload.contains("passphrase"),
+            "a passphrase must never reach the payload"
+        );
     }
     /// The native code_read used to check only that the path sat under
     /// ~/memphis/ -- which is exactly where the operator's own `.env` and
@@ -3526,36 +3543,42 @@ mod tests {
     #[test]
     fn native_self_modify_refuses_the_segments_the_read_path_refuses() {
         let root = temp_runtime_root("native-self-modify-blocked-segment");
-        let runtime = runtime_for(root.as_path());
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-        let workspace = std::path::Path::new(&home).join("memphis");
-        let probe = workspace.join("node_modules").join(".memphis-write-probe");
-        std::fs::create_dir_all(probe.parent().expect("probe parent")).expect("probe dir");
-        let _ = std::fs::remove_file(&probe);
+        let mut runtime = runtime_for(root.as_path());
+        runtime.config.runtime_root = root.clone();
 
-        let call = ChatToolCall {
-            id: "modify-call".to_string(),
-            name: "memphis_self_modify".to_string(),
-            arguments: json!({
-                "path": probe.to_string_lossy(),
-                "content": "probe\n",
-                "mode": "write",
-            }),
-        };
+        // The probe is `node_modules/`, not `.env`: a refusal happens
+        // before anything is written, but a REGRESSION would write the
+        // file, and the operator's own `.env` must not be what a test
+        // risks.
+        for relative in ["node_modules/.memphis-write-probe", "dist/.memphis-write-probe"] {
+            let probe = root.join(relative);
+            std::fs::create_dir_all(probe.parent().expect("probe parent")).expect("probe dir");
+            let _ = std::fs::remove_file(&probe);
 
-        let result = execute_native_tool(&runtime, &call, 2);
-        let _ = std::fs::remove_file(&probe);
+            let call = ChatToolCall {
+                id: "modify-call".to_string(),
+                name: "memphis_self_modify".to_string(),
+                arguments: json!({
+                    "intent": "write a probe",
+                    "files": [relative],
+                    "changes": { relative: "probe\n" },
+                }),
+            };
 
-        let error = result.expect_err("a blocked segment must be refused");
-        assert!(
-            error.to_string().contains("blocked because it matches"),
-            "the refusal must name the reason: {error}"
-        );
-        assert!(
-            !probe.exists(),
-            "the file was written despite the refusal: {}",
-            probe.display()
-        );
+            let result = execute_native_tool(&runtime, &call, 2);
+            let _ = std::fs::remove_file(&probe);
+
+            let error = result.expect_err("a blocked segment must be refused");
+            assert!(
+                error.to_string().contains("forbidden file path"),
+                "the refusal must name the reason: {error}"
+            );
+            assert!(
+                !probe.exists(),
+                "the file was written despite the refusal: {}",
+                probe.display()
+            );
+        }
     }
 
     /// A symlink inside the workspace must not become a door out of it.
@@ -3564,20 +3587,23 @@ mod tests {
     /// never resolved it, so a link inside the workspace could be
     /// written straight through to a file outside it -- the vault state
     /// in ~/.memphis/ is exactly such a target.
+    ///
+    /// The paths are repository-relative now, so the door is a link that
+    /// POINTS out of the repository rather than a path that NAMES a place
+    /// outside it.
     #[test]
     fn native_self_modify_refuses_to_write_through_a_symlink_out_of_the_workspace() {
         let root = temp_runtime_root("native-self-modify-symlink");
-        let runtime = runtime_for(root.as_path());
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-        let workspace = std::path::Path::new(&home).join("memphis");
+        let mut runtime = runtime_for(root.as_path());
+        runtime.config.runtime_root = root.clone();
 
         let outside =
             std::env::temp_dir().join(format!("memphis-write-escape-{}", std::process::id()));
-        let link = workspace.join(".memphis-write-escape-link");
-        // Same reason as the range probe above: ~/memphis does not exist
-        // in a fresh CI HOME, and a symlink cannot be created in a
-        // directory that is not there.
-        std::fs::create_dir_all(&workspace).expect("workspace dir");
+        // No leading dot: a dot-prefixed segment is refused by the shared
+        // path rule before the symlink is ever resolved, and this test is
+        // about the symlink.
+        let relative = "memphis-write-escape-link";
+        let link = root.join(relative);
         let _ = std::fs::remove_file(&outside);
         let _ = std::fs::remove_file(&link);
         std::os::unix::fs::symlink(&outside, &link).expect("create the symlink");
@@ -3586,26 +3612,21 @@ mod tests {
             id: "modify-call".to_string(),
             name: "memphis_self_modify".to_string(),
             arguments: json!({
-                "path": link.to_string_lossy(),
-                "content": "escaped\n",
-                "mode": "write",
+                "intent": "escape the workspace",
+                "files": [relative],
+                "changes": { relative: "escaped\n" },
             }),
         };
 
         let result = execute_native_tool(&runtime, &call, 2);
         let _ = std::fs::remove_file(&link);
-        // The write path stages the workspace before it writes, so the
-        // probe has to leave the index again.
-        let _ = std::process::Command::new("git")
-            .args(["reset", "-q", "--", ".memphis-write-escape-link"])
-            .current_dir(&workspace)
-            .output();
         let escaped = std::fs::read_to_string(&outside).unwrap_or_default();
         let _ = std::fs::remove_file(&outside);
 
+        let error = result.expect_err("writing through a symlink out must be refused");
         assert!(
-            result.is_err(),
-            "writing through a symlink out of the workspace must be refused"
+            error.to_string().contains("outside the runtime repository"),
+            "the refusal must name the reason: {error}"
         );
         assert!(
             escaped.is_empty(),

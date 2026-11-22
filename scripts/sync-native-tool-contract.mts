@@ -29,6 +29,17 @@
  * A model talking to the cockpit and a model talking to Telegram, the CLI
  * or MCP were therefore offered different tools under the same names.
  *
+ * ALL FIVE ARE CLOSED NOW (2026-11-22). The last one,
+ * `memphis_self_modify`, needed more than a schema change: its native arm
+ * EXECUTED a different operation — it wrote one file where the registry
+ * means "apply changes to many files". Its native arm now implements the
+ * registry's semantics (crates/memphis-operator/src/chat_self_modify.rs),
+ * and the case table in `tests/fixtures/self-modify-contract.json` checks
+ * that arm against the TypeScript one. So this script projects EVERY
+ * native tool from the registry, and the DIVERGENCES table below is
+ * empty — it stays because the next divergence has to be declared there
+ * too, not discovered in production.
+ *
  * THE HOUSE PATTERN, TWICE
  * ------------------------
  * `scripts/sync-native-tiers.mts` already projects the registry's TIERS
@@ -82,22 +93,24 @@ type ToolContract = {
  * The tools whose native implementation does NOT honour the registry.
  *
  * Measured 2026-11-22: five of the 23 native tools advertised different
- * arguments than the registry does, and for these the EXECUTOR is behind
- * the registry — not just the schema. The native surface keeps a schema
- * that says what it actually accepts, and the difference is declared in
+ * arguments than the registry does, and for these the EXECUTOR was behind
+ * the registry — not just the schema. The native surface kept a schema
+ * that says what it actually accepts, and the difference was declared in
  * the artifact so it is visible, owned and measurable.
  *
  * A schema that promises what the surface cannot execute is the same
  * class of bug as a schema that promises the wrong argument names.
+ *
+ * The list is EMPTY now. The last entry was `memphis_self_modify`, whose
+ * native arm wrote ONE file while the registry meant "apply changes to
+ * many files" — one name, two operations. Its native arm now implements
+ * the registry's semantics (crates/memphis-operator/src/chat_self_modify.rs),
+ * so it is projected like every other tool. The table stays because the
+ * NEXT divergence has to be declared here too, not discovered in
+ * production: an empty list that cannot be filled is a list nobody
+ * maintains.
  */
-const DIVERGENCES: Record<string, { reason: string; closure: string }> = {
-  memphis_self_modify: {
-    reason:
-      'under one name the registry means "apply changes to many files, with a snapshot and a test run"; the native tool writes ONE file. Same name, two different operations.',
-    closure:
-      'implement the registry semantics natively, or rename the native operation so the name stops lying',
-  },
-};
+const DIVERGENCES: Record<string, { reason: string; closure: string }> = {};
 
 /**
  * The prose the native surface teaches the model.
@@ -226,7 +239,9 @@ function renderRustSource(document: { schemaVersion: number; tools: ToolContract
 //! Measured 2026-11-22: before this file existed the cockpit advertised
 //! five tools with different arguments than the registry — including
 //! \`memphis_self_modify\`, which under one name meant "write one file"
-//! and under the other "apply changes to many files".
+//! and under the other "apply changes to many files". All five are
+//! closed: every tool here is projected from the registry, and the
+//! contract declares no divergence.
 
 /// The contract of every tool the native surface offers.
 pub(crate) const NATIVE_TOOL_CONTRACT_JSON: &str = r#"${json}"#;
