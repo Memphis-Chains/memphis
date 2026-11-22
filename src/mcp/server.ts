@@ -1014,19 +1014,6 @@ export function createMemphisMcpServer(
     );
   }
 
-  // Skeleton: memphis_commit_culture was registered during the audit hardening
-  // sprint (2026-09-22) before tests + approval hook landed. The audit-hook
-  // surface-test (tests/unit/tool-surface-audit.test.ts) flags the registry
-  // mismatch because the tool is wired in MCP server.ts but absent from
-  // src/gateway/tool-registry.ts. Unregistered until the wire-up lands
-  // (see docs/dev/commit-culture-interface.md and the inline note above).
-  const _commitCulturePolicy = getToolPolicy(
-    permissions,
-    'memphis_commit_culture',
-    resolvedManifest,
-  );
-  void _commitCulturePolicy;
-
   const loopStepPolicy = getToolPolicy(permissions, 'memphis_loop_step', resolvedManifest);
   if (shouldRegisterTool('memphis_loop_step', loopStepPolicy, rawEnv)) {
     server.registerTool(
