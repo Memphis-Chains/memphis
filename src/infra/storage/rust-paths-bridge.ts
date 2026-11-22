@@ -31,6 +31,7 @@ import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { callBridge as callBridgeEnvelope } from './bridge-envelope.js';
 import {
   loadPlatformAwareBridge,
   resolveBridgeContract,
@@ -51,12 +52,6 @@ const PATHS_BRIDGE_ALIASES = {
   paths_resolve_chain_path: ['paths_resolve_chain_path', 'pathsResolveChainPath'],
   paths_normalize_chain_name: ['paths_normalize_chain_name', 'pathsNormalizeChainName'],
 } as const satisfies BridgeAliasMap<PathsBridgeKey>;
-
-interface NapiResult<T> {
-  ok: boolean;
-  data?: T;
-  error?: string;
-}
 
 // Cache the resolved bridge by its computed binary path. Codex R5
 // #436 caught that a single global cache locked in the FIRST resolved
@@ -151,12 +146,11 @@ function callBridge<T>(fnName: PathsBridgeKey, args: readonly unknown[]): T {
         `Aliases tried: ${PATHS_BRIDGE_ALIASES[fnName].join(', ')}.`,
     );
   }
-  const raw = fn(...args) as string;
-  const parsed = JSON.parse(raw) as NapiResult<T>;
-  if (!parsed.ok || parsed.data === undefined) {
-    throw new Error(parsed.error ?? `paths bridge ${fnName} returned !ok with no error`);
-  }
-  return parsed.data;
+  // The envelope is parsed by the one module that understands the Rust
+  // bridge's JSON contract. A `catch_unwind`-guarded Rust panic arrives
+  // here as a thrown error, and it becomes a normal bridge error with
+  // the function name attached.
+  return callBridgeEnvelope<T>(fnName, () => fn(...args) as string);
 }
 
 function envToJson(rawEnv: NodeJS.ProcessEnv): string {

@@ -10,6 +10,7 @@ import {
 import { chmod, mkdir, open, readdir, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 
+import { parseEnvelope } from './bridge-envelope.js';
 import { exportChain, validateChainSnapshot, type ChainBlock } from './chain-adapter.js';
 import { writeBlockAtomic } from './chain-file-io.js';
 import { withChainWriteLock } from './chain-write-lock.js';
@@ -75,12 +76,12 @@ function bridge(rawEnv: NodeJS.ProcessEnv) {
   };
 }
 function envelope<T>(raw: string): T {
+  // The envelope itself is understood by one module; this wrapper only
+  // keeps the MV2-specific error message the callers expect.
   try {
-    const value = JSON.parse(raw);
-    if (!value.ok || value.data === undefined) throw new Error();
-    return value.data as T;
-  } catch {
-    throw new Error('MV2 native codec refused the container');
+    return parseEnvelope<T>(raw, 'mv2');
+  } catch (error) {
+    throw new Error('MV2 native codec refused the container', { cause: error });
   }
 }
 function checkJson(value: unknown, depth = 0): void {

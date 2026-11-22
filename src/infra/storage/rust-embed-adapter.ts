@@ -1,3 +1,4 @@
+import { callBridge } from './bridge-envelope.js';
 import {
   hasRequiredBridgeExports,
   loadPlatformAwareBridge,
@@ -46,12 +47,6 @@ interface NormalizedEmbedBridge {
   embed_clear_in_memory?: () => string;
   embed_discard_replacement?: () => string;
   embed_flush?: () => string;
-}
-
-interface BridgeEnvelope<T> {
-  ok: boolean;
-  data?: T;
-  error?: string;
 }
 
 export interface EmbedSearchHit {
@@ -120,17 +115,6 @@ const embedSearchCache = new Map<string, CacheEntry>();
 
 function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
   return resolveRustBridgePath(rawEnv);
-}
-
-function parseEnvelope<T>(raw: string): T {
-  const out = JSON.parse(raw) as BridgeEnvelope<T>;
-  if (!out.ok) {
-    throw new Error(out.error ?? 'rust bridge error');
-  }
-  if (out.data === undefined) {
-    throw new Error('rust bridge returned empty data');
-  }
-  return out.data;
 }
 
 function normalizeNormalized(
@@ -328,7 +312,7 @@ export function embedStore(
   const bridge = getBridgeOrThrow(rawEnv);
   const tagsJson = tags && tags.length > 0 ? JSON.stringify(tags) : undefined;
   return normalizeStoreResult(
-    parseEnvelope<RawEmbedStoreResult>(bridge.embed_store(id, text, tagsJson)),
+    callBridge<RawEmbedStoreResult>('embed_store', () => bridge.embed_store(id, text, tagsJson)),
   );
 }
 
@@ -354,7 +338,9 @@ export function embedSearch(
 
   metrics.recordEmbedCacheMiss();
   const out = normalizeSearchResult(
-    parseEnvelope<RawEmbedSearchResult>(bridge.embed_search(query, topK, tagsJson)),
+    callBridge<RawEmbedSearchResult>('embed_search', () =>
+      bridge.embed_search(query, topK, tagsJson),
+    ),
   );
   setToCache(key, out, ttlMs, now);
   metrics.recordEmbedQuery(out.count);
@@ -385,10 +371,18 @@ export function embedSearchTuned(
   const out =
     typeof bridge.embed_search_tuned !== 'function'
       ? normalizeSearchResult(
-          parseEnvelope<RawEmbedSearchResult>(bridge.embed_search(query, topK, tagsJson)),
+          callBridge<RawEmbedSearchResult>('embed_search', () =>
+            bridge.embed_search(query, topK, tagsJson),
+          ),
         )
       : normalizeSearchResult(
-          parseEnvelope<RawEmbedSearchResult>(bridge.embed_search_tuned(query, topK, tagsJson)),
+          callBridge<RawEmbedSearchResult>('embed_search_tuned', () =>
+            (bridge.embed_search_tuned as (q: string, k: number, t?: string) => string)(
+              query,
+              topK,
+              tagsJson,
+            ),
+          ),
         );
   setToCache(key, out, ttlMs, now);
   metrics.recordEmbedQuery(out.count);
@@ -398,7 +392,7 @@ export function embedSearchTuned(
 export function embedReset(rawEnv: NodeJS.ProcessEnv = process.env): { cleared: boolean } {
   const bridge = getBridgeOrThrow(rawEnv);
   embedSearchCache.clear();
-  return parseEnvelope(bridge.embed_reset());
+  return callBridge('embed_reset', () => bridge.embed_reset());
 }
 
 /**
@@ -415,13 +409,14 @@ export function embedReset(rawEnv: NodeJS.ProcessEnv = process.env): { cleared: 
 export function embedClearInMemory(rawEnv: NodeJS.ProcessEnv = process.env): { cleared: boolean } {
   const bridge = getBridgeOrThrow(rawEnv);
   embedSearchCache.clear();
-  if (typeof bridge.embed_clear_in_memory === 'function') {
-    return parseEnvelope(bridge.embed_clear_in_memory());
+  const clearInMemory = bridge.embed_clear_in_memory;
+  if (typeof clearInMemory === 'function') {
+    return callBridge('embed_clear_in_memory', () => clearInMemory());
   }
   // Legacy NAPI: best-effort degradation. Caller MUST be aware this is
   // not the safe path — the bulk rebuilder should detect the missing
   // binding at startup and refuse to proceed.
-  return parseEnvelope(bridge.embed_reset());
+  return callBridge('embed_reset', () => bridge.embed_reset());
 }
 
 export interface EmbedStoreItem {
@@ -471,11 +466,12 @@ export function embedDiscardReplacement(rawEnv: NodeJS.ProcessEnv = process.env)
   discarded: boolean;
 } {
   const bridge = getBridgeOrThrow(rawEnv);
-  if (typeof bridge.embed_discard_replacement !== 'function') {
+  const discardReplacement = bridge.embed_discard_replacement;
+  if (typeof discardReplacement !== 'function') {
     throw new Error('rust embed bridge does not support discarding a partial rebuild');
   }
   embedSearchCache.clear();
-  return parseEnvelope(bridge.embed_discard_replacement());
+  return callBridge('embed_discard_replacement', () => discardReplacement());
 }
 
 /**
@@ -501,7 +497,11 @@ export function embedStoreMany(
   // Stale on-disk index might lag in-memory state once we start
   // deferring writes — invalidate the per-process search cache.
   embedSearchCache.clear();
-  return parseEnvelope(bridge.embed_store_many(JSON.stringify(items)));
+  const storeMany = bridge.embed_store_many;
+  if (typeof storeMany !== 'function') {
+    throw new Error('rust embed bridge does not support bulk store');
+  }
+  return callBridge('embed_store_many', () => storeMany(JSON.stringify(items)));
 }
 
 /**
@@ -524,5 +524,9 @@ export function embedFlush(rawEnv: NodeJS.ProcessEnv = process.env): {
   // Search cache may be stale relative to a freshly-flushed index
   // even though the in-memory pipeline is the authority.
   embedSearchCache.clear();
-  return parseEnvelope(bridge.embed_flush());
+  const flush = bridge.embed_flush;
+  if (typeof flush !== 'function') {
+    throw new Error('rust embed bridge does not support flush');
+  }
+  return callBridge('embed_flush', () => flush());
 }

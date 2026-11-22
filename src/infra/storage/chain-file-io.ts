@@ -41,36 +41,17 @@ export interface NapiBlock {
   signature?: string;
 }
 
-export interface BridgeEnvelope<T> {
-  ok: boolean;
-  data?: T;
-  error?: string;
-}
-
 // ── Envelope parsing ─────────────────────────────────────────────────────────
 
 /**
  * Parse a Rust NAPI bridge envelope of the form `{ ok, data, error }`. Throws a
  * descriptive error on malformed JSON, a non-ok envelope, or a missing `data` field.
+ *
+ * The implementation lives in `bridge-envelope.ts` — it is the single place
+ * the Rust bridge's JSON contract is understood. This re-export keeps the
+ * existing import path working.
  */
-export function parseEnvelope<T>(raw: string, fnName: string): T {
-  let out: BridgeEnvelope<T>;
-  try {
-    out = JSON.parse(raw) as BridgeEnvelope<T>;
-  } catch (error) {
-    throw new Error(`${fnName}: invalid JSON response (${String(error)})`, { cause: error });
-  }
-
-  if (!out.ok) {
-    throw new Error(`${fnName}: ${out.error ?? 'bridge returned error'}`);
-  }
-
-  if (out.data === undefined) {
-    throw new Error(`${fnName}: bridge returned empty data`);
-  }
-
-  return out.data;
-}
+export { parseEnvelope, callBridge, type BridgeEnvelope } from './bridge-envelope.js';
 
 // ── Block file I/O ───────────────────────────────────────────────────────────
 
