@@ -666,6 +666,24 @@ pub(crate) fn run_soul_write(
     }))
 }
 
+/// The entry a `memphis_case_append` call carries.
+///
+/// The registry accepts the flat form as well as `{entry: {...}}`, and
+/// the gateway normalises the two into one shape
+/// (`normalizeCaseAppendInput` in `src/mcp/tools/case-entry.ts`): the
+/// wrapped form yields its `entry`, the flat form yields the arguments
+/// themselves.
+///
+/// The native arm used to require the wrapped form, so a model that had
+/// learned the flat form on Telegram got a refusal in the cockpit — and
+/// the flat form is the one the registry's own help text shows first.
+pub fn normalize_case_append_input(arguments: &Value) -> Value {
+    match arguments.get("entry") {
+        Some(entry) => entry.clone(),
+        None => arguments.clone(),
+    }
+}
+
 pub(crate) fn append_case_entry(
     runtime: &OperatorRuntime,
     entry: &CaseEntry,

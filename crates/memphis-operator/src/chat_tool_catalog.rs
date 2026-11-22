@@ -98,17 +98,6 @@ pub(crate) fn native_tool_definitions() -> Vec<ChatToolDefinition> {
 pub(crate) fn native_divergent_definitions() -> Vec<ChatToolDefinition> {
     vec![
         ChatToolDefinition {
-                name: "memphis_case_append".to_string(),
-                description: "Append a case chain entry. Arrays must be bare JSON arrays, never objects wrapping an array.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "entry": case_entry_schema()
-                    },
-                    "required": ["entry"]
-                }),
-            },
-        ChatToolDefinition {
                 name: "memphis_self_modify".to_string(),
                 description: "Submit a proposed complete file replacement for local operator review. No file is written until the operator runs evolve prepare in a local terminal; no password should be sent to the agent.".to_string(),
                 input_schema: json!({

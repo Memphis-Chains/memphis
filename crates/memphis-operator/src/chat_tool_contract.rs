@@ -58,6 +58,105 @@ pub(crate) const NATIVE_TOOL_CONTRACT_JSON: &str = r#"{
       }
     },
     {
+      "name": "memphis_case_append",
+      "description": "Append case entry",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "entry": {
+            "type": "object",
+            "properties": {
+              "case_type": {
+                "type": "string",
+                "enum": [
+                  "nominative",
+                  "genitive",
+                  "dative",
+                  "accusative",
+                  "instrumental",
+                  "locative",
+                  "ablative",
+                  "vocative"
+                ]
+              }
+            },
+            "required": [
+              "case_type"
+            ],
+            "additionalProperties": {}
+          },
+          "case_type": {
+            "type": "string",
+            "enum": [
+              "nominative",
+              "genitive",
+              "dative",
+              "accusative",
+              "instrumental",
+              "locative",
+              "ablative",
+              "vocative"
+            ]
+          },
+          "entity": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "possessed": {
+            "type": "string"
+          },
+          "giver": {
+            "type": "string"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "verb": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "instrument": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "invoker": {
+            "type": "string"
+          },
+          "invocation": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "memphis_case_query",
       "description": "Query case graph",
       "input_schema": {
@@ -729,11 +828,6 @@ pub(crate) const NATIVE_TOOL_CONTRACT_JSON: &str = r#"{
     }
   ],
   "divergences": [
-    {
-      "name": "memphis_case_append",
-      "reason": "the registry accepts both `{entry}` and the flat case fields; the native executor reads only `entry`",
-      "closure": "accept the flat form in the native arm, mirroring the gateway's normalizeCaseAppendInput"
-    },
     {
       "name": "memphis_self_modify",
       "reason": "under one name the registry means \"apply changes to many files, with a snapshot and a test run\"; the native tool writes ONE file. Same name, two different operations.",

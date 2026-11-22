@@ -26,9 +26,10 @@ use crate::chat_guards::{
     build_wrapped_segment, emit_runtime_security_event, scan_code_change_content, sha256_hex,
 };
 use crate::chat_memory::{
-    append_case_entry, append_generic_block, is_scannable_chain_directory_name, read_chain_blocks,
-    recall_result_with_sources, run_native_chain_query, run_native_journal, run_soul_read,
-    run_soul_write, search_result_to_json, value_string_array, value_usize,
+    append_case_entry, append_generic_block, is_scannable_chain_directory_name,
+    normalize_case_append_input, read_chain_blocks, recall_result_with_sources,
+    run_native_chain_query, run_native_journal, run_soul_read, run_soul_write,
+    search_result_to_json, value_string_array, value_usize,
 };
 use crate::chat_tool_catalog::tool_tier;
 use crate::code_read::{
@@ -486,9 +487,12 @@ fn execute_native_tool_inner(
             ))
         }
         "memphis_case_append" => {
-            let entry_value = call.arguments.get("entry").cloned().ok_or_else(|| {
-                OperatorError::Message("memphis_case_append requires entry".to_string())
-            })?;
+            // The registry accepts the flat form as well as the wrapped
+            // one, and the gateway normalises the two into one shape.
+            // The native arm used to require the wrapped form, so the
+            // flat form — the one the help text shows first — was
+            // refused in the cockpit.
+            let entry_value = normalize_case_append_input(&call.arguments);
             let entry = serde_json::from_value::<CaseEntry>(entry_value)
                 .map_err(|error| OperatorError::Json(error.to_string()))?;
             let result = append_case_entry(runtime, &entry)?;
