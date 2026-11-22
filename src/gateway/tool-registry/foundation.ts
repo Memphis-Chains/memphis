@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { ToolMeta } from '../tool-metadata.js';
 
-export const FOUNDATION_TOOLS: Record<string, ToolMeta> = {
+export const FOUNDATION_TOOLS = {
   memphis_fs_write: {
     name: 'memphis_fs_write',
     tier: 2,
@@ -317,8 +317,12 @@ export const FOUNDATION_TOOLS: Record<string, ToolMeta> = {
           .array(
             z.object({
               url: z.string().url(),
-              timeout: z.number().int().positive().optional(),
-              expectedStatus: z.number().int().positive().optional(),
+              timeout: z.number().int().min(100).max(30000).optional(),
+              // `expectedStatus` is the status the probe should SEE, so 0
+              // and the negative codes a TCP refusal produces are
+              // legitimate expectations. A positive-only schema rejected
+              // them.
+              expectedStatus: z.number().int().optional(),
             }),
           )
           .min(1),
@@ -363,4 +367,4 @@ export const FOUNDATION_TOOLS: Record<string, ToolMeta> = {
       },
     ],
   },
-};
+} satisfies Record<string, ToolMeta>;

@@ -1,8 +1,9 @@
 import { z } from 'zod';
 
+import { JOURNAL_TARGET_CHAINS } from '../../memory/chain-catalog.js';
 import type { ToolMeta } from '../tool-metadata.js';
 
-export const JOURNAL_TOOL: ToolMeta = {
+export const JOURNAL_TOOL = {
   name: 'memphis_journal',
   tier: 0,
   capabilities: ['write'],
@@ -11,6 +12,16 @@ export const JOURNAL_TOOL: ToolMeta = {
     .object({
       content: z.string().min(1, 'content is required'),
       tags: z.array(z.string()).optional(),
+      // Which chain to append to.
+      //
+      // The MCP server used to carry its own copy of this enum and the
+      // registry carried none, so the two disagreed: the MCP surface
+      // accepted `chain` and this schema — which is `.strict()` — rejected
+      // it. The allowlist is the one place the legal chains are written
+      // down (`JOURNAL_TARGET_CHAINS`, checked against the native arm by
+      // `tests/fixtures/journal-target-chains-contract.json`), so the
+      // schema reads it from there instead of restating it.
+      chain: z.enum(JOURNAL_TARGET_CHAINS).optional(),
       approval_request_id: z.string().optional(),
     })
     .strict(),
@@ -29,4 +40,4 @@ export const JOURNAL_TOOL: ToolMeta = {
       takesValue: true,
     },
   ],
-};
+} satisfies ToolMeta;
