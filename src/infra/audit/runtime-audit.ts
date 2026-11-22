@@ -41,6 +41,7 @@ import {
   type UnreadableBlock,
 } from './checks.js';
 import { readPostmortemCorpus } from './postmortem-corpus.js';
+import { inventoryUnitFiles, listUnitsUnderTest } from './systemd-unit-scope.js';
 import { worstVerdict, type AuditCheckResult, type RuntimeAuditReport } from './types.js';
 import { getChainPath } from '../../config/paths.js';
 import { runMemphisSloStatus } from '../../mcp/tools/slo-status.js';
@@ -500,24 +501,25 @@ export async function collectGateCoverage(repoRoot: string | null): Promise<{
     });
   }
 
-  // 2 · the systemd gate reads one directory; the runtime's own unit is not in it.
-  const unitGate = await readTextIfExists(
-    path.join(repoRoot, 'scripts', 'check-systemd-units.mts'),
-  );
-  const unitDirMatch = unitGate ? /UNIT_DIR\s*=\s*resolve\('([^']+)'\)/.exec(unitGate) : null;
-  if (unitDirMatch) {
-    const opsUnits = (await fs.readdir(path.join(repoRoot, 'ops')).catch(() => [])).filter(
-      (name) => name.endsWith('.service') || name.endsWith('.timer'),
-    );
-    const outside = opsUnits.filter((name) => name !== unitDirMatch[1]);
-    if (outside.length > 0) {
-      misScoped.push({
-        gate: 'check-systemd-units',
-        scope: `reads ${unitDirMatch[1]}/ only; never checks ${outside
-          .map((name) => `ops/${name}`)
-          .join(', ')}`,
-      });
-    }
+  // 2 · every unit the repository ships must be inside the systemd gate.
+  //
+  // The first version compared the NAME of a file in `ops/` against the
+  // PATH of the gate's unit directory (`scripts/systemd`). A file name
+  // and a directory path can never be equal, so the comparison reported
+  // the same hole forever — including after the gate had been extended
+  // to read `ops/` as well. A gate that cries wolf is a gate nobody
+  // reads, and this one was reporting a hole that had been closed.
+  //
+  // Both sides now come from `src/infra/audit/systemd-unit-scope.ts`:
+  // the inventory says what exists anywhere in the repository, the
+  // coverage says what the gate reads, and the difference is the hole.
+  const covered = new Set(listUnitsUnderTest(repoRoot).map((unit) => unit.file));
+  const uncovered = inventoryUnitFiles(repoRoot).filter((file) => !covered.has(file));
+  if (uncovered.length > 0) {
+    misScoped.push({
+      gate: 'check-systemd-units',
+      scope: `never checks ${uncovered.join(', ')}`,
+    });
   }
 
   // 3 · cargo audit exists in a script no workflow calls.
