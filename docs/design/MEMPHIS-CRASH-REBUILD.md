@@ -606,24 +606,56 @@ mode this repository already has a postmortem about.
    duplication; it did not remove the duplication. Collapsing them is
    the next stage, and it is the stage that needs the operator's
    decision about which arm survives.
-2. **The block hash still has four implementations** in TypeScript
+2. **The block hash had four implementations** in TypeScript
    (`rust-chain-adapter.ts`, `chain-canonical.ts`, `chain-adapter.ts` ×
    3, `security/integrity.ts`) against one in Rust. The Rust core is
    canonical and already answers "is this block valid?" — the
    TypeScript copies should ask it rather than recompute it. The
    divergence between the two TypeScript copies is documented in
    `chain-canonical.ts:60-67` and still unfixed.
+   **Closed 2026-11-22.** The copies are gone: one TypeScript
+   implementation in `src/core/chain-hash.ts`, one Rust implementation in
+   `crates/memphis-core/src/hash.rs`, and a fixture of core-produced
+   hashes that both sides check themselves against
+   (`tests/fixtures/chain-hash-parity.json`). The divergence was real —
+   `chain-adapter.ts` fell back `type` → `journal` while the repair path
+   fell back `type` → `block_type` → `journal`, exactly like the core.
+   Measured: 0 of 27 159 blocks on disk carry `block_type` without `type`,
+   so it never bit. A third formula inside `chain-adapter.ts` was
+   byte-identical to the one above it and could never accept anything the
+   first comparison had rejected. See `cfada12478`.
 3. **The signature schemes still differ** — ed25519 in Rust,
    RSA/SHA-256 in `src/security/integrity.ts`.
 4. **The `system` chain still grows without bound** (15 730 blocks,
    62 MB, ~100–280/day from scheduler events). Chain rotation exists
    and is not enabled. Every boot validates every block of it.
+   **Closed 2026-11-22.** Rotation is enabled for the service and the
+   chain is bounded: 10 MB threshold, 500 blocks kept live, four archives
+   per chain. The `system` chain went from 15 771 blocks / 62 MB to 500
+   blocks / 0.4 MB, with the prefix in a gzipped archive. Two bugs had
+   to be fixed first, and both are the same shape as the rest of this
+   document — a writer that did not go through an existing boundary:
+   rotating produced a chain every validator rejected as "missing genesis
+   block" (`f019fc0ff4`), and the publish step took no write lock at all,
+   so a reader could observe the chain mid-rotation (`c9d95b8fe5`). The
+   rotation's own env knobs were registered, validated and then ignored.
 5. **The chain-name allowlist has two rules** — `SAFE_CHAIN_NAME` in
    TypeScript, ad-hoc predicates in Rust — with no parity fixture, the
    same defect §4 just fixed for the journal list.
 6. **The `insights` chain is 32 MB across 402 blocks.** Whatever writes
    it is writing payloads three orders of magnitude larger than a
    journal block.
+   **Cause found 2026-11-22.** `ModelEInsight.evidence` is `Block[]` —
+   the complete source block — and the chain stored it verbatim, so every
+   generated insight carried up to five full copies of blocks that
+   already lived in their own chains. 13.2 MB of the 33.4 MB was
+   `evidence[].data`, and another 14.1 MB was the block-level `content`
+   string, which the chain adapter builds by serialising the whole
+   payload — so the duplication was stored twice over. The chain now
+   stores a reference (`chain`, `index`, `hash`, `prev_hash`, `timestamp`,
+   `title`); the report the caller receives still carries the full
+   evidence. See `ed030a9457`. The 32 MB already on disk is reclaimed by
+   rotation, not by the writer.
 7. **The operator's account identifier is in the published history** —
    55 commits across 21 files. §5.1 measures it and the scan reports it
    on every run. It cannot be fixed by a commit: the history has to be
@@ -634,6 +666,15 @@ mode this repository already has a postmortem about.
 
 None of these is a crash. All of them are the same shape: two copies of
 one rule, with no gate that compares them.
+
+Three of the seven were closed by the cleanup pass of 2026-11-22 —
+items 2, 4 and 6 — and each of them turned out to have a second copy
+hiding behind the first: the hash had a third formula that was
+byte-identical to the second, the rotation had two env knobs that were
+validated and ignored, and the insights chain stored its duplicated
+evidence twice over because the chain adapter serialises the whole
+payload into `content`. Finding the copies was the work; the gates that
+now compare them are what keeps them from coming back.
 
 ---
 
