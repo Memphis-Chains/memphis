@@ -208,3 +208,69 @@ describe('scripts/pii-scan.sh — operator identifier detection', () => {
     expect(result.status).toBe(0);
   });
 });
+
+/**
+ * The history arm.
+ *
+ * Measured 2026-11-22 on the operator's host: the operator's chat id is in
+ * 55 commits across 20 files of the published repository — `crons/spac.sh`,
+ * `docs/MEMORY.md`, ten `tests/unit/mcp-send-*.test.ts` files — while the
+ * working tree is clean of it. Every one of those files was cleaned after
+ * the fact, and the scan above reported OK on the result.
+ *
+ * The state these tests build is exactly that state: a repository that
+ * carried the value and then stopped carrying it. The working tree is
+ * clean. The history is not.
+ */
+describe('scripts/pii-scan.sh — the history arm', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(realTmpdir(), 'memphis-pii-history-'));
+    spawnSync('git', ['init', '-q'], { cwd: dir });
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const OPERATOR_ID = ['131', '603', '3647'].join('');
+  const NEUTRAL_FIXTURE = '99999999';
+
+  /** Commit the identifier, then remove it from the working tree. */
+  function commitThenRemove(name: string, body: string): void {
+    writeFileSync(join(dir, name), body, 'utf8');
+    commitAll(dir);
+    rmSync(join(dir, name));
+    commitAll(dir);
+  }
+
+  it('reports the identifier in the history after it left the working tree', () => {
+    commitThenRemove('leak.env', `CHAT=${OPERATOR_ID}\n`);
+    const result = runScan(dir);
+    // The working tree is clean, so the tree arm has nothing to say.
+    expect(result.status).toBe(0);
+    // The history arm does.
+    expect(result.stderr).toContain('HISTORY');
+    expect(result.stderr).toContain('leak.env');
+  });
+
+  it('states that the remediation is a history rewrite, not a commit', () => {
+    commitThenRemove('leak.env', `CHAT=${OPERATOR_ID}\n`);
+    const result = runScan(dir);
+    expect(result.stderr).toContain('git-filter-repo');
+  });
+
+  it('escalates the history finding under --strict', () => {
+    commitThenRemove('leak.env', `CHAT=${OPERATOR_ID}\n`);
+    expect(runScan(dir, ['--strict']).status).toBe(1);
+  });
+
+  it('reports no history finding for a repository that never carried the identifier', () => {
+    writeFileSync(join(dir, 'fixture.env'), `CHAT=${NEUTRAL_FIXTURE}\n`, 'utf8');
+    commitAll(dir);
+    const result = runScan(dir);
+    expect(result.stderr).not.toContain('HISTORY');
+    expect(result.status).toBe(0);
+  });
+});

@@ -93,6 +93,31 @@ jobs:
       - name: Ops artifact contracts
         run: npm run -s test:ops-artifacts
 
+      # The sweep is the same script the operator's host runs, with the
+      # native core as its oracle. `MEMPHIS_CHAINS` is the runtime's own
+      # variable for where the chains live.
+      #
+      # A pull request cannot see the live chains — they are not in the
+      # repository — so on a public CI runner the committed fixture is
+      # what gets swept, and the reason is printed rather than hidden. On a
+      # runner that DOES own the live chains, the same command sweeps
+      # those instead, because that is where a corrupt chain actually
+      # hurts. The live chains are also measured by `npm run -s ops:audit`
+      # on the host that owns them.
+      #
+      # Measured 2026-11-22 on the operator's host: 14 live chains, 66
+      # blocks checked by the sweep's tail, 0 failures — and the same
+      # command over the committed fixture: 3 chains, 4 blocks, 0 failures.
+      - name: Sweep the chains this runner can reach
+        run: |
+          if [ -n "${MEMPHIS_CHAINS:-}" ] && [ -d "${MEMPHIS_CHAINS}" ]; then
+            echo "sweeping the live chains at ${MEMPHIS_CHAINS}"
+            CHAINS_DIR="${MEMPHIS_CHAINS}" node scripts/chain-integrity-sweep.mjs
+          else
+            echo "no live chains on this runner (MEMPHIS_CHAINS is unset) — sweeping the committed fixture"
+            CHAINS_DIR="${GITHUB_WORKSPACE}/tests/fixtures/chain-invariant" node scripts/chain-integrity-sweep.mjs
+          fi
+
       - name: Upload sandbox dir on failure
         if: failure()
         uses: actions/upload-artifact@v4
