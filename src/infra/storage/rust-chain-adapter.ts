@@ -234,13 +234,26 @@ function normalizeSoulReplayBlock(block: NapiBlock | { data: SoulReplayBlockData
 async function readChainBlocks(
   chain: string,
   rawEnv: NodeJS.ProcessEnv = process.env,
+  tail?: number,
 ): Promise<NapiBlock[]> {
   const normalizedChain = normalizeChainName(chain) ?? chain;
   const blocks: NapiBlock[] = [];
   const seen = new Set<string>();
 
   for (const dir of getReadableChainPaths(normalizedChain, rawEnv)) {
-    const files = await listBlockFiles(dir);
+    const allFiles = await listBlockFiles(dir);
+    // Block files are zero-padded and `listBlockFiles` sorts them
+    // lexicographically, so the tail of the listing is the newest
+    // blocks of that directory.
+    //
+    // Reading only the tail is what keeps a caller that wants the last
+    // twenty blocks from materialising fifteen thousand of them. The
+    // `system` chain alone holds 15 730 blocks / 62 MB, and the `insights`
+    // chain 402 blocks / 32 MB.
+    const files =
+      tail !== undefined && tail > 0 && allFiles.length > tail
+        ? allFiles.slice(-tail)
+        : allFiles;
     // Parse errors and unexpected read errors must propagate — a corrupted block must
     // never be silently treated as "chain is empty" because the caller would then
     // regenerate a fresh genesis and overwrite existing blocks (see issue #70).
@@ -295,8 +308,9 @@ export class NapiChainAdapter {
   }
 
   async getRecentBlocks(chain = 'journal', limit = 20): Promise<Block[]> {
-    const blocks = await readChainBlocks(chain, this.rawEnv);
-    return blocks.slice(-Math.max(1, limit));
+    const bounded = Math.max(1, limit);
+    const blocks = await readChainBlocks(chain, this.rawEnv, bounded);
+    return blocks.slice(-bounded);
   }
 
   async appendBlock(chain: string, data: Record<string, unknown>): Promise<AppendBlockResult> {
@@ -496,6 +510,10 @@ export async function getRecentBlocks(
   limit = 20,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<Block[]> {
-  const blocks = await readChainBlocks(chain, rawEnv);
-  return blocks.slice(-Math.max(1, limit));
+  const bounded = Math.max(1, limit);
+  // The limit is pushed down into the reader. Slicing after the fact
+  // would still have read every block of the chain — which is what turned
+  // a "give me the last 20 blocks" call into a 62 MB read.
+  const blocks = await readChainBlocks(chain, rawEnv, bounded);
+  return blocks.slice(-bounded);
 }
