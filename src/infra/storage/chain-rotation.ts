@@ -12,11 +12,57 @@ import * as path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 
+import { ROTATION_HEAD_FORMAT, writeChainRotationHead } from './chain-rotation-head.js';
+import { withChainWriteLock } from './chain-write-lock.js';
 import { getChainPath, getChainSnapshotsPath } from '../../config/paths.js';
 import { SAFE_CHAIN_NAME } from '../../memory/chain-catalog.js';
 
 /** Default rotation threshold: 50 MB per chain directory. */
 const DEFAULT_ROTATION_THRESHOLD_BYTES = 50 * 1024 * 1024;
+
+/**
+ * The bounds the env schema enforces for the threshold
+ * (`src/infra/config/schema.ts`). The code clamps to the same range, so a
+ * caller that bypassed the schema still cannot ask for a nonsensical
+ * threshold.
+ */
+const MIN_ROTATION_THRESHOLD_BYTES = 1024 * 1024;
+const MAX_ROTATION_THRESHOLD_BYTES = 1024 * 1024 * 1024;
+
+/** The bounds the env schema enforces for the minimum kept block count. */
+const MIN_ROTATION_KEEP_BLOCKS = 1;
+const MAX_ROTATION_KEEP_BLOCKS = 10_000;
+
+/**
+ * The rotation threshold in bytes.
+ *
+ * `MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES` is registered in the env
+ * schema, listed as a warm setting, and named in the rotation loop's own
+ * documentation — but the rotation code never read it. The knob was
+ * accepted, validated and ignored: an operator who set it saw no effect
+ * and no error.
+ */
+function resolveThresholdBytes(rawEnv: NodeJS.ProcessEnv | undefined): number {
+  const raw = (rawEnv ?? process.env).MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES?.trim();
+  if (!raw) return DEFAULT_ROTATION_THRESHOLD_BYTES;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_ROTATION_THRESHOLD_BYTES;
+  return Math.min(Math.max(parsed, MIN_ROTATION_THRESHOLD_BYTES), MAX_ROTATION_THRESHOLD_BYTES);
+}
+
+/**
+ * How many blocks stay in the live chain after a rotation.
+ *
+ * Same story as the threshold: `MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS`
+ * was registered and validated and never read.
+ */
+function resolveMinKeepBlocks(rawEnv: NodeJS.ProcessEnv | undefined): number {
+  const raw = (rawEnv ?? process.env).MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS?.trim();
+  if (!raw) return MIN_KEEP_BLOCKS;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return MIN_KEEP_BLOCKS;
+  return Math.min(Math.max(parsed, MIN_ROTATION_KEEP_BLOCKS), MAX_ROTATION_KEEP_BLOCKS);
+}
 
 /** Minimum blocks to keep in the active chain after rotation. */
 const MIN_KEEP_BLOCKS = 10;
@@ -36,6 +82,24 @@ export interface ChainRotationResult {
   dirSizeBytes: number;
   /** Populated when this chain's rotation threw (per-chain isolation). */
   error?: string;
+}
+
+/**
+ * The archive a rotation has written but not yet published.
+ *
+ * The archive exists as a temporary file until phase 2 renames it and
+ * removes the original blocks — and that phase runs under the chains write
+ * lock, together with the write of the rotation head marker.
+ */
+interface ArchivePreparation {
+  /** Where the archive will live once it is published. */
+  archivePath: string;
+  /** Where the archive is written before it is published. */
+  tmpPath: string;
+  /** The index of the last archived block. */
+  lastIndex: number;
+  /** The hash of the last archived block — the head of the archived prefix. */
+  lastHash: string;
 }
 
 export interface ChainRotationOptions {
@@ -106,18 +170,45 @@ async function listBlockFiles(chainDir: string): Promise<{ file: string; index: 
 }
 
 /**
- * Archive blocks to a gzipped JSON file and remove originals.
+ * Phase 1 of archiving: write the gzipped archive of the blocks.
+ *
+ * No lock is needed here, and that is deliberate.
+ *
+ * The blocks being archived are OLD ones, and the only thing an append
+ * does is add a NEW highest-index block. It never rewrites an existing
+ * block, so the bytes read here cannot change under us.
+ *
+ * The lock IS needed for phase 2, and it is the whole reason this
+ * function is split in two: writing 62 MB through gzip takes seconds, and
+ * the chains write lock is a global one — the append path waits for it
+ * with a 10 second deadline and gives up rather than queueing. Holding
+ * that lock for the whole compression would make appends fail while the
+ * rotation compressed.
  */
-async function archiveBlocks(
+async function prepareArchive(
   chainDir: string,
   chainName: string,
   blocks: { file: string; index: number }[],
-): Promise<string> {
+): Promise<ArchivePreparation> {
   const archiveDir = path.join(path.dirname(chainDir), '.archives');
   await fs.mkdir(archiveDir, { recursive: true });
 
   const firstIdx = blocks[0]!.index;
   const lastIdx = blocks[blocks.length - 1]!.index;
+  // The head of the archived prefix. Read BEFORE the originals are
+  // removed: it is the `prev_hash` of the first live block, and the only
+  // thing that proves the live chain continues this archive.
+  let lastHash = '';
+  try {
+    const lastBlock = JSON.parse(
+      await fs.readFile(path.join(chainDir, blocks[blocks.length - 1]!.file), 'utf8'),
+    ) as { hash?: unknown };
+    if (typeof lastBlock.hash === 'string') lastHash = lastBlock.hash;
+  } catch {
+    // A block that cannot be parsed is a block the validator would reject
+    // anyway; the marker is then written without a hash and the chain
+    // falls back to the genesis rule.
+  }
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const archiveName = `${chainName}_${String(firstIdx).padStart(6, '0')}-${String(lastIdx).padStart(6, '0')}_${timestamp}.jsonl.gz`;
   const archivePath = path.join(archiveDir, archiveName);
@@ -135,20 +226,42 @@ async function archiveBlocks(
   gzip.end();
   await gzipPipeline;
 
+  return { archivePath, tmpPath, lastIndex: lastIdx, lastHash };
+}
+
+/**
+ * Phase 2 of archiving: publish the archive and remove the originals.
+ *
+ * MUST run under the chains write lock, together with the write of the
+ * rotation head marker.
+ *
+ * Why it matters: between removing the archived blocks and writing the
+ * marker, the live chain starts at an index above 1 and carries no proof
+ * that it continues an archive. Every validator rejects that shape as
+ * "missing genesis block" — the exact failure that made rotation
+ * unusable on this host. A reader that arrives in that window sees an
+ * invalid chain.
+ *
+ * The append path takes the same lock (see `chain-write-lock.ts`, shared
+ * with the native writer), so an append cannot observe the window either.
+ */
+async function publishArchive(
+  chainDir: string,
+  blocks: { file: string; index: number }[],
+  prepared: ArchivePreparation,
+): Promise<void> {
   // Atomic rename
   try {
-    await fs.rename(tmpPath, archivePath);
+    await fs.rename(prepared.tmpPath, prepared.archivePath);
   } catch {
-    await fs.unlink(tmpPath).catch(() => undefined);
-    throw new Error(`failed to finalize archive: ${archivePath}`);
+    await fs.unlink(prepared.tmpPath).catch(() => undefined);
+    throw new Error(`failed to finalize archive: ${prepared.archivePath}`);
   }
 
   // Remove archived block files
   for (const entry of blocks) {
     await fs.unlink(path.join(chainDir, entry.file)).catch(() => undefined);
   }
-
-  return archivePath;
 }
 
 function isGcEnabled(options: ChainRotationOptions): boolean {
@@ -357,10 +470,21 @@ export async function rotateChain(
   chainName: string,
   options: ChainRotationOptions = {},
 ): Promise<ChainRotationResult> {
-  const threshold = options.thresholdBytes ?? DEFAULT_ROTATION_THRESHOLD_BYTES;
-  const minKeep = options.minKeepBlocks ?? MIN_KEEP_BLOCKS;
+  const threshold = options.thresholdBytes ?? resolveThresholdBytes(options.rawEnv);
+  const minKeep = options.minKeepBlocks ?? resolveMinKeepBlocks(options.rawEnv);
 
-  const chainDir = getChainPath(chainName);
+  // The caller's environment decides WHICH chain is rotated.
+  //
+  // It used to be `getChainPath(chainName)`, which resolved from
+  // `process.env` only — so a caller with its own data dir rotated the
+  // OPERATOR'S LIVE CHAIN instead of its own. Measured 2026-11-22: a
+  // test that asked to rotate a temporary fixture archived 1052 blocks
+  // of the live `journal` chain. The blocks were recoverable from the
+  // archive and the chain verified again, but the call was made against
+  // a different chain than the one that was asked for.
+  //
+  // Every other function in this file already passed `options.rawEnv`.
+  const chainDir = getChainPath(chainName, options.rawEnv);
   let dirSize: number;
 
   try {
@@ -408,7 +532,41 @@ export async function rotateChain(
 
   // Archive all but the last minKeep blocks
   const toArchive = blocks.slice(0, blocks.length - minKeep);
-  const archivePath = await archiveBlocks(chainDir, chainName, toArchive);
+  // Phase 1 — write the archive. Outside the lock on purpose: compressing
+  // 62 MB takes seconds, and the chains write lock is global. An append
+  // that waits for it gives up after 10 seconds rather than queueing, so
+  // holding the lock across the compression would make appends fail.
+  const prepared = await prepareArchive(chainDir, chainName, toArchive);
+
+  // Phase 2 — publish the archive, remove the originals, and write the
+  // head marker. All of it under the chains write lock, which is the same
+  // lock the append path takes.
+  //
+  // Why the lock matters: between removing the archived blocks and writing
+  // the marker, the live chain starts at an index above 1 and carries no
+  // proof that it continues an archive. Every validator rejects that shape
+  // as "missing genesis block" — the exact failure that made rotation
+  // unusable on this host. Without the lock, a reader — or an append —
+  // could arrive inside that window and see an invalid chain.
+  //
+  // The marker itself is what lets the validators prove that the live
+  // chain continues this archive instead of starting at genesis.
+  // See `src/infra/storage/chain-rotation-head.ts`.
+  const chainsDir = getChainPath(undefined, options.rawEnv);
+  await withChainWriteLock(chainsDir, async () => {
+    await publishArchive(chainDir, toArchive, prepared);
+    await writeChainRotationHead(chainDir, {
+      format: ROTATION_HEAD_FORMAT,
+      chain: chainName,
+      archivedFrom: toArchive[0]!.index,
+      archivedTo: prepared.lastIndex,
+      lastArchivedIndex: prepared.lastIndex,
+      lastArchivedHash: prepared.lastHash,
+      archivePath: prepared.archivePath,
+      rotatedAt: new Date().toISOString(),
+    });
+  });
+
   const newDirSize = await measureChainDirSize(chainDir);
 
   // GC stale archives — opt-in via MEMPHIS_CHAIN_GC_ENABLED.
@@ -418,7 +576,7 @@ export async function rotateChain(
     chain: chainName,
     rotated: true,
     archivedBlocks: toArchive.length,
-    archivePath,
+    archivePath: prepared.archivePath,
     remainingBlocks: blocks.length - toArchive.length,
     dirSizeBytes: newDirSize,
   };
@@ -436,7 +594,9 @@ export async function rotateChain(
 export async function rotateAllChains(
   options: ChainRotationOptions = {},
 ): Promise<ChainRotationResult[]> {
-  const baseDir = getChainPath();
+  // The caller's environment decides WHICH chains are rotated — see the
+  // note in `rotateChain`.
+  const baseDir = getChainPath(undefined, options.rawEnv);
   let entries: string[];
 
   try {
