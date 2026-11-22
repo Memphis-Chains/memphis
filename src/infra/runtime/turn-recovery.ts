@@ -9,6 +9,17 @@ export interface RecoveryTurn {
   updatedAt: string;
   partialBytes: number;
   partialTruncated: boolean;
+  /**
+   * The operations of this turn whose outcome was never determined.
+   *
+   * This is the ONLY thing that can have left a side effect half-applied,
+   * so it is the only thing that needs a decision. A turn that failed
+   * without dispatching a tool has nothing outstanding — `memphis_exec`
+   * that was never called cannot have half-run.
+   */
+  unsettledCount: number;
+  /** Does this turn need the operator to acknowledge it? */
+  needsAcknowledgement: boolean;
   operations: Array<{ tool: string; status: string; exitCode?: number }>;
 }
 
@@ -48,18 +59,34 @@ export function listRecoveryTurns(databasePath: string): RecoveryTurn[] {
     if (!exists) return [];
     const turns = db.prepare(
       "SELECT id, session_id AS sessionId, status, updated_at AS updatedAt, length(CAST(partial_text AS BLOB)) AS partialBytes, partial_truncated AS partialTruncated FROM operator_turn_checkpoints WHERE status IN ('running','interrupted','blocked','abandoned') ORDER BY updated_at DESC LIMIT 100",
-    ).all() as Array<Omit<RecoveryTurn, 'operations'>>;
+    ).all() as Array<Omit<RecoveryTurn, 'operations' | 'unsettledCount' | 'needsAcknowledgement'>>;
     const operationsExist = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='operator_tool_operations'").get();
     const columns = operationsExist ? db.pragma('table_info(operator_tool_operations)') as Array<{ name: string }> : [];
-    if (!columns.some((column) => column.name === 'turn_id')) return turns.map((turn) => ({ ...turn, partialTruncated: Boolean(turn.partialTruncated), operations: [] }));
+    if (!columns.some((column) => column.name === 'turn_id')) {
+      return turns.map((turn) => ({ ...turn, partialTruncated: Boolean(turn.partialTruncated), unsettledCount: 0, needsAcknowledgement: false, operations: [] }));
+    }
+    const hasReviewedAt = columns.some((column) => column.name === 'reviewed_at');
     const query = db.prepare('SELECT tool_name AS tool, status, result_summary AS summary FROM operator_tool_operations WHERE turn_id=? AND session_id=? ORDER BY created_at ASC LIMIT 100');
-    return turns.map((turn) => ({
-      ...turn, partialTruncated: Boolean(turn.partialTruncated),
-      operations: (query.all(turn.id, turn.sessionId) as Array<{ tool: string; status: string; summary: string | null }>).map((op) => {
-        const exit = op.summary?.match(/(?:^|\s)exit=(\d+)$/);
-        return { tool: op.tool, status: op.status, ...(exit ? { exitCode: Number(exit[1]) } : {}) };
-      }),
-    }));
+    // The same predicate the Rust arm uses (`list_recovery_turns` in
+    // crates/memphis-operator/src/chat_session.rs): an operation that was
+    // dispatched and never settled is the ONLY evidence of a possible
+    // half-applied side effect. A turn that failed without dispatching a
+    // tool has nothing outstanding to acknowledge.
+    const unsettledQuery = db.prepare(
+      `SELECT COUNT(*) AS n FROM operator_tool_operations op WHERE op.turn_id=? AND op.session_id=? AND op.status IN ('started','unknown') ${hasReviewedAt ? 'AND op.reviewed_at IS NULL' : ''}`,
+    );
+    return turns.map((turn) => {
+      const unsettledCount = Number((unsettledQuery.get(turn.id, turn.sessionId) as { n: number }).n);
+      return {
+        ...turn, partialTruncated: Boolean(turn.partialTruncated),
+        unsettledCount,
+        needsAcknowledgement: unsettledCount > 0,
+        operations: (query.all(turn.id, turn.sessionId) as Array<{ tool: string; status: string; summary: string | null }>).map((op) => {
+          const exit = op.summary?.match(/(?:^|\s)exit=(\d+)$/);
+          return { tool: op.tool, status: op.status, ...(exit ? { exitCode: Number(exit[1]) } : {}) };
+        }),
+      };
+    });
   } finally {
     db.close();
   }
