@@ -7,7 +7,7 @@ import { z } from 'zod';
 
 import { LOOP_LIMITS, formatLoopLimitsLine } from './loop-limits.js';
 import type { RuntimeEnvironmentContext } from './runtime-environment.js';
-import { TOOL_REGISTRY, type ToolMeta, type ToolTier } from './tool-registry.js';
+import { getToolMeta, type ToolMeta, type ToolTier } from './tool-registry.js';
 import { COGNITIVE_MODES, type CognitiveMode } from '../cognitive/modes.js';
 import { CHAIN_CATALOG, getChainNames } from '../memory/chain-catalog.js';
 import { resolveModelCapabilitySnapshot } from '../providers/model-capabilities.js';
@@ -1292,7 +1292,7 @@ WHEN NOT TO USE:
   // when the hand-authored block is missing (the pre-G1 default behaviour).
   for (const name of tools) {
     if (HAND_AUTHORED_TOOLS.has(name)) continue;
-    const meta = TOOL_REGISTRY[name];
+    const meta = getToolMeta(name);
     if (!meta) continue; // tool unknown to registry — skip to avoid hallucinating docs
     sections.push(autoGenToolDoc(name, meta));
   }
@@ -1307,7 +1307,7 @@ WHEN NOT TO USE:
   // information surfaces regardless.
   for (const name of tools) {
     if (!HAND_AUTHORED_TOOLS.has(name)) continue;
-    const meta = TOOL_REGISTRY[name];
+    const meta = getToolMeta(name);
     if (!meta || !meta.featureFlag) continue;
     sections.push(
       `<tool_metadata tool="${name}" feature_flag="${meta.featureFlag}">

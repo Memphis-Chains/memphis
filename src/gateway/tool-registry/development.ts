@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { ToolMeta } from '../tool-metadata.js';
 
-export const DEVELOPMENT_TOOLS: Record<string, ToolMeta> = {
+export const DEVELOPMENT_TOOLS = {
   memphis_code_read: {
     name: 'memphis_code_read',
     tier: 2,
@@ -50,11 +50,11 @@ export const DEVELOPMENT_TOOLS: Record<string, ToolMeta> = {
     description: 'Search code using regex patterns (ripgrep or grep)',
     inputSchema: z
       .object({
-        pattern: z.string().min(1),
+        pattern: z.string().min(1).max(500),
         path: z.string().optional(),
         glob: z.string().optional(),
         limit: z.number().int().positive().max(200).optional(),
-        context: z.number().int().min(0).optional(),
+        context: z.number().int().min(0).max(10).optional(),
         ignoreCase: z.boolean().optional(),
         approval_request_id: z.string().optional(),
       })
@@ -101,7 +101,7 @@ export const DEVELOPMENT_TOOLS: Record<string, ToolMeta> = {
     description: 'Find files by glob pattern (fd or find)',
     inputSchema: z
       .object({
-        pattern: z.string().min(1),
+        pattern: z.string().min(1).max(300),
         path: z.string().optional(),
         limit: z.number().int().positive().max(500).optional(),
         approval_request_id: z.string().optional(),
@@ -193,13 +193,13 @@ export const DEVELOPMENT_TOOLS: Record<string, ToolMeta> = {
       .object({
         action: z.enum(['run', 'health', 'rollback']).optional(),
         profile: z.enum(['local-service', 'build-only', 'custom']).optional(),
-        buildCommand: z.string().optional(),
-        deployCommand: z.string().optional(),
-        healthUrl: z.string().optional(),
+        buildCommand: z.string().min(1).optional(),
+        deployCommand: z.string().min(1).optional(),
+        healthUrl: z.string().url().optional(),
         testSuite: z.enum(['ts', 'rust', 'lint', 'typecheck', 'all']).optional(),
         deep: z.boolean().optional(),
         dryRun: z.boolean().optional(),
-        rollbackIndex: z.number().int().min(0).optional(),
+        rollbackIndex: z.number().int().min(1).optional(),
         approval_request_id: z.string().optional(),
       })
       .strict(),
@@ -246,4 +246,4 @@ export const DEVELOPMENT_TOOLS: Record<string, ToolMeta> = {
       },
     ],
   },
-};
+} satisfies Record<string, ToolMeta>;
