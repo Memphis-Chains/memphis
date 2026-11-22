@@ -51,7 +51,9 @@ pub mod code_read;
 /// archive of one. Exported so the contract test can check the native arm
 /// against `tests/fixtures/chain-verify-contract.json`, the same fixture
 /// the TypeScript arm is checked against.
-pub use chat_memory::{is_chain_backup_directory, is_scannable_chain_directory_name};
+pub use chat_memory::{
+    is_chain_backup_directory, is_scannable_chain_directory_name, normalize_case_append_input,
+};
 /// The chains a tool may append to when the operator names one explicitly.
 ///
 /// Exported so the contract test can check the native arm against

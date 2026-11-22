@@ -91,12 +91,6 @@ type ToolContract = {
  * class of bug as a schema that promises the wrong argument names.
  */
 const DIVERGENCES: Record<string, { reason: string; closure: string }> = {
-  memphis_case_append: {
-    reason:
-      'the registry accepts both `{entry}` and the flat case fields; the native executor reads only `entry`',
-    closure:
-      "accept the flat form in the native arm, mirroring the gateway's normalizeCaseAppendInput",
-  },
   memphis_self_modify: {
     reason:
       'under one name the registry means "apply changes to many files, with a snapshot and a test run"; the native tool writes ONE file. Same name, two different operations.',

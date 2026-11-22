@@ -2152,17 +2152,25 @@ mod tests {
     }
 
     #[test]
-    fn case_append_schema_types_tags_as_a_bare_array() {
+    fn case_append_advertises_only_the_fields_the_case_entry_has() {
         let binding = tool_schema("memphis_case_append");
         let entry = schema_at(&binding, &["properties", "entry"]);
-        let tags = schema_at(entry, &["properties", "tags"]);
         assert_eq!(
-            tags["type"].as_str(),
-            Some("array"),
-            "entry.tags must be array — the live history shows 6 case_append calls \
-             that wrapped it as {{\"item\": [...}}"
+            entry["properties"]["case_type"]["type"].as_str(),
+            Some("string"),
+            "the case entry is anchored on its grammatical case"
         );
-        assert_eq!(tags["items"]["type"].as_str(), Some("string"));
+        // The case entry has NO `tags` field — the block's tags are
+        // DERIVED (`case:{case_type}`). The hand-written schema used to
+        // advertise `entry.tags` as a bare array, which taught the model
+        // to send a field the surface silently dropped: the live history
+        // shows 6 case_append calls that wrapped it as `{"item": [...]}`.
+        // The projected schema says what the entry actually IS, so the
+        // model stops sending a field that does nothing.
+        assert!(
+            entry["properties"].get("tags").is_none(),
+            "the case entry has no tags field — the block's tags are derived"
+        );
         assert!(
             entry["properties"].get("item").is_none(),
             "entry must not offer an `item` key"
@@ -2172,9 +2180,16 @@ mod tests {
     /// Every list-bearing tool must say so in the description the model reads
     /// first. The schema alone is not enough when the model has been burned
     /// by the wrapper before and is primed to reproduce it.
+    ///
+    /// `memphis_case_append` is NOT on the list: a case entry has no list
+    /// field at all — every role slot is a string, and the block's tags
+    /// are derived from the grammatical case. It used to be on the list
+    /// because the hand-written schema advertised a `tags` field the
+    /// implementation ignored; teaching a rule about a field that does
+    /// not exist is teaching the model to send something for nothing.
     #[test]
     fn list_bearing_tools_mention_the_bare_array_rule_in_their_description() {
-        for name in ["memphis_soul_write", "memphis_case_append"] {
+        for name in ["memphis_soul_write"] {
             let description = native_tool_definitions()
                 .into_iter()
                 .find(|tool| tool.name == name)

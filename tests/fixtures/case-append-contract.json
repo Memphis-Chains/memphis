@@ -1,0 +1,72 @@
+{
+  "comment": "Which entry a `memphis_case_append` call carries. The registry accepts the flat form as well as `{entry: {...}}`, and both arms normalise the two into one shape: TypeScript (src/mcp/tools/case-entry.ts, `normalizeCaseAppendInput`) and Rust (crates/memphis-operator/src/chat_memory.rs, `normalize_case_append_input`). The runners are tests/unit/case-append-contract.test.ts and crates/memphis-operator/tests/case_append_contract.rs. WHY: the native arm required the wrapped form, so a model that had learned the flat form on Telegram got a refusal in the cockpit — and the flat form is the one the registry's own help text shows first. The expected values hold the CASE FIELDS only: the gateway's normaliser returns the whole argument object for the flat form, transport keys included, while the native arm deserialises into the case enum and drops what it does not know. The two arms agree on the case.",
+  "cases": [
+    {
+      "name": "the wrapped form",
+      "arguments": {
+        "entry": {
+          "case_type": "nominative",
+          "entity": "operator",
+          "action": "verified",
+          "timestamp": "2026-11-22T10:00:00Z"
+        }
+      },
+      "expected": {
+        "case_type": "nominative",
+        "entity": "operator",
+        "action": "verified",
+        "timestamp": "2026-11-22T10:00:00Z"
+      }
+    },
+    {
+      "name": "the flat form",
+      "arguments": {
+        "case_type": "nominative",
+        "entity": "operator",
+        "action": "verified",
+        "timestamp": "2026-11-22T10:00:00Z"
+      },
+      "expected": {
+        "case_type": "nominative",
+        "entity": "operator",
+        "action": "verified",
+        "timestamp": "2026-11-22T10:00:00Z"
+      }
+    },
+    {
+      "name": "the flat form carries a transport key the case does not know",
+      "arguments": {
+        "case_type": "instrumental",
+        "actor": "agent",
+        "instrument": "memphis_exec",
+        "target": "providers",
+        "approval_request_id": "req-1"
+      },
+      "expected": {
+        "case_type": "instrumental",
+        "actor": "agent",
+        "instrument": "memphis_exec",
+        "target": "providers"
+      }
+    },
+    {
+      "name": "the wrapped form wins when both are present",
+      "arguments": {
+        "entry": {
+          "case_type": "locative",
+          "entity": "operator",
+          "location": "krakow"
+        },
+        "case_type": "nominative",
+        "entity": "ignored",
+        "action": "ignored",
+        "timestamp": "2026-11-22T10:00:00Z"
+      },
+      "expected": {
+        "case_type": "locative",
+        "entity": "operator",
+        "location": "krakow"
+      }
+    }
+  ]
+}
