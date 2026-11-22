@@ -22,6 +22,7 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { readNativeCatalog } from '../../scripts/lib/native-tool-catalog.mts';
 import { nativeToolPolicy, requireToolPolicy } from '../../src/gateway/native-tool-policy.js';
 import {
   NATIVE_TOOL_CONTRACTS,
@@ -30,7 +31,6 @@ import {
   requireToolContract,
 } from '../../src/gateway/tool-contract.js';
 import { TOOL_REGISTRY } from '../../src/gateway/tool-registry.js';
-import { readNativeCatalog } from '../helpers/native-tool-catalog.js';
 
 const RUST_EXECUTOR = resolve('crates/memphis-operator/src/chat_tool_executor.rs');
 
