@@ -98,18 +98,6 @@ pub(crate) fn native_tool_definitions() -> Vec<ChatToolDefinition> {
 pub(crate) fn native_divergent_definitions() -> Vec<ChatToolDefinition> {
     vec![
         ChatToolDefinition {
-                name: "memphis_journal".to_string(),
-                description: "Save an entry to the Memphis journal chain".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "content": { "type": "string" },
-                        "tags": { "type": "array", "items": { "type": "string" } }
-                    },
-                    "required": ["content"]
-                }),
-            },
-        ChatToolDefinition {
                 name: "memphis_case_append".to_string(),
                 description: "Append a case chain entry. Arrays must be bare JSON arrays, never objects wrapping an array.".to_string(),
                 input_schema: json!({

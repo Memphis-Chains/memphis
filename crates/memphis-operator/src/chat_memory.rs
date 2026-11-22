@@ -207,7 +207,42 @@ pub(crate) fn run_native_journal(
     runtime: &OperatorRuntime,
     content: &str,
     tags: Vec<String>,
+    chain: Option<&str>,
 ) -> Result<JournalWriteResult, OperatorError> {
+    // An explicitly named chain must be one a TOOL may write to on the
+    // operator's request. Without this check the call could append to
+    // `system` or `security` — the audit-guarded chains — and would write
+    // wherever it was pointed.
+    //
+    // The check belongs at the tool boundary, not inside the append: the
+    // runtime's own audit path writes to `system` and `security` through
+    // other routes, and a check placed there would refuse the runtime's
+    // own writes. The boundary is where an operator-supplied name
+    // arrives, so the boundary is where the name is validated.
+    //
+    // This mirrors the TypeScript arm's boundary in
+    // `src/mcp/tools/journal.ts` — including the refusal being a
+    // structured failure, not a thrown error, so both surfaces answer
+    // the same way for the same input.
+    let requested = chain.map(str::trim).filter(|name| !name.is_empty());
+    if let Some(requested) = requested {
+        if !is_journal_target_chain(requested) {
+            return Ok(JournalWriteResult {
+                success: false,
+                memory_id: String::new(),
+                index: 0,
+                hash: String::new(),
+                indexed: false,
+                error: Some(format!(
+                    "refusing to write to chain \"{requested}\": a tool may append to {} only",
+                    JOURNAL_TARGET_CHAINS.join(", ")
+                )),
+                pattern_id: None,
+            });
+        }
+    }
+    let target_chain = requested.unwrap_or("journal");
+
     if let Err((pattern_id, reason)) = scan_memory_content(content) {
         emit_runtime_security_event(
             runtime,
@@ -238,25 +273,26 @@ pub(crate) fn run_native_journal(
     // regresses the runtime to `legacy-migrateable` and
     // `memphis repair runtime --force` becomes a recurring chore
     // instead of a one-shot migration.
+    let block_type = journal_block_type(target_chain);
     let append = append_generic_block(
         &runtime.config.data_dir,
-        "journal",
+        target_chain,
         json!({
-            "type": "journal",
+            "type": block_type,
             "content": content,
             "tags": tags,
             "source": "memphis-rust",
         }),
     )?;
-    let memory_id = format!("journal-{}", append.index);
+    let memory_id = format!("{}-{}", target_chain, append.index);
     let exact_indexed = upsert_exact_search_entry(
         &runtime.config.database_path,
         ExactSearchEntry {
-            source_key: format!("journal:{}", append.index),
-            chain: "journal".to_string(),
+            source_key: format!("{}:{}", target_chain, append.index),
+            chain: target_chain.to_string(),
             block_index: append.index,
             block_hash: append.hash.clone(),
-            block_type: "journal".to_string(),
+            block_type: block_type.to_string(),
             content: content.to_string(),
             summary: summarize_content(content),
             tags: tags.clone(),
@@ -268,7 +304,7 @@ pub(crate) fn run_native_journal(
         runtime,
         &memory_id,
         content,
-        &embed_tags_for_chain("journal", &tags),
+        &embed_tags_for_chain(target_chain, &tags),
     )
     .is_ok();
 
@@ -281,6 +317,22 @@ pub(crate) fn run_native_journal(
         error: None,
         pattern_id: None,
     })
+}
+
+/// The block type a journal-style write carries in a given chain.
+///
+/// Mirrors the TypeScript arm's `inferredType` in
+/// `src/infra/memory/durable-memory.ts`. The block type is part of what
+/// the two arms answer, so it cannot be one arm's invention: the
+/// TypeScript arm writes `decision` for the decisions chain,
+/// `system_event` for soul and system, and `journal` everywhere else —
+/// and so does this one.
+pub(crate) fn journal_block_type(chain: &str) -> &'static str {
+    match chain {
+        "decisions" => "decision",
+        "soul" | "system" => "system_event",
+        _ => "journal",
+    }
 }
 
 pub(crate) fn run_soul_read(

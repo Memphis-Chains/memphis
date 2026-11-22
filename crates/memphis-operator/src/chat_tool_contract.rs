@@ -352,6 +352,39 @@ pub(crate) const NATIVE_TOOL_CONTRACT_JSON: &str = r#"{
       }
     },
     {
+      "name": "memphis_journal",
+      "description": "Save entries to journal chain",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "chain": {
+            "type": "string",
+            "enum": [
+              "journal",
+              "soul",
+              "reflections",
+              "cases",
+              "patterns"
+            ]
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "memphis_recall",
       "description": "Semantic search across chains",
       "input_schema": {
@@ -583,11 +616,6 @@ pub(crate) const NATIVE_TOOL_CONTRACT_JSON: &str = r#"{
     }
   ],
   "divergences": [
-    {
-      "name": "memphis_journal",
-      "reason": "the registry declares a `chain` argument; the native journal writes to the journal chain and ignores it",
-      "closure": "plumb the chain through run_native_journal and validate it with is_journal_target_chain — the machinery is already in the operator crate"
-    },
     {
       "name": "memphis_case_append",
       "reason": "the registry accepts both `{entry}` and the flat case fields; the native executor reads only `entry`",

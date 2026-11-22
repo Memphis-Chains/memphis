@@ -91,12 +91,6 @@ type ToolContract = {
  * class of bug as a schema that promises the wrong argument names.
  */
 const DIVERGENCES: Record<string, { reason: string; closure: string }> = {
-  memphis_journal: {
-    reason:
-      'the registry declares a `chain` argument; the native journal writes to the journal chain and ignores it',
-    closure:
-      'plumb the chain through run_native_journal and validate it with is_journal_target_chain — the machinery is already in the operator crate',
-  },
   memphis_case_append: {
     reason:
       'the registry accepts both `{entry}` and the flat case fields; the native executor reads only `entry`',
