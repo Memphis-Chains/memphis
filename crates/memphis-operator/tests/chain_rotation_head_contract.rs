@@ -31,7 +31,8 @@ const FIXTURE: &str = include_str!("../../../tests/fixtures/chain-rotation-head-
 
 #[test]
 fn the_native_arm_agrees_with_the_contract() {
-    let fixture: Value = serde_json::from_str(FIXTURE).expect("the contract fixture must be valid JSON");
+    let fixture: Value =
+        serde_json::from_str(FIXTURE).expect("the contract fixture must be valid JSON");
 
     assert_eq!(
         fixture["format"].as_str(),
@@ -74,7 +75,8 @@ fn the_native_arm_agrees_with_the_contract() {
 fn the_native_arm_reads_a_marker_the_typescript_arm_wrote() {
     // The format tag and the file name are what the two arms share. A
     // marker written by the rotation (TypeScript) must parse here.
-    let fixture: Value = serde_json::from_str(FIXTURE).expect("the contract fixture must be valid JSON");
+    let fixture: Value =
+        serde_json::from_str(FIXTURE).expect("the contract fixture must be valid JSON");
     let head = fixture["cases"][0]["head"].clone();
     let parsed = parse_chain_rotation_head(&head.to_string()).expect("the head must parse");
     assert_eq!(parsed.last_archived_index, 15738);

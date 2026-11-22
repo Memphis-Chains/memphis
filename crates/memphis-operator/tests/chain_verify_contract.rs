@@ -16,7 +16,8 @@ const FIXTURE: &str = include_str!("../../../tests/fixtures/chain-verify-contrac
 
 #[test]
 fn the_native_arm_agrees_with_the_typescript_arm_on_chain_directory_names() {
-    let fixture: Value = serde_json::from_str(FIXTURE).expect("the contract fixture must be valid JSON");
+    let fixture: Value =
+        serde_json::from_str(FIXTURE).expect("the contract fixture must be valid JSON");
     let cases = fixture["cases"]
         .as_array()
         .expect("the contract fixture must hold a cases array");
@@ -26,7 +27,9 @@ fn the_native_arm_agrees_with_the_typescript_arm_on_chain_directory_names() {
     let mut failures: Vec<String> = Vec::new();
     for case in cases {
         let name = case["name"].as_str().expect("every case needs a name");
-        let directory = case["directory"].as_str().expect("every case needs a directory");
+        let directory = case["directory"]
+            .as_str()
+            .expect("every case needs a directory");
         let expected = case["scannable"]
             .as_bool()
             .expect("every case needs a scannable verdict");

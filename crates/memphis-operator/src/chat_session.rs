@@ -71,7 +71,10 @@ pub(crate) struct RunningCheckpointGuard<'a> {
 
 impl<'a> RunningCheckpointGuard<'a> {
     pub(crate) fn new(conn: &'a Connection, id: &str) -> Self {
-        Self { conn, id: id.to_string() }
+        Self {
+            conn,
+            id: id.to_string(),
+        }
     }
 }
 
@@ -156,28 +159,44 @@ pub(crate) fn ensure_chat_tables(conn: &Connection) -> Result<(), OperatorError>
         ("owner_start_time", "INTEGER"),
     ] {
         let has_column = {
-            let mut statement = conn.prepare("PRAGMA table_info(operator_turn_checkpoints)")
+            let mut statement = conn
+                .prepare("PRAGMA table_info(operator_turn_checkpoints)")
                 .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
-            let columns = statement.query_map([], |row| row.get::<_, String>(1))
+            let columns = statement
+                .query_map([], |row| row.get::<_, String>(1))
                 .map_err(|error| OperatorError::Sqlite(error.to_string()))?
-                .collect::<Result<Vec<_>, _>>().map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
             columns.iter().any(|column| column == name)
         };
         if !has_column {
-            let sql = format!("ALTER TABLE operator_turn_checkpoints ADD COLUMN {name} {declaration}");
+            let sql =
+                format!("ALTER TABLE operator_turn_checkpoints ADD COLUMN {name} {declaration}");
             if let Err(error) = conn.execute(&sql, []) {
-                let present = conn.prepare("PRAGMA table_info(operator_turn_checkpoints)").and_then(|mut statement| {
-                    let columns = statement.query_map([], |row| row.get::<_, String>(1))?.collect::<Result<Vec<_>, _>>()?;
-                    Ok(columns.iter().any(|column| column == name))
-                }).unwrap_or(false);
-                if !present { return Err(OperatorError::Sqlite(error.to_string())); }
+                let present = conn
+                    .prepare("PRAGMA table_info(operator_turn_checkpoints)")
+                    .and_then(|mut statement| {
+                        let columns = statement
+                            .query_map([], |row| row.get::<_, String>(1))?
+                            .collect::<Result<Vec<_>, _>>()?;
+                        Ok(columns.iter().any(|column| column == name))
+                    })
+                    .unwrap_or(false);
+                if !present {
+                    return Err(OperatorError::Sqlite(error.to_string()));
+                }
             }
         }
     }
     Ok(())
 }
 
-pub(crate) fn save_partial_turn_text(conn: &Connection, id: &str, text: &str, truncated: bool) -> Result<(), OperatorError> {
+pub(crate) fn save_partial_turn_text(
+    conn: &Connection,
+    id: &str,
+    text: &str,
+    truncated: bool,
+) -> Result<(), OperatorError> {
     conn.execute(
         "UPDATE operator_turn_checkpoints SET partial_text=?, partial_truncated=?, updated_at=? WHERE id=? AND status='running'",
         params![text, truncated, utc_now(), id],
@@ -196,9 +215,12 @@ pub(crate) fn save_turn_checkpoint(
     status: &str,
     pending: &[MessageToPersist],
 ) -> Result<(), OperatorError> {
-    let json = serde_json::to_string(pending).map_err(|error| OperatorError::Json(error.to_string()))?;
+    let json =
+        serde_json::to_string(pending).map_err(|error| OperatorError::Json(error.to_string()))?;
     if json.len() > 4 * 1024 * 1024 {
-        return Err(OperatorError::Message("turn checkpoint exceeds 4 MiB; operator review required".into()));
+        return Err(OperatorError::Message(
+            "turn checkpoint exceeds 4 MiB; operator review required".into(),
+        ));
     }
     // A `running` checkpoint records the identity of its owner, so a
     // checkpoint left behind by a killed process can be told apart from
@@ -235,20 +257,28 @@ pub(crate) fn save_turn_checkpoint(
 /// audit trail of what happened survives. Whether the abandoned turn had
 /// side effects is decided separately, by the unsettled-operations query
 /// — which is the only signal that actually matters.
-pub(crate) fn reclaim_abandoned_turns(conn: &Connection, session_id: &str) -> Result<usize, OperatorError> {
-    let mut statement = conn.prepare(
-        "SELECT id, owner_pid, owner_boot_id, owner_start_time FROM operator_turn_checkpoints \
+pub(crate) fn reclaim_abandoned_turns(
+    conn: &Connection,
+    session_id: &str,
+) -> Result<usize, OperatorError> {
+    let mut statement = conn
+        .prepare(
+            "SELECT id, owner_pid, owner_boot_id, owner_start_time FROM operator_turn_checkpoints \
          WHERE session_id=? AND status='running'",
-    ).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
-    let rows = statement.query_map(params![session_id], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, Option<i64>>(1)?,
-            row.get::<_, Option<String>>(2)?,
-            row.get::<_, Option<i64>>(3)?,
-        ))
-    }).map_err(|error| OperatorError::Sqlite(error.to_string()))?
-      .collect::<Result<Vec<_>, _>>().map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+        )
+        .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+    let rows = statement
+        .query_map(params![session_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<i64>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<i64>>(3)?,
+            ))
+        })
+        .map_err(|error| OperatorError::Sqlite(error.to_string()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
     drop(statement);
 
     let mut reclaimed = 0usize;
@@ -317,14 +347,17 @@ pub fn list_recovery_turns(
                         WHERE op.turn_id=cp.id AND op.status IN ('started','unknown') AND op.reviewed_at IS NULL) \
          ORDER BY cp.updated_at DESC LIMIT 20",
     ).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
-    let turns = statement.query_map(params![session_id], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, String>(2)?,
-        ))
-    }).map_err(|error| OperatorError::Sqlite(error.to_string()))?
-      .collect::<Result<Vec<_>, _>>().map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+    let turns = statement
+        .query_map(params![session_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(|error| OperatorError::Sqlite(error.to_string()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
     drop(statement);
 
     let mut summaries = Vec::with_capacity(turns.len());
@@ -334,13 +367,16 @@ pub fn list_recovery_turns(
              WHERE session_id=? AND turn_id=? AND status IN ('started','unknown') AND reviewed_at IS NULL \
              ORDER BY created_at ASC LIMIT 20",
         ).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
-        let operations = operations_statement.query_map(params![session_id, id], |row| {
-            Ok(RecoveryOperationSummary {
-                tool_name: row.get(0)?,
-                status: row.get(1)?,
+        let operations = operations_statement
+            .query_map(params![session_id, id], |row| {
+                Ok(RecoveryOperationSummary {
+                    tool_name: row.get(0)?,
+                    status: row.get(1)?,
+                })
             })
-        }).map_err(|error| OperatorError::Sqlite(error.to_string()))?
-          .collect::<Result<Vec<_>, _>>().map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+            .map_err(|error| OperatorError::Sqlite(error.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
         summaries.push(RecoveryTurnSummary {
             id,
             status,
@@ -380,16 +416,25 @@ pub fn list_recovery_turns(
 /// The unfinished turns are the ones [`list_recovery_turns`] finds, and
 /// that is the same list the console shows the operator. One definition,
 /// three readers.
-pub(crate) fn incomplete_turn_summary(conn: &Connection, session_id: &str, current_turn_id: &str) -> Result<String, OperatorError> {
+pub(crate) fn incomplete_turn_summary(
+    conn: &Connection,
+    session_id: &str,
+    current_turn_id: &str,
+) -> Result<String, OperatorError> {
     let summaries = list_recovery_turns(conn, session_id)?;
     let relevant: Vec<&RecoveryTurnSummary> = summaries
         .iter()
         .filter(|summary| summary.id != current_turn_id)
         .collect();
-    if relevant.is_empty() { return Ok(String::new()); }
+    if relevant.is_empty() {
+        return Ok(String::new());
+    }
     let mut entries = Vec::new();
     for summary in relevant {
-        entries.push(format!("- {} [{}] at {}", summary.id, summary.status, summary.updated_at));
+        entries.push(format!(
+            "- {} [{}] at {}",
+            summary.id, summary.status, summary.updated_at
+        ));
         for operation in &summary.operations {
             let safe_name: String = operation
                 .tool_name
@@ -621,15 +666,23 @@ mod checkpoint_tests {
         save_turn_checkpoint(&conn, "first", "session", "running", &[]).unwrap();
         {
             let _guard = RunningCheckpointGuard::new(&conn, "first");
-            assert!(incomplete_turn_summary(&conn, "session", "first").unwrap().is_empty());
+            assert!(incomplete_turn_summary(&conn, "session", "first")
+                .unwrap()
+                .is_empty());
             assert!(save_turn_checkpoint(&conn, "second", "session", "running", &[]).is_err());
         }
         save_turn_checkpoint(&conn, "second", "session", "running", &[]).unwrap();
         save_turn_checkpoint(&conn, "second", "session", "completed", &[]).unwrap();
-        { let _guard = RunningCheckpointGuard::new(&conn, "second"); }
-        let status: String = conn.query_row(
-            "SELECT status FROM operator_turn_checkpoints WHERE id='second'", [], |row| row.get(0),
-        ).unwrap();
+        {
+            let _guard = RunningCheckpointGuard::new(&conn, "second");
+        }
+        let status: String = conn
+            .query_row(
+                "SELECT status FROM operator_turn_checkpoints WHERE id='second'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(status, "completed");
     }
 
@@ -651,9 +704,13 @@ mod checkpoint_tests {
         {
             let _guard = RunningCheckpointGuard::new(&conn, "first");
         }
-        let status: String = conn.query_row(
-            "SELECT status FROM operator_turn_checkpoints WHERE id='first'", [], |row| row.get(0),
-        ).unwrap();
+        let status: String = conn
+            .query_row(
+                "SELECT status FROM operator_turn_checkpoints WHERE id='first'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(status, "interrupted");
 
         let summary = incomplete_turn_summary(&conn, "session", "current").unwrap();
@@ -673,14 +730,7 @@ mod checkpoint_tests {
         {
             let _guard = RunningCheckpointGuard::new(&conn, "first");
         }
-        record_operation_started(
-            &conn,
-            "session",
-            "call-1",
-            "memphis_journal",
-            "{}",
-        )
-        .unwrap();
+        record_operation_started(&conn, "session", "call-1", "memphis_journal", "{}").unwrap();
         conn.execute(
             "UPDATE operator_tool_operations SET turn_id='first' WHERE session_id='session'",
             [],
@@ -711,9 +761,13 @@ mod checkpoint_tests {
 
         let reclaimed = reclaim_abandoned_turns(&conn, "session").unwrap();
         assert_eq!(reclaimed, 1);
-        let status: String = conn.query_row(
-            "SELECT status FROM operator_turn_checkpoints WHERE id='stale'", [], |row| row.get(0),
-        ).unwrap();
+        let status: String = conn
+            .query_row(
+                "SELECT status FROM operator_turn_checkpoints WHERE id='stale'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(status, "abandoned");
     }
 
@@ -726,9 +780,13 @@ mod checkpoint_tests {
 
         let reclaimed = reclaim_abandoned_turns(&conn, "session").unwrap();
         assert_eq!(reclaimed, 0);
-        let status: String = conn.query_row(
-            "SELECT status FROM operator_turn_checkpoints WHERE id='live'", [], |row| row.get(0),
-        ).unwrap();
+        let status: String = conn
+            .query_row(
+                "SELECT status FROM operator_turn_checkpoints WHERE id='live'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(status, "running");
     }
 

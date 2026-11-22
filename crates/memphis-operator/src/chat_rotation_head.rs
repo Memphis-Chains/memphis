@@ -67,7 +67,10 @@ pub struct ChainRotationHead {
 
 /// Is this hash a SHA-256 hex digest?
 fn is_sha256_hex(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 
 /// Parse a marker out of raw file content.
@@ -87,11 +90,17 @@ pub fn parse_chain_rotation_head(raw: &str) -> Option<ChainRotationHead> {
     let archived_from = object.get("archivedFrom").and_then(Value::as_i64)?;
     let archived_to = object.get("archivedTo").and_then(Value::as_i64)?;
     let last_archived_index = object.get("lastArchivedIndex").and_then(Value::as_i64)?;
-    let last_archived_hash = object.get("lastArchivedHash").and_then(Value::as_str)?.to_string();
+    let last_archived_hash = object
+        .get("lastArchivedHash")
+        .and_then(Value::as_str)?
+        .to_string();
     if !is_sha256_hex(&last_archived_hash) {
         return None;
     }
-    let archive_path = object.get("archivePath").and_then(Value::as_str)?.to_string();
+    let archive_path = object
+        .get("archivePath")
+        .and_then(Value::as_str)?
+        .to_string();
     let rotated_at = object.get("rotatedAt").and_then(Value::as_str)?.to_string();
     Some(ChainRotationHead {
         chain,
@@ -122,11 +131,13 @@ pub fn continues_archived_prefix(
     first_live_index: i64,
     first_live_prev_hash: &str,
 ) -> bool {
-    head.last_archived_index + 1 == first_live_index && head.last_archived_hash == first_live_prev_hash
+    head.last_archived_index + 1 == first_live_index
+        && head.last_archived_hash == first_live_prev_hash
 }
 
 /// The `prev_hash` a genesis block carries.
-pub const GENESIS_PREV_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+pub const GENESIS_PREV_HASH: &str =
+    "0000000000000000000000000000000000000000000000000000000000000000";
 
 /// May a chain start here?
 ///

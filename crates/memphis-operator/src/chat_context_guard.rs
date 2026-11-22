@@ -75,7 +75,9 @@ pub(crate) fn enforce_context_window_before_provider(
             fits: true,
         };
     };
-    let target = (((window as f64) * TARGET_WINDOW_RATIO).floor() as u64).max(MIN_TARGET_TOKENS).min(window);
+    let target = (((window as f64) * TARGET_WINDOW_RATIO).floor() as u64)
+        .max(MIN_TARGET_TOKENS)
+        .min(window);
 
     let mut messages = input.messages.to_vec();
     let mut trimmed_messages = 0usize;
@@ -86,7 +88,9 @@ pub(crate) fn enforce_context_window_before_provider(
     //    assistant tool calls and results. Dropping the user while keeping a
     //    tool result makes the model continue without knowing the task.
     while messages.len() > 1 && estimate_prompt_tokens(input.system_prompt, &messages) > target {
-        let active_start = messages.iter().rposition(|message| matches!(message, ChatMessage::User { .. }))
+        let active_start = messages
+            .iter()
+            .rposition(|message| matches!(message, ChatMessage::User { .. }))
             .unwrap_or(messages.len() - 1);
         let Some(index) = messages
             .iter()
@@ -105,7 +109,9 @@ pub(crate) fn enforce_context_window_before_provider(
 
     // 2. Still too large: shorten the biggest non-system message.
     while estimate_prompt_tokens(input.system_prompt, &messages) > target {
-        let current_user = messages.iter().rposition(|message| matches!(message, ChatMessage::User { .. }));
+        let current_user = messages
+            .iter()
+            .rposition(|message| matches!(message, ChatMessage::User { .. }));
         let Some(index) = largest_message_index(&messages, current_user) else {
             break;
         };
@@ -358,7 +364,10 @@ mod tests {
         assert_eq!(result.messages[0].content(), system.as_str());
         assert_eq!(result.truncated_messages, 0);
         assert_eq!(result.messages[1].content().len(), 5_000);
-        assert!(!result.fits, "an oversized protected prompt must be reported");
+        assert!(
+            !result.fits,
+            "an oversized protected prompt must be reported"
+        );
     }
 
     #[test]
@@ -427,31 +436,65 @@ mod tests {
         let messages = vec![
             user(&"old history".repeat(500)),
             user("build the report"),
-            ChatMessage::Assistant { content: String::new(), tool_calls: vec![ChatToolCall {
-                id: "active-call".into(), name: "memphis_exec".into(), arguments: json!({"command":"printf synthetic"}),
-            }], reasoning_content: None },
-            ChatMessage::Tool { tool_call_id: "active-call".into(), content: "result".repeat(2_000) },
+            ChatMessage::Assistant {
+                content: String::new(),
+                tool_calls: vec![ChatToolCall {
+                    id: "active-call".into(),
+                    name: "memphis_exec".into(),
+                    arguments: json!({"command":"printf synthetic"}),
+                }],
+                reasoning_content: None,
+            },
+            ChatMessage::Tool {
+                tool_call_id: "active-call".into(),
+                content: "result".repeat(2_000),
+            },
         ];
         let result = enforce_context_window_before_provider(ContextWindowGuardInput {
-            system_prompt: None, messages: &messages, declared_context_window: Some(1_000), account_context_window: None,
+            system_prompt: None,
+            messages: &messages,
+            declared_context_window: Some(1_000),
+            account_context_window: None,
         });
         assert!(result.fits);
         assert_eq!(result.messages[0].content(), "build the report");
         assert_eq!(result.messages.len(), 3);
-        assert!(matches!(&result.messages[1], ChatMessage::Assistant {tool_calls, ..} if tool_calls[0].id == "active-call"));
-        assert!(matches!(&result.messages[2], ChatMessage::Tool {tool_call_id, content} if tool_call_id == "active-call" && content.contains("[context trimmed")));
-        assert_eq!(messages[3].content().len(), 12_000, "durable input is not mutated");
+        assert!(
+            matches!(&result.messages[1], ChatMessage::Assistant {tool_calls, ..} if tool_calls[0].id == "active-call")
+        );
+        assert!(
+            matches!(&result.messages[2], ChatMessage::Tool {tool_call_id, content} if tool_call_id == "active-call" && content.contains("[context trimmed"))
+        );
+        assert_eq!(
+            messages[3].content().len(),
+            12_000,
+            "durable input is not mutated"
+        );
     }
 
     #[test]
     fn reports_unfit_when_tool_call_arguments_alone_exceed_budget() {
-        let messages = vec![user("current"), ChatMessage::Assistant {
-            content: String::new(), tool_calls: vec![ChatToolCall {
-                id: "active".into(), name: "memphis_exec".into(), arguments: json!({"command": "x".repeat(8_000)}),
-            }], reasoning_content: None,
-        }, ChatMessage::Tool { tool_call_id: "active".into(), content: "done".into() }];
+        let messages = vec![
+            user("current"),
+            ChatMessage::Assistant {
+                content: String::new(),
+                tool_calls: vec![ChatToolCall {
+                    id: "active".into(),
+                    name: "memphis_exec".into(),
+                    arguments: json!({"command": "x".repeat(8_000)}),
+                }],
+                reasoning_content: None,
+            },
+            ChatMessage::Tool {
+                tool_call_id: "active".into(),
+                content: "done".into(),
+            },
+        ];
         let result = enforce_context_window_before_provider(ContextWindowGuardInput {
-            system_prompt: None, messages: &messages, declared_context_window: Some(1_000), account_context_window: None,
+            system_prompt: None,
+            messages: &messages,
+            declared_context_window: Some(1_000),
+            account_context_window: None,
         });
         assert!(!result.fits);
         assert_eq!(result.messages.len(), 3);

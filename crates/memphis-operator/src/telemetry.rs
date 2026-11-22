@@ -260,7 +260,16 @@ pub(crate) fn record_tool_call(
     failed: bool,
     error_message: Option<&str>,
 ) {
-    record_tool_call_for_turn(config, tool_name, tool_id, duration_ms, failed, error_message, None, None);
+    record_tool_call_for_turn(
+        config,
+        tool_name,
+        tool_id,
+        duration_ms,
+        failed,
+        error_message,
+        None,
+        None,
+    );
 }
 
 pub(crate) fn record_tool_call_for_turn(
@@ -282,7 +291,9 @@ pub(crate) fn record_tool_call_for_turn(
         ("surface", Value::String("rust-tui".to_string())),
         ("audit.surface", Value::String("rust-tui".to_string())),
     ];
-    if let Some(id) = turn_id { attrs.push(("turn.id", Value::String(id.to_string()))); }
+    if let Some(id) = turn_id {
+        attrs.push(("turn.id", Value::String(id.to_string())));
+    }
     record_span(
         config,
         "tool.call",
@@ -321,7 +332,16 @@ pub(crate) fn record_turn_dispatch(
     failed: bool,
     error_message: Option<&str>,
 ) {
-    record_turn_dispatch_for_turn(config, session_id, provider, model, duration_ms, failed, error_message, None);
+    record_turn_dispatch_for_turn(
+        config,
+        session_id,
+        provider,
+        model,
+        duration_ms,
+        failed,
+        error_message,
+        None,
+    );
 }
 
 pub(crate) fn record_turn_dispatch_for_turn(
@@ -344,7 +364,9 @@ pub(crate) fn record_turn_dispatch_for_turn(
         ("model", Value::String(model.to_string())),
         ("turn.timing_ms", Value::from(duration_ms)),
     ];
-    if let Some(id) = turn_id { attrs.push(("turn.id", Value::String(id.to_string()))); }
+    if let Some(id) = turn_id {
+        attrs.push(("turn.id", Value::String(id.to_string())));
+    }
     record_span(
         config,
         "turn.dispatch",
@@ -373,7 +395,18 @@ pub(crate) fn record_provider_completion(
     failed: bool,
     error_message: Option<&str>,
 ) {
-    record_provider_completion_for_turn(config, provider, model, tools_count, messages_count, duration_ms, failed, error_message, None, None);
+    record_provider_completion_for_turn(
+        config,
+        provider,
+        model,
+        tools_count,
+        messages_count,
+        duration_ms,
+        failed,
+        error_message,
+        None,
+        None,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -396,13 +429,24 @@ pub(crate) fn record_provider_completion_for_turn(
         ("provider.tools.count", Value::from(tools_count)),
         ("provider.messages.count", Value::from(messages_count)),
     ];
-    if let Some(id) = turn_id { attrs.push(("turn.id", Value::String(id.to_string()))); }
+    if let Some(id) = turn_id {
+        attrs.push(("turn.id", Value::String(id.to_string())));
+    }
     if let Some(stream) = stream {
         attrs.push(("stream.bytes", Value::from(stream.bytes)));
-        attrs.push(("stream.max_interread_gap_ms", Value::from(stream.max_interread_gap_ms)));
-        if let Some(value) = stream.first_byte_after_headers_ms { attrs.push(("stream.first_byte_after_headers_ms", Value::from(value))); }
-        if let Some(value) = stream.last_byte_after_headers_ms { attrs.push(("stream.last_byte_after_headers_ms", Value::from(value))); }
-        if let Some(value) = stream.idle_before_error_ms { attrs.push(("stream.idle_before_error_ms", Value::from(value))); }
+        attrs.push((
+            "stream.max_interread_gap_ms",
+            Value::from(stream.max_interread_gap_ms),
+        ));
+        if let Some(value) = stream.first_byte_after_headers_ms {
+            attrs.push(("stream.first_byte_after_headers_ms", Value::from(value)));
+        }
+        if let Some(value) = stream.last_byte_after_headers_ms {
+            attrs.push(("stream.last_byte_after_headers_ms", Value::from(value)));
+        }
+        if let Some(value) = stream.idle_before_error_ms {
+            attrs.push(("stream.idle_before_error_ms", Value::from(value)));
+        }
     }
     record_span(
         config,

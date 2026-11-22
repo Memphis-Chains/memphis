@@ -67,7 +67,9 @@ fn read_boot_id() -> String {
             .args(["-n", "kern.bootsessionuuid"])
             .output();
         return match output {
-            Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
+            Ok(out) if out.status.success() => {
+                String::from_utf8_lossy(&out.stdout).trim().to_string()
+            }
             _ => String::new(),
         };
     }

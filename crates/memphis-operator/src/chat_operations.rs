@@ -102,27 +102,37 @@ pub(crate) fn ensure_operation_tables(conn: &Connection) -> Result<(), OperatorE
     )
     .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
     for column in ["turn_id", "reviewed_at"] {
-    let has_column = {
-        let mut statement = conn.prepare("PRAGMA table_info(operator_tool_operations)")
-            .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
-        let columns = statement.query_map([], |row| row.get::<_, String>(1))
-            .map_err(|error| OperatorError::Sqlite(error.to_string()))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
-        columns.iter().any(|name| name == column)
-    };
-    if !has_column {
-        // A concurrent process may have completed the same migration.
-        if let Err(error) = conn.execute(&format!("ALTER TABLE operator_tool_operations ADD COLUMN {column} TEXT"), []) {
-            let already_added = conn.prepare("PRAGMA table_info(operator_tool_operations)")
-                .and_then(|mut statement| {
-                    let names = statement.query_map([], |row| row.get::<_, String>(1))?
-                        .collect::<Result<Vec<_>, _>>()?;
-                    Ok(names.iter().any(|name| name == column))
-                }).unwrap_or(false);
-            if !already_added { return Err(OperatorError::Sqlite(error.to_string())); }
+        let has_column = {
+            let mut statement = conn
+                .prepare("PRAGMA table_info(operator_tool_operations)")
+                .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+            let columns = statement
+                .query_map([], |row| row.get::<_, String>(1))
+                .map_err(|error| OperatorError::Sqlite(error.to_string()))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+            columns.iter().any(|name| name == column)
+        };
+        if !has_column {
+            // A concurrent process may have completed the same migration.
+            if let Err(error) = conn.execute(
+                &format!("ALTER TABLE operator_tool_operations ADD COLUMN {column} TEXT"),
+                [],
+            ) {
+                let already_added = conn
+                    .prepare("PRAGMA table_info(operator_tool_operations)")
+                    .and_then(|mut statement| {
+                        let names = statement
+                            .query_map([], |row| row.get::<_, String>(1))?
+                            .collect::<Result<Vec<_>, _>>()?;
+                        Ok(names.iter().any(|name| name == column))
+                    })
+                    .unwrap_or(false);
+                if !already_added {
+                    return Err(OperatorError::Sqlite(error.to_string()));
+                }
+            }
         }
-    }
     }
     conn.execute("CREATE INDEX IF NOT EXISTS idx_operator_tool_operations_turn ON operator_tool_operations(turn_id)", [])
         .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
@@ -139,7 +149,14 @@ pub(crate) fn record_operation_started(
     tool_name: &str,
     arguments_json: &str,
 ) -> Result<String, OperatorError> {
-    record_operation_started_for_turn(conn, session_id, tool_call_id, tool_name, arguments_json, None)
+    record_operation_started_for_turn(
+        conn,
+        session_id,
+        tool_call_id,
+        tool_name,
+        arguments_json,
+        None,
+    )
 }
 
 pub(crate) fn record_operation_started_for_turn(
@@ -314,10 +331,18 @@ pub(crate) fn unsettled_operations_summary(
         .iter()
         .map(|record| {
             let status = record.status.as_str();
-            let safe_name: String = record.tool_name.chars()
-                .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_').take(80).collect();
+            let safe_name: String = record
+                .tool_name
+                .chars()
+                .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+                .take(80)
+                .collect();
             match record.result_summary.as_deref() {
-                Some(summary) if summary.strip_prefix("exit=").is_some_and(|code| !code.is_empty() && code.chars().all(|ch| ch.is_ascii_digit())) => {
+                Some(summary)
+                    if summary.strip_prefix("exit=").is_some_and(|code| {
+                        !code.is_empty() && code.chars().all(|ch| ch.is_ascii_digit())
+                    }) =>
+                {
                     format!("- {} [{}]: {}", safe_name, status, summary)
                 }
                 _ => format!("- {} [{}]", safe_name, status),
@@ -408,8 +433,12 @@ mod tests {
         assert_ne!(first, second);
         let all = load_session_operations(&conn, "s1", 10).expect("load operations");
         assert_eq!(all.len(), 2);
-        assert!(all.iter().any(|op| op.id == first && op.status == OperationStatus::Completed));
-        assert!(all.iter().any(|op| op.id == second && op.status == OperationStatus::Started));
+        assert!(all
+            .iter()
+            .any(|op| op.id == first && op.status == OperationStatus::Completed));
+        assert!(all
+            .iter()
+            .any(|op| op.id == second && op.status == OperationStatus::Started));
         let _ = std::fs::remove_dir_all(root);
     }
 

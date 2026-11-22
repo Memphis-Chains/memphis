@@ -78,7 +78,11 @@ fn journal_chain_validates_against_canonical_hash() {
             .and_then(Value::as_str)
             .unwrap()
             .to_string();
-        let stored_hash = value.get("hash").and_then(Value::as_str).unwrap().to_string();
+        let stored_hash = value
+            .get("hash")
+            .and_then(Value::as_str)
+            .unwrap()
+            .to_string();
 
         let block: Block = serde_json::from_value(value.clone())
             .unwrap_or_else(|error| panic!("fixture block {index} does not deserialize: {error}"));
