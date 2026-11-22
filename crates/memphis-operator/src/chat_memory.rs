@@ -335,6 +335,177 @@ pub(crate) fn journal_block_type(chain: &str) -> &'static str {
     }
 }
 
+/// Query raw chain blocks with the filters the registry declares.
+///
+/// ## Why this mirrors a TypeScript function instead of being its own
+///
+/// `memphis_chain_query` is a FILTERING tool: what it returns IS the
+/// answer. Two arms that filter differently are two answers to one
+/// question, which is the failure mode ADR-012 exists to remove — and
+/// the native arm was quietly one of them:
+///
+///   - `offset` was not read at all, so the cockpit could not page;
+///   - `blockType` was not read at all, so the cockpit could not filter
+///     by block type;
+///   - `contains` was a contiguous substring match, while the gateway
+///     tokenises the query and requires EVERY token (decision #190);
+///   - `tag` matched case-insensitively, while the gateway matches the
+///     tag exactly;
+///   - the window was "read everything, filter, take the last N",
+///     while the gateway reads the most recent `limit + offset` blocks
+///     and then pages inside that window.
+///
+/// The order matters and is the gateway's: window → offset → filters →
+/// limit. Paging before filtering returns "the page after the offset",
+/// not "the page of the filtered set", and the two are different
+/// answers for the same call.
+///
+/// The output carries `count` (what the gateway returns) AND `total` /
+/// `returned` (what the cockpit returned before), so the two arms agree
+/// on the shared key and the cockpit keeps its extra information.
+pub(crate) fn run_native_chain_query(
+    data_dir: &Path,
+    input: &ChainQueryInput,
+) -> Result<ChainQueryResult, OperatorError> {
+    let chain_name = input.chain.as_deref().unwrap_or("journal");
+    let limit = input.limit.unwrap_or(20);
+    let offset = input.offset.unwrap_or(0);
+    validate_chain_name(chain_name)?;
+
+    let chain_dir = data_dir.join("chains").join(chain_name);
+    if !chain_dir.exists() {
+        return Ok(ChainQueryResult {
+            chain: chain_name.to_string(),
+            blocks: Vec::new(),
+            total: 0,
+            found: false,
+        });
+    }
+
+    let mut blocks: Vec<Value> = read_chain_blocks(&chain_dir)?
+        .into_iter()
+        .map(|block| {
+            json!({
+                "index": block.index,
+                "timestamp": block.timestamp,
+                "chain": block.chain,
+                "data": block.data,
+                "prev_hash": block.prev_hash,
+                "hash": block.hash,
+            })
+        })
+        .collect();
+
+    // The filters, as one predicate, so the answer and the count are
+    // filtered by the same rule. The `contains` filter tokenises the
+    // query once and requires EVERY token: a contiguous substring match
+    // returns false negatives for any query that is not an exact phrase
+    // — "embed reindex" missed "rebuild derived embeddings" — so the
+    // query is split on whitespace and every token has to appear
+    // somewhere in the block.
+    let tokens: Vec<String> = input
+        .contains
+        .as_deref()
+        .map(|query| {
+            query
+                .to_lowercase()
+                .split_whitespace()
+                .map(|token| token.trim().to_string())
+                .filter(|token| !token.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    // An empty query after tokenisation matches nothing rather than
+    // silently matching everything.
+    let empty_query = input.contains.is_some() && tokens.is_empty();
+
+    let matches = |block: &Value| -> bool {
+        if empty_query {
+            return false;
+        }
+        if let Some(target_type) = input.block_type.as_deref() {
+            let block_type = block.pointer("/data/type").and_then(Value::as_str);
+            if block_type != Some(target_type) {
+                return false;
+            }
+        }
+        if !tokens.is_empty() {
+            let haystack = serde_json::to_string(&block["data"])
+                .unwrap_or_default()
+                .to_lowercase();
+            if !tokens.iter().all(|token| haystack.contains(token.as_str())) {
+                return false;
+            }
+        }
+        if let Some(target_tag) = input.tag.as_deref() {
+            let has_tag = block
+                .pointer("/data/tags")
+                .and_then(Value::as_array)
+                .map(|tags| {
+                    tags.iter()
+                        .any(|value| value.as_str().map(|tag| tag == target_tag).unwrap_or(false))
+                })
+                .unwrap_or(false);
+            if !has_tag {
+                return false;
+            }
+        }
+        true
+    };
+
+    // The count of matching blocks in the WHOLE chain. The gateway does
+    // not report it — it returns only `count` — but the cockpit has
+    // always told the operator how many blocks matched, and that is
+    // information worth keeping. The shared keys (`count`, `blocks`)
+    // stay identical to the gateway's answer.
+    let total = blocks.iter().filter(|block| matches(block)).count();
+
+    // The window: the most recent `limit + offset` blocks, oldest first.
+    let window = limit.saturating_add(offset);
+    if window > 0 && blocks.len() > window {
+        blocks = blocks.split_off(blocks.len() - window);
+    }
+
+    // The page: skip the oldest `offset` blocks of that window.
+    if offset > 0 {
+        blocks = blocks.split_off(offset);
+    }
+
+    // The filters, applied to the window.
+    blocks.retain(|block| matches(block));
+
+    // The limit, applied AFTER filtering — the gateway's order.
+    blocks.truncate(limit);
+
+    Ok(ChainQueryResult {
+        chain: chain_name.to_string(),
+        blocks,
+        total,
+        found: true,
+    })
+}
+
+/// The arguments `memphis_chain_query` accepts, as the registry declares
+/// them.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct ChainQueryInput {
+    pub(crate) chain: Option<String>,
+    pub(crate) limit: Option<usize>,
+    pub(crate) offset: Option<usize>,
+    pub(crate) block_type: Option<String>,
+    pub(crate) contains: Option<String>,
+    pub(crate) tag: Option<String>,
+}
+
+/// What `memphis_chain_query` answers.
+#[derive(Debug, Clone)]
+pub(crate) struct ChainQueryResult {
+    pub(crate) chain: String,
+    pub(crate) blocks: Vec<Value>,
+    pub(crate) total: usize,
+    pub(crate) found: bool,
+}
+
 pub(crate) fn run_soul_read(
     runtime: &OperatorRuntime,
     section: Option<&str>,
