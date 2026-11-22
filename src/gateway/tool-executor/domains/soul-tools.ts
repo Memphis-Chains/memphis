@@ -4,6 +4,7 @@ import { appendBlock } from '../../../infra/storage/chain-adapter.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from '../../../mcp/tools/soul.js';
 import { updateSoulMemory } from '../../../soul/memory.js';
 import { soulMemoryUpdateSchema } from '../../../soul/types.js';
+import { buildRegistryInputJsonSchema } from '../../tool-json-schema.js';
 import { buildTool, type RuntimeToolDefinition } from '../../tool-runtime.js';
 import {
   normalizeSoulWriteUpdatesForToolCall,
@@ -16,12 +17,7 @@ export function createSoulRuntimeTools(caseAdapter?: CaseChainAdapter): RuntimeT
     buildTool({
       name: 'memphis_soul_read',
       description: 'Read soul memory and persistent identity',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          section: { type: 'string', enum: ['user', 'self', 'context', 'all'] },
-        },
-      },
+      inputSchema: buildRegistryInputJsonSchema('memphis_soul_read'),
       isConcurrencySafe: true,
       isReadOnly: true,
       validateInput(args) {
@@ -36,13 +32,11 @@ export function createSoulRuntimeTools(caseAdapter?: CaseChainAdapter): RuntimeT
     buildTool({
       name: 'memphis_soul_write',
       description: 'Update soul memory and persistent preferences',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          updates: { type: 'object', description: 'Soul memory update payload' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_soul_write', {
+        propertyDescriptions: {
+          updates: 'Soul memory update payload',
         },
-        required: ['updates'],
-      },
+      }),
       validateInput(args) {
         // Mode B (LLM-direct via gateway tool-executor) bypasses the MCP
         // Zod gate, so prior to this guard a model could send
