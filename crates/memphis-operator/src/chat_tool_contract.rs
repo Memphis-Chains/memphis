@@ -110,6 +110,42 @@ pub(crate) const NATIVE_TOOL_CONTRACT_JSON: &str = r#"{
       }
     },
     {
+      "name": "memphis_chain_query",
+      "description": "Query raw chain blocks with lightweight filters",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "chain": {
+            "type": "string",
+            "description": "Chain name e.g. 'journal', 'decisions', 'patterns', 'reflections'"
+          },
+          "limit": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 100,
+            "description": "Max blocks to return (default: 20)"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "blockType": {
+            "type": "string"
+          },
+          "contains": {
+            "type": "string",
+            "description": "Substring filter on block content"
+          },
+          "tag": {
+            "type": "string",
+            "description": "Filter blocks by tag"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "memphis_chain_verify",
       "description": "Verify chain hashes, indexes, and prev-hash links before diagnosing corruption",
       "input_schema": {
@@ -620,11 +656,6 @@ pub(crate) const NATIVE_TOOL_CONTRACT_JSON: &str = r#"{
       "name": "memphis_case_append",
       "reason": "the registry accepts both `{entry}` and the flat case fields; the native executor reads only `entry`",
       "closure": "accept the flat form in the native arm, mirroring the gateway's normalizeCaseAppendInput"
-    },
-    {
-      "name": "memphis_chain_query",
-      "reason": "the registry declares `offset` and `blockType`; the native executor reads neither",
-      "closure": "apply the offset and the blockType filter in the native arm, mirroring the gateway tool"
     },
     {
       "name": "memphis_classify",

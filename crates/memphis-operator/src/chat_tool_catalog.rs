@@ -109,20 +109,6 @@ pub(crate) fn native_divergent_definitions() -> Vec<ChatToolDefinition> {
                 }),
             },
         ChatToolDefinition {
-                name: "memphis_chain_query".to_string(),
-                description: "Query blocks from a Memphis chain (journal, decisions, patterns, reflections). Filter by substring or tag.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "chain": { "type": "string", "description": "Chain name e.g. 'journal', 'decisions', 'patterns', 'reflections'" },
-                        "contains": { "type": "string", "description": "Substring filter on block content" },
-                        "tag": { "type": "string", "description": "Filter blocks by tag" },
-                        "limit": { "type": "number", "description": "Max blocks to return (default: 20)" }
-                    },
-                    "required": ["chain"]
-                }),
-            },
-        ChatToolDefinition {
                 name: "memphis_classify".to_string(),
                 description: "Advisory typed decision via the local BASAL service. Validates class probabilities and reports confidence, model, calibration and deferral. auto reports caller-threshold eligibility and honors deferral; it grants no action permissions or domain error-rate guarantee. Defaults use a bounded service threshold read with fallback0.93; explicit caller policy wins. Historical CPU calls took70-140seconds. Requires a separately running service.".to_string(),
                 input_schema: json!({

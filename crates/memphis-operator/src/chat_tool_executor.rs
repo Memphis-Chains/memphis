@@ -27,8 +27,8 @@ use crate::chat_guards::{
 };
 use crate::chat_memory::{
     append_case_entry, append_generic_block, is_scannable_chain_directory_name, read_chain_blocks,
-    recall_result_with_sources, run_native_journal, run_soul_read, run_soul_write,
-    search_result_to_json, validate_chain_name, value_string_array, value_usize,
+    recall_result_with_sources, run_native_chain_query, run_native_journal, run_soul_read,
+    run_soul_write, search_result_to_json, value_string_array, value_usize,
 };
 use crate::chat_tool_catalog::tool_tier;
 use crate::code_read::{
@@ -1678,98 +1678,63 @@ fn execute_native_tool_inner(
             }
         }
         "memphis_chain_query" => {
-            let chain_name = call
-                .arguments
-                .get("chain")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    OperatorError::Message("memphis_chain_query requires chain".to_string())
-                })?;
-            let contains = call.arguments.get("contains").and_then(Value::as_str);
-            let tag_filter = call.arguments.get("tag").and_then(Value::as_str);
-            let limit = call
-                .arguments
-                .get("limit")
-                .and_then(Value::as_u64)
-                .unwrap_or(20) as usize;
-
-            validate_chain_name(chain_name)?;
-            let chain_dir = runtime.config.data_dir.join("chains").join(chain_name);
-
-            if !chain_dir.exists() {
-                let json = serde_json::json!({
-                    "chain": chain_name,
-                    "blocks": [],
-                    "total": 0,
-                    "message": format!("chain '{}' not found", chain_name)
-                });
-                return Ok((
-                    format!("chain_query: {} not found", chain_name),
-                    build_wrapped_segment(
-                        "tool_output",
-                        &serde_json::to_string(&json).unwrap(),
-                        None,
-                        Some("memphis_chain_query"),
-                    ),
-                ));
+            // The arguments are read the way the gateway reads them: the
+            // range checks belong at the tool boundary, because that is
+            // where an operator-supplied value arrives. A model that
+            // sends `limit: 500` gets the same refusal on both surfaces.
+            let limit = value_usize(call.arguments.get("limit"));
+            if let Some(limit) = limit {
+                if !(1..=100).contains(&limit) {
+                    return Err(OperatorError::Message(
+                        "tool limit must be an integer between 1 and 100".to_string(),
+                    ));
+                }
+            }
+            let offset = value_usize(call.arguments.get("offset"));
+            if let Some(raw_offset) = call.arguments.get("offset") {
+                if !raw_offset.is_null() && offset.is_none() {
+                    return Err(OperatorError::Message(
+                        "tool offset must be an integer >= 0".to_string(),
+                    ));
+                }
+            }
+            if let Some(offset) = offset {
+                if offset > 1000 {
+                    return Err(OperatorError::Message(
+                        "tool offset must be an integer between 0 and 1000".to_string(),
+                    ));
+                }
             }
 
-            let mut blocks: Vec<serde_json::Value> = read_chain_blocks(&chain_dir)?
-                .into_iter()
-                .map(|block| {
-                    json!({
-                        "index": block.index,
-                        "timestamp": block.timestamp,
-                        "chain": block.chain,
-                        "data": block.data,
-                        "prev_hash": block.prev_hash,
-                        "hash": block.hash,
-                    })
-                })
-                .collect();
+            let input = crate::chat_memory::ChainQueryInput {
+                chain: call.arguments.get("chain").and_then(Value::as_str).map(String::from),
+                limit,
+                offset,
+                block_type: call
+                    .arguments
+                    .get("blockType")
+                    .and_then(Value::as_str)
+                    .map(String::from),
+                contains: call.arguments.get("contains").and_then(Value::as_str).map(String::from),
+                tag: call.arguments.get("tag").and_then(Value::as_str).map(String::from),
+            };
 
-            // Filter by contains
-            if let Some(substr) = contains {
-                let lower = substr.to_ascii_lowercase();
-                blocks.retain(|b| {
-                    b.pointer("/data/content")
-                        .and_then(Value::as_str)
-                        .map(|c| c.to_ascii_lowercase().contains(&lower))
-                        .unwrap_or(false)
-                });
-            }
-
-            // Filter by tag
-            if let Some(tag) = tag_filter {
-                let lower = tag.to_ascii_lowercase();
-                blocks.retain(|b| {
-                    b.pointer("/data/tags")
-                        .and_then(Value::as_array)
-                        .map(|tags| {
-                            tags.iter().any(|t| {
-                                t.as_str()
-                                    .map(|s| s.to_ascii_lowercase() == lower)
-                                    .unwrap_or(false)
-                            })
-                        })
-                        .unwrap_or(false)
-                });
-            }
-
-            let total = blocks.len();
-            // Return last N blocks (most recent)
-            if blocks.len() > limit {
-                blocks = blocks.split_off(blocks.len() - limit);
-            }
-
+            let result = run_native_chain_query(&runtime.config.data_dir, &input)?;
             let json = serde_json::json!({
-                "chain": chain_name,
-                "blocks": blocks,
-                "total": total,
-                "returned": blocks.len()
+                "chain": result.chain,
+                "blocks": result.blocks,
+                "count": result.blocks.len(),
+                "total": result.total,
+                "returned": result.blocks.len(),
+                "message": if result.found { serde_json::Value::Null } else {
+                    serde_json::Value::String(format!("chain '{}' not found", result.chain))
+                },
             });
             Ok((
-                format!("chain_query: {} ({} blocks)", chain_name, total),
+                format!(
+                    "chain_query: {} ({} blocks)",
+                    result.chain, result.total
+                ),
                 build_wrapped_segment(
                     "tool_output",
                     &serde_json::to_string(&json).unwrap(),
@@ -2125,6 +2090,108 @@ mod tests {
             !root.join("chains").join("system").exists(),
             "a refused chain must not be written to"
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// The chain query must filter and page the way the gateway does.
+    ///
+    /// This is a FILTERING tool: what it returns is the answer, so a
+    /// difference in the filters is a difference in the answer. The
+    /// native arm used to read no `offset` and no `blockType` at all,
+    /// matched `contains` as a contiguous substring where the gateway
+    /// tokenises the query, and matched `tag` case-insensitively where
+    /// the gateway matches it exactly.
+    #[test]
+    fn the_chain_query_filters_and_pages_the_way_the_gateway_does() {
+        let root = temp_root("chain-query");
+        let runtime = runtime_for(&root);
+
+        append_generic_block(
+            &root,
+            "journal",
+            json!({
+                "type": "journal",
+                "content": "alpha rebuild derived embeddings",
+                "tags": ["build"]
+            }),
+        )
+        .expect("append first block");
+        append_generic_block(
+            &root,
+            "journal",
+            json!({ "type": "journal", "content": "beta run", "tags": ["run"] }),
+        )
+        .expect("append second block");
+        append_generic_block(
+            &root,
+            "journal",
+            json!({ "type": "insight", "content": "gamma rebuild", "tags": ["build"] }),
+        )
+        .expect("append third block");
+
+        let query = |arguments: Value| -> Value {
+            let call = ChatToolCall {
+                id: "call-chain-query".to_string(),
+                name: "memphis_chain_query".to_string(),
+                arguments,
+            };
+            let (_display, payload) = execute_native_tool(&runtime, &call, 0).expect("query");
+            let body = payload
+                .split_once('\n')
+                .unwrap()
+                .1
+                .rsplit_once("\n</tool_output>")
+                .unwrap()
+                .0;
+            serde_json::from_str(body).expect("the payload must be JSON")
+        };
+
+        // The whole chain, and the limit applied AFTER filtering.
+        let all = query(json!({ "chain": "journal" }));
+        assert_eq!(all["total"], 3);
+        assert_eq!(all["count"], 3);
+
+        // The limit narrows the WINDOW (the most recent `limit + offset`
+        // blocks), so the total reports how many blocks matched in the
+        // whole chain while the count reports how many came back.
+        let capped = query(json!({ "chain": "journal", "limit": 1 }));
+        assert_eq!(
+            capped["total"], 3,
+            "the total must count the matching blocks in the whole chain"
+        );
+        assert_eq!(capped["count"], 1);
+
+        // The block type filter, which the native arm did not read at all.
+        let insights = query(json!({ "chain": "journal", "blockType": "insight" }));
+        assert_eq!(insights["count"], 1);
+        assert_eq!(insights["blocks"][0]["data"]["type"], "insight");
+
+        // The tag filter: an exact match, like the gateway's. "BUILD" is
+        // not the tag "build".
+        let tagged = query(json!({ "chain": "journal", "tag": "build" }));
+        assert_eq!(tagged["count"], 2);
+        let misscased = query(json!({ "chain": "journal", "tag": "BUILD" }));
+        assert_eq!(misscased["count"], 0);
+
+        // The content filter: tokenised AND, not a contiguous substring.
+        // "rebuild embeddings" is NOT a substring of "alpha rebuild
+        // derived embeddings" — a substring match returns nothing, the
+        // gateway's token match returns the block.
+        let tokens = query(json!({ "chain": "journal", "contains": "rebuild embeddings" }));
+        assert_eq!(
+            tokens["count"], 1,
+            "the content filter must match every token, not one phrase"
+        );
+
+        // The page: the window is the most recent `limit + offset`
+        // blocks, and the offset skips the oldest of them.
+        let page = query(json!({ "chain": "journal", "offset": 1, "limit": 1 }));
+        assert_eq!(page["count"], 1);
+        assert_eq!(
+            page["blocks"][0]["index"], 3,
+            "the offset must skip the oldest block of the window"
+        );
+
         let _ = std::fs::remove_dir_all(root);
     }
 

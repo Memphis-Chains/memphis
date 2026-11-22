@@ -97,12 +97,6 @@ const DIVERGENCES: Record<string, { reason: string; closure: string }> = {
     closure:
       "accept the flat form in the native arm, mirroring the gateway's normalizeCaseAppendInput",
   },
-  memphis_chain_query: {
-    reason:
-      'the registry declares `offset` and `blockType`; the native executor reads neither',
-    closure:
-      'apply the offset and the blockType filter in the native arm, mirroring the gateway tool',
-  },
   memphis_classify: {
     reason:
       "the registry's `criteria` is a union (an object of labels, or an array of 2-10 labels); the native executor reads only the object form",
