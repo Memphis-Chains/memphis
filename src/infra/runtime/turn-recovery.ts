@@ -5,7 +5,7 @@ import { validateOperatorPassphrase } from '../auth/operator-gate.js';
 export interface RecoveryTurn {
   id: string;
   sessionId: string;
-  status: 'running' | 'interrupted' | 'blocked';
+  status: 'running' | 'interrupted' | 'blocked' | 'abandoned';
   updatedAt: string;
   partialBytes: number;
   partialTruncated: boolean;
@@ -47,7 +47,7 @@ export function listRecoveryTurns(databasePath: string): RecoveryTurn[] {
     const exists = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='operator_turn_checkpoints'").get();
     if (!exists) return [];
     const turns = db.prepare(
-      "SELECT id, session_id AS sessionId, status, updated_at AS updatedAt, length(CAST(partial_text AS BLOB)) AS partialBytes, partial_truncated AS partialTruncated FROM operator_turn_checkpoints WHERE status IN ('running','interrupted','blocked') ORDER BY updated_at DESC LIMIT 100",
+      "SELECT id, session_id AS sessionId, status, updated_at AS updatedAt, length(CAST(partial_text AS BLOB)) AS partialBytes, partial_truncated AS partialTruncated FROM operator_turn_checkpoints WHERE status IN ('running','interrupted','blocked','abandoned') ORDER BY updated_at DESC LIMIT 100",
     ).all() as Array<Omit<RecoveryTurn, 'operations'>>;
     const operationsExist = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='operator_tool_operations'").get();
     const columns = operationsExist ? db.pragma('table_info(operator_tool_operations)') as Array<{ name: string }> : [];
@@ -70,7 +70,7 @@ export function showRecoveryPartial(databasePath: string, id: string): { text: s
   if (!/^[0-9a-f]{32}$/.test(id)) throw new Error('invalid turn id');
   const db = new Database(databasePath, { readonly: true, fileMustExist: true });
   try {
-    const row = db.prepare("SELECT partial_text AS text, partial_truncated AS truncated FROM operator_turn_checkpoints WHERE id=? AND status IN ('running','interrupted','blocked')").get(id) as { text: string; truncated: number } | undefined;
+    const row = db.prepare("SELECT partial_text AS text, partial_truncated AS truncated FROM operator_turn_checkpoints WHERE id=? AND status IN ('running','interrupted','blocked','abandoned')").get(id) as { text: string; truncated: number } | undefined;
     if (!row) throw new Error('incomplete turn not found');
     return { text: row.text, truncated: Boolean(row.truncated) };
   } finally { db.close(); }
@@ -86,7 +86,7 @@ export function acknowledgeRecoveryTurn(databasePath: string, id: string, passph
     db.transaction(() => {
       const now = new Date().toISOString();
       const update = db.prepare(
-        `UPDATE operator_turn_checkpoints SET status='acknowledged', updated_at=? WHERE id=? AND status ${forceRunning ? "IN ('interrupted','blocked','running')" : "IN ('interrupted','blocked')"}`,
+        `UPDATE operator_turn_checkpoints SET status='acknowledged', updated_at=? WHERE id=? AND status ${forceRunning ? "IN ('interrupted','blocked','running','abandoned')" : "IN ('interrupted','blocked','abandoned')"}`,
       ).run(now, id);
       if (update.changes !== 1) throw new Error('turn is not interrupted, was already acknowledged, or is still running; review before using --force-running');
       if (hasOperations) db.prepare("UPDATE operator_tool_operations SET reviewed_at=? WHERE turn_id=? AND status IN ('started','unknown') AND reviewed_at IS NULL").run(now, id);

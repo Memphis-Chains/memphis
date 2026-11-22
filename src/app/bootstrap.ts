@@ -48,6 +48,7 @@ import { startChainRotationLoop } from '../infra/runtime/chain-rotation-loop.js'
 import { startCronsBridge } from '../infra/runtime/crons-bridge.js';
 import { inStrictMode } from '../infra/runtime/emergency-log.js';
 import { EXIT_CODES, MemphisExitError } from '../infra/runtime/exit-codes.js';
+import { DAEMON_FATAL_POLICY, setFatalPolicy } from '../infra/runtime/fatal-guard.js';
 import { installShutdownHandlers } from '../infra/runtime/graceful-shutdown.js';
 import { HeartbeatWatchdog, writeBootPulse } from '../infra/runtime/heartbeat-watchdog.js';
 import { resolveInstallRoot } from '../infra/runtime/install-root.js';
@@ -109,6 +110,12 @@ import { getCognitiveMode, ensureIskra, ensureSoulManifest } from '../soul/manif
 import { loadSoulMemory } from '../soul/memory.js';
 
 export async function bootstrap(): Promise<void> {
+  // The daemon must not die because one background task rejected. The
+  // fatal guard reads argv to close the import-time window; this states
+  // the mode explicitly so the behaviour does not depend on how the
+  // command was spelled.
+  setFatalPolicy(DAEMON_FATAL_POLICY);
+
   // Phase 2.3 production sprint: bump the boot-attempt counter BEFORE
   // any risky init. If we crash mid-init, the next process sees the
   // failure and may auto-revert a recent self-modify commit.
