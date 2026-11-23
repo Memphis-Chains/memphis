@@ -171,6 +171,70 @@ async function listBlockFiles(chainDir: string): Promise<{ file: string; index: 
 }
 
 /**
+ * How many of the NEWEST blocks fit under the threshold.
+ *
+ * Counted from the newest backwards, because recency is what the
+ * keep-count is about: the blocks that stay live are the recent ones.
+ */
+async function countBlocksFitting(
+  chainDir: string,
+  blocks: { file: string; index: number }[],
+  threshold: number,
+): Promise<number> {
+  let used = 0;
+  let fitting = 0;
+
+  for (let position = blocks.length - 1; position >= 0; position -= 1) {
+    const entry = blocks[position]!;
+    let size: number;
+    try {
+      size = (await fs.stat(path.join(chainDir, entry.file))).size;
+    } catch {
+      // The block is already gone — it is not live, so it does not count
+      // towards what stays.
+      continue;
+    }
+    if (used + size > threshold) break;
+    used += size;
+    fitting += 1;
+  }
+
+  return fitting;
+}
+
+/**
+ * How many blocks stay in the live chain after a rotation.
+ *
+ * Two bounds, and the smaller of them only where the keep-count cannot
+ * apply at all:
+ *
+ *   - the keep-count (`MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS`) says how
+ *     much recent context stays live. It applies whenever the chain HAS
+ *     that many blocks — that is the operator's contract, and it is
+ *     pinned by `tests/unit/chain-rotation-thresholds.test.ts`.
+ *   - the threshold says how big the live chain may get. It applies when
+ *     the chain has FEWER blocks than the keep-count asks for, because
+ *     there the keep-count is vacuous: you cannot keep 500 blocks of a
+ *     404-block chain.
+ *
+ * A chain that is over the threshold but under the keep-count therefore
+ * keeps what fits under the threshold — measured on this host, the 107
+ * newest blocks of the `insights` chain (9.93 MB of its 31.92 MB).
+ *
+ * The chain is never emptied: one block always stays.
+ */
+async function resolveKeepBlocks(
+  chainDir: string,
+  blocks: { file: string; index: number }[],
+  threshold: number,
+  minKeep: number,
+): Promise<number> {
+  if (blocks.length >= minKeep) return minKeep;
+  const fitting = await countBlocksFitting(chainDir, blocks, threshold);
+  return Math.max(1, fitting);
+}
+
+/**
  * Phase 1 of archiving: write the gzipped archive of the blocks.
  *
  * No lock is needed here, and that is deliberate.
@@ -525,7 +589,29 @@ export async function rotateChain(
   }
 
   const blocks = await listBlockFiles(chainDir);
-  if (blocks.length <= minKeep) {
+
+  // How many blocks stay live.
+  //
+  // The knobs are separate: the threshold says WHEN a chain is touched, the
+  // keep-count says how much recent context stays live. The operator's own
+  // unit file puts it plainly — "the threshold is what actually triggers a
+  // rotation. A chain that stays under 10 MB is never touched" — and 500
+  // blocks stay live after one.
+  //
+  // A chain can be over the threshold and still hold fewer blocks than the
+  // keep-count asks for. Measured 2026-11-23 on this host: the `insights`
+  // chain is 31.92 MB across 404 blocks — three times over the 10 MB
+  // threshold and under the 500 the keep-count asks for. Requiring BOTH
+  // conditions meant such a chain never rotated, however large it grew: the
+  // threshold was inert for exactly the chains whose blocks are fat, which
+  // is the case the threshold exists for.
+  //
+  // So the threshold alone decides WHEN a chain is touched, and the
+  // keep-count still says how much stays — except where it cannot apply at
+  // all, because the chain has fewer blocks than it asks for. See
+  // `resolveKeepBlocks`.
+  const keep = await resolveKeepBlocks(chainDir, blocks, threshold, minKeep);
+  if (blocks.length <= keep) {
     return {
       chain: chainName,
       rotated: false,
@@ -544,8 +630,17 @@ export async function rotateChain(
     }
   }
 
-  // Archive all but the last minKeep blocks
-  const toArchive = blocks.slice(0, blocks.length - minKeep);
+  // Archive all but the last `keep` blocks.
+  //
+  // The count has to be the one the retention decided — `keep`, not
+  // `minKeep`. The two differ exactly when the chain has fewer blocks than
+  // the keep-count asks for, and there the old formula
+  // `slice(0, length - minKeep)` produced a NEGATIVE end index: on a
+  // three-block chain with a keep-count of seven it selected nothing, and
+  // on a chain with a few blocks more it would have selected the NEWEST
+  // blocks. The guard that used to hide that (`blocks.length <= minKeep`)
+  // is gone, so the formula has to move with it.
+  const toArchive = blocks.slice(0, blocks.length - keep);
   // Phase 1 — write the archive. Outside the lock on purpose: compressing
   // 62 MB takes seconds, and the chains write lock is global. An append
   // that waits for it gives up after 10 seconds rather than queueing, so

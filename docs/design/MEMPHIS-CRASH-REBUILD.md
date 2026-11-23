@@ -778,7 +778,27 @@ mode this repository already has a postmortem about.
    `cases` (1.14 MB, 2 182 blocks). The threshold is inert for every chain
    whose blocks are fat, which is exactly the case the threshold exists
    for.
-   for. **Still open.**
+   **Closed 2026-11-23.** The threshold alone now decides WHEN a chain is
+   touched. The keep-count still decides how much stays — except where it
+   cannot apply at all, because the chain holds fewer blocks than it asks
+   for; there the size bound decides, and the chain is never emptied. The
+   old formula `slice(0, length - minKeep)` was guarded by the very
+   condition that hid the bug, and removing the guard without moving the
+   formula would have selected a NEGATIVE range — on a three-block chain
+   with a keep-count of seven, that range is empty, and a few blocks more
+   would have selected the NEWEST blocks. The count the retention decided
+   is now the count the archive uses.
+   Measured on this host, on a copy of the real `insights` chain: the
+   rotation fires, archives **297 blocks** and keeps **107** (9.93 MB of
+   the 31.92 MB) — the blocks that fit under the threshold, counted from
+   the newest backwards. The chain still verifies afterwards
+   (`chain verify` → `ok: true`, 107 blocks), because the rotation head
+   marker proves the live chain continues the archived prefix.
+   The falsifier is the gate, and it fails without the fix: the new case
+   in `tests/unit/chain-rotation-thresholds.test.ts` asserts
+   `result.rotated === true` on a chain of three 400 KB blocks with a
+   keep-count of seven, and against the old code it reports
+   `expected false to be true`.
 8. **The operator's account identifier is in the published history** —
    55 commits across 21 files. §5.1 measures it and the scan reports it
    on every run. It cannot be fixed by a commit: the history has to be
@@ -850,8 +870,8 @@ copy of its own after that pass — the payload shrank, the copy of it
 stayed — and it was closed on 2026-11-23 by the same rule applied at the
 writer. Item 4 kept a copy of its own too: the rotation wrote archives
 that could not be read back, and the gate that should have caught it was
-testing a fixture instead of the writer. Item 9 was closed on 2026-11-23
-by the same rule applied at the archive format.
+testing a fixture instead of the writer. Item 7 was closed on the same
+day by the same rule applied to the retention.
 
 
 A later pass of the same day found the same shape in the skills. A
