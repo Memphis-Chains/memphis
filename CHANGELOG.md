@@ -44,6 +44,28 @@ Both packaging gates now live in `ops:release-preflight` — the fast closure
 check (seconds) and `ops:validate-package-artifact` (minutes) — so the suite
 the operator runs before a release is the suite CI runs.
 
+### The gate that was green where it was measured, and red where it was not
+
+The public chat's `/ready` answers 200 only when the provider is configured
+**and** the basal layer is healthy — and the basal layer is an HTTP service on
+127.0.0.1:8000. The relay's test asked the **real** service, so its verdict
+depended on whether a basal service happened to be running.
+
+Measured 2026-11-23: this host answers `/health` with `{"ok":true,"ready":true}`,
+so the test passed locally; a CI runner has nothing on that port, so the test
+failed there with `expected 503 to be 200` — the required
+`cross-arch (ubuntu-24.04-arm)` check was red, and the failure was already
+present on `34cb179074`, before this release's fixes.
+
+A test that is green where it was measured and red where it was not is a test
+that hides itself. The readiness check is now injected next to the classifier
+that was already injectable, and the test pins the three real cases — provider
+configured and basal ready (200), provider unconfigured (503), basal not ready
+(503). The third could not be told apart from the second before. The test
+also points the ambient basal URL at a closed port for its duration, so it is
+its own falsifier: if the injection is ever dropped, it fails with the CI
+message instead of quietly depending on the room.
+
 ### One dependency bump (RUSTSEC-2026-0592)
 
 `url` 2.5.8 → 2.5.9 (with `form_urlencoded` 1.2.2 → 1.2.3). The advisory was
