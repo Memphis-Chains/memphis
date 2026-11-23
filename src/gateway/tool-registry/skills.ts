@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { ToolMeta } from '../tool-metadata.js';
 
-export const SKILL_TOOLS: Record<string, ToolMeta> = {
+export const SKILL_TOOLS = {
   memphis_skill_list: {
     name: 'memphis_skill_list',
     tier: 1,
@@ -87,4 +87,4 @@ export const SKILL_TOOLS: Record<string, ToolMeta> = {
     helpText:
       'Atomically materializes the skill: validates the manifest → copies into ~/.memphis/skills/catalog/<id>/ → mirrors into ~/.memphis/skills/installed/<id>/ → updates ~/.memphis/skills/registry.json. Refuses on schema or unknown-tool errors (run memphis_skill_validate first to see what fails). `force=true` overwrites an existing installed version — use it when iterating on a freshly edited draft of the same id.',
   },
-};
+} satisfies Record<string, ToolMeta>;

@@ -1,84 +1,32 @@
 import {
+  BRIDGE_EXPORT_ALIASES,
+  DEFAULT_REQUIRED_RUST_BRIDGE_EXPORTS,
+  type RustBridgeManifestExport,
+} from './bridge-exports.generated.js';
+import {
   loadPlatformAwareBridge,
   resolveBridgeContract,
-  type BridgeAliasMap,
 } from './napi-contract.js';
 import { parseBool } from '../../core/env.js';
 import { resolveRustBridgePath } from '../runtime/install-root.js';
 
-const BRIDGE_EXPORT_ALIASES = {
-  bridge_manifest: ['bridge_manifest', 'bridgeManifest'],
-  chain_append: ['chain_append', 'chainAppend'],
-  chain_validate: ['chain_validate', 'chainValidate'],
-  chain_query: ['chain_query', 'chainQuery'],
-  vault_init_json: ['vault_init_json', 'vaultInitJson'],
-  vault_init_full: ['vault_init_full', 'vaultInitFull'],
-  vault_store: ['vault_store', 'vaultStore'],
-  vault_retrieve: ['vault_retrieve', 'vaultRetrieve'],
-  vault_load_state: ['vault_load_state', 'vaultLoadState'],
-  vault_parse_entries: ['vault_parse_entries', 'vaultParseEntries'],
-  vault_decode_entry: ['vault_decode_entry', 'vaultDecodeEntry'],
-  embed_store: ['embed_store', 'embedStore'],
-  embed_store_many: ['embed_store_many', 'embedStoreMany'],
-  embed_flush: ['embed_flush', 'embedFlush'],
-  embed_search: ['embed_search', 'embedSearch'],
-  embed_search_tuned: ['embed_search_tuned', 'embedSearchTuned'],
-  embed_reset: ['embed_reset', 'embedReset'],
-  embed_shutdown: ['embed_shutdown', 'embedShutdown'],
-  soul_loop_step: ['soul_loop_step', 'soulLoopStep'],
-  soul_replay: ['soul_replay', 'soulReplay'],
-  case_append: ['case_append', 'caseAppend'],
-  case_query: ['case_query', 'caseQuery'],
-  case_rebuild: ['case_rebuild', 'caseRebuild'],
-  paths_resolve_data_dir: ['paths_resolve_data_dir', 'pathsResolveDataDir'],
-  paths_resolve_vault_state: ['paths_resolve_vault_state', 'pathsResolveVaultState'],
-  paths_resolve_vault_entries: ['paths_resolve_vault_entries', 'pathsResolveVaultEntries'],
-  paths_resolve_chains_dir: ['paths_resolve_chains_dir', 'pathsResolveChainsDir'],
-  paths_resolve_chain_path: ['paths_resolve_chain_path', 'pathsResolveChainPath'],
-  paths_resolve_embed_index: ['paths_resolve_embed_index', 'pathsResolveEmbedIndex'],
-  paths_resolve_case_index: ['paths_resolve_case_index', 'pathsResolveCaseIndex'],
-  paths_resolve_database_path: ['paths_resolve_database_path', 'pathsResolveDatabasePath'],
-  paths_normalize_chain_name: ['paths_normalize_chain_name', 'pathsNormalizeChainName'],
-  mv2_export: ['mv2_export', 'mv2Export'],
-  mv2_inspect: ['mv2_inspect', 'mv2Inspect'],
-} satisfies BridgeAliasMap<string>;
-
-export type RustBridgeManifestExport = keyof typeof BRIDGE_EXPORT_ALIASES;
-
-export const DEFAULT_REQUIRED_RUST_BRIDGE_EXPORTS = [
-  'bridge_manifest',
-  'chain_append',
-  'chain_validate',
-  'chain_query',
-  'vault_init_json',
-  'vault_init_full',
-  'vault_store',
-  'vault_retrieve',
-  'vault_load_state',
-  'vault_parse_entries',
-  'vault_decode_entry',
-  'embed_store',
-  'embed_store_many',
-  'embed_flush',
-  'embed_search',
-  'embed_search_tuned',
-  'embed_reset',
-  'embed_shutdown',
-  'soul_loop_step',
-  'soul_replay',
-  'case_append',
-  'case_query',
-  'case_rebuild',
-  'paths_resolve_data_dir',
-  'paths_resolve_vault_state',
-  'paths_resolve_vault_entries',
-  'paths_resolve_chains_dir',
-  'paths_resolve_chain_path',
-  'paths_resolve_embed_index',
-  'paths_resolve_case_index',
-  'paths_resolve_database_path',
-  'paths_normalize_chain_name',
-] as const satisfies readonly RustBridgeManifestExport[];
+/**
+ * The bridge's export vocabulary is NOT written here.
+ *
+ * It is projected from the Rust core's table
+ * (`crates/memphis-napi/src/bridge_exports.rs`) into
+ * `src/infra/storage/bridge-exports.generated.ts` by
+ * `scripts/sync-bridge-export-contract.mts`, and the projection is checked
+ * against the built binary — so the map below cannot drift away from what
+ * the bridge really exports.
+ *
+ * Measured 2026-11-23 on this host: the hand-written map that used to live
+ * here named 34 exports where the bridge has 37, could not name three of
+ * them at all, and carried 68 spellings of which **34 never matched** any
+ * export.
+ */
+export { BRIDGE_EXPORT_ALIASES, DEFAULT_REQUIRED_RUST_BRIDGE_EXPORTS };
+export type { RustBridgeManifestExport };
 
 export interface RustBridgeManifest {
   name: string;
@@ -86,6 +34,12 @@ export interface RustBridgeManifest {
   exports: string[];
   requiredExports: string[];
   optionalExports?: string[];
+  /**
+   * The canonical name of every export and the name the bridge exports it
+   * under. Added 2026-11-23: the manifest used to carry only names, and nine
+   * of them were spellings the bridge never exports.
+   */
+  exportBindings?: Array<{ canonical: string; jsName: string; required: boolean }>;
 }
 
 export interface RustBridgeManifestStatus {

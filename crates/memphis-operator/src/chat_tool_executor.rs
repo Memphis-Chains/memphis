@@ -19,23 +19,23 @@ use serde_json::{json, Value};
 
 use crate::brave_search::{search as run_brave_search, BraveSearchInput};
 use crate::chat_basal::{
-    basal_threshold_from_service, classify_reply_to_json, read_basal_json, BASAL_DEFAULT_URL,
-    BASAL_TIMEOUT_SECS,
+    basal_threshold_from_service, classify_reply_to_json, normalize_classify_criteria,
+    read_basal_json, BASAL_DEFAULT_URL, BASAL_TIMEOUT_SECS,
 };
 use crate::chat_guards::{
-    build_wrapped_segment, emit_runtime_security_event, scan_code_change_content, sha256_hex,
+    build_wrapped_segment, sha256_hex,
 };
 use crate::chat_memory::{
-    append_case_entry, append_generic_block, is_scannable_chain_directory_name, read_chain_blocks,
-    recall_result_with_sources, run_native_journal, run_soul_read, run_soul_write,
-    search_result_to_json, validate_chain_name, value_string_array, value_usize,
+    append_case_entry, append_generic_block, is_scannable_chain_directory_name,
+    normalize_case_append_input, read_chain_blocks, recall_result_with_sources,
+    run_native_chain_query, run_native_journal, run_soul_read, run_soul_write,
+    search_result_to_json, value_string_array, value_usize,
 };
+use crate::chat_self_modify::{assert_inside_runtime_root, canonical_self_modify_request};
 use crate::chat_tool_catalog::tool_tier;
 use crate::code_read::{
     assert_not_blocked as assert_code_read_path_not_blocked,
-    assert_not_write_blocked as assert_code_read_path_not_write_blocked,
     assert_within_read_roots as assert_code_read_within_read_roots,
-    assert_write_contained as assert_code_read_write_contained,
     resolve_path as resolve_code_read_path, split_lines as split_code_read_lines,
     CODE_READ_MAX_CONTENT_CHARS,
 };
@@ -87,7 +87,9 @@ fn web_fetch_timeout_ms() -> u64 {
 /// split, so the result is always valid UTF-8.
 pub(crate) fn cut_on_char_boundary(body: &[u8], max_bytes: usize) -> String {
     let decoded = String::from_utf8_lossy(body);
-    if decoded.len() <= max_bytes { return decoded.into_owned(); }
+    if decoded.len() <= max_bytes {
+        return decoded.into_owned();
+    }
     let mut end = max_bytes;
     while end > 0 && !decoded.is_char_boundary(end) {
         end -= 1;
@@ -99,26 +101,51 @@ pub(crate) fn cut_on_char_boundary(body: &[u8], max_bytes: usize) -> String {
 /// nonzero exit without diagnostics may mean "no match", so it is
 /// inconclusive rather than a fabricated success or failure.
 pub(crate) fn native_tool_result_shape(payload: &str) -> &'static str {
-    let Some((_, body)) = payload.split_once('\n') else { return "unknown" };
-    let Some((body, _)) = body.rsplit_once("\n</tool_output>") else { return "unknown" };
-    let Ok(value) = serde_json::from_str::<Value>(body) else { return "unknown" };
-    let Some(object) = value.as_object() else { return "unknown" };
-    let error = object.get("error").and_then(Value::as_str).is_some_and(|s| !s.trim().is_empty());
-    if error || object.get("success") == Some(&Value::Bool(false)) || object.get("ok") == Some(&Value::Bool(false))
-        || object.get("blocked") == Some(&Value::Bool(true)) || object.get("status").and_then(Value::as_str) == Some("error") {
+    let Some((_, body)) = payload.split_once('\n') else {
+        return "unknown";
+    };
+    let Some((body, _)) = body.rsplit_once("\n</tool_output>") else {
+        return "unknown";
+    };
+    let Ok(value) = serde_json::from_str::<Value>(body) else {
+        return "unknown";
+    };
+    let Some(object) = value.as_object() else {
+        return "unknown";
+    };
+    let error = object
+        .get("error")
+        .and_then(Value::as_str)
+        .is_some_and(|s| !s.trim().is_empty());
+    if error
+        || object.get("success") == Some(&Value::Bool(false))
+        || object.get("ok") == Some(&Value::Bool(false))
+        || object.get("blocked") == Some(&Value::Bool(true))
+        || object.get("status").and_then(Value::as_str) == Some("error")
+    {
         return "error";
     }
     if let Some(code) = object.get("exitCode").and_then(Value::as_i64) {
         if code != 0 {
-            let stderr = object.get("stderr").and_then(Value::as_str).is_some_and(|s| !s.trim().is_empty());
-            return if stderr || matches!(code, 124 | 126 | 127 | 129..=192) { "error" } else { "inconclusive" };
+            let stderr = object
+                .get("stderr")
+                .and_then(Value::as_str)
+                .is_some_and(|s| !s.trim().is_empty());
+            return if stderr || matches!(code, 124 | 126 | 127 | 129..=192) {
+                "error"
+            } else {
+                "inconclusive"
+            };
         }
     }
     "success"
 }
 
 pub(crate) fn native_tool_result_failed(_name: &str, payload: &str) -> bool {
-    matches!(native_tool_result_shape(payload), "error" | "inconclusive" | "unknown")
+    matches!(
+        native_tool_result_shape(payload),
+        "error" | "inconclusive" | "unknown"
+    )
 }
 
 struct BoundedExecOutput {
@@ -153,10 +180,14 @@ fn run_bounded_process(
         let mut chunk = [0_u8; 8192];
         loop {
             let count = input.read(&mut chunk)?;
-            if count == 0 { break; }
+            if count == 0 {
+                break;
+            }
             let room = 32_001_usize.saturating_sub(captured.len());
             captured.extend_from_slice(&chunk[..count.min(room)]);
-            if count > room || captured.len() > 32_000 { truncated = true; }
+            if count > room || captured.len() > 32_000 {
+                truncated = true;
+            }
         }
         Ok((captured, truncated))
     }
@@ -171,40 +202,57 @@ fn run_bounded_process(
         let _ = child.wait();
     }
 
-    process.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    process
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         process.process_group(0);
     }
-    let mut child = process.spawn().map_err(|error| OperatorError::Message(format!("exec failed to start: {error}")))?;
+    let mut child = process
+        .spawn()
+        .map_err(|error| OperatorError::Message(format!("exec failed to start: {error}")))?;
     let (stdout, stderr) = match (child.stdout.take(), child.stderr.take()) {
         (Some(stdout), Some(stderr)) => (stdout, stderr),
         _ => {
             stop(&mut child);
-            return Err(OperatorError::ToolOutcomeUnknown("output pipes unavailable".into()));
+            return Err(OperatorError::ToolOutcomeUnknown(
+                "output pipes unavailable".into(),
+            ));
         }
     };
     let (send, receive) = mpsc::channel();
     let send_stdout = send.clone();
-    std::thread::spawn(move || { let _ = send_stdout.send((0_u8, drain(stdout))); });
-    std::thread::spawn(move || { let _ = send.send((1_u8, drain(stderr))); });
+    std::thread::spawn(move || {
+        let _ = send_stdout.send((0_u8, drain(stdout)));
+    });
+    std::thread::spawn(move || {
+        let _ = send.send((1_u8, drain(stderr)));
+    });
     let deadline = Instant::now() + Duration::from_millis(timeout_ms);
     let status = loop {
         if cancel_flag.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
             stop(&mut child);
-            return Err(OperatorError::ToolOutcomeUnknown("execution cancelled; side effects may have occurred".into()));
+            return Err(OperatorError::ToolOutcomeUnknown(
+                "execution cancelled; side effects may have occurred".into(),
+            ));
         }
         if Instant::now() >= deadline {
             stop(&mut child);
-            return Err(OperatorError::ToolOutcomeUnknown("execution timed out; side effects may have occurred".into()));
+            return Err(OperatorError::ToolOutcomeUnknown(
+                "execution timed out; side effects may have occurred".into(),
+            ));
         }
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) => std::thread::sleep(Duration::from_millis(20)),
             Err(_) => {
                 stop(&mut child);
-                return Err(OperatorError::ToolOutcomeUnknown("could not determine process status".into()));
+                return Err(OperatorError::ToolOutcomeUnknown(
+                    "could not determine process status".into(),
+                ));
             }
         }
     };
@@ -216,18 +264,27 @@ fn run_bounded_process(
             Ok((index, Ok(result))) => results[index as usize] = Some(result),
             _ => {
                 stop(&mut child);
-                return Err(OperatorError::ToolOutcomeUnknown("output pipes did not close cleanly; side effects may have occurred".into()));
+                return Err(OperatorError::ToolOutcomeUnknown(
+                    "output pipes did not close cleanly; side effects may have occurred".into(),
+                ));
             }
         }
     }
-    let (stdout, stdout_truncated) = results[0].take().ok_or_else(|| OperatorError::ToolOutcomeUnknown("missing stdout result".into()))?;
-    let (stderr, stderr_truncated) = results[1].take().ok_or_else(|| OperatorError::ToolOutcomeUnknown("missing stderr result".into()))?;
+    let (stdout, stdout_truncated) = results[0]
+        .take()
+        .ok_or_else(|| OperatorError::ToolOutcomeUnknown("missing stdout result".into()))?;
+    let (stderr, stderr_truncated) = results[1]
+        .take()
+        .ok_or_else(|| OperatorError::ToolOutcomeUnknown("missing stderr result".into()))?;
     Ok(BoundedExecOutput {
-        exit_code: status.code().unwrap_or(1), stdout, stderr,
+        exit_code: status.code().unwrap_or(1),
+        stdout,
+        stderr,
         truncated: stdout_truncated || stderr_truncated,
     })
 }
 
+#[cfg(test)]
 pub(crate) fn execute_native_tool(
     runtime: &OperatorRuntime,
     call: &ChatToolCall,
@@ -256,7 +313,11 @@ pub(crate) fn execute_native_tool_for_turn(
         call.id.as_str(),
         started.elapsed().as_millis() as u64,
         result.is_err() || shape == "error",
-        if result.is_err() { Some("tool execution failed") } else { None },
+        if result.is_err() {
+            Some("tool execution failed")
+        } else {
+            None
+        },
         turn_id,
         Some(shape),
     );
@@ -293,7 +354,13 @@ fn execute_native_tool_inner(
                     OperatorError::Message("memphis_journal requires content".to_string())
                 })?;
             let tags = value_string_array(call.arguments.get("tags"));
-            let result = run_native_journal(runtime, content, tags)?;
+            // The chain travels with the call. It used to be dropped here,
+            // so the cockpit wrote to the journal chain while the gateway
+            // wrote to the chain the model asked for — the same call, two
+            // different results. The name is validated against
+            // `JOURNAL_TARGET_CHAINS` inside the tool.
+            let chain = call.arguments.get("chain").and_then(Value::as_str);
+            let result = run_native_journal(runtime, content, tags, chain)?;
             let json = serde_json::to_string(&result)
                 .map_err(|error| OperatorError::Json(error.to_string()))?;
             Ok((
@@ -419,9 +486,12 @@ fn execute_native_tool_inner(
             ))
         }
         "memphis_case_append" => {
-            let entry_value = call.arguments.get("entry").cloned().ok_or_else(|| {
-                OperatorError::Message("memphis_case_append requires entry".to_string())
-            })?;
+            // The registry accepts the flat form as well as the wrapped
+            // one, and the gateway normalises the two into one shape.
+            // The native arm used to require the wrapped form, so the
+            // flat form — the one the help text shows first — was
+            // refused in the cockpit.
+            let entry_value = normalize_case_append_input(&call.arguments);
             let entry = serde_json::from_value::<CaseEntry>(entry_value)
                 .map_err(|error| OperatorError::Json(error.to_string()))?;
             let result = append_case_entry(runtime, &entry)?;
@@ -515,7 +585,10 @@ fn execute_native_tool_inner(
             let range = resolve_code_read_range(total_lines, start_line, end_line, limit)
                 .map_err(OperatorError::Message)?;
 
-            let slice: Vec<&str> = lines.get(range.start..range.slice_end()).unwrap_or(&[]).to_vec();
+            let slice: Vec<&str> = lines
+                .get(range.start..range.slice_end())
+                .unwrap_or(&[])
+                .to_vec();
             let mut result_content = slice.join("\n");
             let mut truncated = range.is_truncated();
             // The same marker the TypeScript arm appends, and the same
@@ -588,8 +661,7 @@ fn execute_native_tool_inner(
             // the native arm ignored them: a caller asking for two
             // lines of context got one, and a caller asking for a
             // case-insensitive search got a case-sensitive one.
-            let context =
-                value_usize(call.arguments.get("context")).map(|value| value.to_string());
+            let context = value_usize(call.arguments.get("context")).map(|value| value.to_string());
             let ignore_case = call
                 .arguments
                 .get("ignoreCase")
@@ -683,7 +755,9 @@ fn execute_native_tool_inner(
 
             // The registry names the cap `limit`; the native arm had a
             // hardcoded 200 and ignored the argument entirely.
-            let limit = value_usize(call.arguments.get("limit")).unwrap_or(100).min(500);
+            let limit = value_usize(call.arguments.get("limit"))
+                .unwrap_or(100)
+                .min(500);
 
             let output = std::process::Command::new("find")
                 .arg(&base_path)
@@ -750,10 +824,7 @@ fn execute_native_tool_inner(
                             })?;
                         let mut parts = command.split_whitespace();
                         let subcommand = parts.next().unwrap_or("").to_string();
-                        (
-                            subcommand,
-                            parts.map(|part| part.to_string()).collect(),
-                        )
+                        (subcommand, parts.map(|part| part.to_string()).collect())
                     }
                 };
             let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
@@ -786,16 +857,28 @@ fn execute_native_tool_inner(
             // and remote have mutating forms, while diff/log can write with
             // --output. These surfaces require explicit exec instead.
             if matches!(subcmd, "branch" | "tag" | "remote") && !git_args.is_empty()
-                || git_args.iter().any(|arg| arg == "--output" || arg.starts_with("--output="))
-                || matches!(subcmd, "diff" | "log" | "show") && git_args.iter().any(|arg| arg == "-o" || (arg.starts_with("-o") && arg.len() > 2))
-                || git_args.iter().any(|arg| arg == "--ext-diff" || arg == "--textconv")
+                || git_args
+                    .iter()
+                    .any(|arg| arg == "--output" || arg.starts_with("--output="))
+                || matches!(subcmd, "diff" | "log" | "show")
+                    && git_args
+                        .iter()
+                        .any(|arg| arg == "-o" || (arg.starts_with("-o") && arg.len() > 2))
+                || git_args
+                    .iter()
+                    .any(|arg| arg == "--ext-diff" || arg == "--textconv")
             {
                 return Err(OperatorError::Message("memphis_git permits only read-only forms; use an authorized exec for mutations".into()));
             }
             let mut process = std::process::Command::new("git");
-            process.arg("-c").arg("core.fsmonitor=false")
-                .arg("-C").arg(&memphis_dir).arg(&subcommand)
-                .env("GIT_PAGER", "cat").env("GIT_TERMINAL_PROMPT", "0")
+            process
+                .arg("-c")
+                .arg("core.fsmonitor=false")
+                .arg("-C")
+                .arg(&memphis_dir)
+                .arg(&subcommand)
+                .env("GIT_PAGER", "cat")
+                .env("GIT_TERMINAL_PROMPT", "0")
                 .env("GIT_OPTIONAL_LOCKS", "0");
             if matches!(subcmd, "diff" | "log" | "show") {
                 process.arg("--no-ext-diff").arg("--no-textconv");
@@ -806,7 +889,8 @@ fn execute_native_tool_inner(
             let stdout = cut_on_char_boundary(&output.stdout, 32_000);
             let stderr = cut_on_char_boundary(&output.stderr, 8_000);
             let truncated = String::from_utf8_lossy(&output.stdout).len() > 32_000
-                || String::from_utf8_lossy(&output.stderr).len() > 8_000 || output.truncated;
+                || String::from_utf8_lossy(&output.stderr).len() > 8_000
+                || output.truncated;
             let json = serde_json::json!({
                 "command": format!("git {}", subcommand),
                 "stdout": stdout,
@@ -889,9 +973,9 @@ fn execute_native_tool_inner(
                 }
                 // The body is read as bytes and cut on a character
                 // boundary. Reading it straight into a String failed the
-            // whole fetch when the cut landed in the middle of a
-            // multi-byte character -- so a page with Polish text failed
-            // depending on where the byte boundary happened to fall.
+                // whole fetch when the cut landed in the middle of a
+                // multi-byte character -- so a page with Polish text failed
+                // depending on where the byte boundary happened to fall.
                 response
                     .into_reader()
                     .take(max_bytes as u64)
@@ -899,7 +983,7 @@ fn execute_native_tool_inner(
                     .map_err(|e| OperatorError::Message(format!("web_fetch read failed: {}", e)))?;
                 break;
             }
-            let mut body = cut_on_char_boundary(&raw, max_bytes);
+            let body = cut_on_char_boundary(&raw, max_bytes);
 
             let truncated = raw.len() >= max_bytes;
             let json = serde_json::json!({
@@ -968,14 +1052,17 @@ fn execute_native_tool_inner(
                     OperatorError::Message("memphis_exec requires command".to_string())
                 })?;
 
-            let timeout_ms = runtime.config().env("MEMPHIS_EXEC_TIMEOUT_MS")
+            let timeout_ms = runtime
+                .config()
+                .env("MEMPHIS_EXEC_TIMEOUT_MS")
                 .and_then(|value| value.parse::<u64>().ok())
                 .filter(|value| (1..=86_400_000).contains(value))
                 .unwrap_or(3_600_000);
             let output = run_bounded_exec(command, timeout_ms, cancel_flag)?;
             let stdout = cut_on_char_boundary(&output.stdout, 32_000);
             let stderr = cut_on_char_boundary(&output.stderr, 32_000);
-            let truncated = output.truncated || String::from_utf8_lossy(&output.stdout).len() > 32_000
+            let truncated = output.truncated
+                || String::from_utf8_lossy(&output.stdout).len() > 32_000
                 || String::from_utf8_lossy(&output.stderr).len() > 32_000;
 
             let json = serde_json::json!({
@@ -1046,108 +1133,65 @@ fn execute_native_tool_inner(
             ))
         }
         "memphis_self_modify" => {
-            use std::fs;
+            // The registry's contract, applied natively: the same five
+            // arguments, the same rules, the same canonical payload the
+            // gateway queues. The cockpit used to accept {path, content,
+            // mode} under this name and write ONE file — a second
+            // operation under one name. The rule lives in
+            // `canonical_self_modify_request` (chat_self_modify.rs), and
+            // the case table in tests/fixtures/self-modify-contract.json
+            // checks it against the TypeScript arm.
+            let canonical = canonical_self_modify_request(&call.arguments)
+                .map_err(OperatorError::Message)?;
 
-            let path_str = call
-                .arguments
-                .get("path")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    OperatorError::Message("memphis_self_modify requires path".to_string())
-                })?;
-            let content = call
-                .arguments
-                .get("content")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    OperatorError::Message("memphis_self_modify requires content".to_string())
-                })?;
-            let mode = call
-                .arguments
-                .get("mode")
-                .and_then(Value::as_str)
-                .unwrap_or("write");
-
-            // Refuse before touching the filesystem. The MCP surface has
-            // run this scan since the code-change profile landed; the native
-            // tool did not, so content that gets refused over MCP would have
-            // been written verbatim here -- on the authoritative surface.
-            if let Err((pattern_id, reason)) = scan_code_change_content(content) {
-                emit_runtime_security_event(
-                    runtime,
-                    "content_scan.self_modify.blocked",
-                    "blocked",
-                    json!({
-                        "patternId": pattern_id,
-                        "reason": reason,
-                        "profile": "code-change",
-                        "path": path_str,
-                        "contentHash": sha256_hex(content.as_bytes()),
-                    }),
-                )?;
-                return Err(OperatorError::Message(format!(
-                    "Blocked self-modify content for {path_str}: {reason}"
-                )));
-            }
-
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-            let home_path = std::path::Path::new(&home);
-            // The rules the read path applies, in the same words: resolve
-            // the path the way the other arm resolves it, refuse the
-            // blocked segments by name, and refuse a target that leaves
-            // ~/memphis/ through a symlink.
-            //
-            // Checking only that the path sat under ~/memphis/ left the
-            // write path able to write .env, .git/ and node_modules/ --
-            // the very segments the read path refuses -- and to write
-            // through a symlink straight out of the workspace.
-            let resolved = resolve_code_read_path(path_str, home_path);
-            if let Err(reason) = assert_code_read_path_not_write_blocked(&resolved) {
-                return Err(OperatorError::Message(reason));
-            }
-            if let Err(reason) = assert_code_read_write_contained(&resolved, home_path) {
-                return Err(OperatorError::Message(reason));
+            // The native arm's own boundary: a queued request must not name
+            // a file that leaves the runtime repository through a symlink.
+            // The shared rule refuses a path that NAMES something outside;
+            // this refuses a path that POINTS there.
+            let root = fs::canonicalize(&runtime.config.runtime_root).map_err(|_| {
+                OperatorError::Message("runtime repository root is unavailable".into())
+            })?;
+            for file in &canonical.request.files {
+                assert_inside_runtime_root(&root, file).map_err(OperatorError::Message)?;
             }
 
             // Queue only a proposal. Operator authentication and all code
             // writes happen later in the local Node CLI, never in the model.
-            if call.arguments.get("passphrase").is_some() {
-                return Err(OperatorError::Message("Do not send a passphrase to the agent; use local evolve prepare".into()));
-            }
-            if mode != "write" {
-                return Err(OperatorError::Message("Submit complete replacement content; append is not supported".into()));
-            }
-            let root = fs::canonicalize(&runtime.config.runtime_root)
-                .map_err(|_| OperatorError::Message("runtime repository root is unavailable".into()))?;
-            let relative = resolved.strip_prefix(&runtime.config.runtime_root)
-                .map_err(|_| OperatorError::Message("path is outside the active runtime repository".into()))?;
-            let relative = relative.to_str().ok_or_else(|| OperatorError::Message("path is not valid UTF-8".into()))?;
-            if relative.is_empty() || relative.split('/').any(|part| part.is_empty() || part.starts_with('.') || part == "dist" || part == "node_modules" || part == "vault") || relative.contains('\\') {
-                return Err(OperatorError::Message("request contains a forbidden file path".into()));
-            }
-            let mut changes = serde_json::Map::new();
-            changes.insert(relative.to_string(), Value::String(content.to_string()));
-            let payload = serde_json::to_string(&json!({
-                "intent": format!("Native proposal: {relative}"),
-                "files": [relative], "changes": changes,
-            })).map_err(|error| OperatorError::Json(error.to_string()))?;
-            if payload.len() > 1_048_576 { return Err(OperatorError::Message("evolution request exceeds one MiB".into())); }
-            let digest = sha256_hex(payload.as_bytes());
+            let digest = sha256_hex(canonical.payload.as_bytes());
             let db = crate::chat_session::open_sqlite_rw(&runtime.config.database_path)?;
             db.execute_batch("CREATE TABLE IF NOT EXISTS evolve_requests (id TEXT PRIMARY KEY, root TEXT NOT NULL, payload TEXT NOT NULL, digest TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','preparing','prepared','failed')), created_at TEXT NOT NULL, expires_at_ms INTEGER NOT NULL, session_id TEXT)")
                 .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
-            let id: String = db.query_row("SELECT lower(hex(randomblob(16)))", [], |row| row.get(0))
+            let id: String = db
+                .query_row("SELECT lower(hex(randomblob(16)))", [], |row| row.get(0))
                 .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
             let now = Utc::now();
-            db.execute("INSERT INTO evolve_requests VALUES (?,?,?,?,?,?,?,?)", rusqlite::params![
-                id, root.to_string_lossy().as_ref(), payload, digest, "pending", now.to_rfc3339(),
-                now.timestamp_millis() + 86_400_000_i64, Option::<String>::None,
-            ]).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+            db.execute(
+                "INSERT INTO evolve_requests VALUES (?,?,?,?,?,?,?,?)",
+                rusqlite::params![
+                    id,
+                    root.to_string_lossy().as_ref(),
+                    canonical.payload,
+                    digest,
+                    "pending",
+                    now.to_rfc3339(),
+                    now.timestamp_millis() + 86_400_000_i64,
+                    Option::<String>::None,
+                ],
+            )
+            .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
             let json = json!({"status":"operator-review-required", "requestId":id, "digest":digest,
                 "action": format!("Run memphis evolve prepare {id} in a local terminal.")});
-            let serialized = serde_json::to_string(&json).map_err(|error| OperatorError::Json(error.to_string()))?;
-            Ok((format!("proposed change for local review: {id}"),
-                build_wrapped_segment("tool_output", &serialized, None, Some("memphis_self_modify"))))
+            let serialized = serde_json::to_string(&json)
+                .map_err(|error| OperatorError::Json(error.to_string()))?;
+            Ok((
+                format!("proposed change for local review: {id}"),
+                build_wrapped_segment(
+                    "tool_output",
+                    &serialized,
+                    None,
+                    Some("memphis_self_modify"),
+                ),
+            ))
         }
 
         "memphis_classify" => {
@@ -1176,36 +1220,6 @@ fn execute_native_tool_inner(
                 })?
                 .to_string();
 
-            let criteria = call
-                .arguments
-                .get("criteria")
-                .and_then(Value::as_object)
-                .ok_or_else(|| {
-                    OperatorError::Message(
-                        "memphis_classify requires criteria as a {key: description} object"
-                            .to_string(),
-                    )
-                })?;
-            let options: Vec<(String, String)> = criteria
-                .iter()
-                .filter_map(|(key, value)| {
-                    value
-                        .as_str()
-                        .map(|description| (key.clone(), description.to_string()))
-                })
-                .collect();
-            if options.len() < 2 {
-                return Err(OperatorError::Message(
-                    "memphis_classify requires at least two criteria options; one option carries no decision".to_string(),
-                ));
-            }
-            if options.len() > 10 {
-                return Err(OperatorError::Message(format!(
-                    "memphis_classify supports at most 10 options, got {}",
-                    options.len()
-                )));
-            }
-
             let question_type = match call.arguments.get("type") {
                 None => "choice",
                 Some(Value::String(value))
@@ -1220,6 +1234,19 @@ fn execute_native_tool_inner(
                 }
             }
             .to_string();
+
+            // The criteria are normalised by the shared rule, so the
+            // cockpit and the gateway turn the same criteria into the
+            // same options — the object form AND the array form.
+            let criteria_value = call.arguments.get("criteria").ok_or_else(|| {
+                OperatorError::Message(
+                    "memphis_classify requires criteria as a {key: description} object or an array of labels".to_string(),
+                )
+            })?;
+            let options: Vec<(String, String)> =
+                normalize_classify_criteria(criteria_value, &question_type)
+                    .map_err(OperatorError::Message)?;
+
             if question_type == "score"
                 && options
                     .iter()
@@ -1549,98 +1576,63 @@ fn execute_native_tool_inner(
             }
         }
         "memphis_chain_query" => {
-            let chain_name = call
-                .arguments
-                .get("chain")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    OperatorError::Message("memphis_chain_query requires chain".to_string())
-                })?;
-            let contains = call.arguments.get("contains").and_then(Value::as_str);
-            let tag_filter = call.arguments.get("tag").and_then(Value::as_str);
-            let limit = call
-                .arguments
-                .get("limit")
-                .and_then(Value::as_u64)
-                .unwrap_or(20) as usize;
-
-            validate_chain_name(chain_name)?;
-            let chain_dir = runtime.config.data_dir.join("chains").join(chain_name);
-
-            if !chain_dir.exists() {
-                let json = serde_json::json!({
-                    "chain": chain_name,
-                    "blocks": [],
-                    "total": 0,
-                    "message": format!("chain '{}' not found", chain_name)
-                });
-                return Ok((
-                    format!("chain_query: {} not found", chain_name),
-                    build_wrapped_segment(
-                        "tool_output",
-                        &serde_json::to_string(&json).unwrap(),
-                        None,
-                        Some("memphis_chain_query"),
-                    ),
-                ));
+            // The arguments are read the way the gateway reads them: the
+            // range checks belong at the tool boundary, because that is
+            // where an operator-supplied value arrives. A model that
+            // sends `limit: 500` gets the same refusal on both surfaces.
+            let limit = value_usize(call.arguments.get("limit"));
+            if let Some(limit) = limit {
+                if !(1..=100).contains(&limit) {
+                    return Err(OperatorError::Message(
+                        "tool limit must be an integer between 1 and 100".to_string(),
+                    ));
+                }
+            }
+            let offset = value_usize(call.arguments.get("offset"));
+            if let Some(raw_offset) = call.arguments.get("offset") {
+                if !raw_offset.is_null() && offset.is_none() {
+                    return Err(OperatorError::Message(
+                        "tool offset must be an integer >= 0".to_string(),
+                    ));
+                }
+            }
+            if let Some(offset) = offset {
+                if offset > 1000 {
+                    return Err(OperatorError::Message(
+                        "tool offset must be an integer between 0 and 1000".to_string(),
+                    ));
+                }
             }
 
-            let mut blocks: Vec<serde_json::Value> = read_chain_blocks(&chain_dir)?
-                .into_iter()
-                .map(|block| {
-                    json!({
-                        "index": block.index,
-                        "timestamp": block.timestamp,
-                        "chain": block.chain,
-                        "data": block.data,
-                        "prev_hash": block.prev_hash,
-                        "hash": block.hash,
-                    })
-                })
-                .collect();
+            let input = crate::chat_memory::ChainQueryInput {
+                chain: call.arguments.get("chain").and_then(Value::as_str).map(String::from),
+                limit,
+                offset,
+                block_type: call
+                    .arguments
+                    .get("blockType")
+                    .and_then(Value::as_str)
+                    .map(String::from),
+                contains: call.arguments.get("contains").and_then(Value::as_str).map(String::from),
+                tag: call.arguments.get("tag").and_then(Value::as_str).map(String::from),
+            };
 
-            // Filter by contains
-            if let Some(substr) = contains {
-                let lower = substr.to_ascii_lowercase();
-                blocks.retain(|b| {
-                    b.pointer("/data/content")
-                        .and_then(Value::as_str)
-                        .map(|c| c.to_ascii_lowercase().contains(&lower))
-                        .unwrap_or(false)
-                });
-            }
-
-            // Filter by tag
-            if let Some(tag) = tag_filter {
-                let lower = tag.to_ascii_lowercase();
-                blocks.retain(|b| {
-                    b.pointer("/data/tags")
-                        .and_then(Value::as_array)
-                        .map(|tags| {
-                            tags.iter().any(|t| {
-                                t.as_str()
-                                    .map(|s| s.to_ascii_lowercase() == lower)
-                                    .unwrap_or(false)
-                            })
-                        })
-                        .unwrap_or(false)
-                });
-            }
-
-            let total = blocks.len();
-            // Return last N blocks (most recent)
-            if blocks.len() > limit {
-                blocks = blocks.split_off(blocks.len() - limit);
-            }
-
+            let result = run_native_chain_query(&runtime.config.data_dir, &input)?;
             let json = serde_json::json!({
-                "chain": chain_name,
-                "blocks": blocks,
-                "total": total,
-                "returned": blocks.len()
+                "chain": result.chain,
+                "blocks": result.blocks,
+                "count": result.blocks.len(),
+                "total": result.total,
+                "returned": result.blocks.len(),
+                "message": if result.found { serde_json::Value::Null } else {
+                    serde_json::Value::String(format!("chain '{}' not found", result.chain))
+                },
             });
             Ok((
-                format!("chain_query: {} ({} blocks)", chain_name, total),
+                format!(
+                    "chain_query: {} ({} blocks)",
+                    result.chain, result.total
+                ),
                 build_wrapped_segment(
                     "tool_output",
                     &serde_json::to_string(&json).unwrap(),
@@ -1839,10 +1831,19 @@ mod tests {
         assert_eq!(display, "exit=7");
         assert!(native_tool_result_failed(&call.name, &payload));
         let span: Value = serde_json::from_str(
-            read_to_string(spans_file_path(runtime.config(), Utc::now())).unwrap().trim(),
-        ).unwrap();
+            read_to_string(spans_file_path(runtime.config(), Utc::now()))
+                .unwrap()
+                .trim(),
+        )
+        .unwrap();
         assert_eq!(span["attrs"]["tool.output.shape"], "inconclusive");
-        let body = payload.split_once('\n').unwrap().1.rsplit_once("\n</tool_output>").unwrap().0;
+        let body = payload
+            .split_once('\n')
+            .unwrap()
+            .1
+            .rsplit_once("\n</tool_output>")
+            .unwrap()
+            .0;
         let json: Value = serde_json::from_str(body).unwrap();
         assert_eq!(json["exitCode"], 7);
         assert_eq!(json["stdout"].as_str().unwrap().len(), 31_999);
@@ -1852,12 +1853,34 @@ mod tests {
 
     #[test]
     fn structured_tool_outcomes_distinguish_inconclusive_and_failures() {
-        let wrap = |value: Value| build_wrapped_segment("tool_output", &value.to_string(), None, Some("memphis_exec"));
-        assert_eq!(native_tool_result_shape(&wrap(json!({"exitCode": 0}))), "success");
-        assert_eq!(native_tool_result_shape(&wrap(json!({"exitCode": 7, "stderr": ""}))), "inconclusive");
-        assert_eq!(native_tool_result_shape(&wrap(json!({"exitCode": 7, "stderr": "failed"}))), "error");
-        assert_eq!(native_tool_result_shape(&wrap(json!({"success": false}))), "error");
-        assert_eq!(native_tool_result_shape(&wrap(json!({"exitCode": 127, "stderr": ""}))), "error");
+        let wrap = |value: Value| {
+            build_wrapped_segment(
+                "tool_output",
+                &value.to_string(),
+                None,
+                Some("memphis_exec"),
+            )
+        };
+        assert_eq!(
+            native_tool_result_shape(&wrap(json!({"exitCode": 0}))),
+            "success"
+        );
+        assert_eq!(
+            native_tool_result_shape(&wrap(json!({"exitCode": 7, "stderr": ""}))),
+            "inconclusive"
+        );
+        assert_eq!(
+            native_tool_result_shape(&wrap(json!({"exitCode": 7, "stderr": "failed"}))),
+            "error"
+        );
+        assert_eq!(
+            native_tool_result_shape(&wrap(json!({"success": false}))),
+            "error"
+        );
+        assert_eq!(
+            native_tool_result_shape(&wrap(json!({"exitCode": 127, "stderr": ""}))),
+            "error"
+        );
         assert!(native_tool_result_failed("unknown", "not an envelope"));
     }
 
@@ -1873,7 +1896,11 @@ mod tests {
             json!({"subcommand": "show", "args": ["-o", "side-effect"]}),
             json!({"subcommand": "diff", "args": ["--ext-diff"]}),
         ] {
-            let call = ChatToolCall { id: "git".into(), name: "memphis_git".into(), arguments };
+            let call = ChatToolCall {
+                id: "git".into(),
+                name: "memphis_git".into(),
+                arguments,
+            };
             assert!(execute_native_tool(&runtime, &call, 2).is_err());
         }
         let _ = std::fs::remove_dir_all(root);
@@ -1896,6 +1923,174 @@ mod tests {
         assert_eq!(output.exit_code, 0);
         assert!(output.truncated);
         assert!(output.stdout.len() <= 32_001);
+    }
+
+    /// The cockpit must honour the chain the model named.
+    ///
+    /// Before ADR-012 the native arm dropped the `chain` argument and
+    /// wrote to the journal chain, while the gateway wrote to the chain
+    /// that was asked for: the same call, two different results, on two
+    /// surfaces of the same product. The registry declares `chain`, so
+    /// the native side has to honour it.
+    #[test]
+    fn the_journal_writes_to_the_chain_the_model_named() {
+        let root = temp_root("journal-chain");
+        let runtime = runtime_for(&root);
+        let call = ChatToolCall {
+            id: "call-journal-chain".to_string(),
+            name: "memphis_journal".to_string(),
+            arguments: json!({ "content": "entry for the cases chain", "chain": "cases" }),
+        };
+
+        execute_native_tool(&runtime, &call, 2).expect("the journal write must succeed");
+
+        let chains = root.join("chains");
+        assert!(
+            chains.join("cases").exists(),
+            "the entry must land in the chain the model named; chains: {:?}",
+            std::fs::read_dir(&chains)
+                .map(|entries| {
+                    entries
+                        .filter_map(Result::ok)
+                        .map(|entry| entry.file_name())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        );
+        assert!(
+            !chains.join("journal").exists(),
+            "the entry must NOT also land in the default chain — that was the divergence"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// A chain a tool may not write to is refused, and refusing it must
+    /// write nothing.
+    ///
+    /// `system` and `security` are the runtime's own audit chains. A
+    /// model that could name one would write wherever it was pointed.
+    #[test]
+    fn the_journal_refuses_a_chain_a_tool_may_not_write() {
+        let root = temp_root("journal-refused-chain");
+        let runtime = runtime_for(&root);
+        let call = ChatToolCall {
+            id: "call-journal-refused".to_string(),
+            name: "memphis_journal".to_string(),
+            arguments: json!({ "content": "entry for an audit chain", "chain": "system" }),
+        };
+
+        let (_display, payload) = execute_native_tool(&runtime, &call, 2).expect("a refusal is an answer, not a crash");
+        assert!(
+            native_tool_result_failed(&call.name, &payload),
+            "the refusal must be reported as a failed tool result"
+        );
+        assert!(
+            !root.join("chains").join("system").exists(),
+            "a refused chain must not be written to"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// The chain query must filter and page the way the gateway does.
+    ///
+    /// This is a FILTERING tool: what it returns is the answer, so a
+    /// difference in the filters is a difference in the answer. The
+    /// native arm used to read no `offset` and no `blockType` at all,
+    /// matched `contains` as a contiguous substring where the gateway
+    /// tokenises the query, and matched `tag` case-insensitively where
+    /// the gateway matches it exactly.
+    #[test]
+    fn the_chain_query_filters_and_pages_the_way_the_gateway_does() {
+        let root = temp_root("chain-query");
+        let runtime = runtime_for(&root);
+
+        append_generic_block(
+            &root,
+            "journal",
+            json!({
+                "type": "journal",
+                "content": "alpha rebuild derived embeddings",
+                "tags": ["build"]
+            }),
+        )
+        .expect("append first block");
+        append_generic_block(
+            &root,
+            "journal",
+            json!({ "type": "journal", "content": "beta run", "tags": ["run"] }),
+        )
+        .expect("append second block");
+        append_generic_block(
+            &root,
+            "journal",
+            json!({ "type": "insight", "content": "gamma rebuild", "tags": ["build"] }),
+        )
+        .expect("append third block");
+
+        let query = |arguments: Value| -> Value {
+            let call = ChatToolCall {
+                id: "call-chain-query".to_string(),
+                name: "memphis_chain_query".to_string(),
+                arguments,
+            };
+            let (_display, payload) = execute_native_tool(&runtime, &call, 0).expect("query");
+            let body = payload
+                .split_once('\n')
+                .unwrap()
+                .1
+                .rsplit_once("\n</tool_output>")
+                .unwrap()
+                .0;
+            serde_json::from_str(body).expect("the payload must be JSON")
+        };
+
+        // The whole chain, and the limit applied AFTER filtering.
+        let all = query(json!({ "chain": "journal" }));
+        assert_eq!(all["total"], 3);
+        assert_eq!(all["count"], 3);
+
+        // The limit narrows the WINDOW (the most recent `limit + offset`
+        // blocks), so the total reports how many blocks matched in the
+        // whole chain while the count reports how many came back.
+        let capped = query(json!({ "chain": "journal", "limit": 1 }));
+        assert_eq!(
+            capped["total"], 3,
+            "the total must count the matching blocks in the whole chain"
+        );
+        assert_eq!(capped["count"], 1);
+
+        // The block type filter, which the native arm did not read at all.
+        let insights = query(json!({ "chain": "journal", "blockType": "insight" }));
+        assert_eq!(insights["count"], 1);
+        assert_eq!(insights["blocks"][0]["data"]["type"], "insight");
+
+        // The tag filter: an exact match, like the gateway's. "BUILD" is
+        // not the tag "build".
+        let tagged = query(json!({ "chain": "journal", "tag": "build" }));
+        assert_eq!(tagged["count"], 2);
+        let misscased = query(json!({ "chain": "journal", "tag": "BUILD" }));
+        assert_eq!(misscased["count"], 0);
+
+        // The content filter: tokenised AND, not a contiguous substring.
+        // "rebuild embeddings" is NOT a substring of "alpha rebuild
+        // derived embeddings" — a substring match returns nothing, the
+        // gateway's token match returns the block.
+        let tokens = query(json!({ "chain": "journal", "contains": "rebuild embeddings" }));
+        assert_eq!(
+            tokens["count"], 1,
+            "the content filter must match every token, not one phrase"
+        );
+
+        // The page: the window is the most recent `limit + offset`
+        // blocks, and the offset skips the oldest of them.
+        let page = query(json!({ "chain": "journal", "offset": 1, "limit": 1 }));
+        assert_eq!(page["count"], 1);
+        assert_eq!(
+            page["blocks"][0]["index"], 3,
+            "the offset must skip the oldest block of the window"
+        );
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

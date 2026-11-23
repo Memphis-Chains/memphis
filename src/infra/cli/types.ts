@@ -113,6 +113,17 @@ export type CliArgs = {
   verify?: boolean;
   keep?: number;
   tag?: string;
+  /**
+   * `memphis chain rotate --threshold-bytes <n>` — the size threshold for
+   * one rotation, in bytes. Overrides the environment and the service's
+   * configured value.
+   */
+  thresholdBytes?: number;
+  /**
+   * `memphis chain rotate --keep-blocks <n>` — how many blocks stay live
+   * after one rotation.
+   */
+  keepBlocks?: number;
   // `mv2` added for Sprint G N12 — `memphis export --format=mv2`. Other
   // values (`table`, `json`, `csv`) remain valid for the legacy listing
   // commands. Keep the union narrow so handlers don't have to catch

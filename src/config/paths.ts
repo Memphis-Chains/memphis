@@ -16,6 +16,7 @@ import {
   bridgeResolveChainsDir,
   bridgeResolveDataDir,
 } from '../infra/storage/rust-paths-bridge.js';
+import { CHAIN_NAME_ALIASES } from '../memory/chain-names.generated.js';
 
 /**
  * Sprint B note (2026-05-04): `getDataDir`, `getChainPath`, and
@@ -32,14 +33,15 @@ import {
  * etc.) compose data_dir + a fixed segment without needing the bridge.
  * The bridge owns the data_dir computation; everything below joins
  * onto its result, so the agreement is preserved.
+ *
+ * The alias map itself is a PROJECTION of the Rust core's owner
+ * (`crates/memphis-paths/src/chain_names.rs`), read through the bridge's
+ * manifest — so it is not a second hand-written table, and the gate
+ * (`npm run -s ops:sync-chain-name-contract -- --check`) proves it is in
+ * sync. The bridge still answers the FORWARD question (alias → canonical)
+ * because path resolution belongs to the bridge; this side needs the
+ * REVERSE one (canonical → aliases), which the bridge does not serve.
  */
-
-const CHAIN_NAME_ALIASES: Record<string, string> = {
-  case: 'cases',
-  decision: 'decisions',
-  pattern: 'patterns',
-  reflection: 'reflections',
-};
 
 function expandHome(input: string): string {
   if (input === '~') return os.homedir();
@@ -64,10 +66,10 @@ export function getReadableChainNames(chainName?: string): string[] {
   const normalized = normalizeChainName(chainName);
   if (!normalized) return [];
 
-  // Aliases are mirrored in the Rust crate (`CHAIN_NAME_ALIASES`); the
-  // table is kept in sync there. We compute readable names locally
-  // because they're a derived set, not a path resolution — the bridge
-  // owns paths, this owns the alias surface.
+  // The aliases are a projection of the Rust core's table, so the two
+  // sides cannot drift. We compute readable names locally because they're
+  // a derived set, not a path resolution — the bridge owns paths, this
+  // owns the alias surface.
   const aliases = Object.entries(CHAIN_NAME_ALIASES)
     .filter(([, canonical]) => canonical === normalized)
     .map(([alias]) => alias);

@@ -52,15 +52,14 @@ const EMBED_SUBDIR: &str = "embed";
 const EMBED_INDEX_FILENAME: &str = "index-v1.json";
 const CASE_INDEX_FILENAME: &str = "case-index.sqlite";
 
-/// Chain name aliases shared with `src/config/paths.ts`.
-/// Keep this table in sync when adding chain-name sugar to either side.
-/// (Singular → canonical plural.)
-const CHAIN_NAME_ALIASES: &[(&str, &str)] = &[
-    ("case", "cases"),
-    ("decision", "decisions"),
-    ("pattern", "patterns"),
-    ("reflection", "reflections"),
-];
+/// The chain-name vocabulary — one owner for every arm.
+///
+/// The rules themselves (plain name, archive, alias table) live in
+/// `chain_names`; they are re-exported here so the path resolvers keep
+/// their address.
+pub mod chain_names;
+
+pub use chain_names::{normalize_chain_name, ChainDirectoryKind, CHAIN_NAME_ALIASES};
 
 /// Read a value from the env map, treating empty strings as absent.
 fn env_get<'a>(env: &'a HashMap<String, String>, key: &str) -> Option<&'a str> {
@@ -142,17 +141,6 @@ pub fn resolve_chain_path(
     }
     let normalized = normalize_chain_name(trimmed);
     resolve_chains_dir(env, cwd).join(normalized)
-}
-
-/// Normalize a chain name through the alias table. Returns the input
-/// verbatim when no alias applies. Pure function for sharing with TS.
-pub fn normalize_chain_name(input: &str) -> &str {
-    for (alias, canonical) in CHAIN_NAME_ALIASES {
-        if input == *alias {
-            return canonical;
-        }
-    }
-    input
 }
 
 /// Resolve the embed-index path. Honors `RUST_EMBED_PERSIST_PATH` when

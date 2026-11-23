@@ -4,15 +4,27 @@
  * semantic roles in the cognitive knowledge graph.
  */
 
-export type CaseType =
-  | 'nominative'
-  | 'genitive'
-  | 'dative'
-  | 'accusative'
-  | 'instrumental'
-  | 'locative'
-  | 'ablative'
-  | 'vocative';
+/**
+ * The legal case types, as a runtime value.
+ *
+ * The list used to exist only as a TypeScript union, which meant every
+ * place that needed it at runtime — a Zod enum for a tool schema — had to
+ * spell the eight names out again. Measured on this host: four copies
+ * (this file's union, `tool-registry/storage.ts` twice, and the MCP
+ * server). One list, and the type is derived from it.
+ */
+export const CASE_TYPES = [
+  'nominative',
+  'genitive',
+  'dative',
+  'accusative',
+  'instrumental',
+  'locative',
+  'ablative',
+  'vocative',
+] as const;
+
+export type CaseType = (typeof CASE_TYPES)[number];
 
 export type CaseEntry =
   | { case_type: 'nominative'; entity: string; action: string; timestamp: string }

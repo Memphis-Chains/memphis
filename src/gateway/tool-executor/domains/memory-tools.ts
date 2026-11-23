@@ -28,20 +28,24 @@ export function createMemoryRuntimeTools(deps: MemoryRuntimeToolDeps): RuntimeTo
       name: 'memphis_journal',
       description:
         'Save important context or observations to the journal chain for later recall. This is NOT a channel for replying to the user — always produce a normal text reply after any tool calls.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          content: { type: 'string', description: 'Content to journal' },
-          tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_journal', {
+        propertyDescriptions: {
+          content: 'Content to journal',
+          tags: 'Optional tags',
         },
-        required: ['content'],
-      },
+      }),
       isReadOnly: false,
       isDestructive: false,
       validateInput(args) {
         return {
           content: requiredString(args, 'content'),
           tags: optionalStringArray(args, 'tags'),
+          // The chain travels with the call. It used to be dropped here,
+          // so the gateway path silently wrote to the default chain while
+          // the MCP path honoured the name — the same call, two different
+          // results. The tool validates the name against
+          // `JOURNAL_TARGET_CHAINS` at its own boundary.
+          chain: optionalString(args, 'chain'),
         };
       },
       async execute(input) {
@@ -66,17 +70,12 @@ export function createMemoryRuntimeTools(deps: MemoryRuntimeToolDeps): RuntimeTo
       name: 'memphis_kartograf',
       description:
         'Run Kartograf inference on text — returns 256-d embedding + zone classification (12 chains). Requires installed checkpoint + MEMPHIS_KARTOGRAF_ENABLE=1. Returns structured error if either is missing.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: 'Text to classify (1-8192 chars)' },
-          top_k_zones: {
-            type: 'number',
-            description: 'Return only top-K zones (1-12). Omit for full distribution.',
-          },
+      inputSchema: buildRegistryInputJsonSchema('memphis_kartograf', {
+        propertyDescriptions: {
+          query: 'Text to classify (1-8192 chars)',
+          top_k_zones: 'Return only top-K zones (1-12). Omit for full distribution.',
         },
-        required: ['query'],
-      },
+      }),
       isConcurrencySafe: true,
       isReadOnly: true,
       validateInput(args) {
@@ -102,34 +101,17 @@ export function createMemoryRuntimeTools(deps: MemoryRuntimeToolDeps): RuntimeTo
       name: 'memphis_classify',
       description:
         'Advisory typed decision via local BASAL with validated probabilities. auto only reports caller-threshold eligibility; it grants no action permissions or error-rate guarantee. Classes are supplied per request. Revalidate calibration for each model/backend. Historical CPU calls took 70-140 seconds; unavailable services return a structured error.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          state: { type: 'string', description: 'Text to classify (1-32000 chars)' },
-          question: { type: 'string', description: 'What to decide about it, in plain language' },
-          criteria: {
-            description:
-              'Options as {key: description} pairs, or an array of 2-10 labels. Score object keys must be ordinal positions 0..n-1; score arrays preserve level order.',
-            oneOf: [
-              { type: 'object', additionalProperties: { type: 'string' } },
-              { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 10 },
-            ],
-          },
-          type: { type: 'string', enum: ['choice', 'noul', 'score'] },
-          threshold: {
-            type: 'number',
-            description:
-              'Advisory threshold from 0 to 1; explicit policy overrides service discovery, fallback 0.93',
-          },
-          orders: {
-            type: 'number',
-            enum: [1, 2],
-            description:
-              '1 = one pass (fast, order-sensitive). 2 = averaged over both option orders.',
-          },
+      inputSchema: buildRegistryInputJsonSchema('memphis_classify', {
+        propertyDescriptions: {
+          state: 'Text to classify (1-32000 chars)',
+          question: 'What to decide about it, in plain language',
+          criteria:
+            'Options as {key: description} pairs, or an array of 2-10 labels. Score object keys must be ordinal positions 0..n-1; score arrays preserve level order.',
+          threshold:
+            'Advisory threshold from 0 to 1; explicit policy overrides service discovery, fallback 0.93',
+          orders: '1 = one pass (fast, order-sensitive). 2 = averaged over both option orders.',
         },
-        required: ['state', 'question', 'criteria'],
-      },
+      }),
       // Not concurrency-safe: a call holds the single-threaded CPU model for
       // minutes. Running several at once starves the host and makes every
       // one of them slower.
@@ -233,15 +215,7 @@ export function createMemoryRuntimeTools(deps: MemoryRuntimeToolDeps): RuntimeTo
     buildTool({
       name: 'memphis_decide',
       description: 'Record a decision with context',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          title: { type: 'string' },
-          choice: { type: 'string' },
-          context: { type: 'string' },
-        },
-        required: ['title', 'choice'],
-      },
+      inputSchema: buildRegistryInputJsonSchema('memphis_decide'),
       validateInput(args) {
         return {
           title: requiredString(args, 'title'),
@@ -257,18 +231,13 @@ export function createMemoryRuntimeTools(deps: MemoryRuntimeToolDeps): RuntimeTo
       name: 'memphis_wallet_sign',
       description:
         'Sign a Solana transaction message with an Ed25519 seed held in the vault. The private key is decrypted inside a callback and never returned — only the base58 public key, the 64-byte signature, and a SHA-256 of the signed message.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          keyName: {
-            type: 'string',
-            description: 'Vault key holding a base64 32-byte Ed25519 seed',
-          },
-          message: { type: 'string', description: 'Base64 transaction message bytes to sign' },
-          label: { type: 'string', description: 'Operator label recorded in the audit entry' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_wallet_sign', {
+        propertyDescriptions: {
+          keyName: 'Vault key holding a base64 32-byte Ed25519 seed',
+          message: 'Base64 transaction message bytes to sign',
+          label: 'Operator label recorded in the audit entry',
         },
-        required: ['keyName', 'message'],
-      },
+      }),
       // Signing is not concurrency-safe in spirit: two simultaneous
       // signatures produce two audit entries racing on the chain append,
       // and a caller that signs in parallel is usually not asking a

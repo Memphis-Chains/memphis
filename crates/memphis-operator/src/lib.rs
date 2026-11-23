@@ -4,17 +4,18 @@ mod chat_basal;
 mod chat_basal_prompt;
 mod chat_context_guard;
 mod chat_guards;
+mod chat_lease;
 mod chat_memory;
 mod chat_operations;
 mod chat_prompt;
+pub mod chat_rotation_head;
+mod chat_self_modify;
 mod chat_session;
 mod chat_streaming;
 mod chat_tool_catalog;
+mod chat_tool_contract;
 mod chat_tool_executor;
 mod code_read_range;
-pub mod sink_retry;
-pub mod sink_status;
-mod ssrf_guard;
 mod config;
 mod context;
 mod openai_codex;
@@ -22,17 +23,21 @@ mod provider;
 mod provider_breaker;
 mod provider_budget;
 mod runtime;
+pub mod sink_retry;
+pub mod sink_status;
+mod ssrf_guard;
 mod telemetry;
 mod text_truncation;
 mod think_stripper;
 
 pub use chat::{ChatExchange, ChatSessionView, ChatTranscriptEntry, JournalWriteResult};
+pub use chat_basal::normalize_classify_criteria;
 pub use chat_basal_prompt::BasalPromptClassification;
 pub use config::OperatorConfig;
 pub use provider::{
     normalize_minimax_reasoning_effort, ChatMessage, ChatRequestOptions, ChatStreamEvent,
-    ChatToolCall, ChatToolDefinition, ModelCapabilitySummary, ProviderStatus, StreamReadStats, TokenUsageSummary,
-    MINIMAX_DEFAULT_REASONING_EFFORT, MINIMAX_REASONING_EFFORT_LEVELS,
+    ChatToolCall, ChatToolDefinition, ModelCapabilitySummary, ProviderStatus, StreamReadStats,
+    TokenUsageSummary, MINIMAX_DEFAULT_REASONING_EFFORT, MINIMAX_REASONING_EFFORT_LEVELS,
 };
 pub use runtime::{
     CaseItem, CaseSummary, ExactSearchHit, MatrixReadinessSummary, MemoryQueryResult,
@@ -43,13 +48,36 @@ pub use runtime::{
 pub use text_truncation::{truncate_on_char_boundary, truncate_with_ellipsis};
 pub mod brave_search;
 pub mod code_read;
+/// The chain directory names the verifier may open — a plain chain or an
+/// archive of one. Exported so the contract test can check the native arm
+/// against `tests/fixtures/chain-verify-contract.json`, the same fixture
+/// the TypeScript arm is checked against.
+pub use chat_memory::{
+    is_chain_backup_directory, is_scannable_chain_directory_name, normalize_case_append_input,
+};
+/// The chains a tool may append to when the operator names one explicitly.
+///
+/// Exported so the contract test can check the native arm against
+/// `tests/fixtures/journal-target-chains-contract.json`, the same fixture
+/// the TypeScript arm is checked against. The fixture is what stops the
+/// two copies of this list from drifting apart.
+pub use chat_memory::{is_journal_target_chain, JOURNAL_TARGET_CHAINS};
+/// The rotation head contract — the marker that lets a rotated chain
+/// prove that it continues an archived prefix.
+///
+/// Exported so the contract test can check the native arm against
+/// `tests/fixtures/chain-rotation-head-contract.json`, the same fixture
+/// the TypeScript arm is checked against.
+pub use chat_rotation_head::{is_valid_chain_start, parse_chain_rotation_head, ChainRotationHead};
+/// The self-modify request contract — the registry's five arguments, the
+/// rules they obey and the canonical payload they become.
+///
+/// Exported so the contract test can check the native arm against
+/// `tests/fixtures/self-modify-contract.json`, the same fixture the
+/// TypeScript arm is checked against.
+pub use chat_self_modify::{canonical_self_modify_request, SelfModifyRequest};
 pub use code_read::{
     assert_not_blocked, assert_not_write_blocked, assert_within_read_roots, assert_within_roots,
     resolve_path, split_lines,
 };
 pub use code_read_range::{resolve_code_read_range, CodeReadRange};
-/// The chain directory names the verifier may open — a plain chain or an
-/// archive of one. Exported so the contract test can check the native arm
-/// against `tests/fixtures/chain-verify-contract.json`, the same fixture
-/// the TypeScript arm is checked against.
-pub use chat_memory::{is_chain_backup_directory, is_scannable_chain_directory_name};

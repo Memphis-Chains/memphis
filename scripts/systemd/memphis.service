@@ -1,0 +1,53 @@
+[Unit]
+Description=Memphis local runtime
+After=network-online.target
+Wants=network-online.target
+# A crash loop must not become a boot loop. `Restart=on-failure` below
+# restarts the service; these two directives cap how often that can
+# happen, so a persistent failure stops instead of spinning.
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+[Service]
+Type=simple
+WorkingDirectory=%h/memphis
+ExecStart=/usr/bin/node %h/memphis/dist/infra/cli/index.js serve
+# `on-failure` (not `always`) so RestartPreventExitStatus is honoured.
+# Exit codes 101/102/103 (integrity fail / config error / startup fail)
+# stop the supervisor from looping on the same crash.
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=101 102 103
+
+# Resource limits.
+#
+# These were absent, and the absence was measurable. The runtime's own
+# cgroup peaked at 3.4 GB and the whole app slice at 9.6 GB with 1.4 GB
+# of swap in use, with nothing above it to stop it: the kernel OOM killer
+# had to act, and the operator saw the runtime die for no visible reason.
+#
+# MemoryHigh is the soft limit — the kernel starts reclaiming under
+# pressure, before the runtime is in trouble. MemoryMax is the hard one:
+# the process is killed, and `Restart=on-failure` brings a clean one
+# back. `OOMPolicy=kill` makes systemd kill the unit's process rather
+# than stopping the whole unit, so the recovery path is the same one a
+# crash takes.
+#
+# The service's own measured peak is 3.4 GB — the boot-time chain
+# verification holds every block of every chain in memory at once — so
+# 4 GB leaves headroom without letting a leak reach the kernel.
+MemoryHigh=2G
+MemoryMax=4G
+OOMPolicy=kill
+
+# A drain that never finishes must not hold the unit open for the
+# default 90 seconds on every restart.
+TimeoutStopSec=45
+
+EnvironmentFile=%h/memphis/.env
+Environment=HOME=%h
+Environment=NODE_ENV=development
+Environment=PATH=/usr/bin:%h/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+[Install]
+WantedBy=default.target

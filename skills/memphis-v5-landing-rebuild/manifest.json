@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "memphis-v5-landing-rebuild",
+  "name": "Memphis v5 Landing Rebuild",
+  "description": "Build a public-facing HTML landing page in the memphis-v5.pl design vocabulary — Memphis orange, MiniMax blue, Watra earth, three-brand integration theme, hero stats grid, two-column comparison, diagram, pricing cards, partnership strip, CTA. Use when a pitch deck needs a single-page public version, or when a sub-brand must keep the visual family.",
+  "tags": ["design", "html", "landing", "memphis-v5"],
+  "tools": ["memphis_code_read", "memphis_exec", "memphis_fs_write", "memphis_journal"],
+  "workflow": [
+    "READ THE TOKENS: take the CSS custom properties from the skill document — they are the canonical values for every landing in this family.",
+    "DERIVE: read the reference pitch deck at docs/pitch/memphis-watra-minimax-pitch-deck.html for the light-mode canvas and docs/pitch/memphis-v5-pl-landing.html for the dark-mode adaptation.",
+    "BUILD: produce one self-contained HTML file with the hero stats grid, the two-column comparison, the diagram section, the pricing cards, the partnership strip and the CTA — in that order.",
+    "VERIFY: render the page locally and check the tokens against the reference before publishing."
+  ],
+  "promptHints": [
+    "Do NOT use this skill for internal admin docs under docs/ (different layout), for PDF-only deliverables (use libreoffice --convert-to pdf) or for marketing email templates (single-column).",
+    "All pages in this family use the exact token values unless a deviation is documented.",
+    "The deploy target is a webroot on a shared host reached over SSH — that is the remote-site-edit skill, not this one."
+  ],
+  "examples": [
+    {
+      "prompt": "Zrób landing w stylu memphis-v5.pl dla Watra.ai",
+      "outcome": "The skill supplies the design tokens and the section order, the reference decks supply the visual vocabulary, and the result is a single self-contained HTML page."
+    }
+  ],
+  "notes": [
+    "Tier 0: read and write under the user's own paths, no vault and no passphrase.",
+    "The reference decks and the published site are the source of truth for the visual family; the skill only records the vocabulary so it does not have to be rediscovered each time."
+  ]
+}
