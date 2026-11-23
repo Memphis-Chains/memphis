@@ -25,7 +25,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use memphis_case_index::CaseIndex;
-use memphis_core::hash::to_canonical_hash_data;
+use memphis_core::block_format::{normalize_block_payload, serialize_block_for_disk};
+use memphis_core::hash::compute_hash_of_payload;
 use memphis_core::{
     block::{Block, BlockData, BlockType},
     case_entry::CaseEntry,
@@ -741,25 +742,30 @@ pub(crate) fn append_generic_block(
     let prev_hash = previous
         .map(|block| block.hash.clone())
         .unwrap_or_else(|| GENESIS_PREV_HASH.to_string());
-    let canonical_data = to_canonical_hash_data(&data);
-    let block_without_hash = json!({
-        "index": index,
-        "timestamp": timestamp,
-        "chain": chain_name,
-        "data": canonical_data,
-        "prev_hash": prev_hash,
-    });
-    let hash = sha256_hex(stable_json(block_without_hash.clone())?.as_bytes());
+    // The payload is normalised BEFORE it is hashed and BEFORE it is
+    // written: the three canonical fields (`type`, `content`, `tags`) get
+    // their defined values, and everything else the payload carried is
+    // kept.
+    //
+    // Hashing the normalised payload gives the same hash as hashing the
+    // raw one: the canonical projection reads the same three fields
+    // either way, because the normalisation fills them with exactly the
+    // values the projection would have derived.
+    //
+    // Normalising before writing also means this arm writes the same
+    // bytes as the TypeScript arm: measured 2026-11-23, the two wrote
+    // 6 248 and 5 606 block files in two different key orders.
+    let normalized = normalize_block_payload(&data);
+    let hash = compute_hash_of_payload(index, &timestamp, chain_name, &normalized, &prev_hash);
     let block = json!({
         "index": index,
         "timestamp": timestamp,
         "chain": chain_name,
-        "data": data,
+        "data": normalized,
         "prev_hash": prev_hash,
         "hash": hash,
     });
-    let payload = serde_json::to_vec_pretty(&block)
-        .map_err(|error| OperatorError::Json(error.to_string()))?;
+    let payload = serialize_block_for_disk(&block);
     publish_chain_block(&chain_dir, index, &payload)?;
     Ok(GenericAppendResult {
         index,
@@ -957,15 +963,16 @@ fn verify_block_hash(block: &GenericChainBlock) -> Result<(), OperatorError> {
     // extra fields (source, turn_id, conversation_id, session_id, consent,
     // ...) fail validation here with `chain integrity check failed for
     // {chain}:{index} hash mismatch` even though they are valid.
-    let canonical_data = to_canonical_hash_data(&block.data);
-    let block_without_hash = json!({
-        "index": block.index,
-        "timestamp": block.timestamp,
-        "chain": block.chain,
-        "data": canonical_data,
-        "prev_hash": block.prev_hash,
-    });
-    let expected_hash = sha256_hex(stable_json(block_without_hash)?.as_bytes());
+    //
+    // The hash is assembled in ONE place — `memphis_core::hash` — so this
+    // arm and the write path cannot drift apart.
+    let expected_hash = compute_hash_of_payload(
+        block.index,
+        &block.timestamp,
+        &block.chain,
+        &block.data,
+        &block.prev_hash,
+    );
     if block.hash != expected_hash {
         return Err(OperatorError::Message(format!(
             "chain integrity check failed for {}:{} hash mismatch",
@@ -1112,29 +1119,6 @@ pub(crate) fn validate_chain_name(chain_name: &str) -> Result<(), OperatorError>
         return Err(OperatorError::Message("invalid chain name".to_string()));
     }
     Ok(())
-}
-
-pub(crate) fn stable_json(value: Value) -> Result<String, OperatorError> {
-    serde_json::to_string(&canonicalize(value))
-        .map_err(|error| OperatorError::Json(error.to_string()))
-}
-
-pub(crate) fn canonicalize(value: Value) -> Value {
-    match value {
-        Value::Array(items) => Value::Array(items.into_iter().map(canonicalize).collect()),
-        Value::Object(map) => {
-            let mut next = serde_json::Map::new();
-            let mut sorted = BTreeMap::new();
-            for (key, value) in map {
-                sorted.insert(key, value);
-            }
-            for (key, value) in sorted {
-                next.insert(key, canonicalize(value));
-            }
-            Value::Object(next)
-        }
-        other => other,
-    }
 }
 
 #[derive(Debug, Clone)]

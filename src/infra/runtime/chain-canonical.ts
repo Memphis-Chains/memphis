@@ -40,6 +40,7 @@ import {
   CANONICAL_KIND_FIELD,
   type BlockVocabulary,
 } from '../storage/block-vocabulary.js';
+import { serializeBlockForDisk } from '../storage/chain-file-io.js';
 
 export const GENESIS_PREV_HASH = '0'.repeat(64);
 
@@ -320,7 +321,14 @@ export function rewriteChainDirectory(
   for (const block of nextBlocks) {
     const target = join(chainDir, block.file);
     const tmp = `${target}.repair-${process.pid}-${Date.now()}`;
-    writeFileSync(tmp, `${JSON.stringify(block.payload, null, 2)}\n`, 'utf8');
+    // The repair writes through the ONE serializer, like every other
+    // writer. It used to write `JSON.stringify(payload, null, 2)` plus a
+    // trailing newline: the same whitespace as the canonical form, with
+    // one byte more at the end, and the key order of the object literal
+    // rather than the canonical one. Measured 2026-11-23 on this host:
+    // 224 block files on disk carry that trailing newline — the repair
+    // path's own byte shape.
+    writeFileSync(tmp, serializeBlockForDisk(block.payload), 'utf8');
     renameSync(tmp, target);
   }
 

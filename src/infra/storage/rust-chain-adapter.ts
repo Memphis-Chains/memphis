@@ -18,6 +18,7 @@ import {
   type BridgeResolution,
 } from './napi-contract.js';
 import { getChainPath, getReadableChainPaths, normalizeChainName } from '../../config/paths.js';
+import { normalizeBlockPayload } from '../../core/block-payload.js';
 import { canonicalHash } from '../../core/chain-hash.js';
 import { normalizeDecisionBlockData } from '../../core/decision-chain.js';
 import type { Block } from '../../memory/chain.js';
@@ -151,27 +152,6 @@ function resolveChainBridge(
   );
 }
 
-function normalizeData(data: Record<string, unknown>): NapiBlockData {
-  const tags = Array.isArray(data.tags)
-    ? data.tags.filter((v): v is string => typeof v === 'string')
-    : [];
-
-  const content = typeof data.content === 'string' ? data.content : JSON.stringify(data);
-
-  const blockType = typeof data.type === 'string' ? data.type : 'journal';
-
-  const passthrough = Object.fromEntries(
-    Object.entries(data).filter(([key]) => !['type', 'content', 'tags'].includes(key)),
-  );
-
-  return {
-    ...passthrough,
-    type: blockType,
-    content,
-    tags,
-  };
-}
-
 function toNapiBlock(
   chain: string,
   index: number,
@@ -180,7 +160,7 @@ function toNapiBlock(
 ): NapiBlock {
   const normalizedChain = normalizeChainName(chain) ?? chain;
   const timestamp = new Date().toISOString();
-  const normalized = normalizeData(data);
+  const normalized = normalizeBlockPayload(data) as NapiBlockData;
 
   // The canonical hash has ONE implementation: `core/chain-hash.ts`.
   //
@@ -261,7 +241,7 @@ async function readChainBlocks(
       const normalizedData =
         normalizedChain === 'decisions' && block.data
           ? (normalizeDecisionBlockData(block.data as Record<string, unknown>) as NapiBlockData)
-          : normalizeData((block.data ?? {}) as Record<string, unknown>);
+          : (normalizeBlockPayload((block.data ?? {}) as Record<string, unknown>) as NapiBlockData);
 
       blocks.push({
         ...block,
@@ -306,7 +286,7 @@ export class NapiChainAdapter {
   }
 
   async appendBlock(chain: string, data: Record<string, unknown>): Promise<AppendBlockResult> {
-    const normalizedData = normalizeData(data);
+    const normalizedData = normalizeBlockPayload(data) as NapiBlockData;
     const result = await this.appendBlockWithDecision(chain, async () => ({ data: normalizedData, value: undefined }), false);
     if (!result.block) throw new Error('chain append unexpectedly skipped');
     return result.block;

@@ -36,14 +36,23 @@
  *
  * The hash covers exactly three fields of `data` — `type`, `content` and
  * `tags`. Every other field of `data` is persisted but NOT protected by the
- * hash. The payload is serialised with sorted keys (`stableStringify`) so
- * the digest does not depend on property order, and the Rust core does the
- * same through `serde_json`'s ordered map.
+ * hash. The payload is serialised with sorted keys so the digest does not
+ * depend on property order, and the Rust core does the same through
+ * `serde_json`'s ordered map.
+ *
+ * The sorted-key form is `core/canonical-json.ts` — byte order, not
+ * `localeCompare`, because the native core sorts by byte. See that module
+ * for the measurement of what the two orders cost when they disagree.
+ *
+ * The three fields themselves are read by `core/block-payload.ts`, which is
+ * the one owner of the payload rule. This module does not carry a second
+ * copy of it.
  */
 
 import * as nodeCrypto from 'node:crypto';
 
-import { stableStringify } from './stable-stringify.js';
+import { canonicalContent, canonicalTags, canonicalType } from './block-payload.js';
+import { canonicalStringify } from './canonical-json.js';
 
 /** The three fields of a block's `data` that the hash covers. */
 export interface CanonicalHashData {
@@ -64,27 +73,24 @@ export interface HashableBlock {
 /**
  * Reduce a block's `data` payload to the canonical three-field form.
  *
- * The fallback order mirrors the native core exactly
- * (`crates/memphis-core/src/hash.rs:46`): `type`, then `block_type`, then
- * `journal`. The TypeScript side used to skip `block_type` — a block
- * carrying only `block_type` was hashed as `journal` here and as its own
- * type there, so the two implementations disagreed about the same bytes.
- * Measured on this host: 0 of 27 159 blocks on disk carry `block_type`
- * without `type`, so the disagreement never bit. It was still a second
- * vocabulary, and the core is the oracle.
+ * The three fields are read by `core/block-payload.ts`, which is the one
+ * owner of the payload rule. The fallback order mirrors the native core
+ * exactly (`crates/memphis-core/src/hash.rs`): `type`, then `block_type`,
+ * then `journal`.
+ *
+ * The TypeScript side used to skip `block_type` — a block carrying only
+ * `block_type` was hashed as `journal` here and as its own type there, so
+ * the two implementations disagreed about the same bytes. Measured on this
+ * host: 0 of 27 433 blocks on disk carry `block_type` without `type`, so
+ * the disagreement never bit. It was still a second vocabulary, and the
+ * core is the oracle.
  */
 export function toCanonicalHashData(data: Record<string, unknown>): CanonicalHashData {
-  const tags = Array.isArray(data.tags)
-    ? data.tags.filter((value): value is string => typeof value === 'string')
-    : [];
-  const content = typeof data.content === 'string' ? data.content : JSON.stringify(data);
-  const type =
-    typeof data.type === 'string'
-      ? data.type
-      : typeof data.block_type === 'string'
-        ? data.block_type
-        : 'journal';
-  return { type, content, tags };
+  return {
+    type: canonicalType(data),
+    content: canonicalContent(data),
+    tags: canonicalTags(data),
+  };
 }
 
 /**
@@ -98,7 +104,7 @@ export function canonicalHash(
   block: HashableBlock,
   crypto: typeof nodeCrypto = nodeCrypto,
 ): string {
-  const canonical = stableStringify({
+  const canonical = canonicalStringify({
     ...block,
     data: toCanonicalHashData(block.data),
   });

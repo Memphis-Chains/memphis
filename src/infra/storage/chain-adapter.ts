@@ -24,6 +24,7 @@ import {
 } from './napi-contract.js';
 import { NapiChainAdapter } from './rust-chain-adapter.js';
 import { getChainPath, normalizeChainName } from '../../config/paths.js';
+import { normalizeBlockPayload } from '../../core/block-payload.js';
 import { canonicalHash } from '../../core/chain-hash.js';
 import { parseBool } from '../../core/env.js';
 import { stableStringify } from '../../core/stable-stringify.js';
@@ -223,19 +224,6 @@ export interface ChainBlock {
   signature?: string;
 }
 
-function normalizeBlockData(data: Record<string, unknown>): Record<string, unknown> {
-  const tags = Array.isArray(data.tags)
-    ? data.tags.filter((value): value is string => typeof value === 'string')
-    : [];
-  const content = typeof data.content === 'string' ? data.content : JSON.stringify(data);
-  const type = typeof data.type === 'string' ? data.type : 'journal';
-  const passthrough = Object.fromEntries(
-    Object.entries(data).filter(([key]) => !['type', 'content', 'tags'].includes(key)),
-  );
-
-  return { ...passthrough, type, content, tags };
-}
-
 export interface ChainExportEnvelope {
   chainName: string;
   exportedAt: string;
@@ -323,7 +311,7 @@ export async function appendBlock(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<AppendBlockResult> {
   // Capture the block before waiting for a lock, as the old append path did.
-  const normalizedData = normalizeBlockData(data);
+  const normalizedData = normalizeBlockPayload(data);
   const result = await appendBlockConditionalInternal(chainName, async () => ({ data: normalizedData, value: undefined }), rawEnv, false);
   if (!result.block) throw new Error('chain append unexpectedly skipped');
   return result.block;
@@ -362,11 +350,11 @@ async function appendBlockConditionalInternal<T>(
       if (!preflight) {
         const decision = await decide();
         if (!decision.data) return { value: decision.value };
-        return { value: decision.value, block: await adapter.appendBlock(normalizedChainName, normalizeBlockData(decision.data)) };
+        return { value: decision.value, block: await adapter.appendBlock(normalizedChainName, normalizeBlockPayload(decision.data)) };
       }
       return await adapter.appendBlockConditional(normalizedChainName, async () => {
         const decision = await decide();
-        return { ...decision, data: decision.data ? normalizeBlockData(decision.data) : undefined };
+        return { ...decision, data: decision.data ? normalizeBlockPayload(decision.data) : undefined };
       });
     } catch (error) {
       throw new Error(`rust chain append failed: ${String(error)}`, { cause: error });
@@ -398,7 +386,7 @@ async function appendBlockConditionalInternal<T>(
     });
     const decision = await decide();
     if (!decision.data) return { value: decision.value };
-    const normalizedData = normalizeBlockData(decision.data);
+    const normalizedData = normalizeBlockPayload(decision.data);
     const previousBlock = blocks.at(-1);
     const nextIndex = previousBlock ? previousBlock.index + 1 : 1;
 

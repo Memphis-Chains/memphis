@@ -20,6 +20,7 @@ import {
 import { join } from 'node:path';
 
 import { withChainWriteLock } from './chain-write-lock.js';
+import { canonicalStringifyPretty } from '../../core/canonical-json.js';
 
 // ── Shared types ─────────────────────────────────────────────────────────────
 
@@ -69,9 +70,23 @@ export { parseEnvelope, callBridge, type BridgeEnvelope } from './bridge-envelop
  * was not byte-identical to a chain that had never been rotated, and
  * nothing said why. With one serializer, "the archive round trip is
  * lossless" becomes a property that can be checked with `cmp`.
+ *
+ * The key ORDER was the same kind of divergence, one level deeper. The
+ * TypeScript writer used the order of the object literal, while the
+ * Rust data plane (`crates/memphis-operator/src/chat_memory.rs`) writes
+ * with `serde_json::to_vec_pretty` over a `BTreeMap` — every key
+ * sorted by byte. Measured 2026-11-23 on this host: 6 248 block files
+ * in the Rust order and 5 606 in the TypeScript order, in the same
+ * chains. `chain verify` cannot see it — the hash covers values, not
+ * bytes — so two files that differ only in key order verify
+ * identically and no gate ever noticed.
+ *
+ * The canonical form is therefore: keys sorted by byte, two-space
+ * indent. That is what the Rust core writes, so the two arms produce
+ * byte-identical files for the same logical block.
  */
 export function serializeBlockForDisk(block: unknown): string {
-  return JSON.stringify(block, null, 2);
+  return canonicalStringifyPretty(block);
 }
 
 /**

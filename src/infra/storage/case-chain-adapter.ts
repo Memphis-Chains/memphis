@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 
 import {
@@ -20,8 +19,8 @@ import {
   type BridgeResolution,
 } from './napi-contract.js';
 import { getChainPath, getDataDir } from '../../config/paths.js';
+import { canonicalHash } from '../../core/chain-hash.js';
 import { parseBool } from '../../core/env.js';
-import { stableStringify } from '../../core/stable-stringify.js';
 import type {
   CaseAppendResult,
   CaseEntry,
@@ -87,21 +86,26 @@ function toNapiBlock(
   prevHash: string,
 ): NapiBlock {
   const timestamp = new Date().toISOString();
-  const hashPayload = stableStringify({
-    index,
-    timestamp,
-    chain,
-    data,
-    prev_hash: prevHash,
-  });
 
+  // The canonical hash has ONE implementation: `core/chain-hash.ts`.
+  //
+  // This module used to build the hash payload inline, over the FULL
+  // `data`, and hash that. The canonical hash covers a three-field
+  // projection of `data` (type/content/tags), so the two formulas agreed
+  // only while the payload carried exactly those three fields — and the
+  // moment a case entry grew a fourth field, this writer would have
+  // produced a hash the native core could not reproduce.
+  //
+  // Measured 2026-11-23 on this host: 0 of 2 190 blocks on the `cases`
+  // chain use this formula, so the divergence never bit. The corpus
+  // cannot prove a rule, so the rule was taken from the owner.
   return {
     index,
     timestamp,
     chain,
     data,
     prev_hash: prevHash,
-    hash: createHash('sha256').update(hashPayload).digest('hex'),
+    hash: canonicalHash({ index, timestamp, chain, data, prev_hash: prevHash }),
   };
 }
 

@@ -57,6 +57,7 @@ import {
   type ChainBlock,
 } from '../../src/infra/storage/chain-adapter.js';
 import { restoreChainFromArchive } from '../../src/infra/storage/chain-archive-restore.js';
+import { serializeBlockForDisk } from '../../src/infra/storage/chain-file-io.js';
 import { rotateChain } from '../../src/infra/storage/chain-rotation.js';
 
 const CHAIN = 'archive-roundtrip-fixture';
@@ -237,13 +238,20 @@ describe('the archive format survives the round trip', () => {
 /**
  * Write the chain the way the adapter writes it: pretty-printed, one
  * file per block, six-digit index.
+ *
+ * The bytes go through `serializeBlockForDisk` — the ONE owner of the
+ * block file's form. This function used to write `JSON.stringify(block,
+ * null, 2)` inline, which was a third copy of the format rule: it
+ * matched the writer of the day, and it stopped matching the moment the
+ * canonical form changed. A gate whose corpus is written by a copy of
+ * the rule is a gate about the copy.
  */
 function writeFixtureChain(chainDir: string, count: number, content?: string): void {
   mkdirSync(chainDir, { recursive: true });
   for (const block of makeFixtureBlocks(count, content)) {
     writeFileSync(
-      join(chainDir, `${String(block.index).padStart(6, '0')}.json`),
-      JSON.stringify(block, null, 2),
+      join(chainDir, `${String(block.index).padStart(6, 0)}.json`),
+      serializeBlockForDisk(block),
       'utf8',
     );
   }
@@ -280,7 +288,11 @@ async function writeLegacyArchive(archivePath: string, blocks: ChainBlock[]): Pr
   const out = createWriteStream(archivePath);
   const done = pipeline(gzip, out);
   for (const block of blocks) {
-    gzip.write(`${JSON.stringify(block, null, 2).trim()}\n`);
+    // The legacy archive held the block file's own bytes. The block file
+    // goes through the one serializer, so the archive does too — the
+    // legacy part of the format is the GLUING (one pretty-printed object
+    // after another), not a second copy of the block form.
+    gzip.write(`${serializeBlockForDisk(block).trim()}\n`);
   }
   gzip.end();
   await done;
