@@ -74,6 +74,9 @@
  * archive BODY is read by the TypeScript arm only.
  */
 
+import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
+
 /** A JSON object, as it is stored inside an archive. */
 export type ArchiveBlockValue = Record<string, unknown>;
 
@@ -89,6 +92,120 @@ export interface ArchiveValueScan {
    * and prepends it to the next chunk.
    */
   rest: string;
+}
+
+/**
+ * The name of an archive file.
+ *
+ * Archives are named `{chain}_{firstIndex}-{lastIndex}_{timestamp}.jsonl.gz`.
+ * The index RANGE is part of the name because it is what lets a reader
+ * decide, without opening the file, whether an archive can hold the block
+ * it is looking for — the rotation moves a PREFIX of a chain aside, and
+ * the range says which prefix.
+ *
+ * One owner for the name: the writer (`chain-rotation.ts`) and every
+ * reader (the restore path, the recall's archive fallback) go through the
+ * functions below, so a chain whose name contains an underscore
+ * (`autonom_archive`) cannot be mis-parsed by a reader that split on the
+ * first underscore.
+ */
+export interface ArchiveFileName {
+  /** The chain the archive belongs to. */
+  chain: string;
+  /** The first block index in the archive. */
+  firstIndex: number;
+  /** The last block index in the archive. */
+  lastIndex: number;
+  /** The timestamp part of the name, verbatim. */
+  timestamp: string;
+}
+
+/**
+ * The file name of an archive.
+ *
+ * @param chain the chain the archive belongs to.
+ * @param firstIndex the first archived block index.
+ * @param lastIndex the last archived block index.
+ * @param timestamp the timestamp part, as the rotation writes it
+ *   (`new Date().toISOString().replace(/[:.]/g, '-')`).
+ */
+export function archiveFileName(
+  chain: string,
+  firstIndex: number,
+  lastIndex: number,
+  timestamp: string,
+): string {
+  return `${chain}_${String(firstIndex).padStart(6, '0')}-${String(lastIndex).padStart(6, '0')}_${timestamp}.jsonl.gz`;
+}
+
+/**
+ * Parse an archive file name, or return null when the name is not one.
+ *
+ * The parse works from the RIGHT: the timestamp is after the last
+ * underscore, the index range is between the last two underscores, and
+ * everything before that is the chain — whose name may itself contain
+ * underscores.
+ */
+export function parseArchiveFileName(file: string): ArchiveFileName | null {
+  if (!file.endsWith('.jsonl.gz')) return null;
+  const stem = file.slice(0, -'.jsonl.gz'.length);
+
+  const timestampStart = stem.lastIndexOf('_');
+  if (timestampStart < 0) return null;
+  const rangeStart = stem.lastIndexOf('_', timestampStart - 1);
+  if (rangeStart < 0) return null;
+
+  const chain = stem.slice(0, rangeStart);
+  const range = stem.slice(rangeStart + 1, timestampStart);
+  const timestamp = stem.slice(timestampStart + 1);
+
+  const bounds = range.split('-');
+  if (bounds.length !== 2) return null;
+  const firstIndex = Number(bounds[0]);
+  const lastIndex = Number(bounds[1]);
+  if (!chain || !Number.isInteger(firstIndex) || !Number.isInteger(lastIndex)) return null;
+
+  return { chain, firstIndex, lastIndex, timestamp };
+}
+
+/**
+ * The blocks held by an archive's text.
+ *
+ * The text is what the archive file holds after decompression. The
+ * scanner reads both the current format (one object per line) and the
+ * legacy one (objects spread over many lines) — the archives already on
+ * disk stay readable.
+ *
+ * @throws if a value is not a JSON object.
+ */
+export function parseArchiveBlocks(text: string): ArchiveBlockValue[] {
+  return scanArchiveValues(text).values.map((value) => {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('an archive value is not a JSON object');
+    }
+    return parsed as ArchiveBlockValue;
+  });
+}
+
+/**
+ * The blocks held by an archive file, read synchronously.
+ *
+ * The synchronous reader exists for the callers that cannot await: the
+ * recall's source resolver is synchronous, and it has to be able to read
+ * the blocks the rotation moved aside.
+ *
+ * It uses the SAME scanner as the streaming reader in
+ * `chain-archive-restore.ts`, so both read what the writer wrote —
+ * including the legacy pretty-printed archives still on disk.
+ *
+ * @param archivePath the archive's path. A `.gz` file is decompressed.
+ * @throws if the file cannot be read or a value is not a JSON object.
+ */
+export function readArchiveBlocksSync(archivePath: string): ArchiveBlockValue[] {
+  const raw = readFileSync(archivePath);
+  const text = archivePath.endsWith('.gz') ? gunzipSync(raw).toString('utf8') : raw.toString('utf8');
+  return parseArchiveBlocks(text);
 }
 
 /**
