@@ -1,86 +1,205 @@
 <!doctype html>
 <html lang="pl">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Roadmap 2026–2028 — Memphis</title>
-  <meta name="description" content="13-punktowa roadmapa Memphis: shipped, in-progress, spec, research i design — z anchorami do publicznych źródeł." />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Roadmapa Memphisa — własna aplikacja z własnego forka</title>
+  <meta name="description" content="Oficjalna roadmapa Memphisa. Sprawdź plan aplikacji z własnego forka, stan kodu na komputerze i kryteria odbioru dla Androida oraz iPhone’a.">
+  <link rel="canonical" href="https://memphis-v5.pl/roadmap/">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="pl_PL">
+  <meta property="og:title" content="Roadmapa Memphisa — własna aplikacja z własnego forka">
+  <meta property="og:description" content="Decyzje projektowe, działający kod i próby, które musi przejść aplikacja na telefon.">
+  <meta property="og:url" content="https://memphis-v5.pl/roadmap/">
+  <meta property="og:image" content="https://memphis-v5.pl/memphis-os-social-preview.jpg">
   <style>
-    :root{--bg:#f4f1ea;--bg2:#ffffff;--bg3:#ebe6d6;--fg:#1a1d24;--muted:#4a4f5a;--soft:#3a3f4a;--accent:#c44e1f;--accent2:#1a4d8f;--good:#15803d;--warn:#f59e0b;--blue:#1a4d8f;--line:rgba(0,0,0,0.12);--sans:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif}
-    *{box-sizing:border-box;margin:0;padding:0} body{font-family:var(--sans);background:radial-gradient(circle at 15% 0,rgba(196,78,31,.16),transparent 30rem),radial-gradient(circle at 90% 10%,rgba(26,77,143,.13),transparent 28rem),var(--bg);color:var(--fg);line-height:1.66;min-height:100vh} a{color:var(--accent2);text-decoration:none}a:hover{text-decoration:underline}
-    header{padding:1.2rem 2rem;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;background:rgba(4,5,9,.78);backdrop-filter:blur(16px);position:sticky;top:0;z-index:5}.brand{font-weight:950;font-size:1.1rem}.brand .a{color:var(--accent)}.brand .b{color:var(--accent2)}.nav{display:flex;gap:1rem;flex-wrap:wrap}.nav a{color:var(--muted);font-size:.9rem}.nav a:hover{color:var(--accent2)}
-    main{max-width:1120px;margin:0 auto;padding:3rem 1.35rem 5rem}.badge{display:inline-flex;border:1px solid rgba(26,77,143,.35);background:rgba(26,77,143,.08);color:var(--accent2);border-radius:999px;padding:.34rem .78rem;font-weight:850;font-size:.76rem;margin-bottom:1rem}h1{font-size:clamp(2.2rem,6vw,4.7rem);line-height:1;letter-spacing:-.065em;margin-bottom:.75rem}.lead{font-size:1.08rem;color:var(--muted);max-width:860px;margin-bottom:1.4rem}.note{background:rgba(196,78,31,.09);border-left:4px solid var(--accent);border-radius:0 14px 14px 0;padding:1rem 1.15rem;color:#d8e3ee;margin:1.2rem 0 2rem}.note strong{color:var(--fg)}
-    .legend{display:flex;gap:.55rem;flex-wrap:wrap;margin:1rem 0 2rem}.pill{display:inline-flex;align-items:center;gap:.35rem;border-radius:999px;padding:.28rem .7rem;font-size:.8rem;font-weight:850;border:1px solid var(--line);background:rgba(0,0,0,.04)}.shipped{color:var(--good);border-color:rgba(34,197,94,.35)}.progress{color:var(--warn);border-color:rgba(245,158,11,.35)}.spec{color:var(--blue);border-color:rgba(96,165,250,.35)}.research{color:#c084fc;border-color:rgba(192,132,252,.35)}.design{color:var(--muted)}
-    .orbs{display:grid;grid-template-columns:repeat(13,minmax(30px,1fr));gap:.45rem;margin:2rem 0 1.3rem}.orb{aspect-ratio:1;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(16,21,29,.85);border:1px solid rgba(26,77,143,.35);color:var(--accent2);font-weight:950;font-size:.82rem;box-shadow:0 0 0 5px rgba(26,77,143,.045)}
-    .timeline{position:relative;padding-left:2rem;margin-top:1.5rem}.timeline:before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--line)}.item{position:relative;margin-bottom:1rem;background:rgba(10,13,20,.74);border:1px solid var(--line);border-radius:18px;padding:1.05rem 1.2rem}.item:before{content:attr(data-n);position:absolute;left:calc(-2rem - 13px);top:1.05rem;width:28px;height:28px;border-radius:50%;background:var(--bg3);border:1px solid rgba(26,77,143,.45);color:var(--accent2);display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:950}.meta{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.25rem}.time{color:var(--accent);font-size:.75rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.event{font-size:1.13rem;font-weight:900;margin-bottom:.32rem}.desc{color:var(--muted);font-size:.94rem}.desc strong{color:var(--fg)}.facts{margin-top:.72rem;display:grid;gap:.4rem}.fact{font-size:.86rem;color:#3a3f4a;background:rgba(0,0,0,.04);border:1px solid rgba(0,0,0,.06);border-radius:10px;padding:.5rem .65rem}.fact strong{color:var(--fg)}
-    .links{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.68rem}.links a{font-size:.82rem;color:var(--accent2);border:1px solid rgba(26,77,143,.25);background:rgba(26,77,143,.06);border-radius:999px;padding:.24rem .62rem}.section{margin-top:2rem;padding-top:2rem;border-top:1px solid var(--line)}h2{font-size:1.55rem;letter-spacing:-.03em;margin-bottom:.75rem}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1rem}.card{background:rgba(10,13,20,.74);border:1px solid var(--line);border-radius:16px;padding:1rem}.card p{color:var(--muted);font-size:.94rem}.card strong{color:var(--fg)}code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent2);font-size:.92em}footer{text-align:center;border-top:1px solid var(--line);padding:2rem 1rem;color:var(--muted);font-size:.86rem}@media(max-width:760px){.orbs{grid-template-columns:repeat(7,1fr)}.grid{grid-template-columns:1fr}.timeline{padding-left:1.55rem}.item:before{left:calc(-1.55rem - 13px)}}
+    :root {
+      color-scheme: light;
+      --paper: #f4f1ea;
+      --ink: #202522;
+      --muted: #4c5652;
+      --line: #c8c9bd;
+      --accent: #9a3d19;
+      --link: #184e76;
+      --soft: #e8eee7;
+      --sans: Inter, system-ui, sans-serif;
+      --serif: Georgia, "Times New Roman", serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--paper); font: 1rem/1.6 var(--sans); }
+    a { color: var(--link); text-underline-offset: .18em; text-decoration-thickness: .075em; }
+    a:hover { text-decoration-thickness: .15em; }
+    a:focus-visible { outline: 3px solid var(--link); outline-offset: 4px; }
+    .wrap { width: min(70rem, 100%); margin-inline: auto; padding-inline: clamp(1rem, 4vw, 3.5rem); }
+    .skip { position: absolute; left: 1rem; top: -6rem; z-index: 1; padding: .5rem 1rem; background: white; }
+    .skip:focus { top: .5rem; }
+    header { border-bottom: 1px solid var(--line); }
+    .bar, .foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem 2rem; padding-block: .8rem; }
+    .brand { display: inline-flex; align-items: center; gap: .6rem; color: var(--ink); font-weight: 750; text-decoration: none; }
+    .brand img { width: 2rem; height: 2rem; object-fit: contain; }
+    nav, .refs, .foot-links { display: flex; flex-wrap: wrap; gap: .3rem 1.15rem; }
+    nav a, .foot-links a { display: inline-flex; align-items: center; min-height: 2.75rem; font-size: .92rem; }
+    .hero { padding-block: clamp(2.5rem, 7vw, 5rem) clamp(1.8rem, 4vw, 3rem); }
+    h1, h2, h3, p { margin: 0; }
+    h1, h2 { font-family: var(--serif); font-weight: 500; line-height: 1.08; }
+    h1 { font-size: clamp(2.65rem, 7vw, 5.6rem); letter-spacing: -.045em; }
+    h2 { font-size: clamp(1.95rem, 4vw, 3rem); letter-spacing: -.035em; margin-bottom: 1.1rem; }
+    h3 { font-size: 1.16rem; line-height: 1.35; margin-bottom: .45rem; }
+    .hero p { max-width: 58ch; font-size: clamp(1.12rem, 2vw, 1.4rem); margin-top: 1.1rem; }
+    .stamp { display: block; margin-top: 1.25rem; font-size: .92rem; color: var(--muted); }
+    section { border-top: 1px solid var(--line); padding-block: clamp(1.7rem, 4vw, 3rem); scroll-margin-top: 1rem; }
+    .eyebrow { color: var(--accent); font-size: .8rem; font-weight: 750; text-transform: uppercase; letter-spacing: .09em; margin-bottom: .55rem; }
+    .intro { max-width: 72ch; font-size: 1.07rem; }
+    .profiles, .evidence { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.45rem clamp(1.4rem, 5vw, 3.6rem); margin-top: 1.65rem; }
+    .profiles { background: var(--soft); border-left: .25rem solid #52765f; padding: clamp(1rem, 3vw, 1.7rem); }
+    .refs { margin-top: .55rem; font-size: .92rem; }
+    .evidence article { border-top: 1px solid var(--line); padding-top: .85rem; }
+    .steps, .timeline { padding-left: 1.65rem; margin: 1.4rem 0 0; }
+    .steps li, .timeline li { margin-block: 0 1rem; padding-left: .35rem; max-width: 78ch; }
+    .steps li::marker { font-family: var(--serif); color: var(--accent); font-weight: bold; }
+    .steps p + p { margin-top: .25rem; }
+    .accept { color: var(--muted); }
+    .accept strong { display: block; color: var(--ink); font-size: .88rem; }
+    .rule { max-width: 76ch; border-left: .2rem solid var(--accent); padding-left: 1rem; margin-top: 1.4rem; }
+    code { font: .94em ui-monospace, monospace; overflow-wrap: anywhere; }
+    footer { border-top: 1px solid var(--line); color: var(--muted); }
+    @media (max-width: 42rem) {
+      .profiles, .evidence { grid-template-columns: 1fr; }
+      .bar { align-items: flex-start; flex-direction: column; gap: 0; }
+      nav { column-gap: .85rem; }
+    }
   </style>
 </head>
 <body>
-<header>
-  <div class="brand"><span class="a">Memphis</span> <span class="b">Roadmap</span></div>
-  <nav class="nav"><a href="/">Memphis-v5</a><a href="#historia">Historia</a><a href="#plany">Plany</a><a href="/prezentacja/">Prezentacja</a><a href="/sciaga/">Ściąga</a></nav>
-</header>
-<main>
-  <span class="badge">13 punktów · fakty + jawnie oznaczone predykcje</span>
-  <h1>Roadmap Memphis 2026–2028</h1>
-  <p class="lead">Większy artefakt: jak Memphis ewoluował, czym jest dziś i czym aspiruje się stać. Każdy punkt ma status. „Shipped” oznacza kod/release/PR; „Spec/Research/Design” oznacza kierunek, nie obietnicę produkcyjną.</p>
-  <div class="note"><strong>Reguła uczciwości:</strong> nie mieszamy rzeczy zrobionych z rzeczami zaplanowanymi. Predykcje są przydatne, ale muszą być opisane jako predykcje.</div>
-  <div class="legend"><span class="pill shipped">✅ shipped</span><span class="pill progress">⏳ in-progress / scaffold</span><span class="pill spec">🔬 spec</span><span class="pill research">🧪 research</span><span class="pill design">📐 design</span></div>
-  <div class="orbs"><div class="orb">1</div><div class="orb">2</div><div class="orb">3</div><div class="orb">4</div><div class="orb">5</div><div class="orb">6</div><div class="orb">7</div><div class="orb">8</div><div class="orb">9</div><div class="orb">10</div><div class="orb">11</div><div class="orb">12</div><div class="orb">13</div></div>
+  <a class="skip" href="#tresc">Przejdź do treści</a>
+  <header>
+    <div class="wrap bar">
+      <a class="brand" href="/"><img src="logo_oswobodzeni_icon.png" alt="" width="32" height="32">Memphis · Oswobodzeni</a>
+      <nav aria-label="Na tej stronie">
+        <a href="#kierunek">Kierunek</a><a href="#kod">Stan kodu</a><a href="#plany">Etapy</a><a href="#historia">Historia</a>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap" id="tresc">
+    <div class="hero">
+      <h1>Roadmapa Memphisa</h1>
+      <p>Komputer z Memphisem ma umieć „wykluć” aplikację na telefon swojego właściciela. Wybierasz, do czego ma Ci służyć, i dostajesz jej kod u siebie.</p>
+      <span class="stamp">Aktualizacja <time datetime="2026-11-22">22 listopada 2026</time> · Generator aplikacji i parowanie telefonu są na etapie projektu · Jedna umowa narzędzi po obu stronach — opisana niżej.</span>
+    </div>
 
-  <div class="timeline">
-    <div class="item" data-n="1"><div class="meta"><span class="time">2026 Q1–Q2</span><span class="pill shipped">✅ shipped</span></div><div class="event">Sovereign runtime baseline</div><p class="desc">Local-first agent runtime: Rust core, encrypted vault, signed append-only chains. To jest rdzeń Memphis.</p><div class="facts"><div class="fact"><strong>Evidence:</strong> v1.11.0 (baseline od v1.8.0), README, <code>crates/memphis-core</code>, <code>crates/memphis-vault</code>.</div></div><div class="links"><a href="https://github.com/Memphis-Chains/memphis/releases/tag/v1.11.0" target="_blank" rel="noopener">v1.11.0</a><a href="https://github.com/Memphis-Chains/memphis/tree/main/crates/memphis-core" target="_blank" rel="noopener">memphis-core</a></div></div>
+    <section id="kierunek" aria-labelledby="kierunek-tytul">
+      <p class="eyebrow">Prawda projektowa</p>
+      <h2 id="kierunek-tytul">Własna aplikacja z własnego forka</h2>
+      <p class="intro">Podczas instalacji na komputerze chcemy dodać do <code>memphis init</code> opcję „Dodaj telefon”. Wybierzesz Androida lub iPhone’a i opiszesz po polsku, co chcesz robić. Memphis zaproponuje funkcje, a po Twoim zatwierdzeniu zapisze gotowy do zbudowania projekt Tauri w Twojej kopii repozytorium, czyli forku.</p>
+      <div class="profiles">
+        <article>
+          <h3>„Chcę porozmawiać z Memphisem”</h3>
+          <p>Osoba, która woli mówić niż pisać, wybierze jeden duży przycisk do rozmowy i odczyt odpowiedzi na głos. Otrzyma dostęp do rozmowy z wybranym komputerem.</p>
+        </article>
+        <article>
+          <h3>„Chcę sterować swoim komputerem”</h3>
+          <p>Właściciel będzie mógł wybrać pełny kokpit <code>memphis tui</code>, własne sesje, pamięć, pliki i terminal. Polecenia wykona komputer z uprawnieniami konta właściciela. Podniesienie uprawnień będzie wymagało osobnego potwierdzenia.</p>
+        </article>
+      </div>
+      <p class="rule">Fork ma zawierać źródła aplikacji, listę wybranych modułów i wersję Memphisa używaną do budowy. Możesz zmienić ekran, dopisać funkcję albo samodzielnie wydać kolejną wersję. Publikacja kodu i udzielenie dostępu do komputera to dwie osobne decyzje właściciela.</p>
+      <p class="intro">Telefon i planowany pulpit graficzny na komputerze to dwie powłoki tego samego kokpitu. Rdzeń — pamięć, narzędzia, strażnicy — jest jeden; powłoka tylko pokazuje i wysyła. Dlatego aplikacja na telefon nie pisze własnej logiki narzędzi: wywołuje kokpit komputera, który używa jednej umowy narzędzi.</p>
+    </section>
 
-    <div class="item" data-n="2"><div class="meta"><span class="time">2026 Q1–Q2</span><span class="pill shipped">✅ shipped</span></div><div class="event">Memory architecture</div><p class="desc">Canonical chain catalog, signed memory, semantic + exact recall. To jest pamięć, nie luźny chat-log.</p><div class="facts"><div class="fact"><strong>Evidence:</strong> <code>src/memory/chain-catalog.ts</code> pokazuje 11 canonical chains; spec Kartograf mówi o embedding + zone routing; FTS5/case-index obecne w opisach repo.</div></div><div class="links"><a href="https://github.com/Memphis-Chains/memphis/blob/main/src/memory/chain-catalog.ts" target="_blank" rel="noopener">chain catalog</a><a href="https://github.com/Memphis-Chains/memphis/blob/main/docs/dev/KARTOGRAF-SPEC.md" target="_blank" rel="noopener">Kartograf spec</a></div></div>
+    <section id="kod" aria-labelledby="kod-tytul">
+      <p class="eyebrow">Prawda w kodzie</p>
+      <h2 id="kod-tytul">Na czym możemy dziś budować</h2>
+      <p class="intro">Poniższe odsyłacze wskazują tę samą rewizję publicznego repozytorium. Można otworzyć implementację i test dokładnie w stanie opisanym na tej stronie.</p>
+      <p class="refs"><a href="https://github.com/Memphis-Chains/memphis/tree/00351eaf6252f4471fbbdcd7591c32c86f384c88">Sprawdzona rewizja <code>00351eaf</code></a></p>
+      <div class="evidence">
+        <article>
+          <h3>Instalacja ze źródeł</h3>
+          <p>Instalator umie pracować na istniejącej kopii kodu i przyjąć adres repozytorium. Działa już pierwsza konfiguracja na PC. Krok „Dodaj telefon” jest zaplanowany.</p>
+          <div class="refs"><a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/scripts/install.sh">Instalator</a><a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/tests/ops/install-script-check-only.test.ts">Test instalatora</a></div>
+        </article>
+        <article>
+          <h3>Kokpit operatora na komputerze</h3>
+          <p>Rustowy TUI uruchamia rozmowę, odczytuje sesje i przeszukuje pamięć przez <code>memphis-operator</code>. Wybrane polecenia, w tym kontrolę stanu, przekazuje lokalnemu procesowi TypeScript. Silnik kokpitu zostaje w Rustie, bo tylko on strumieniuje odpowiedzi token po tokenie — aplikacja na telefon i planowany pulpit graficzny muszą korzystać z tego samego silnika, a nie pisać własnego.</p>
+          <div class="refs"><a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/crates/memphis-tui/src/client.rs">Klient TUI</a><a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/tests/unit/tui-host.test.ts">Test protokołu komend</a><a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/docs/adr/011-cockpit-core-and-tauri-shell.md">Propozycja wspólnego rdzenia</a></div>
+        </article>
+        <article>
+          <h3>Pamięć i most N-API</h3>
+          <p>TypeScript wywołuje biblioteki Rusta przez N-API. Test pamięci uruchamia cztery procesy zapisujące do jednego łańcucha i sprawdza komplet 32 wpisów. Druga próba sprawdza zapis po przerwaniu procesu trzymającego blokadę.</p>
+          <div class="refs"><a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/crates/memphis-napi/src/lib.rs">Interfejs N-API</a><a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/tests/integration/chain-writer-processes.test.ts">Test wspólnego zapisu</a></div>
+        </article>
+        <article>
+          <h3>Publiczny czat z Basalem i MiniMaxem</h3>
+          <p>W publicznym czacie lokalny Basal klasyfikuje pytanie, zanim MiniMax przygotuje odpowiedź. Do modelu może trafić fragment pamięci jawnie oznaczony do publicznej rozmowy i eksportu. Prywatny kokpit telefonu będzie wymagał sparowania z PC.</p>
+          <div class="refs"><a href="/chat/">Otwórz publiczny czat</a><a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/src/infra/http/public-minimax.ts">Obsługa pytania</a><a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/src/infra/http/public-chain-context.ts">Zgoda na fragment</a></div>
+        </article>
 
-    <div class="item" data-n="3"><div class="meta"><span class="time">2026 Q2</span><span class="pill shipped">✅ shipped</span></div><div class="event">Multi-surface gateway</div><p class="desc">Memphis nie jest jednym oknem. Działa przez TUI, CLI, Telegram, HTTP i MCP-ready surface.</p><div class="facts"><div class="fact"><strong>Evidence:</strong> <code>crates/memphis-tui</code>, <code>src/gateway/channels</code>, README: Rust TUI, Telegram-ready, HTTP API, MCP-ready.</div></div><div class="links"><a href="https://github.com/Memphis-Chains/memphis/tree/main/crates/memphis-tui" target="_blank" rel="noopener">TUI</a><a href="https://github.com/Memphis-Chains/memphis/blob/main/README.md" target="_blank" rel="noopener">README</a></div></div>
+        <article>
+          <h3>Jedna umowa narzędzi po obu stronach</h3>
+          <p>Model dostaje ten sam zestaw narzędzi z tymi samymi nazwami argumentów niezależnie od tego, czy rozmawia przez kokpit, telefon, Telegram, CLI czy MCP. Umowę trzyma jeden rejestr w kodzie; kopia dla kokpitu Rust powstaje z niego automatycznie, a bramka w CI pilnuje, żeby się nie rozjechały. Przed tą decyzją pięć z dwudziestu trzech narzędzi kokpitu obiecywało inne argumenty niż reszta Memphis, a <code>memphis_self_modify</code> oznaczał dwie różne operacje pod jedną nazwą.</p>
+          <p>Wszystkie pięć rozdzielności jest dziś zamkniętych. Kokpit ma 23 narzędzia wzięte prosto z rejestru — bez własnych, ręcznie pisanych schematów — a każda z tych różnic ma teraz swój test: jedna tabela przypadków sprawdzana z obu stron mostu, z sumą kontrolną tych samych bajtów. Tam, gdzie kokpit odmawiał czegoś, czego gateway przyjmował, dziś obie strony mówią to samo.</p>
+          <div class="refs"><a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/docs/adr/012-one-tool-contract-across-the-bridge.md">Decyzja ADR-012</a><a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/src/gateway/tool-registry.ts">Rejestr narzędzi</a><a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/scripts/sync-native-tool-contract.mts">Generator kopii</a><a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/tests/unit/native-tool-contract.test.ts">Test bramki</a></div>
+        </article>
 
-    <div class="item" data-n="4"><div class="meta"><span class="time">2026 Q2</span><span class="pill shipped">✅ shipped</span></div><div class="event">Voice stack 100% local</div><p class="desc">Lokalne STT/TTS: faster-whisper + Piper, w tym polskie głosy. Kierunek: rozmawiać z własnym agentem bez chmury.</p><div class="facts"><div class="fact"><strong>Evidence:</strong> PR #430, #455, #456, #457, #458 — merged 2026-05-04.</div></div><div class="links"><a href="https://github.com/Memphis-Chains/memphis/pull/430" target="_blank" rel="noopener">#430</a><a href="https://github.com/Memphis-Chains/memphis/pull/455" target="_blank" rel="noopener">#455</a><a href="https://github.com/Memphis-Chains/memphis/pull/456" target="_blank" rel="noopener">#456</a><a href="https://github.com/Memphis-Chains/memphis/pull/458" target="_blank" rel="noopener">#458</a></div></div>
+        <article>
+          <h3>Konsola operatora mówi to, co robi</h3>
+          <p>Operator pracuje przez CLI, więc to, co konsola pokazuje, jest jego jedynym interfejsem. Dwa miejsca kłamały. Pierwsze: CLI zna czterdzieści trzy polecenia, a w pomocy widziało dwadzieścia osiem — piętnaście komend nie było w ogóle w <code>--help</code>, w tym <code>recovery</code>, czyli dokładnie ta, która rozlicza turne pozostawione przez runtime. Rejestr i linia pomocy nigdy się nie porównywały, więc następna komenda znikała po cichu; dziś porównuje je bramka w kodzie.</p>
+          <p>Drugie: <code>backup clean</code> czytał <code>--tag</code> i gubił go, więc udokumentowane polecenie <code>backup clean --keep 7 --tag scheduled</code> skasowałoby wszystkie dwadzieścia ręcznych punktów odtworzenia i żadnego z siedmiu archiwów harmonogramu — dokładnie odwrotnie do zamysłu. Te dwadzieścia archiwów to jedyna droga powrotu po nieudanym przywracaniu. Równolegle indeks archiwów znał 30 plików, których dawno nie ma, i nie znał czterech najnowszych. Dziś indeks ma jedną implementację, dzieloną przez CLI i harmonogram systemd, i jest uzgadniany z dyskiem przy każdym zapisie.</p>
+          <div class="refs"><a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/tests/unit/cli-command-usage.test.ts">Bramka pomocy</a><a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/tests/unit/backup-clean-cli-tag.test.ts">Bramka zakresu czyszczenia</a><a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/scripts/backup-manifest.mjs">Wspólny indeks archiwów</a><a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/tests/unit/backup-manifest-contract.test.ts">Bramka kontraktu indeksu</a></div>
+        </article>
+      </div>
+    </section>
 
-    <div class="item" data-n="5"><div class="meta"><span class="time">2026 Q2</span><span class="pill shipped">✅ shipped</span></div><div class="event">Anti-confab + audit-grade transparency</div><p class="desc">Odpowiedź ma mieć stempel providera i guardy promptu. Cel: mniej konfabulacji, więcej jawności kto odpowiada.</p><div class="facts"><div class="fact"><strong>Evidence:</strong> PR #463 „provider stamp on every reply + system-prompt guards”, #464, #465 — merged 2026-05-04.</div></div><div class="links"><a href="https://github.com/Memphis-Chains/memphis/pull/463" target="_blank" rel="noopener">#463</a><a href="https://github.com/Memphis-Chains/memphis/pull/464" target="_blank" rel="noopener">#464</a><a href="https://github.com/Memphis-Chains/memphis/pull/465" target="_blank" rel="noopener">#465</a></div></div>
+    <section id="plany" aria-labelledby="plany-tytul">
+      <p class="eyebrow">Plan wdrożenia</p>
+      <h2 id="plany-tytul">Co musi zadziałać na telefonie</h2>
+      <p class="intro">To kolejne etapy prac. Przy każdym zapisujemy próbę, którą będzie mógł powtórzyć właściciel urządzenia.</p>
+      <ol class="steps">
+        <li>
+          <h3>Sparowanie z własnym komputerem</h3>
+          <p>Telefon utworzy własny klucz. Jednorazowe zaproszenie połączy go z właściwym PC, na którym właściciel zatwierdzi zakres dostępu. Klucze urządzenia i dane sejfu pozostaną poza forkiem.</p>
+          <p class="accept"><strong>Warunek odbioru</strong> Po cofnięciu dostępu na PC aktywna sesja telefonu kończy się. Ponowne połączenie wymaga nowej zgody.</p>
+        </li>
+        <li>
+          <h3>Ta sama sesja TUI poza domem</h3>
+          <p>Pierwszy klient operatorski ma otwierać prawdziwy kokpit na PC przez prywatne, uwierzytelnione połączenie SSH. Na komputerze pozostaną Rust, N-API, TypeScript, historia sesji i wykonanie poleceń.</p>
+          <p class="accept"><strong>Warunek odbioru</strong> Właściciel uruchamia polecenie, traci zasięg i po powrocie widzi wynik w tej samej sesji. Polecenie wykonuje się raz.</p>
+          <p class="accept"><strong>Warunek odbioru</strong> Telefon pokazuje dokładnie te narzędzia co kokpit na komputerze, z tymi samymi nazwami argumentów, a wywołanie z telefonu działa tak samo jak z terminala.</p>
+        </li>
+        <li>
+          <h3>Generator i kolejne wydanie z forka</h3>
+          <p>Kreator dobierze moduły do wybranych funkcji. Przy aktualizacji pokaże różnice między wersjami i zachowa ręczne poprawki właściciela.</p>
+          <p class="accept"><strong>Warunek odbioru</strong> Użytkownik buduje aplikację z własnego repozytorium, zmienia jeden ekran, aktualizuje Memphisa i ponownie buduje aplikację ze swoją zmianą.</p>
+          <p class="accept"><strong>Warunek odbioru</strong> Wygenerowany projekt nie definiuje własnej listy narzędzi — wywołuje kokpit komputera, który używa jednej umowy narzędzi. Aktualizacja Memphisa aktualizuje listę narzędzi aplikacji bez ręcznego scalania.</p>
+        </li>
+        <li>
+          <h3>Instalacja na Androidzie i iPhonie</h3>
+          <p>Na Androidzie celem jest podpisany plik APK. Dla iPhone’a generator przygotuje projekt do budowy i podpisania na Macu z Xcode. Każdy system otrzyma własny wynik próby na fizycznym telefonie.</p>
+          <p class="accept"><strong>Warunek odbioru</strong> Właściciel instaluje aplikację, paruje ją ze swoim PC i używa wybranej funkcji. Potem instaluje podpisaną aktualizację tej samej aplikacji.</p>
+          <div class="refs"><a href="https://v2.tauri.app/distribute/sign/android/">Podpis aplikacji Android</a><a href="https://v2.tauri.app/start/prerequisites/#ios">Wymagania Tauri dla iOS</a></div>
+        </li>
+      </ol>
+      <p class="rule">Na tej stronie zapisujemy kierunek i warunki odbioru. Status „działa” nadajemy po scaleniu kodu i potwierdzeniu warunków odbioru. Dołączamy odsyłacz do publicznego testu lub wyniku próby. Dla telefonu podajemy również platformę. Każda aktualizacja wskazuje datę i rewizję kodu.</p>
+    </section>
 
-    <div class="item" data-n="6"><div class="meta"><span class="time">2026 Q2</span><span class="pill progress">⏳ verify</span></div><div class="event">One-liner install + automated bootstrap</div><p class="desc">Ambicja: clean box → operator console w kilka minut. One-liner jest w README; clean Ubuntu verify nadal warto nagrać przed pitchowaniem jako pewnik.</p><div class="facts"><div class="fact"><strong>Evidence:</strong> <code>scripts/install.sh</code>, README install path, świeże PR voice-install. <strong>Nie claimować „5 min gwarantowane” bez testu na czystej VM.</strong></div></div><div class="links"><a href="https://github.com/Memphis-Chains/memphis/blob/main/scripts/install.sh" target="_blank" rel="noopener">install.sh</a><a href="https://github.com/Memphis-Chains/memphis/blob/main/README.md" target="_blank" rel="noopener">README</a></div></div>
-
-    <div class="item" data-n="7"><div class="meta"><span class="time">2026 Q3</span><span class="pill spec">🔬 spec</span></div><div class="event">Kartograf v1 + Watrowanie</div><p class="desc">Memphis-native mini-model dla embeddingów i routingu do właściwego łańcucha. Nightly retrain / ONNX swap to target w specyfikacji, nie obecny runtime claim.</p><div class="facts"><div class="fact"><strong>Evidence:</strong> <code>docs/dev/KARTOGRAF-SPEC.md</code>: status binding, target Q2/Q3, ModernBERT, 256d embeddings, 12-class zone distribution.</div></div><div class="links"><a href="https://github.com/Memphis-Chains/memphis/blob/main/docs/dev/KARTOGRAF-SPEC.md" target="_blank" rel="noopener">Kartograf spec</a></div></div>
-
-    <div class="item" data-n="8"><div class="meta"><span class="time">2026 Q3–Q4</span><span class="pill spec">🔬 spec</span></div><div class="event">Federation Matrix private peer sync</div><p class="desc">Station ↔ Nomad: prywatny sync między własnymi maszynami operatora, bez centralnego serwera.</p><div class="facts"><div class="fact"><strong>Evidence:</strong> istnieje <code>src/federation/mp</code> i <code>MEMPHIS-FEDERATION-DESIGN.md</code>. Traktować jako spec/scaffold, nie full production.</div></div><div class="links"><a href="https://github.com/Memphis-Chains/memphis/tree/main/src/federation/mp" target="_blank" rel="noopener">src/federation/mp</a><a href="https://github.com/Memphis-Chains/memphis/blob/main/MEMPHIS-FEDERATION-DESIGN.md" target="_blank" rel="noopener">design</a></div></div>
-
-    <div class="item" data-n="9"><div class="meta"><span class="time">2026 Q3</span><span class="pill progress">⏳ scaffolded</span></div><div class="event">.mv2 archival + portability</div><p class="desc">Eksport/import łańcuchów jako przenośny kontener. To jest klucz do „moje dane mogę zabrać ze sobą”.</p><div class="facts"><div class="fact"><strong>Evidence:</strong> PR #434 merged: „.mv2 v0 container scaffold + CLI + NAPI bridge”; <code>crates/memphis-export</code>.</div></div><div class="links"><a href="https://github.com/Memphis-Chains/memphis/pull/434" target="_blank" rel="noopener">#434</a><a href="https://github.com/Memphis-Chains/memphis/tree/main/crates/memphis-export" target="_blank" rel="noopener">memphis-export</a></div></div>
-
-    <div class="item" data-n="10"><div class="meta"><span class="time">2027 Q1</span><span class="pill spec">🔬 design/spec</span></div><div class="event">Memphis Language v1</div><p class="desc">Język intencji dla ludzi i agentów: konfiguracja, zaufanie, negocjacja, komunikacja agent↔agent.</p><div class="facts"><div class="fact"><strong>Evidence:</strong> publiczny design <code>MEMPHIS-FEDERATION-DESIGN.md</code>. <strong>Nie mam publicznego potwierdzenia working VM / 10 crates</strong>, więc tego nie claimuję jako shipped.</div></div><div class="links"><a href="https://github.com/Memphis-Chains/memphis/blob/main/MEMPHIS-FEDERATION-DESIGN.md" target="_blank" rel="noopener">ML/MP design</a></div></div>
-
-    <div class="item" data-n="11"><div class="meta"><span class="time">2027 Q1–Q2</span><span class="pill research">🧪 research</span></div><div class="event">Bielik-distill local LLM companion</div><p class="desc">Pomysł: polski mały model pomocniczy, uczony na schematach operatora, z tool-call schema Memphis. Bardzo mocny kierunek, ale dziś research.</p><div class="facts"><div class="fact"><strong>Evidence:</strong> brainstorm/operator memory. <strong>Brak publicznego pliku KARTOGRAF-LLM-DISTILL.md w repo na ten moment</strong> — nie publikować jako plan gwarantowany.</div></div></div>
-
-    <div class="item" data-n="12"><div class="meta"><span class="time">2027 Q2–Q3</span><span class="pill spec">🔬 spec</span></div><div class="event">LeWorldModel perception layer</div><p class="desc">Warstwa percepcji: model świata dla sensorów/audio/CNC, VoE alerts i checkpointy federowane.</p><div class="facts"><div class="fact"><strong>Evidence:</strong> PR #466 merged; <code>docs/dev/LEWM-INTEGRATION-PROPOSAL.md</code> ma status RESEARCH, no production code.</div></div><div class="links"><a href="https://github.com/Memphis-Chains/memphis/pull/466" target="_blank" rel="noopener">#466</a><a href="https://github.com/Memphis-Chains/memphis/blob/main/docs/dev/LEWM-INTEGRATION-PROPOSAL.md" target="_blank" rel="noopener">LEWM spec</a></div></div>
-
-    <div class="item" data-n="13"><div class="meta"><span class="time">2027 Q4 → 2028</span><span class="pill design">📐 design</span></div><div class="event">Agora public market</div><p class="desc">Publiczny rynek odkrywania, reputacji i wymiany checkpointów/programów. To Y2+ — kierunek ekosystemu, nie obecny produkt.</p><div class="facts"><div class="fact"><strong>Evidence:</strong> LEWM proposal odnosi się do Agora jako Y2+ deferred i public market. Claim wyłącznie jako design horizon.</div></div><div class="links"><a href="https://github.com/Memphis-Chains/memphis/blob/main/docs/dev/LEWM-INTEGRATION-PROPOSAL.md" target="_blank" rel="noopener">LEWM / Agora reference</a></div></div>
-  </div>
-
-  <div class="section"><h2>Świadomie wyłączone ze scope’u</h2><div class="grid"><div class="card"><p><strong>RLM safety sandbox</strong><br/>Za daleko: Y3+ / brak potrzeby na środową prezentację.</p></div><div class="card"><p><strong>Multi-modal fusion</strong><br/>Zbyt duże na teraz; LEWM wystarczy jako research/spec.</p></div><div class="card"><p><strong>Mobile app</strong><br/>Brak kodu i potwierdzonego planu — nie wpisujemy.</p></div><div class="card"><p><strong>Cloud Memphis-as-a-service</strong><br/>Nie pasuje do sovereignty story. Memphis ma mieszkać u operatora.</p></div></div></div>
-
-  <div class="section" id="historia"><h2>Historia — skąd przyszliśmy</h2><p class="lead">Ta część zbiera klasyczną historię projektu: nie jako główną roadmapę techniczną, tylko jako opowieść o ewolucji. Tu celowo jest mniej spekulacji, więcej dat i commitów.</p><div class="timeline">
-    <div class="item" data-n="H1"><div class="meta"><span class="time">2026-02-17</span><span class="pill shipped">fakt</span></div><div class="event">Pierwszy commit: memory chain + CLI + testy</div><p class="desc">Commit <code>b41f428</code> w <code>elathoxu-crypto/memphis</code>: „v0.1.0: Memphis is alive — memory chain, CLI, tests”. To jest punkt startowy: własna pamięć i lokalny agent, nie SaaS.</p><div class="links"><a href="https://github.com/elathoxu-crypto/memphis/commit/b41f428" target="_blank" rel="noopener">commit b41f428</a></div></div>
-    <div class="item" data-n="H2"><div class="meta"><span class="time">2026-02-20</span><span class="pill shipped">fakt</span></div><div class="event">Cline bridge + autosave agent</div><p class="desc">Commit <code>8ca8926</code>: „v1.1.0: Add Cline bridge, autosave agent, CLI improvements”. Memphis zaczyna iść w stronę operatora z narzędziami, nie tylko rozmowy z modelem.</p><div class="links"><a href="https://github.com/elathoxu-crypto/memphis/commit/8ca8926" target="_blank" rel="noopener">commit 8ca8926</a></div></div>
-    <div class="item" data-n="H3"><div class="meta"><span class="time">2026-03-07</span><span class="pill shipped">fakt</span></div><div class="event">External tooling reliability pack</div><p class="desc">Commit <code>f256a22</code>: „feat(ask): external tooling reliability pack (RM-088..RM-095)”. Memphis zaczyna być stabilnym narzędziem, nie tylko prototypem.</p><div class="links"><a href="https://github.com/elathoxu-crypto/memphis/commit/f256a22" target="_blank" rel="noopener">commit f256a22</a></div></div>
-    <div class="item" data-n="H4"><div class="meta"><span class="time">2026-03-08 / 2026-03-11</span><span class="pill shipped">fakt</span></div><div class="event">Publiczne repo Memphis-Chains</div><p class="desc">Repo <code>Memphis-Chains/memphis</code> utworzone 2026-03-11; najstarszy widoczny commit <code>912c564</code> z 2026-03-08: „fresh codebase baseline for memphis-v4”. Pojawia się quality gate, release process, Rust workspace, NAPI skeleton.</p><div class="links"><a href="https://github.com/Memphis-Chains/memphis" target="_blank" rel="noopener">Memphis-Chains/memphis</a><a href="https://github.com/Memphis-Chains/memphis/commit/912c564" target="_blank" rel="noopener">commit 912c564</a></div></div>
-    <div class="item" data-n="H5"><div class="meta"><span class="time">2026-04-19</span><span class="pill shipped">fakt</span></div><div class="event">v1.4.0: production-ready first install</div><p class="desc">Release v1.4.0 opisany jako „Production-ready for first install”. To moment, gdy Memphis staje się instalowalnym narzędziem operatora.</p><div class="links"><a href="https://github.com/Memphis-Chains/memphis/releases/tag/v1.4.0" target="_blank" rel="noopener">v1.4.0</a></div></div>
-    <div class="item" data-n="H6"><div class="meta"><span class="time">2026-04-25 → 2026-04-27</span><span class="pill shipped">fakt</span></div><div class="event">v1.7.x: operator, vault, TUI live-loop</div><p class="desc">v1.7.0-rc0 2026-04-25, v1.7.0 2026-04-26, v1.7.1/v1.7.2 2026-04-27. Wzmacnia operatora: vault unblock, TUI live-loop, self-awareness.</p><div class="links"><a href="https://github.com/Memphis-Chains/memphis/releases/tag/v1.7.0" target="_blank" rel="noopener">v1.7.0</a><a href="https://github.com/Memphis-Chains/memphis/releases/tag/v1.7.2" target="_blank" rel="noopener">v1.7.2</a></div></div>
-    <div class="item" data-n="H7"><div class="meta"><span class="time">2026-05-02</span><span class="pill shipped">fakt</span></div><div class="event">v1.8.0: production-ready runtime (historyczny)</div><p class="desc">README mówi: „Sovereign AI that runs on your machine, remembers in chains you own, and answers to no one but you.” Status w tamtym momencie: production-ready for operator-supervised runtime. Zastąpiony przez v1.11.0.</p><div class="links"><a href="https://github.com/Memphis-Chains/memphis/releases/tag/v1.8.0" target="_blank" rel="noopener">v1.8.0</a><a href="https://github.com/Memphis-Chains/memphis/blob/main/README.md" target="_blank" rel="noopener">README</a></div></div>
-    <div class="item" data-n="H8"><div class="meta"><span class="time">2026-07-22</span><span class="pill shipped">fakt</span></div><div class="event">v1.11.0: public-readiness closeout</div><p class="desc">Pełny cykl: v1.9.0 → v1.9.1 → v1.9.2 → v1.10.0 → v1.11.0. v1.11.0 oparty o PR #617 „Complete runtime modernization and public-readiness closeout” (+10329/-9188 linii) + 39 wcześniejszych PR-ów od v1.10.0. W składzie: operator-mode wisdom 5-layer, telegram vision+exec tier-3, SEGV fix, deps advisories clear, Node ≥22 baseline, PR #618 (README align) + #619 (release prep) dzień przed, #620 (macOS Intel runner migrate) dzień po.</p><div class="facts"><div class="fact"><strong>Asset:</strong> GitHub Releases publikuje <code>memphis-chains-memphis-1.11.0.tgz</code>. <code>@memphis-chains/memphis</code> na npm registry — przygotowywany, nie opublikowany.</div></div><div class="links"><a href="https://github.com/Memphis-Chains/memphis/releases/tag/v1.11.0" target="_blank" rel="noopener">v1.11.0</a><a href="https://github.com/Memphis-Chains/memphis/pull/617" target="_blank" rel="noopener">#617</a><a href="https://github.com/Memphis-Chains/memphis/pull/589" target="_blank" rel="noopener">#589</a></div></div>
-  </div></div>
-
-  <div class="section" id="plany"><h2>Plany — dokąd idziemy</h2><p class="lead">To nie są obietnice, tylko kierunki wynikające z obecnych speców, researchu i designu. Każdy punkt ma status i anchor do źródła — przed pitchowaniem warto sprawdzić, czy coś się zmieniło.</p><div class="grid">
-    <div class="card"><p><strong>Q2 2026 — instalacja i głos <span class="pill progress">⏳ verify</span></strong><br/>Dopracować one-liner install (<code>scripts/install.sh</code>) i lokalne STT/TTS (PR #430, #455, #456, #457, #458). Demo: clean Ubuntu LTS → operator console → rozmowa głosowa.</p><div class="links"><a href="https://github.com/Memphis-Chains/memphis/blob/main/scripts/install.sh" target="_blank" rel="noopener">install.sh</a><a href="https://github.com/Memphis-Chains/memphis/pull/430" target="_blank" rel="noopener">#430</a><a href="https://github.com/Memphis-Chains/memphis/pull/455" target="_blank" rel="noopener">#455</a></div></div>
-    <div class="card"><p><strong>Q3 2026 — Kartograf v1 <span class="pill spec">🔬 spec</span></strong><br/>Memphis-native mini-model dla embeddingów i routingu do chainów. Spec: ModernBERT, 256d embeddings, 12-class zone distribution, nightly retrain, ONNX swap.</p><div class="links"><a href="https://github.com/Memphis-Chains/memphis/blob/main/docs/dev/KARTOGRAF-SPEC.md" target="_blank" rel="noopener">Kartograf spec</a></div></div>
-    <div class="card"><p><strong>Q3 2026 — .mv2 archival <span class="pill progress">⏳ scaffolded</span></strong><br/>Eksport/import chainów jako przenośny kontener. PR #434: „.mv2 v0 container scaffold + CLI + NAPI bridge”.</p><div class="links"><a href="https://github.com/Memphis-Chains/memphis/pull/434" target="_blank" rel="noopener">#434</a><a href="https://github.com/Memphis-Chains/memphis/tree/main/crates/memphis-export" target="_blank" rel="noopener">memphis-export</a></div></div>
-    <div class="card"><p><strong>Q3–Q4 2026 — prywatna federacja <span class="pill spec">🔬 spec</span></strong><br/>Station ↔ Nomad: prywatny sync między własnymi maszynami operatora, bez centralnego serwera. Spec: <code>src/federation/mp</code>, <code>MEMPHIS-FEDERATION-DESIGN.md</code>.</p><div class="links"><a href="https://github.com/Memphis-Chains/memphis/tree/main/src/federation/mp" target="_blank" rel="noopener">src/federation/mp</a><a href="https://github.com/Memphis-Chains/memphis/blob/main/MEMPHIS-FEDERATION-DESIGN.md" target="_blank" rel="noopener">design</a></div></div>
-    <div class="card"><p><strong>2027 Q1 — Memphis Language v1 <span class="pill spec">🔬 design/spec</span></strong><br/>Język intencji dla ludzi i agentów: konfiguracja, zaufanie, negocjacja, komunikacja agent↔agent. Design: <code>MEMPHIS-FEDERATION-DESIGN.md</code>.</p><div class="links"><a href="https://github.com/Memphis-Chains/memphis/blob/main/MEMPHIS-FEDERATION-DESIGN.md" target="_blank" rel="noopener">ML/MP design</a></div></div>
-    <div class="card"><p><strong>2027 Q1–Q2 — Bielik-distill <span class="pill research">🧪 research</span></strong><br/>Pomysł: polski mały companion model (1B-class), uczony na schematach operatora, z tool-call schema Memphis. Research: brak publicznego pliku KARTOGRAF-LLM-DISTILL.md.</p></div>
-    <div class="card"><p><strong>2027 Q2–Q3 — LeWorldModel <span class="pill spec">🔬 spec</span></strong><br/>Perception layer: 15M JEPA na sensor stream, VoE alerts, federated checkpoints. Spec: PR #466, <code>docs/dev/LEWM-INTEGRATION-PROPOSAL.md</code>.</p><div class="links"><a href="https://github.com/Memphis-Chains/memphis/pull/466" target="_blank" rel="noopener">#466</a><a href="https://github.com/Memphis-Chains/memphis/blob/main/docs/dev/LEWM-INTEGRATION-PROPOSAL.md" target="_blank" rel="noopener">LEWM spec</a></div></div>
-    <div class="card"><p><strong>2027 Q4 → 2028 — Agora <span class="pill design">📐 design</span></strong><br/>Publiczny rynek: discovery, reputacja, stake, DHT dla checkpointów/programów. Design horizon, nie obecny produkt.</p><div class="links"><a href="https://github.com/Memphis-Chains/memphis/blob/main/docs/dev/LEWM-INTEGRATION-PROPOSAL.md" target="_blank" rel="noopener">LEWM / Agora reference</a></div></div>
-  </div></div>
-</main>
-<footer>Memphis Roadmap 2026–2028 · shipped vs spec jasno oznaczone · <a href="https://memphis-v5.pl">memphis-v5.pl</a></footer>
+    <section id="historia" aria-labelledby="historia-tytul">
+      <h2 id="historia-tytul">Historia decyzji</h2>
+      <ul class="timeline">
+        <li>W <strong>wcześniejszej roadmapie 2026–2028</strong> trzynaście punktów opisywało m.in. głos, Kartografa, eksport pamięci, federację i badania nad lokalnymi modelami. Zachowujemy ten zapis jako historię projektu. <a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/docs/roadmap/ROADMAP_2026_2030.md">Archiwalny plan</a></li>
+        <li><strong>26 października 2026</strong> w repozytorium pojawiła się propozycja wspólnej logiki dla kokpitu terminalowego i interfejsu Tauri. <a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/docs/adr/011-cockpit-core-and-tauri-shell.md">Propozycja architektury ADR-011</a></li>
+        <li><strong>20 listopada 2026</strong> scaliliśmy poprawkę wejścia TUI oraz obsługę publicznego czatu. Tego dnia przyjęliśmy osobną decyzję produktową o aplikacji generowanej z forka właściciela. <a href="https://github.com/Memphis-Chains/memphis/pull/769">Zmiana w TUI</a> · <a href="https://github.com/Memphis-Chains/memphis/pull/770">Zmiana w publicznym czacie</a></li>
+        <li><strong>22 listopada 2026</strong> przyjęliśmy decyzję o jednej umowie narzędzi po obu stronach mostu: rejestr w TypeScript jest jej właścicielem, kopia dla kokpitu Rust powstaje z niego automatycznie, a bramka w CI pilnuje zgodności. <a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/docs/adr/012-one-tool-contract-across-the-bridge.md">Decyzja ADR-012</a></li>
+        <li><strong>22 listopada 2026</strong> doprecyzowaliśmy propozycję wspólnego rdzenia kokpitu: telefon i planowany pulpit graficzny to dwie powłoki jednego rdzenia, a nie dwie implementacje — powłoka nigdy nie definiuje własnych narzędzi. <a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/docs/adr/011-cockpit-core-and-tauri-shell.md">Propozycja ADR-011</a></li>
+        <li><strong>22 listopada 2026</strong> zamknęliśmy wszystkie pięć rozdzielności między kokpitem a resztą Memphisa. Kokpit nauczył się tej samej umowy co gateway, a <code>memphis_self_modify</code> przestał oznaczać dwie operacje pod jedną nazwą. Przy okazji zamknęliśmy dziurę, przez którą wiszący symlink wychodził poza repozytorium. <a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/tests/fixtures/self-modify-contract.json">Tabela przypadków</a></li>
+        <li><strong>23 listopada 2026</strong> naprawiliśmy dwa miejsca, w których konsola operatora kłamała: pomoc nie pokazywała piętnastu spośród czterdziestu trzech poleceń (w tym <code>recovery</code>), a <code>backup clean</code> gubił <code>--tag</code> i skasowałby dwadzieścia ręcznych punktów odtworzenia zamiast archiwów harmonogramu. Do tego indeks archiwów ma jedną implementację, uzgadnianą z dyskiem przy każdym zapisie. <a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/tests/unit/cli-command-usage.test.ts">Bramka pomocy</a> · <a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/scripts/backup-manifest.mjs">Wspólny indeks archiwów</a></li>
+        <li><strong>23 listopada 2026</strong> naprawiliśmy trzy miejsca, w których pamięć operowała na ślepo. Rotacja łańcuchów pisała archiwa, których żaden czytnik nie umiał odczytać, a przy okazji gubiła polskie znaki, gdy znak dzielił się między dwa fragmenty strumienia. Próg rozmiaru nie mógł się odpalić dla łańcucha z małą liczbą bloków, więc największy z nich (32 MB) rósł dalej. Dziś rotacja się odpala, archiwum wraca w całości, a 23 MB wróciły na dysk. Do tego konsola mówi, kiedy się wykonała, a operator może poprosić o rotację sam. <a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/tests/unit/chain-archive-roundtrip.test.ts">Bramka round-trip</a> · <a href="https://github.com/Memphis-Chains/memphis/blob/00351eaf6252f4471fbbdcd7591c32c86f384c88/tests/unit/chain-rotation-operability.test.ts">Bramka operacyjności</a></li>
+      </ul>
+    </section>
+  </main>
+  <footer>
+    <div class="wrap foot">
+      <a class="brand" href="/">Memphis · Oswobodzeni</a>
+      <div class="foot-links"><a href="/start/">Instalacja Memphisa</a><a href="/prezentacja/">Prezentacja</a><a href="/sciaga/">Ściąga</a><a href="https://github.com/Memphis-Chains/memphis">Repozytorium</a></div>
+    </div>
+  </footer>
 </body>
 </html>

@@ -1,6 +1,7 @@
 import { runMemphisProviders } from '../../../mcp/tools/providers.js';
 import { runMemphisSystemInfo } from '../../../mcp/tools/system-info.js';
 import { runMemphisWebFetch } from '../../../mcp/tools/web-fetch.js';
+import { buildRegistryInputJsonSchema } from '../../tool-json-schema.js';
 import { buildTool, type RuntimeToolDefinition } from '../../tool-runtime.js';
 import { optionalIntegerInRange, requiredString } from '../input-normalization.js';
 
@@ -11,7 +12,7 @@ export function createExternalInfoRuntimeTools(
     buildTool({
       name: 'memphis_providers',
       description: 'Inspect configured providers and available models',
-      inputSchema: { type: 'object', properties: {} },
+      inputSchema: buildRegistryInputJsonSchema('memphis_providers'),
       isConcurrencySafe: true,
       isReadOnly: true,
       async execute() {
@@ -21,7 +22,7 @@ export function createExternalInfoRuntimeTools(
     buildTool({
       name: 'memphis_system_info',
       description: 'Inspect host and Memphis runtime system information',
-      inputSchema: { type: 'object', properties: {} },
+      inputSchema: buildRegistryInputJsonSchema('memphis_system_info'),
       isConcurrencySafe: true,
       isReadOnly: true,
       execute() {
@@ -31,14 +32,12 @@ export function createExternalInfoRuntimeTools(
     buildTool({
       name: 'memphis_web_fetch',
       description: 'Fetch a public URL',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          url: { type: 'string', description: 'URL to fetch' },
-          maxBytes: { type: 'number', description: 'Max bytes of the body to return (default 32000)' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_web_fetch', {
+        propertyDescriptions: {
+          url: 'URL to fetch',
+          maxBytes: 'Max bytes of the body to return (default 32000)',
         },
-        required: ['url'],
-      },
+      }),
       isConcurrencySafe: true,
       isReadOnly: true,
       validateInput(args) {

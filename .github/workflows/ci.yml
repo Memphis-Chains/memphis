@@ -62,6 +62,49 @@ jobs:
         # reads the gateway refused. Regenerate, never hand-edit.
         run: npm run -s ops:sync-native-tiers -- --check
 
+      - name: Native tool contract matches the TypeScript registry
+        # The cockpit advertised its own copy of every tool's input schema,
+        # hand-written in Rust, and nothing compared the two. Measured
+        # 2026-11-22: five of the 23 native tools advertised different
+        # arguments than the registry, and `memphis_self_modify` under one
+        # name meant "write one file" and under the other "apply changes
+        # to many files". The contract is projected from the registry;
+        # regenerate, never hand-edit.
+        run: npm run -s ops:sync-native-tool-contract -- --check
+
+      - name: Bridge export vocabulary matches the Rust core
+        # The N-API bridge's vocabulary was declared in three places — a
+        # hand-written list in the Rust manifest, a hand-written alias map in
+        # TypeScript, and the built binary — and nothing compared them.
+        # Measured 2026-11-23: the binary exports 37 functions, the manifest
+        # named 34, three real exports were missing from it, and nine of its
+        # names were spellings the bridge never exports. The vocabulary is
+        # projected from the Rust core's table; regenerate, never hand-edit.
+        run: npm run -s ops:sync-bridge-export-contract -- --check
+
+      - name: The chain-name vocabulary matches the Rust core
+        # "What is a chain called?" had four owners and three answers. The
+        # native runtime asked "does the name end in `.backup-<digits>`?"
+        # and nothing else, so an archive with a dated stamp was counted as a
+        # live chain while an archive with an epoch stamp was not — measured
+        # 2026-11-23: the runtime counted 11 504 blocks as live memory, the
+        # audit counted 11 975, and the live chains hold 11 228. The rule now
+        # has one owner; the TypeScript side is its projection. Regenerate,
+        # never hand-edit.
+        run: npm run -s ops:sync-chain-name-contract -- --check
+
+      - name: The published runtime's file closure covers every module it loads
+        # v1.14.0 did not publish. The tarball shipped
+        # `dist/infra/cli/commands/backup-manifest.js` without the
+        # `scripts/backup-manifest.mjs` it imports at module load, so every
+        # CLI command died with "Cannot find module". The defect was in
+        # `package.json`'s `files` list — a denylist of omissions that
+        # nobody checked. This gate discovers the omissions instead: every
+        # file the shipped code imports from outside its own tree must be
+        # listed. Seconds to run, and it fails long before the slow
+        # `ops:validate-package-artifact` proof.
+        run: npm run -s ops:check-package-runtime-closure -- --check
+
       - name: Landing page metrics match measured values
         # The metric strip, the typed terminal and the noscript fallback all
         # quote one operator instance's block and chain counts. They were

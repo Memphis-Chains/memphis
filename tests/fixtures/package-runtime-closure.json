@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "edges": [
+    {
+      "importer": "src/infra/cli/commands/backup-db-snapshot.ts",
+      "specifier": "../../../../scripts/backup-db-snapshot.mjs",
+      "resolved": "scripts/backup-db-snapshot.mjs"
+    },
+    {
+      "importer": "src/infra/cli/commands/backup-manifest.ts",
+      "specifier": "../../../../scripts/backup-manifest.mjs",
+      "resolved": "scripts/backup-manifest.mjs"
+    }
+  ]
+}

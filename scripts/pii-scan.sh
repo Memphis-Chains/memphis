@@ -119,6 +119,57 @@ path_hits() {
   tracked | tr '\0' '\n' | grep -IE "$1" || true
 }
 
+# THE HISTORY ARM
+# ---------------
+# The working tree is not the only thing that reaches GitHub. Every commit
+# does, forever.
+#
+# Measured on this host, 2026-11-22: the operator's Telegram chat id appears
+# in 55 commits across 20 files of this repository's history -- among them
+# `crons/spac.sh`, `crons/morning-report.sh`, `docs/MEMORY.md`,
+# `docs/runbooks/RESTORE-FROM-BACKUP.md` and ten `tests/unit/mcp-send-*.test.ts`
+# files. The working tree is clean of it today: every one of those files was
+# cleaned after the fact, and the scanner above reported OK on the result.
+#
+# A scan that only reads the tree therefore reports OK on a repository that
+# published the value 55 times. The value is still readable by anyone who
+# clones the repository, and `git log` is what they would use to find it.
+#
+# `git log --all -G<pattern>` asks git which commits added or removed a
+# matching line. Git does the search, so this is a query with an answer, not
+# a second implementation of a scan. `-G` takes a regex and matches the DIFF
+# text, which is what catches a value that was added and later removed.
+#
+# `--all` covers every ref the clone has: branches, tags, remotes. A value
+# that only ever existed on a deleted branch is still in the object store.
+#
+# Cost: measured 5.3 s per pattern over a 234 MB .git, so the two tiers cost
+# about 11 s. That is why this is a scan and not a pre-commit step.
+#
+# The exit semantics differ from the working tree, on purpose.
+#
+# A working-tree hit is fixed by the next commit, so the gate can enforce it:
+# that is what BLOCK means. A history hit is not fixable by a commit. It
+# needs the history rewritten (git-filter-repo) and the remote force-pushed
+# -- an operator decision with consequences no commit has, and one that a
+# permanently-red gate would only train people to ignore. So the history arm
+# reports loudly, states the remediation, and blocks only under --strict.
+#
+# This is the same split the client tier already uses, and it is the same
+# split the scanner's own doctrine states: "a permanently-red script is one
+# nobody reads" -- and the thing this script exists to catch is a NEW leak
+# in the tree, which the working-tree arm still blocks.
+history_report() {
+  git log --all --name-only --format='@@@%h' -G"$1" -- . 2>/dev/null \
+    | awk '
+        /^@@@/ { commits++; next }
+        NF { files[$0] = 1 }
+        END {
+          printf "%d\n", commits + 0;
+          for (f in files) print f;
+        }'
+}
+
 # WHY FILE TYPES ARE A SEPARATE ARM
 # ----------------------------------
 # Measured 2026-10-09: `sites/memphis-v5/docs/internal/.htpasswd` was staged
@@ -177,6 +228,14 @@ client_paths="$(path_hits "$CLIENT_PII")"
 operator_files="$(printf '%s\n%s' "$operator_files" "$operator_paths" | grep -v '^$' || true)"
 client_files="$(printf '%s\n%s' "$client_files" "$client_paths" | grep -v '^$' || true)"
 
+# The history arms. One pass per tier: `git log --all -G` does the search.
+operator_history="$(history_report "$OPERATOR_PII")"
+operator_history_commits="$(printf '%s\n' "$operator_history" | head -1)"
+operator_history_files="$(printf '%s\n' "$operator_history" | tail -n +2)"
+client_history="$(history_report "$CLIENT_PII")"
+client_history_commits="$(printf '%s\n' "$client_history" | head -1)"
+client_history_files="$(printf '%s\n' "$client_history" | tail -n +2)"
+
 status=0
 
 if [ -n "$secret_type_files" ]; then
@@ -209,10 +268,40 @@ if [ -n "$client_files" ]; then
   fi
 fi
 
+# The history arm. Advisory by default, for the reason stated above the
+# function: a history hit cannot be fixed by a commit.
+if [ "${operator_history_commits:-0}" -gt 0 ] 2>/dev/null; then
+  {
+    echo "[pii-scan] HISTORY: operator account identifier in the git history"
+    echo "[pii-scan]   ${operator_history_commits} commit(s), $(printf '%s\n' "$operator_history_files" | grep -c .) file(s)"
+    printf '%s\n' "$operator_history_files" | grep . | sed 's/^/[pii-scan]   /'
+    echo "[pii-scan] The working tree is clean of it. These commits are not, and"
+    echo "[pii-scan] anyone who clones this repository can read them with git log."
+    echo "[pii-scan] A commit cannot fix this: the history has to be rewritten"
+    echo "[pii-scan] (git-filter-repo) and the remote force-pushed."
+    echo "[pii-scan] Known open item. Run with --strict to block on it."
+  } >&2
+  if [ "$STRICT" = "1" ]; then
+    status=1
+  fi
+fi
+
+if [ "${client_history_commits:-0}" -gt 0 ] 2>/dev/null; then
+  {
+    echo "[pii-scan] HISTORY: third-party identifiers in the git history"
+    echo "[pii-scan]   ${client_history_commits} commit(s), $(printf '%s\n' "$client_history_files" | grep -c .) file(s)"
+    printf '%s\n' "$client_history_files" | grep . | sed 's/^/[pii-scan]   /'
+    echo "[pii-scan] Known open item. Removal is an operator decision."
+  } >&2
+  if [ "$STRICT" = "1" ]; then
+    status=1
+  fi
+fi
+
 if [ "$status" = "0" ] && [ -z "$client_files" ] && [ -z "$secret_type_files" ]; then
   echo "[pii-scan] OK"
 elif [ "$status" = "0" ]; then
-  echo "[pii-scan] OK (operator identifiers clean; advisory above)"
+  echo "[pii-scan] OK (operator identifiers clean in the working tree; advisory above)"
 fi
 
 exit "$status"

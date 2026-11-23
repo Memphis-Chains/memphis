@@ -9,6 +9,7 @@ import {
 } from '../../../mcp/tools/self-plan.js';
 import { runMemphisSelfPrOpen } from '../../../mcp/tools/self-pr-open.js';
 import { runMemphisSelfReview } from '../../../mcp/tools/self-review.js';
+import { buildRegistryInputJsonSchema } from '../../tool-json-schema.js';
 import { buildTool, type RuntimeToolDefinition } from '../../tool-runtime.js';
 import { optionalString, requiredString } from '../input-normalization.js';
 
@@ -21,13 +22,12 @@ export function createSelfManagementRuntimeTools(
       name: 'memphis_self_describe',
       description:
         'Runtime self-introspection — returns active surface policy, effective tier (with tier-3 session info), cognitive mode, full tool inventory with availability, feature flags, and cross-surface tier-3 sessions. Use this BEFORE answering "what can you do" — never hallucinate capabilities from training data.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          surface: { type: 'string', description: 'Override active surface name' },
-          actorId: { type: 'string', description: 'Actor id for tier-3 lookup' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_self_describe', {
+        propertyDescriptions: {
+          surface: 'Override active surface name',
+          actorId: 'Actor id for tier-3 lookup',
         },
-      },
+      }),
       isReadOnly: true,
       isConcurrencySafe: true,
       validateInput(args) {
@@ -49,22 +49,12 @@ export function createSelfManagementRuntimeTools(
       name: 'memphis_self_plan_create',
       description:
         'Open a durable multi-step self-coding plan. Returns plan_id for use with memphis_self_plan_{get,advance,cancel} and the step-aware mode of memphis_self_modify.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          goal: { type: 'string', description: 'Operator-facing one-line goal.' },
-          steps: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: { description: { type: 'string' } },
-              required: ['description'],
-            },
-            description: 'Ordered list of steps, each {description}.',
-          },
+      inputSchema: buildRegistryInputJsonSchema('memphis_self_plan_create', {
+        propertyDescriptions: {
+          goal: 'Operator-facing one-line goal.',
+          steps: 'Ordered list of steps, each {description}.',
         },
-        required: ['goal', 'steps'],
-      },
+      }),
       isConcurrencySafe: false,
       isReadOnly: false,
       validateInput(args) {
@@ -79,11 +69,7 @@ export function createSelfManagementRuntimeTools(
           }
           const description = (s as { description?: unknown }).description;
           if (typeof description !== 'string' || description.trim().length === 0) {
-            throw new AppError(
-              'VALIDATION_ERROR',
-              `steps[${i}].description is required`,
-              400,
-            );
+            throw new AppError('VALIDATION_ERROR', `steps[${i}].description is required`, 400);
           }
           return { description };
         });
@@ -97,11 +83,7 @@ export function createSelfManagementRuntimeTools(
       name: 'memphis_self_plan_get',
       description:
         'Read a self-coding plan by id. Returns {plan, next_step}; next_step surfaces the first pending or failed step (failed first, so retries resume before new work).',
-      inputSchema: {
-        type: 'object',
-        properties: { plan_id: { type: 'string' } },
-        required: ['plan_id'],
-      },
+      inputSchema: buildRegistryInputJsonSchema('memphis_self_plan_get'),
       isConcurrencySafe: true,
       isReadOnly: true,
       validateInput(args) {
@@ -115,20 +97,7 @@ export function createSelfManagementRuntimeTools(
       name: 'memphis_self_plan_advance',
       description:
         'Mark a plan step as in_progress/done/failed/skipped/pending. attempts auto-increments on in_progress/failed. Passing artifact clears lastError on the step.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          plan_id: { type: 'string' },
-          step_idx: { type: 'number' },
-          status: {
-            type: 'string',
-            enum: ['pending', 'in_progress', 'done', 'failed', 'skipped'],
-          },
-          artifact: { type: 'string' },
-          error: { type: 'string' },
-        },
-        required: ['plan_id', 'step_idx', 'status'],
-      },
+      inputSchema: buildRegistryInputJsonSchema('memphis_self_plan_advance'),
       isConcurrencySafe: false,
       isReadOnly: false,
       validateInput(args) {
@@ -158,14 +127,7 @@ export function createSelfManagementRuntimeTools(
       name: 'memphis_self_plan_cancel',
       description:
         'Cancel a self-coding plan with a reason recorded on the first non-terminal step for audit.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          plan_id: { type: 'string' },
-          reason: { type: 'string' },
-        },
-        required: ['plan_id', 'reason'],
-      },
+      inputSchema: buildRegistryInputJsonSchema('memphis_self_plan_cancel'),
       isConcurrencySafe: false,
       isReadOnly: false,
       validateInput(args) {
@@ -182,11 +144,7 @@ export function createSelfManagementRuntimeTools(
       name: 'memphis_self_review',
       description:
         'Pre-PR review: gap (step done with no artifact), unfinished steps, scope creep (files not named by any step), TODO/FIXME/XXX/HACK markers added in plan diff. Returns {ok, checklist, blockers[]}.',
-      inputSchema: {
-        type: 'object',
-        properties: { plan_id: { type: 'string' } },
-        required: ['plan_id'],
-      },
+      inputSchema: buildRegistryInputJsonSchema('memphis_self_review'),
       isConcurrencySafe: true,
       isReadOnly: true,
       validateInput(args) {
@@ -200,17 +158,7 @@ export function createSelfManagementRuntimeTools(
       name: 'memphis_self_pr_open',
       description:
         'Push the plan branch and open a PR via gh. Auto-derives title from plan.goal and body from step list. Sets plan status pr-open + records prUrl. Memphis NEVER merges — operator-only.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          plan_id: { type: 'string' },
-          title: { type: 'string' },
-          body_prefix: { type: 'string' },
-          branch: { type: 'string' },
-          base: { type: 'string' },
-        },
-        required: ['plan_id'],
-      },
+      inputSchema: buildRegistryInputJsonSchema('memphis_self_pr_open'),
       isConcurrencySafe: false,
       isReadOnly: false,
       isDestructive: false,
@@ -231,15 +179,7 @@ export function createSelfManagementRuntimeTools(
       name: 'memphis_self_deploy_verify',
       description:
         'C-step: confirm merged PR shipped — three checks (PR merged, merge commit on origin/main, build artifact newer than merge timestamp). Sets plan status `done` on all-green.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          plan_id: { type: 'string' },
-          build_artifact_path: { type: 'string' },
-          base: { type: 'string' },
-        },
-        required: ['plan_id'],
-      },
+      inputSchema: buildRegistryInputJsonSchema('memphis_self_deploy_verify'),
       isConcurrencySafe: true,
       isReadOnly: true,
       validateInput(args) {
@@ -252,6 +192,6 @@ export function createSelfManagementRuntimeTools(
       async execute(input) {
         return runMemphisSelfDeployVerify(input, { rawEnv: rawEnv });
       },
-    })
+    }),
   ];
 }

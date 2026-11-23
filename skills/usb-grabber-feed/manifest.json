@@ -2,23 +2,24 @@
   "schemaVersion": 1,
   "id": "usb-grabber-feed",
   "name": "USB Grabber Feed",
-  "description": "Trwały feed video+audio z USB grabbera (MACROSILICON MS2109, /dev/video0) do aplikacji lokalnych przez PipeWire (Ripper USB 0/1) i opcjonalny podgląd okna SDL. Use when you need continuous capture from a USB HDMI grabber for Telegram/Chrome/other PipeWire-aware apps, or to display the feed on the local screen for monitoring. Auto-loads v4l2loopback + gst-launch + pulsesrc command patterns.",
+  "description": "Trwały feed video+audio z USB grabbera (MACROSILICON MS2109, /dev/video0) do aplikacji lokalnych przez PipeWire (Ripper USB 0/1) i opcjonalny podgląd okna SDL. Use when you need continuous capture from a USB HDMI grabber for Telegram/Chrome/other PipeWire-aware apps, or to display the feed on the local screen for monitoring.",
   "tags": [
-    "usb",
-    "video",
+    "always-on",
     "audio",
+    "feed",
     "grabber",
-    "v4l2",
     "pipewire",
     "telegram",
-    "feed",
-    "always-on"
+    "usb",
+    "v4l2",
+    "video"
   ],
   "tools": [
+    "memphis_cron",
+    "memphis_cron_script",
     "memphis_exec",
     "memphis_health",
-    "memphis_journal",
-    "memphis_cron"
+    "memphis_journal"
   ],
   "workflow": [
     "DIAGNOSE: uruchom memphis-probe żeby zweryfikować stan USB, /dev/video*, v4l2loopback, PipeWire sources. Zapisz stan do journal jako 'grabber-feed-baseline'.",
@@ -27,7 +28,7 @@
     "VERIFY_PIPEWIRE: 'wpctl status | grep -A1 Sources' powinien pokazać Ripper USB 0/1 + USB Video. Jeśli brak → restart PipeWire.",
     "TEST_FEED: uruchom memphis-grabber-test (3s test, video+audio entropy). Output JSON z verdict.",
     "DISPLAY_ON_DEMAND: uruchom memphis-display dla podglądu w oknie SDL na lokalnym ekranie.",
-    "INSTALL_PERSIST: utwórz systemd user service memphis-grabber-feed.service (tier-1, ale plik tworzony w ~/.config/systemd/user, enable+start bez sudo).",
+    "INSTALL_PERSIST: utwórz skrypt audytu w ~/memphis/crons/ z nagłówkiem '# schedule:' — plikiem zarządza memphis_cron_script, a zadaniami harmonogramu memphis_cron.",
     "AUDIT: co 24h, memphis_exec + journal wpis 'grabber-feed-audit' z aktualnym stanem."
   ],
   "promptHints": [
@@ -41,7 +42,7 @@
   "examples": [
     {
       "prompt": "Uruchom trwały feed z grabbera USB dla Telegram",
-      "outcome": "Agent runs memphis-probe, memphis-grabber-test, then writes systemd user service memphis-grabber-feed.service, enables it, verifies with systemctl --user status. Records journal 'grabber-feed-baseline' + 'grabber-feed-active'."
+      "outcome": "Agent runs memphis-probe, memphis-grabber-test, then registers the audit script with memphis_cron_script, enables it, verifies with systemctl --user status. Records journal 'grabber-feed-baseline' + 'grabber-feed-active'."
     },
     {
       "prompt": "Wyświetl feed grabbera na ekranie",
@@ -60,6 +61,7 @@
     "Hardened against common pitfalls: module not loaded (sudo needed), grabber unplugged (USB reset), PipeWire stale (restart), bridge duplicate (pgrep first).",
     "All tier-0 scripts are idempotent — safe to re-run.",
     "Audio path: MS2109 USB Audio (card 2) → ALSA → PipeWire pulsesrc → applications. No manual routing.",
-    "Telegram Desktop (portable at /home/memphis/Downloads/Telegram/Telegram) is a PipeWire client — uses default source automatically."
+    "Telegram Desktop (portable at /home/memphis/Downloads/Telegram/Telegram) is a PipeWire client — uses default source automatically.",
+    "Sprzęt zweryfikowany 2026-09-12 na tym hoście: USB ID 534d:2109, /dev/video0 MJPG 1920x1080@60, ALSA hw:2,0, PipeWire sources 68/66/76/93."
   ]
 }

@@ -1,15 +1,36 @@
-//! Integration test: verify that validate_generic_block accepts TS-written
-//! blocks with extra `data` fields (the original bug was that
-//! `to_canonical_hash_data` was missing from chat.rs, causing
-//! "chain integrity check failed for journal:2 hash mismatch").
+//! Integration test: the core's validator accepts TS-written blocks with
+//! extra `data` fields.
 //!
-//! This test uses a deterministic fixture produced with the TS hash recipe.
-//! It must never depend on an operator's live journal: doing so leaks local
-//! runtime state into the test boundary and makes release gates host-specific.
+//! The original bug was that `to_canonical_hash_data` was missing from
+//! `chat.rs`, which produced "chain integrity check failed for journal:2
+//! hash mismatch" on blocks the TypeScript side had written.
+//!
+//! ## What changed in this test
+//!
+//! It used to re-implement `stable_json` and SHA-256 INLINE and compare
+//! the result against a hand-written fixture. That proved a hand-written
+//! copy agreed with a hand-written fixture, and said nothing at all about
+//! the code that actually validates blocks: the copy could drift from
+//! `compute_hash` and the test would still pass.
+//!
+//! It now calls the OWNER — `memphis_core::hash::compute_hash` and
+//! `memphis_core::soul::validate_block` — on blocks the TypeScript side
+//! really wrote. The parity fixture that pins the two implementations
+//! against each other lives in `tests/fixtures/chain-hash-parity.json` and
+//! is checked by `crates/memphis-core/tests/chain_hash_parity.rs` and
+//! `tests/unit/chain-hash-parity.test.ts`.
+//!
+//! ## Why it must not depend on an operator's live journal
+//!
+//! Doing so leaks local runtime state into the test boundary and makes
+//! release gates host-specific.
 
-// compute_hash not needed — we reimplement stable_json inline
+use memphis_core::block::Block;
+use memphis_core::hash::compute_hash;
+use memphis_core::soul::validate_block;
 use serde_json::Value;
 
+/// A deterministic fixture produced with the TypeScript hash recipe.
 const TS_WRITTEN_BLOCKS: &str = r#"[
   {
     "index": 0,
@@ -46,85 +67,56 @@ fn journal_chain_validates_against_canonical_hash() {
     let entries: Vec<Value> = serde_json::from_str(TS_WRITTEN_BLOCKS).unwrap();
 
     let mut prev_hash: Option<String> = None;
+    let mut previous_block: Option<Block> = None;
     let mut prev_index: Option<u64> = None;
     let mut count = 0;
 
-    for v in entries {
-        let index = v.get("index").and_then(Value::as_u64).unwrap();
-        let timestamp = v
-            .get("timestamp")
-            .and_then(Value::as_str)
-            .unwrap()
-            .to_string();
-        let chain = v.get("chain").and_then(Value::as_str).unwrap().to_string();
-        let data = v.get("data").cloned().unwrap();
-        let prev = v
+    for value in entries {
+        let index = value.get("index").and_then(Value::as_u64).unwrap();
+        let prev = value
             .get("prev_hash")
             .and_then(Value::as_str)
             .unwrap()
             .to_string();
-        let stored_hash = v.get("hash").and_then(Value::as_str).unwrap().to_string();
+        let stored_hash = value
+            .get("hash")
+            .and_then(Value::as_str)
+            .unwrap()
+            .to_string();
 
-        // Reconstruct what the FIXED compute_hash produces and compare.
-        // We need a Block struct equivalent — easiest path: reimplement the
-        // hash recipe using the same canonical data projection.
-        let canonical = memphis_core::hash::to_canonical_hash_data(data.clone());
-        let payload = serde_json::json!({
-            "index": index,
-            "timestamp": timestamp,
-            "chain": chain,
-            "data": canonical,
-            "prev_hash": prev,
-        });
-        // Use the same stable_json trick the validator uses
-        fn stable_json(v: &Value) -> String {
-            fn canonicalize(v: Value) -> Value {
-                match v {
-                    Value::Array(items) => {
-                        Value::Array(items.into_iter().map(canonicalize).collect())
-                    }
-                    Value::Object(map) => {
-                        let mut sorted = std::collections::BTreeMap::new();
-                        for (k, val) in map {
-                            sorted.insert(k, val);
-                        }
-                        let mut next = serde_json::Map::new();
-                        for (k, val) in sorted {
-                            next.insert(k, canonicalize(val));
-                        }
-                        Value::Object(next)
-                    }
-                    other => other,
-                }
-            }
-            serde_json::to_string(&canonicalize(v.clone())).unwrap()
-        }
-        let expected = {
-            use sha2::{Digest, Sha256};
-            let bytes = stable_json(&payload);
-            let mut h = Sha256::new();
-            h.update(bytes.as_bytes());
-            format!("{:x}", h.finalize())
-        };
+        let block: Block = serde_json::from_value(value.clone())
+            .unwrap_or_else(|error| panic!("fixture block {index} does not deserialize: {error}"));
+
+        // The OWNER computes the hash. The extra `data` fields — `source`,
+        // `turn_id`, `consent` — are persisted but are NOT covered by the
+        // hash, so they must not change it. That is the property this test
+        // exists for.
+        assert_eq!(
+            compute_hash(&block),
+            stored_hash,
+            "block {index} canonical-hash mismatch"
+        );
+
+        let previous_block_ref = previous_block.as_ref();
+        assert!(
+            validate_block(&block, previous_block_ref).is_ok(),
+            "block {index} was rejected by the core validator"
+        );
 
         // Chain-link integrity
         if let Some(p) = &prev_hash {
-            assert_eq!(p, &prev, "block {} prev_hash mismatch", index);
+            assert_eq!(p, &prev, "block {index} prev_hash mismatch");
         } else {
             assert_eq!(prev, "0".repeat(64), "block 1 must have zero prev_hash");
         }
         if let Some(pi) = prev_index {
-            assert_eq!(index, pi + 1, "non-sequential index at {}", index);
+            assert_eq!(index, pi + 1, "non-sequential index at {index}");
         }
-        assert_eq!(
-            expected, stored_hash,
-            "block {} canonical-hash mismatch",
-            index
-        );
-
-        prev_hash = Some(stored_hash);
         prev_index = Some(index);
+        prev_hash = Some(stored_hash);
+        previous_block = Some(block);
         count += 1;
     }
-    assert_eq!(count, 2, "fixture block count changed unexpectedly");
+
+    assert_eq!(count, 2, "the fixture must exercise both blocks");
 }

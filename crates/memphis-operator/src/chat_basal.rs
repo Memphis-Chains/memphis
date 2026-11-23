@@ -9,6 +9,106 @@ use serde_json::{json, Value};
 
 pub(crate) const BASAL_DEFAULT_URL: &str = "http://127.0.0.1:8000/v1/systemone";
 pub(crate) const BASAL_TIMEOUT_SECS: u64 = 300;
+
+/// Normalize `criteria` into the options a classification question is
+/// asked over.
+///
+/// ## Why this mirrors a TypeScript function
+///
+/// The registry declares `criteria` as a UNION: an object of labels, or
+/// an array of 2-10 labels. The gateway accepts both
+/// (`normalizeCriteria` in `src/mcp/tools/classify.ts`), and the native
+/// arm accepted only the object — so a model that had learned the array
+/// form on Telegram got a refusal in the cockpit.
+///
+/// The normalisation mirrors the gateway's, including the two details
+/// that change the answer:
+///
+///   - a description is STRINGIFIED, not dropped: the gateway turns any
+///     value into text (`String(description)`), and the native arm used
+///     to skip non-strings silently, which could turn two options into
+///     one;
+///   - the entries are filtered by the KEY being non-empty, not by the
+///     description.
+///
+/// A score question over an ARRAY gets ordinal keys 0..n-1: the gateway
+/// re-keys the filtered list the same way, and the score-key check
+/// would otherwise refuse every array.
+///
+/// ## The one difference this function does NOT paper over
+///
+/// The gateway keeps the object's INSERTION order; a `serde_json::Map`
+/// is sorted. The two agree whenever the keys are already sorted, and
+/// they differ only for an object whose keys are not — and then only
+/// under `orders: 1`, the mode the service documents as
+/// order-sensitive. Fixing it means giving the crate an order-
+/// preserving JSON map, which changes how every block is serialised —
+/// and the canonical hash is computed over that serialisation, so it
+/// is not a change to make while closing a divergence. It is recorded
+/// in ADR-012 instead of being hidden here.
+pub fn normalize_classify_criteria(
+    criteria: &Value,
+    question_type: &str,
+) -> Result<Vec<(String, String)>, String> {
+    let criteria_is_array = criteria.is_array();
+    let mut options: Vec<(String, String)> = match criteria {
+        Value::Array(items) => items
+            .iter()
+            .map(js_string_of)
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| (value.clone(), value))
+            .collect(),
+        Value::Object(map) => map
+            .iter()
+            .filter(|(key, _)| !key.trim().is_empty())
+            .map(|(key, value)| (key.clone(), js_string_of(value)))
+            .collect(),
+        _ => {
+            return Err(
+                "memphis_classify requires criteria as a {key: description} object or an array of labels"
+                    .to_string(),
+            )
+        }
+    };
+
+    if question_type == "score" && criteria_is_array {
+        options = options
+            .into_iter()
+            .enumerate()
+            .map(|(index, (_, description))| (index.to_string(), description))
+            .collect();
+    }
+
+    if options.len() < 2 {
+        // The message is the gateway's, word for word: the two arms
+        // have to refuse the same input the same way, or the model
+        // learns two different reasons for the same refusal.
+        return Err("memphis_classify requires at least two criteria options".to_string());
+    }
+    if options.len() > 10 {
+        return Err(format!(
+            "memphis_classify supports at most 10 options, got {}",
+            options.len()
+        ));
+    }
+    Ok(options)
+}
+
+/// Render a JSON value the way `String(value)` renders it in JavaScript.
+fn js_string_of(value: &Value) -> String {
+    match value {
+        Value::String(text) => text.clone(),
+        Value::Null => "null".to_string(),
+        Value::Bool(flag) => flag.to_string(),
+        Value::Number(number) => number.to_string(),
+        Value::Array(items) => items
+            .iter()
+            .map(js_string_of)
+            .collect::<Vec<String>>()
+            .join(","),
+        Value::Object(_) => "[object Object]".to_string(),
+    }
+}
 const DEFAULT_THRESHOLD: f64 = 0.93;
 const MAX_BYTES: u64 = 64 * 1024;
 const TOLERANCE: f64 = 1e-4;

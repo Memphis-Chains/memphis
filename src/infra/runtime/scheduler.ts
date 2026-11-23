@@ -46,14 +46,17 @@ import {
 } from './scheduler-defaults.js';
 import { isSchedulerTaskStatus, type SchedulerTaskStatus } from './scheduler-status.js';
 import { getUserServiceStatus, resolveRuntimeRoot } from './user-service.js';
-import { HOME } from '../../config/env-registry.js';
+import { HOME, LOG_LEVEL } from '../../config/env-registry.js';
 import { getConfigPath } from '../../config/paths.js';
 import { runDeployPipeline, type DeployProfile } from '../deploy/pipeline.js';
+import { createPinoLogger } from '../logging/pino.js';
 import { appendBlock } from '../storage/chain-adapter.js';
 import { SCHEDULER_EXECUTE_WORK_CAPABILITY } from '../work/work-capabilities.js';
 import type { WorkPollingService } from '../work/work-polling-service.js';
 
 export type { SchedulerTaskStatus } from './scheduler-status.js';
+
+const schedulerLog = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1024,6 +1027,17 @@ export class MemphisScheduler {
           await this.runTask(task);
         }
       }
+    } catch (error) {
+      // A rejected tick used to reach the process-level `unhandledRejection`
+      // handler, which called `process.exit(1)`. The scheduler runs every
+      // 30 seconds, so one malformed task file — or a stale
+      // `tasks.lock` left behind by a killed process — turned into a
+      // 30-second crash loop. The tick is a background task: it must
+      // fail alone.
+      schedulerLog.warn(
+        { err: error, event: 'scheduler.tick.failed' },
+        'scheduler tick failed; the runtime keeps serving',
+      );
     } finally {
       this.tickInFlight = false;
     }

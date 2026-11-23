@@ -1,15 +1,22 @@
 import type { CliArgs } from './types.js';
 
-function readFlagValue(flags: Map<string, string | true>, name: string): string | undefined {
+/**
+ * Read a flag that carries a value.
+ *
+ * The map holds `string | boolean` because a boolean flag can be
+ * written `--json=false`, which is a boolean, not a string. A boolean
+ * value is never a value — `readFlagValue` says no.
+ */
+function readFlagValue(flags: Map<string, string | boolean>, name: string): string | undefined {
   const value = flags.get(name);
   return typeof value === 'string' ? value : undefined;
 }
 
-function hasBooleanFlag(flags: Map<string, string | true>, name: string): boolean {
+function hasBooleanFlag(flags: Map<string, string | boolean>, name: string): boolean {
   return flags.get(name) === true;
 }
 
-function readNumberFlag(flags: Map<string, string | true>, name: string): number | undefined {
+function readNumberFlag(flags: Map<string, string | boolean>, name: string): number | undefined {
   const value = readFlagValue(flags, name);
   return value ? Number(value) : undefined;
 }
@@ -29,10 +36,84 @@ function readNumberFlag(flags: Map<string, string | true>, name: string): number
  */
 const POSITIONAL_INPUT_COMMANDS = new Set(['ask', 'chat']);
 
+/**
+ * Flags that never take a value.
+ *
+ * ## Why this list exists
+ *
+ * The parser used to treat every `--flag` as "a flag, possibly with a
+ * value", and it decided which by looking at the NEXT token. A boolean
+ * flag in front of the command therefore ate the command:
+ *
+ * ```text
+ * memphis --safe-mode health --json
+ *   --safe-mode claimed "health" as its value
+ *   => positionals empty, command undefined, safe mode OFF
+ * ```
+ *
+ * Measured on the operator's host (2026-11-23): that invocation printed
+ * the usage guide and exited 0. The operator asked for a safe-mode
+ * health check, got a guide — and the safety switch was never on.
+ * `memphis --json health` failed the same way.
+ *
+ * The rule now: a flag in this list is boolean and never consumes the
+ * next token. A flag outside this list keeps the old "the next token is
+ * probably its value" behaviour, which is what the value-carrying flags
+ * need.
+ *
+ * `--cron` is deliberately absent: it is both — `memphis health --cron`
+ * is boolean, `memphis schedule ... --cron "0 3 * * *"` carries a
+ * value. It keeps the generic behaviour so both shapes still work.
+ *
+ * Exported so the gate can hold this list against the flags the parser
+ * actually reads as boolean.
+ */
+export const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
+  '--allow-all-users',
+  '--apply',
+  '--check-only',
+  '--clean',
+  '--confirm',
+  '--confirm-write',
+  '--deep',
+  '--dry-run',
+  '--fix',
+  '--force',
+  '--force-active',
+  '--force-reinit',
+  '--functions',
+  '--generate',
+  '--interactive',
+  '--json',
+  '--list',
+  '--non-interactive',
+  '--no-vault',
+  '--post-install',
+  '--provider-only',
+  '--register',
+  '--reset',
+  '--runtime',
+  '--safe-mode',
+  '--save',
+  '--schema',
+  '--skip-build',
+  '--skip-restart',
+  '--stdio-json',
+  '--strict-mode',
+  '--telegram',
+  '--tui',
+  '--tuned',
+  '--verbose',
+  '--verify',
+  '--vision',
+  '--write',
+  '--yes',
+]);
+
 export function parseCommand(argv: string[]): CliArgs {
   const args = argv.slice(2);
   const positionals: string[] = [];
-  const flags = new Map<string, string | true>();
+  const flags = new Map<string, string | boolean>();
 
   for (let i = 0; i < args.length; i += 1) {
     const token = args[i];
@@ -51,7 +132,16 @@ export function parseCommand(argv: string[]): CliArgs {
     if (eqIdx > 2) {
       const flagName = token.slice(0, eqIdx);
       const flagValue = token.slice(eqIdx + 1);
-      flags.set(flagName, flagValue);
+      // `--json=true` / `--json=false` — a boolean flag with an explicit
+      // value is still a boolean, not a string.
+      flags.set(flagName, BOOLEAN_FLAGS.has(flagName) ? flagValue !== 'false' : flagValue);
+      continue;
+    }
+
+    // A boolean flag never claims the next token: the next token may be
+    // the command. See BOOLEAN_FLAGS for the measurement.
+    if (BOOLEAN_FLAGS.has(token)) {
+      flags.set(token, true);
       continue;
     }
 
@@ -191,6 +281,8 @@ export function parseCommand(argv: string[]): CliArgs {
     restore: readFlagValue(flags, '--restore'),
     verify: hasBooleanFlag(flags, '--verify'),
     keep: readNumberFlag(flags, '--keep'),
+    thresholdBytes: readNumberFlag(flags, '--threshold-bytes'),
+    keepBlocks: readNumberFlag(flags, '--keep-blocks'),
     tag: readFlagValue(flags, '--tag'),
     format: readFlagValue(flags, '--format') as CliArgs['format'],
     include: readFlagValue(flags, '--include'),

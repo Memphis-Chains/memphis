@@ -6,6 +6,8 @@ import { join } from 'node:path';
 type PreflightGateId =
   | 'lint'
   | 'typecheck'
+  | 'packageRuntimeClosure'
+  | 'packageArtifact'
   | 'guardDrill'
   | 'strictHandoffFixtureValidator'
   | 'strictHandoffJsonGate'
@@ -92,6 +94,27 @@ type PreflightSummary = {
 const defaultGates: PreflightGate[] = [
   { id: 'lint', command: 'npm', args: ['run', '-s', 'lint'] },
   { id: 'typecheck', command: 'npm', args: ['run', '-s', 'typecheck'] },
+  // v1.14.0 did not publish because the tarball shipped
+  // `dist/infra/cli/commands/backup-manifest.js` without the
+  // `scripts/backup-manifest.mjs` it imports at module load. The local
+  // preflight said `ok: true` and only the `release` workflow found it —
+  // so the two packaging gates now live HERE, in the suite the operator
+  // runs before a release, and CI runs the same suite.
+  //
+  // `packageRuntimeClosure` is the fast one (seconds): it discovers every
+  // file the shipped code imports from outside its own tree and requires
+  // each one to be listed in `package.json`'s `files`.
+  //
+  // `packageArtifact` is the slow one (minutes): it packs, installs and
+  // executes the real tarball. It was already in the release path through
+  // the rc-drill's "bounded package proof"; running it here as well gives
+  // the suite a second witness, and the suite one more.
+  {
+    id: 'packageRuntimeClosure',
+    command: 'npm',
+    args: ['run', '-s', 'ops:check-package-runtime-closure', '--', '--check'],
+  },
+  { id: 'packageArtifact', command: 'npm', args: ['run', '-s', 'ops:validate-package-artifact'] },
   { id: 'guardDrill', command: './scripts/guard-drill-json-gate.sh', args: [] },
   {
     id: 'strictHandoffFixtureValidator',

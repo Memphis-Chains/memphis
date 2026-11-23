@@ -3,6 +3,7 @@ import { createConnection } from 'node:net';
 import { type NativeMcpRequest, invokeNativeMcpAsk } from '../../../bridges/mcp-native-gateway.js';
 import { startNativeMcpTransport } from '../../../bridges/mcp-native-transport.js';
 import type { RequestedProviderName } from '../../../core/types.js';
+import { readStreamAsText } from '../../../core/utf8-stream.js';
 import { DEFAULT_MCP_HTTP_HOST, DEFAULT_MCP_HTTP_PORT } from '../../../mcp/transport/defaults.js';
 import { serveMcpHttp } from '../../../mcp/transport/http.js';
 import { serveMcpStdio } from '../../../mcp/transport/stdio.js';
@@ -323,12 +324,11 @@ async function sendServeOnceRequest(
     const client = createConnection({ host, port }, () => {
       client.write(JSON.stringify(requestPayload));
     });
-    let data = '';
-    client.on('data', (chunk) => {
-      data += chunk.toString('utf8');
-    });
-    client.on('end', () => resolve(data));
-    client.on('error', reject);
+    // One decoder for the whole response: a multi-byte character that
+    // straddles a chunk boundary is ONE character, and decoding the
+    // halves separately turns it into U+FFFD.
+    // See `src/core/utf8-stream.ts`.
+    readStreamAsText(client).then(resolve, reject);
   });
 }
 

@@ -29,24 +29,48 @@ import { resolve } from 'node:path';
 import { requireToolPolicy } from '../src/gateway/native-tool-policy.js';
 import { NATIVE_TOOL_CONTRACTS, nativeToolContractNames } from '../src/gateway/tool-contract.js';
 import { TOOL_REGISTRY } from '../src/gateway/tool-registry.js';
+import {
+  readNativeCatalog,
+  readNativeExecutableToolNames,
+} from './lib/native-tool-catalog.mts';
 
 // The catalog and the dispatcher live in separate modules since the
 // `chat.rs` split (2026-10-22). The tier table itself is generated into the
 // catalog module, next to the advertised tool list it gates.
 const TARGET = resolve('crates/memphis-operator/src/chat_tool_catalog.rs');
-const EXECUTOR_TARGET = resolve('crates/memphis-operator/src/chat_tool_executor.rs');
 
 // Catalog and dispatcher must agree. Discover actual native operations so a new
 // executable arm cannot accidentally inherit tier zero.
-const source = readFileSync(TARGET, 'utf8');
-const executorSource = readFileSync(EXECUTOR_TARGET, 'utf8');
-const catalog = source.split('fn native_tool_definitions()')[1]?.split('fn tool_tier(')[0];
-const executor = executorSource.split('fn execute_native_tool(')[1];
-if (!catalog || !executor) throw new Error('Native catalog/dispatcher boundaries missing');
-const advertised = [...catalog.matchAll(/name: "(memphis_[a-z0-9_]+)"/g)].map((m) => m[1]);
-const executable = [...executor.matchAll(/^ {8}"(memphis_[a-z0-9_]+)" =>/gm)].map((m) => m[1]);
-if (JSON.stringify([...advertised].sort()) !== JSON.stringify([...executable].sort())) {
-  throw new Error('Native catalog and executable tool arms differ');
+//
+// The advertised set is read from the catalog the way the cockpit reads it:
+// the generated projection plus the declared divergences. Before ADR-012 this
+// was a regular expression over the catalog source, and when the names moved
+// into the projection the expression matched five tools instead of twenty-three
+// — so the gate failed with a message that named the symptom and not the
+// cause. `scripts/lib/native-tool-catalog.mts` is now the single reader, and
+// the tests read it too.
+const catalog = readNativeCatalog();
+const executable = readNativeExecutableToolNames();
+if (JSON.stringify([...catalog.advertised].sort()) !== JSON.stringify([...executable].sort())) {
+  const advertisedOnly = catalog.advertised.filter((name) => !executable.includes(name));
+  const executableOnly = executable.filter((name) => !catalog.advertised.includes(name));
+  throw new Error(
+    [
+      'Native catalog and executable tool arms differ.',
+      advertisedOnly.length ? `  advertised but not executable: ${advertisedOnly.join(', ')}` : '',
+      executableOnly.length ? `  executable but not advertised: ${executableOnly.join(', ')}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  );
+}
+
+// A hand-written schema outside the divergence list is the old way of adding
+// a tool: a second copy of the registry that nothing compares. Name it.
+if (catalog.stray.length > 0) {
+  throw new Error(
+    `Hand-written native schemas outside the declared divergence list: ${catalog.stray.join(', ')}`,
+  );
 }
 const NATIVE_TOOLS = [...new Set(executable)].sort();
 

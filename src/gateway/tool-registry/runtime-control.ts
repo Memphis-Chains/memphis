@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { ToolMeta } from '../tool-metadata.js';
 
-export const RUNTIME_CONTROL_TOOLS: Record<string, ToolMeta> = {
+export const RUNTIME_CONTROL_TOOLS = {
   memphis_providers: {
     name: 'memphis_providers',
     tier: 0,
@@ -175,4 +175,4 @@ export const RUNTIME_CONTROL_TOOLS: Record<string, ToolMeta> = {
       },
     ],
   },
-};
+} satisfies Record<string, ToolMeta>;

@@ -1,0 +1,288 @@
+{
+  "comment": "The chain-name vocabulary — the ONE rule that decides what a directory under `chains/` is. The owner is the Rust core (`crates/memphis-paths/src/chain_names.rs`); the TypeScript arm is a projection of it (`src/memory/chain-names.generated.ts`). Both arms check themselves against THIS file: the Rust runner is `crates/memphis-paths/tests/chain_name_contract.rs`, the TypeScript runner is `tests/unit/chain-name-contract.test.ts`. WHY: the rule had four owners and three answers. Measured 2026-11-23 on the operator's host, the runtime counted 11 504 blocks as live memory, the audit counted 11 975, and the live chains hold 11 228 — the gap was one archive of `cases` (276 blocks) counted as if it were the chain itself, because the old native rule asked \"does the name end in `.backup-<digits>`?\" and nothing else. A dated stamp was a live chain; an epoch stamp was not. WHAT: `kind` is `chain`, `archive` or `foreign`; `logical` is the chain a directory holds; `normalized` is the canonical name of a user-supplied reference (trimmed, then aliased — the trim is the caller's convention in both arms). The corpus is fixed on purpose: a corpus that grew with the host's disk would change the artefact every time a chain was rotated, and a gate that changes when nothing changed is a gate nobody reads.",
+  "schemaVersion": 1,
+  "generatedBy": "scripts/sync-chain-name-contract.mts",
+  "owner": "crates/memphis-paths/src/chain_names.rs",
+  "vocabulary": {
+    "archiveChainPartPattern": "^[A-Za-z0-9_-]+$",
+    "archiveSeparator": ".backup-",
+    "archiveStampPatterns": [
+      "^[0-9]+$",
+      "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{3}Z$"
+    ],
+    "chainNameAliases": [
+      {
+        "alias": "case",
+        "canonical": "cases"
+      },
+      {
+        "alias": "decision",
+        "canonical": "decisions"
+      },
+      {
+        "alias": "pattern",
+        "canonical": "patterns"
+      },
+      {
+        "alias": "reflection",
+        "canonical": "reflections"
+      }
+    ],
+    "maxChainNameLength": 64,
+    "plainChainNamePattern": "^[A-Za-z0-9_-]{1,64}$"
+  },
+  "cases": [
+    {
+      "name": "the journal is a chain",
+      "directory": "journal",
+      "kind": "chain",
+      "logical": "journal",
+      "normalized": "journal"
+    },
+    {
+      "name": "the decisions are a chain",
+      "directory": "decisions",
+      "kind": "chain",
+      "logical": "decisions",
+      "normalized": "decisions"
+    },
+    {
+      "name": "the reflections are a chain",
+      "directory": "reflections",
+      "kind": "chain",
+      "logical": "reflections",
+      "normalized": "reflections"
+    },
+    {
+      "name": "the cases are a chain",
+      "directory": "cases",
+      "kind": "chain",
+      "logical": "cases",
+      "normalized": "cases"
+    },
+    {
+      "name": "the patterns are a chain",
+      "directory": "patterns",
+      "kind": "chain",
+      "logical": "patterns",
+      "normalized": "patterns"
+    },
+    {
+      "name": "the soul is a chain",
+      "directory": "soul",
+      "kind": "chain",
+      "logical": "soul",
+      "normalized": "soul"
+    },
+    {
+      "name": "the system chain is a chain",
+      "directory": "system",
+      "kind": "chain",
+      "logical": "system",
+      "normalized": "system"
+    },
+    {
+      "name": "the collective is a chain",
+      "directory": "collective",
+      "kind": "chain",
+      "logical": "collective",
+      "normalized": "collective"
+    },
+    {
+      "name": "the insights are a chain",
+      "directory": "insights",
+      "kind": "chain",
+      "logical": "insights",
+      "normalized": "insights"
+    },
+    {
+      "name": "the proposals are a chain",
+      "directory": "proposals",
+      "kind": "chain",
+      "logical": "proposals",
+      "normalized": "proposals"
+    },
+    {
+      "name": "the autonomous archive is a chain",
+      "directory": "autonom_archive",
+      "kind": "chain",
+      "logical": "autonom_archive",
+      "normalized": "autonom_archive"
+    },
+    {
+      "name": "the singular alias is a chain",
+      "directory": "case",
+      "kind": "chain",
+      "logical": "case",
+      "normalized": "cases"
+    },
+    {
+      "name": "the decision alias is a chain",
+      "directory": "decision",
+      "kind": "chain",
+      "logical": "decision",
+      "normalized": "decisions"
+    },
+    {
+      "name": "the pattern alias is a chain",
+      "directory": "pattern",
+      "kind": "chain",
+      "logical": "pattern",
+      "normalized": "patterns"
+    },
+    {
+      "name": "the reflection alias is a chain",
+      "directory": "reflection",
+      "kind": "chain",
+      "logical": "reflection",
+      "normalized": "reflections"
+    },
+    {
+      "name": "an archive with an epoch stamp is an archive",
+      "directory": "journal.backup-1784913076785",
+      "kind": "archive",
+      "logical": "journal",
+      "normalized": "journal.backup-1784913076785"
+    },
+    {
+      "name": "an archive with a dated stamp is an archive",
+      "directory": "cases.backup-2026-07-07T15-07-23-108Z",
+      "kind": "archive",
+      "logical": "cases",
+      "normalized": "cases.backup-2026-07-07T15-07-23-108Z"
+    },
+    {
+      "name": "a second archive of another chain is an archive",
+      "directory": "system.backup-1782897312539",
+      "kind": "archive",
+      "logical": "system",
+      "normalized": "system.backup-1782897312539"
+    },
+    {
+      "name": "an archive of a long chain name is still an archive",
+      "directory": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy.backup-123",
+      "kind": "archive",
+      "logical": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+      "normalized": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy.backup-123"
+    },
+    {
+      "name": "the rotation directory is not a chain",
+      "directory": ".archives",
+      "kind": "foreign",
+      "logical": ".archives",
+      "normalized": ".archives"
+    },
+    {
+      "name": "the quarantine container is a plain name, and the taxonomy decides",
+      "directory": "_quarantine",
+      "kind": "chain",
+      "logical": "_quarantine",
+      "normalized": "_quarantine"
+    },
+    {
+      "name": "an empty name is not a chain",
+      "directory": "",
+      "kind": "foreign",
+      "logical": "",
+      "normalized": ""
+    },
+    {
+      "name": "a parent traversal is not a chain",
+      "directory": "..",
+      "kind": "foreign",
+      "logical": "..",
+      "normalized": ".."
+    },
+    {
+      "name": "a nested path is not a chain",
+      "directory": "journal/000001",
+      "kind": "foreign",
+      "logical": "journal/000001",
+      "normalized": "journal/000001"
+    },
+    {
+      "name": "a backslash path is not a chain",
+      "directory": "journal\\000001",
+      "kind": "foreign",
+      "logical": "journal\\000001",
+      "normalized": "journal\\000001"
+    },
+    {
+      "name": "a dot that is not an archive suffix is not a chain",
+      "directory": "journal.partial",
+      "kind": "foreign",
+      "logical": "journal.partial",
+      "normalized": "journal.partial"
+    },
+    {
+      "name": "a space is not a chain",
+      "directory": "journal backup",
+      "kind": "foreign",
+      "logical": "journal backup",
+      "normalized": "journal backup"
+    },
+    {
+      "name": "an archive without a stamp is not an archive",
+      "directory": "journal.backup-",
+      "kind": "foreign",
+      "logical": "journal.backup-",
+      "normalized": "journal.backup-"
+    },
+    {
+      "name": "an archive with a word stamp is not an archive",
+      "directory": "journal.backup-abc",
+      "kind": "foreign",
+      "logical": "journal.backup-abc",
+      "normalized": "journal.backup-abc"
+    },
+    {
+      "name": "an archive with a mixed stamp is not an archive",
+      "directory": "journal.backup-123abc",
+      "kind": "foreign",
+      "logical": "journal.backup-123abc",
+      "normalized": "journal.backup-123abc"
+    },
+    {
+      "name": "a second separator does not make an archive",
+      "directory": "journal.backup-123.backup-456",
+      "kind": "foreign",
+      "logical": "journal.backup-123.backup-456",
+      "normalized": "journal.backup-123.backup-456"
+    },
+    {
+      "name": "a dated stamp with a letter in the millis is not an archive",
+      "directory": "journal.backup-2026-07-07T15-07-23-10ZZ",
+      "kind": "foreign",
+      "logical": "journal.backup-2026-07-07T15-07-23-10ZZ",
+      "normalized": "journal.backup-2026-07-07T15-07-23-10ZZ"
+    },
+    {
+      "name": "a dated stamp with a letter in the middle is not an archive",
+      "directory": "journal.backup-2026-07-07T15-07-23-1Z8",
+      "kind": "foreign",
+      "logical": "journal.backup-2026-07-07T15-07-23-1Z8",
+      "normalized": "journal.backup-2026-07-07T15-07-23-1Z8"
+    },
+    {
+      "name": "a sixty-four character name is a chain",
+      "directory": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "kind": "chain",
+      "logical": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "normalized": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "name": "a sixty-five character name is not a chain",
+      "directory": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "kind": "foreign",
+      "logical": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "normalized": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "name": "a padded alias still normalizes",
+      "directory": " case ",
+      "kind": "foreign",
+      "logical": " case ",
+      "normalized": "cases"
+    }
+  ]
+}

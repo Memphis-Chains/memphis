@@ -1,0 +1,888 @@
+//! The native tool contract, projected from the TypeScript registry.
+//!
+//! GENERATED FILE — do not edit by hand.
+//!
+//! Regenerate with: npm run -s ops:sync-native-tool-contract
+//! Check with:     npm run -s ops:sync-native-tool-contract -- --check
+//!
+//! Why it is JSON and not Rust literals: the reference architecture says
+//! JSON is the only format, and a hand-written schema is a second copy of
+//! the registry. This file is a projection, checked against
+//! tests/fixtures/native-tool-contract.json by the operator crate's own
+//! test, and by tests/unit/native-tool-contract.test.ts on the TypeScript
+//! side.
+//!
+//! Measured 2026-11-22: before this file existed the cockpit advertised
+//! five tools with different arguments than the registry — including
+//! `memphis_self_modify`, which under one name meant "write one file"
+//! and under the other "apply changes to many files". All five are
+//! closed: every tool here is projected from the registry, and the
+//! contract declares no divergence.
+
+/// The contract of every tool the native surface offers.
+pub(crate) const NATIVE_TOOL_CONTRACT_JSON: &str = r#"{
+  "schemaVersion": 1,
+  "tools": [
+    {
+      "name": "memphis_brave_search",
+      "description": "Search the web via Brave Search API (requires BRAVE_API_KEY)",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Search query"
+          },
+          "limit": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 20,
+            "description": "Max results to return (1-20, default 10)"
+          },
+          "country": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 2,
+            "description": "ISO 3166-1 alpha-2 country code, e.g. PL"
+          },
+          "search_lang": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 2,
+            "description": "ISO 639-1 language code, e.g. pl"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_case_append",
+      "description": "Append case entry",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "entry": {
+            "type": "object",
+            "properties": {
+              "case_type": {
+                "type": "string",
+                "enum": [
+                  "nominative",
+                  "genitive",
+                  "dative",
+                  "accusative",
+                  "instrumental",
+                  "locative",
+                  "ablative",
+                  "vocative"
+                ]
+              }
+            },
+            "required": [
+              "case_type"
+            ],
+            "additionalProperties": {}
+          },
+          "case_type": {
+            "type": "string",
+            "enum": [
+              "nominative",
+              "genitive",
+              "dative",
+              "accusative",
+              "instrumental",
+              "locative",
+              "ablative",
+              "vocative"
+            ]
+          },
+          "entity": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "possessed": {
+            "type": "string"
+          },
+          "giver": {
+            "type": "string"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "verb": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "instrument": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "invoker": {
+            "type": "string"
+          },
+          "invocation": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_case_query",
+      "description": "Query case graph",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "object",
+            "properties": {
+              "case_type": {
+                "type": "string",
+                "enum": [
+                  "nominative",
+                  "genitive",
+                  "dative",
+                  "accusative",
+                  "instrumental",
+                  "locative",
+                  "ablative",
+                  "vocative"
+                ]
+              },
+              "entity": {
+                "type": "string"
+              },
+              "actor": {
+                "type": "string"
+              },
+              "target": {
+                "type": "string"
+              },
+              "instrument": {
+                "type": "string"
+              },
+              "location": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 100
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_chain_query",
+      "description": "Query raw chain blocks with lightweight filters",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "chain": {
+            "type": "string",
+            "description": "Chain name e.g. 'journal', 'decisions', 'patterns', 'reflections'"
+          },
+          "limit": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 100,
+            "description": "Max blocks to return (default: 20)"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "blockType": {
+            "type": "string"
+          },
+          "contains": {
+            "type": "string",
+            "description": "Substring filter on block content"
+          },
+          "tag": {
+            "type": "string",
+            "description": "Filter blocks by tag"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_chain_verify",
+      "description": "Verify chain hashes, indexes, and prev-hash links before diagnosing corruption",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "chain": {
+            "type": "string",
+            "description": "Optional chain name; omit to verify all chains"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_classify",
+      "description": "Advisory typed decision via the local BASAL service: choice, yes/no or score with validated probabilities. Classes are supplied in criteria. auto means the caller's confidence threshold passed and the service did not defer or report unvalidated calibration; it grants no tool permissions and guarantees no domain error rate. Re-evaluate thresholds after changing model or backend. Historical CPU calls took 70-140 seconds; use measured latency rather than assuming an interactive response. Requires the separately running local service.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32000,
+            "description": "The text to classify: a message, a document, a case file"
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "What to decide about it, in plain language"
+          },
+          "criteria": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              {
+                "minItems": 2,
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ],
+            "description": "Options as {key: description} pairs. The model reads the descriptions, so they carry the meaning. Needs at least 2 and at most 10 entries. Send a bare object like {\"cards\": \"Reklamacje kart\"} — not {\"item\": [...] }."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "choice",
+              "noul",
+              "score"
+            ],
+            "description": "choice (default), noul (yes/no), or score; score objects require ordinal keys 0..n-1"
+          },
+          "threshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Advisory confidence threshold from 0 to 1. Explicit policy overrides the service default; never grants action permissions."
+          },
+          "orders": {
+            "anyOf": [
+              {
+                "type": "number",
+                "const": 1
+              },
+              {
+                "type": "number",
+                "const": 2
+              }
+            ],
+            "description": "1 = one forward pass, faster but order-sensitive; 2 = averaged over both option orders, invariant to ordering"
+          }
+        },
+        "required": [
+          "state",
+          "question",
+          "criteria"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_code_read",
+      "description": "Read any file on the host (read-only; vault material refused)",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "File path (absolute or ~/relative)"
+          },
+          "startLine": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Start line (1-based)"
+          },
+          "endLine": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "End line (inclusive)"
+          },
+          "limit": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 2000,
+            "description": "Max lines to return (default 2000)"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_cron_script",
+      "description": "Manage cron script files (list, add, remove, enable, disable)",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list",
+              "add",
+              "remove",
+              "enable",
+              "disable"
+            ],
+            "description": "Action (default: list)"
+          },
+          "cron": {
+            "type": "string",
+            "description": "Cron expression e.g. '0 * * * *' (for add)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Script name without the .sh suffix (required for add/remove/enable/disable)"
+          },
+          "script": {
+            "type": "string",
+            "description": "Shell script content (required for add)"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_decide",
+      "description": "Record decisions",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Decision title"
+          },
+          "choice": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The chosen option"
+          },
+          "context": {
+            "type": "string",
+            "description": "Why this decision was made"
+          }
+        },
+        "required": [
+          "title",
+          "choice"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_exec",
+      "description": "Execute shell command",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "Shell command to execute"
+          },
+          "surface_intent": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_git",
+      "description": "Git operations — all tier 2",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "subcommand": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Git subcommand e.g. 'status', 'log', 'diff'"
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Arguments to pass to the subcommand"
+          }
+        },
+        "required": [
+          "subcommand"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_glob",
+      "description": "Find files by glob pattern (fd or find)",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "Glob pattern e.g. 'src/**/*.ts'"
+          },
+          "path": {
+            "type": "string",
+            "description": "Base directory (default: ~/memphis)"
+          },
+          "limit": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 500,
+            "description": "Max files to return (default 100)"
+          }
+        },
+        "required": [
+          "pattern"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_grep",
+      "description": "Search code using regex patterns (ripgrep or grep)",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "Regex pattern to search for"
+          },
+          "path": {
+            "type": "string",
+            "description": "Directory or file to search in (default: ~/memphis)"
+          },
+          "glob": {
+            "type": "string",
+            "description": "Glob filter e.g. '*.ts'"
+          },
+          "limit": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 200,
+            "description": "Max results to return (default 50)"
+          },
+          "context": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10,
+            "description": "Lines of context around each match"
+          },
+          "ignoreCase": {
+            "type": "boolean",
+            "description": "Case-insensitive search"
+          }
+        },
+        "required": [
+          "pattern"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_health",
+      "description": "Check runtime health",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_journal",
+      "description": "Save entries to journal chain",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "chain": {
+            "type": "string",
+            "enum": [
+              "journal",
+              "soul",
+              "reflections",
+              "cases",
+              "patterns"
+            ]
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_recall",
+      "description": "Semantic search across chains",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1
+          },
+          "limit": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_search",
+      "description": "Exact phrase search across indexed memory",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1
+          },
+          "limit": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 50
+          },
+          "chain": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_self_modify",
+      "description": "Submit a code-change request for local operator review",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "intent": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Operator-facing one-liner: what the change does"
+          },
+          "files": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Repository-relative paths to change"
+          },
+          "changes": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The complete new content of each path, keyed by that path"
+          },
+          "plan_id": {
+            "type": "string",
+            "description": "The self-coding plan this change belongs to"
+          },
+          "step_idx": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "The index of the plan step this change implements"
+          }
+        },
+        "required": [
+          "intent",
+          "files",
+          "changes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_soul_read",
+      "description": "Read soul memory",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "section": {
+            "type": "string",
+            "enum": [
+              "user",
+              "self",
+              "context",
+              "all"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_soul_write",
+      "description": "Update soul memory — send arrays as bare JSON arrays, never wrapped in an object: {\"self\":{\"learnings\":[\"a\"]}}, NOT {\"self\":{\"learnings\":{\"item\":[\"a\"]}}}",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "updates": {
+            "type": "object",
+            "properties": {
+              "user": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "description": "Operator display name.",
+                    "type": "string"
+                  },
+                  "languages": {
+                    "description": "Languages the operator writes in. Send a bare JSON array like [\"first\", \"second\"] — never {\"item\": [...]}.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "preferences": {
+                    "description": "How the operator wants work done. Send a bare JSON array like [\"first\", \"second\"] — never {\"item\": [...]}.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "expertise": {
+                    "description": "Domains the operator works in. Send a bare JSON array like [\"first\", \"second\"] — never {\"item\": [...]}.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "integrations": {
+                    "description": "External systems the operator uses. Send a bare JSON array like [\"first\", \"second\"] — never {\"item\": [...]}.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "self": {
+                "type": "object",
+                "properties": {
+                  "personality": {
+                    "description": "Agent personality summary.",
+                    "type": "string"
+                  },
+                  "strengths": {
+                    "description": "Demonstrated strengths. Send a bare JSON array like [\"first\", \"second\"] — never {\"item\": [...]}.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "learnings": {
+                    "description": "Lessons learned, each one a complete sentence. Send a bare JSON array like [\"first\", \"second\"] — never {\"item\": [...]}.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "evolvedCapabilities": {
+                    "description": "Capabilities gained through evolution. Send a bare JSON array like [\"first\", \"second\"] — never {\"item\": [...]}.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "context": {
+                "type": "object",
+                "properties": {
+                  "activeWork": {
+                    "description": "One line on the current task.",
+                    "type": "string"
+                  },
+                  "recentDecisions": {
+                    "description": "Short summaries of recent decisions. Send a bare JSON array like [\"first\", \"second\"] — never {\"item\": [...]}.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "operatorTodo": {
+                    "description": "Items the OPERATOR has to do — NOT work for the agent. Use this field for anything addressed to the operator (things they must send, check or decide); the agent may mention these but must not act on them. Send a bare JSON array like [\"first\", \"second\"] — never {\"item\": [...]}.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "updates"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_test",
+      "description": "Run project tests (typecheck, lint, vitest, cargo test)",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "suite": {
+            "type": "string",
+            "enum": [
+              "all",
+              "ts",
+              "rust",
+              "lint",
+              "typecheck"
+            ],
+            "description": "Test suite: 'ts', 'rust', or 'all' (default: all)"
+          },
+          "filter": {
+            "type": "string",
+            "description": "Test name filter pattern"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_vault_list",
+      "description": "List encrypted vault entry metadata; never export credentials. Native operator surface only.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memphis_web_fetch",
+      "description": "Fetch public URL",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL to fetch"
+          },
+          "maxBytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 32000,
+            "description": "Max bytes to read (default 32000)"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "divergences": []
+}"#;

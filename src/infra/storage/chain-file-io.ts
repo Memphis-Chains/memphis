@@ -20,6 +20,7 @@ import {
 import { join } from 'node:path';
 
 import { withChainWriteLock } from './chain-write-lock.js';
+import { canonicalStringifyPretty } from '../../core/canonical-json.js';
 
 // ── Shared types ─────────────────────────────────────────────────────────────
 
@@ -41,38 +42,52 @@ export interface NapiBlock {
   signature?: string;
 }
 
-export interface BridgeEnvelope<T> {
-  ok: boolean;
-  data?: T;
-  error?: string;
-}
-
 // ── Envelope parsing ─────────────────────────────────────────────────────────
 
 /**
  * Parse a Rust NAPI bridge envelope of the form `{ ok, data, error }`. Throws a
  * descriptive error on malformed JSON, a non-ok envelope, or a missing `data` field.
+ *
+ * The implementation lives in `bridge-envelope.ts` — it is the single place
+ * the Rust bridge's JSON contract is understood. This re-export keeps the
+ * existing import path working.
  */
-export function parseEnvelope<T>(raw: string, fnName: string): T {
-  let out: BridgeEnvelope<T>;
-  try {
-    out = JSON.parse(raw) as BridgeEnvelope<T>;
-  } catch (error) {
-    throw new Error(`${fnName}: invalid JSON response (${String(error)})`, { cause: error });
-  }
-
-  if (!out.ok) {
-    throw new Error(`${fnName}: ${out.error ?? 'bridge returned error'}`);
-  }
-
-  if (out.data === undefined) {
-    throw new Error(`${fnName}: bridge returned empty data`);
-  }
-
-  return out.data;
-}
+export { parseEnvelope, callBridge, type BridgeEnvelope } from './bridge-envelope.js';
 
 // ── Block file I/O ───────────────────────────────────────────────────────────
+
+/**
+ * The canonical on-disk form of a block file.
+ *
+ * One rule, one place.
+ *
+ * Three paths write block files — the append path, the repair path and
+ * the archive restore path — and they have to write them the SAME way.
+ *
+ * The restore path used to write compact JSON while everything else
+ * wrote pretty-printed JSON. The chain still verified either way (the
+ * hash covers the block's VALUES, not its bytes), but a restored chain
+ * was not byte-identical to a chain that had never been rotated, and
+ * nothing said why. With one serializer, "the archive round trip is
+ * lossless" becomes a property that can be checked with `cmp`.
+ *
+ * The key ORDER was the same kind of divergence, one level deeper. The
+ * TypeScript writer used the order of the object literal, while the
+ * Rust data plane (`crates/memphis-operator/src/chat_memory.rs`) writes
+ * with `serde_json::to_vec_pretty` over a `BTreeMap` — every key
+ * sorted by byte. Measured 2026-11-23 on this host: 6 248 block files
+ * in the Rust order and 5 606 in the TypeScript order, in the same
+ * chains. `chain verify` cannot see it — the hash covers values, not
+ * bytes — so two files that differ only in key order verify
+ * identically and no gate ever noticed.
+ *
+ * The canonical form is therefore: keys sorted by byte, two-space
+ * indent. That is what the Rust core writes, so the two arms produce
+ * byte-identical files for the same logical block.
+ */
+export function serializeBlockForDisk(block: unknown): string {
+  return canonicalStringifyPretty(block);
+}
 
 /**
  * List `.json` block files in a chain directory, sorted lexicographically.

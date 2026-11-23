@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "remote-site-edit",
+  "name": "Remote Site Edit",
+  "description": "Deploy, audit and maintain a static site served from a remote webroot over SSH. Covers the whole flow — find the deploy target, snapshot, write, verify, rollback — plus the pre-deploy audit (public leaks, missing standards files, design drift, stale facts), .htaccess maintenance, binary assets and post-deploy verification.",
+  "tags": ["deploy", "htaccess", "ssh", "webroot"],
+  "tools": ["memphis_exec", "memphis_journal"],
+  "workflow": [
+    "FIND THE TARGET: the site lives on a shared host, not in a local path. Read the docroot over SSH with ~/.ssh/lhpl-active/config and host alias lhpl, and list BOTH public_html/ and public_html/<site>/ — a file one level too high is not served.",
+    "SNAPSHOT: back up the file to write into the home directory, which is writable and OUTSIDE the webroot. Never delete without a backup outside the docroot.",
+    "AUDIT: before deploying, check for public leaks, missing standards files, design drift and stale facts.",
+    "WRITE: copy one file at a time with scp -F $SSH_CONFIG -q <local> $HOST:public_html/<site>/<file>.",
+    "VERIFY: read the deployed file back over SSH and compare it with the local copy, then verify the site answers.",
+    "ROLLBACK: restore the snapshot from the home directory if the verification fails."
+  ],
+  "promptHints": [
+    "SSH is flaky on this host — expect a timeout roughly every third or fourth call. A timeout is not a failure of the change: retry with -o ConnectTimeout=30 and do not conclude 'no access' from a single timeout.",
+    "The SSH config is ~/.ssh/lhpl-active/config, NOT ~/.ssh/config. There is no key in the default config.",
+    "Never delete a remote file without a backup that lives outside the docroot."
+  ],
+  "examples": [
+    {
+      "prompt": "Zaktualizuj stronę na memphis-v5.pl",
+      "outcome": "The skill finds the docroot, snapshots the file outside the webroot, audits the site, writes one file over SSH, reads it back to verify and rolls back from the snapshot if the check fails."
+    },
+    {
+      "prompt": "Co tam mamy na serwerze?",
+      "outcome": "The skill reads the remote tree over SSH and reports the files present, the standards files missing and any public leak it finds."
+    }
+  ],
+  "notes": [
+    "This is not a git push — it is SSH/SCP into a shared-hosting webroot.",
+    "The docroot is public_html/<site>/; public_html/ itself is only the parent directory.",
+    "Tier 0 for the SSH account; it is NOT tier-2 and does not need the vault."
+  ]
+}

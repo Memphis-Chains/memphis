@@ -1,0 +1,64 @@
+{
+  "comment": "The contract for a chain that continues from an archived prefix. Rotation (src/infra/storage/chain-rotation.ts) archives the old blocks and leaves a marker in the chain directory; the validators (src/infra/storage/chain-adapter.ts and crates/memphis-operator/src/chat_memory.rs) use the marker to PROVE that the live chain continues the archived prefix instead of starting at genesis. Without the marker a chain whose first live block is not index 0 or 1 is rejected as 'missing genesis block'. Both arms read THIS file, so the two validators cannot drift apart. The arms are tests/unit/chain-rotation-head-contract.test.ts and crates/memphis-operator/tests/chain_rotation_head_contract.rs.",
+  "format": "memphis-chain-rotation-head.v1",
+  "filename": "chain-rotation.head",
+  "cases": [
+    {
+      "name": "a live chain that continues the archived prefix verifies",
+      "head": {
+        "format": "memphis-chain-rotation-head.v1",
+        "chain": "system",
+        "archivedFrom": 1,
+        "archivedTo": 15738,
+        "lastArchivedIndex": 15738,
+        "lastArchivedHash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "archivePath": "/home/memphis/.memphis/chains/.archives/system_000001-015738_2026-11-22T13-40-56-914Z.jsonl.gz",
+        "rotatedAt": "2026-11-22T13:40:56.914Z"
+      },
+      "firstLiveBlock": { "index": 15739, "prev_hash": "1111111111111111111111111111111111111111111111111111111111111111" },
+      "expectValid": true
+    },
+    {
+      "name": "a live block whose prev_hash does not match the archived head is rejected",
+      "head": {
+        "format": "memphis-chain-rotation-head.v1",
+        "chain": "system",
+        "archivedFrom": 1,
+        "archivedTo": 15738,
+        "lastArchivedIndex": 15738,
+        "lastArchivedHash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "archivePath": "/home/memphis/.memphis/chains/.archives/system_000001-015738_2026-11-22T13-40-56-914Z.jsonl.gz",
+        "rotatedAt": "2026-11-22T13:40:56.914Z"
+      },
+      "firstLiveBlock": { "index": 15739, "prev_hash": "2222222222222222222222222222222222222222222222222222222222222222" },
+      "expectValid": false
+    },
+    {
+      "name": "a live block that skips a block after the archived head is rejected",
+      "head": {
+        "format": "memphis-chain-rotation-head.v1",
+        "chain": "system",
+        "archivedFrom": 1,
+        "archivedTo": 15738,
+        "lastArchivedIndex": 15738,
+        "lastArchivedHash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "archivePath": "/home/memphis/.memphis/chains/.archives/system_000001-015738_2026-11-22T13-40-56-914Z.jsonl.gz",
+        "rotatedAt": "2026-11-22T13:40:56.914Z"
+      },
+      "firstLiveBlock": { "index": 15741, "prev_hash": "1111111111111111111111111111111111111111111111111111111111111111" },
+      "expectValid": false
+    },
+    {
+      "name": "no marker at all means the chain has to start at genesis",
+      "head": null,
+      "firstLiveBlock": { "index": 15739, "prev_hash": "1111111111111111111111111111111111111111111111111111111111111111" },
+      "expectValid": false
+    },
+    {
+      "name": "a chain that starts at genesis needs no marker",
+      "head": null,
+      "firstLiveBlock": { "index": 1, "prev_hash": "" },
+      "expectValid": true
+    }
+  ]
+}

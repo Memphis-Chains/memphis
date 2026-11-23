@@ -5,10 +5,21 @@ import { validateOperatorPassphrase } from '../auth/operator-gate.js';
 export interface RecoveryTurn {
   id: string;
   sessionId: string;
-  status: 'running' | 'interrupted' | 'blocked';
+  status: 'running' | 'interrupted' | 'blocked' | 'abandoned';
   updatedAt: string;
   partialBytes: number;
   partialTruncated: boolean;
+  /**
+   * The operations of this turn whose outcome was never determined.
+   *
+   * This is the ONLY thing that can have left a side effect half-applied,
+   * so it is the only thing that needs a decision. A turn that failed
+   * without dispatching a tool has nothing outstanding — `memphis_exec`
+   * that was never called cannot have half-run.
+   */
+  unsettledCount: number;
+  /** Does this turn need the operator to acknowledge it? */
+  needsAcknowledgement: boolean;
   operations: Array<{ tool: string; status: string; exitCode?: number }>;
 }
 
@@ -47,19 +58,35 @@ export function listRecoveryTurns(databasePath: string): RecoveryTurn[] {
     const exists = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='operator_turn_checkpoints'").get();
     if (!exists) return [];
     const turns = db.prepare(
-      "SELECT id, session_id AS sessionId, status, updated_at AS updatedAt, length(CAST(partial_text AS BLOB)) AS partialBytes, partial_truncated AS partialTruncated FROM operator_turn_checkpoints WHERE status IN ('running','interrupted','blocked') ORDER BY updated_at DESC LIMIT 100",
-    ).all() as Array<Omit<RecoveryTurn, 'operations'>>;
+      "SELECT id, session_id AS sessionId, status, updated_at AS updatedAt, length(CAST(partial_text AS BLOB)) AS partialBytes, partial_truncated AS partialTruncated FROM operator_turn_checkpoints WHERE status IN ('running','interrupted','blocked','abandoned') ORDER BY updated_at DESC LIMIT 100",
+    ).all() as Array<Omit<RecoveryTurn, 'operations' | 'unsettledCount' | 'needsAcknowledgement'>>;
     const operationsExist = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='operator_tool_operations'").get();
     const columns = operationsExist ? db.pragma('table_info(operator_tool_operations)') as Array<{ name: string }> : [];
-    if (!columns.some((column) => column.name === 'turn_id')) return turns.map((turn) => ({ ...turn, partialTruncated: Boolean(turn.partialTruncated), operations: [] }));
+    if (!columns.some((column) => column.name === 'turn_id')) {
+      return turns.map((turn) => ({ ...turn, partialTruncated: Boolean(turn.partialTruncated), unsettledCount: 0, needsAcknowledgement: false, operations: [] }));
+    }
+    const hasReviewedAt = columns.some((column) => column.name === 'reviewed_at');
     const query = db.prepare('SELECT tool_name AS tool, status, result_summary AS summary FROM operator_tool_operations WHERE turn_id=? AND session_id=? ORDER BY created_at ASC LIMIT 100');
-    return turns.map((turn) => ({
-      ...turn, partialTruncated: Boolean(turn.partialTruncated),
-      operations: (query.all(turn.id, turn.sessionId) as Array<{ tool: string; status: string; summary: string | null }>).map((op) => {
-        const exit = op.summary?.match(/(?:^|\s)exit=(\d+)$/);
-        return { tool: op.tool, status: op.status, ...(exit ? { exitCode: Number(exit[1]) } : {}) };
-      }),
-    }));
+    // The same predicate the Rust arm uses (`list_recovery_turns` in
+    // crates/memphis-operator/src/chat_session.rs): an operation that was
+    // dispatched and never settled is the ONLY evidence of a possible
+    // half-applied side effect. A turn that failed without dispatching a
+    // tool has nothing outstanding to acknowledge.
+    const unsettledQuery = db.prepare(
+      `SELECT COUNT(*) AS n FROM operator_tool_operations op WHERE op.turn_id=? AND op.session_id=? AND op.status IN ('started','unknown') ${hasReviewedAt ? 'AND op.reviewed_at IS NULL' : ''}`,
+    );
+    return turns.map((turn) => {
+      const unsettledCount = Number((unsettledQuery.get(turn.id, turn.sessionId) as { n: number }).n);
+      return {
+        ...turn, partialTruncated: Boolean(turn.partialTruncated),
+        unsettledCount,
+        needsAcknowledgement: unsettledCount > 0,
+        operations: (query.all(turn.id, turn.sessionId) as Array<{ tool: string; status: string; summary: string | null }>).map((op) => {
+          const exit = op.summary?.match(/(?:^|\s)exit=(\d+)$/);
+          return { tool: op.tool, status: op.status, ...(exit ? { exitCode: Number(exit[1]) } : {}) };
+        }),
+      };
+    });
   } finally {
     db.close();
   }
@@ -70,7 +97,7 @@ export function showRecoveryPartial(databasePath: string, id: string): { text: s
   if (!/^[0-9a-f]{32}$/.test(id)) throw new Error('invalid turn id');
   const db = new Database(databasePath, { readonly: true, fileMustExist: true });
   try {
-    const row = db.prepare("SELECT partial_text AS text, partial_truncated AS truncated FROM operator_turn_checkpoints WHERE id=? AND status IN ('running','interrupted','blocked')").get(id) as { text: string; truncated: number } | undefined;
+    const row = db.prepare("SELECT partial_text AS text, partial_truncated AS truncated FROM operator_turn_checkpoints WHERE id=? AND status IN ('running','interrupted','blocked','abandoned')").get(id) as { text: string; truncated: number } | undefined;
     if (!row) throw new Error('incomplete turn not found');
     return { text: row.text, truncated: Boolean(row.truncated) };
   } finally { db.close(); }
@@ -86,7 +113,7 @@ export function acknowledgeRecoveryTurn(databasePath: string, id: string, passph
     db.transaction(() => {
       const now = new Date().toISOString();
       const update = db.prepare(
-        `UPDATE operator_turn_checkpoints SET status='acknowledged', updated_at=? WHERE id=? AND status ${forceRunning ? "IN ('interrupted','blocked','running')" : "IN ('interrupted','blocked')"}`,
+        `UPDATE operator_turn_checkpoints SET status='acknowledged', updated_at=? WHERE id=? AND status ${forceRunning ? "IN ('interrupted','blocked','running','abandoned')" : "IN ('interrupted','blocked','abandoned')"}`,
       ).run(now, id);
       if (update.changes !== 1) throw new Error('turn is not interrupted, was already acknowledged, or is still running; review before using --force-running');
       if (hasOperations) db.prepare("UPDATE operator_tool_operations SET reviewed_at=? WHERE turn_id=? AND status IN ('started','unknown') AND reviewed_at IS NULL").run(now, id);

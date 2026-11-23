@@ -76,4 +76,18 @@ describe('self-modify — validateFilePath', () => {
 
     expect(() => validateFilePath('src/linked/payload.ts', env.tmpRoot)).toThrow(/Path traversal/);
   });
+
+  it('rejects a DANGLING symlink inside root whose target is outside', () => {
+    // The target does not exist yet, so `realpathSync` fails on it. A
+    // resolver that gives up at the link and keeps the link's own name sees
+    // a path INSIDE the root -- and the write then follows the link out and
+    // creates the file outside. The link has to be resolved even when its
+    // target is missing; the native arm resolves it the same way
+    // (crates/memphis-operator/src/chat_self_modify.rs).
+    const outsideTarget = path.join(env.outsideDir, 'not-created-yet.ts');
+    const linkInsideRoot = path.join(env.tmpRoot, 'src', 'dangling.ts');
+    symlinkSync(outsideTarget, linkInsideRoot);
+
+    expect(() => validateFilePath('src/dangling.ts', env.tmpRoot)).toThrow(/Path traversal/);
+  });
 });
