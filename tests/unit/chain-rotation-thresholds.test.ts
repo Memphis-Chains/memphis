@@ -115,9 +115,50 @@ describe('the rotation honours its environment knobs', () => {
     expect(result.rotated).toBe(true);
     expect(result.remainingBlocks).toBeGreaterThanOrEqual(1);
   });
+
+  it('rotates a chain that is over the threshold even when it has fewer blocks than the keep-count', async () => {
+    // The failure this exists for.
+    //
+    // The rotation used to require BOTH `dirSize > threshold` AND
+    // `blocks.length > minKeep` — the two knobs ANDed, although they are
+    // separate bounds: the threshold says WHEN a chain is touched, the
+    // keep-count says how much recent context stays live. The operator's
+    // own unit file says so — "the threshold is what actually triggers a
+    // rotation".
+    //
+    // Measured 2026-11-23 on this host: the `insights` chain is 31.92 MB
+    // across 404 blocks — three times over the 10 MB threshold and under
+    // the 500 the keep-count asks for — and it has never rotated, although
+    // the service rotates hourly. The threshold was inert for exactly the
+    // chains whose blocks are fat, which is the case the threshold exists
+    // for.
+    //
+    // This fixture is the same shape: 3 blocks of 400 KB — 1.2 MB, over the
+    // 1 MiB threshold, under the 7 the keep-count asks for.
+    rmSync(chainDir, { recursive: true, force: true });
+    mkdirSync(chainDir, { recursive: true });
+    writeChain(chainDir, 3, 400_000);
+
+    const result = await rotateChain(CHAIN, {
+      rawEnv: {
+        ...process.env,
+        MEMPHIS_DATA_DIR: root,
+        MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES: String(1024 * 1024),
+        MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS: '7',
+      },
+    });
+
+    expect(result.rotated).toBe(true);
+    expect(result.archivedBlocks).toBeGreaterThan(0);
+
+    // The keep-count cannot apply to a chain that has fewer blocks than it
+    // asks for, so the size bound decides: what stays live is what fits
+    // under the threshold — two blocks of 400 KB.
+    expect(result.remainingBlocks).toBe(2);
+  });
 });
 
-function writeChain(dir: string, count: number): void {
+function writeChain(dir: string, count: number, contentBytes = BLOCK_CONTENT_BYTES): void {
   const crypto = { createHash };
   let prevHash = '0'.repeat(64);
   for (let index = 1; index <= count; index += 1) {
@@ -125,7 +166,7 @@ function writeChain(dir: string, count: number): void {
       index,
       timestamp: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
       chain: CHAIN,
-      data: { type: 'journal', content: 'x'.repeat(BLOCK_CONTENT_BYTES), tags: [] },
+      data: { type: 'journal', content: 'x'.repeat(contentBytes), tags: [] },
       prev_hash: prevHash,
     };
     const hash = hashBlock(block, crypto as never);
