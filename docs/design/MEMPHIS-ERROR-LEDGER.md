@@ -226,6 +226,36 @@ And the suite is the same on both sides: `ops:release-preflight` now runs
 binary). Measured: the artefact validation fails with the exact CI message
 when the path is removed from `files`, and passes with it.
 
+#### E-11 · A gate that was green where it was measured, and red where it was not
+
+The public chat's `/ready` answers 200 only when the provider is configured
+**and** the basal layer is healthy. The basal layer is an HTTP service on
+127.0.0.1:8000. The relay's test asked the **real** service.
+
+> Measured 2026-11-23 on this host: `http://127.0.0.1:8000/health` answers
+> `{"ok":true,"ready":true,…}` — so `publicBasalReady()` is true and the test
+> passed. On a CI runner nothing listens on that port, the fetch is refused,
+> `publicBasalReady()` is false, and the test failed with
+> `expected 503 to be 200` — the required `cross-arch (ubuntu-24.04-arm)`
+> check was red, and the failure was already present on `34cb179074`.
+>
+> The test could not even be steered from the shell: the vitest setup
+> deletes every `MEMPHIS_*` key (`tests/helpers/isolated-runtime.ts`), so
+> `MEMPHIS_PUBLIC_BASAL_URL` is `undefined` inside the worker — measured.
+
+**CLOSED 2026-11-23.** The readiness check is injected into the relay next
+to the classifier that was already injectable, and the test pins the three
+real cases — configured **and** basal ready (200), provider unconfigured
+(503), basal not ready (503). The third was indistinguishable from the
+second before. The test points the ambient basal URL at a closed port for
+its duration, so it is its own falsifier: if the injection is ever dropped,
+it fails with the CI message instead of quietly depending on the room.
+
+E-10 and E-11 are the same shape from opposite ends: one gate did not look
+at the thing that ships, and one gate looked at the world instead of the
+contract. **A gate measures what it says it measures, on every machine it
+runs on.**
+
 ### Family B — the system degrades quietly instead of failing
 
 Every defect here answers with something plausible. The operator cannot tell
