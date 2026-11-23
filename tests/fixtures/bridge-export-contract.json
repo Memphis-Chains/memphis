@@ -4,6 +4,16 @@
   "owner": "crates/memphis-napi/src/bridge_exports.rs",
   "exports": [
     {
+      "canonical": "bridge_chain_name_facts",
+      "jsName": "bridge_chain_name_facts",
+      "required": false
+    },
+    {
+      "canonical": "bridge_chain_name_manifest",
+      "jsName": "bridge_chain_name_manifest",
+      "required": false
+    },
+    {
       "canonical": "bridge_manifest",
       "jsName": "bridge_manifest",
       "required": true

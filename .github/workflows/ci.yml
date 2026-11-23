@@ -82,6 +82,17 @@ jobs:
         # projected from the Rust core's table; regenerate, never hand-edit.
         run: npm run -s ops:sync-bridge-export-contract -- --check
 
+      - name: The chain-name vocabulary matches the Rust core
+        # "What is a chain called?" had four owners and three answers. The
+        # native runtime asked "does the name end in `.backup-<digits>`?"
+        # and nothing else, so an archive with a dated stamp was counted as a
+        # live chain while an archive with an epoch stamp was not — measured
+        # 2026-11-23: the runtime counted 11 504 blocks as live memory, the
+        # audit counted 11 975, and the live chains hold 11 228. The rule now
+        # has one owner; the TypeScript side is its projection. Regenerate,
+        # never hand-edit.
+        run: npm run -s ops:sync-chain-name-contract -- --check
+
       - name: Landing page metrics match measured values
         # The metric strip, the typed terminal and the noscript fallback all
         # quote one operator instance's block and chain counts. They were

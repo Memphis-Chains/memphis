@@ -1124,6 +1124,53 @@ pub fn paths_normalize_chain_name(input: String) -> String {
     ok(memphis_paths::normalize_chain_name(&input).to_string())
 }
 
+/// The chain-name vocabulary, as its owner publishes it.
+///
+/// The projection (`scripts/sync-chain-name-contract.mts`) reads the
+/// vocabulary through THIS function, so the TypeScript mirror is a
+/// projection of the Rust owner (`memphis_paths::chain_names`) and not a
+/// second hand-written copy. The rule itself lives in the owner, because
+/// the rule is a cross-arm contract and the owner is the crate both arms
+/// can reach.
+#[napi(catch_unwind, js_name = "bridge_chain_name_manifest")]
+pub fn bridge_chain_name_manifest() -> String {
+    use memphis_paths::chain_names as names;
+    ok(serde_json::json!({
+        "plainChainNamePattern": names::PLAIN_CHAIN_NAME_PATTERN,
+        "maxChainNameLength": names::MAX_CHAIN_NAME_LEN,
+        "archiveChainPartPattern": names::ARCHIVE_CHAIN_PART_PATTERN,
+        "archiveSeparator": names::ARCHIVE_SEPARATOR,
+        "archiveStampPatterns": names::ARCHIVE_STAMP_PATTERNS,
+        "chainNameAliases": names::CHAIN_NAME_ALIASES
+            .iter()
+            .map(|(alias, canonical)| serde_json::json!({
+                "alias": alias,
+                "canonical": canonical,
+            }))
+            .collect::<Vec<_>>(),
+    }))
+}
+
+/// The facts about one chain directory name.
+///
+/// `kind` — `chain`, `archive` or `foreign`; `logical` — the chain the
+/// directory holds; `normalized` — the canonical name of a user-supplied
+/// reference (trimmed, then aliased).
+///
+/// The ONE question the runtime, the audit, the verifier and the cockpit
+/// used to answer with three rules. The projection reads the answers from
+/// here, so the artefact of cases carries the OWNER's answers and not the
+/// projection's own arithmetic.
+#[napi(catch_unwind, js_name = "bridge_chain_name_facts")]
+pub fn bridge_chain_name_facts(name: String) -> String {
+    use memphis_paths::chain_names as names;
+    ok(serde_json::json!({
+        "kind": names::classify_chain_directory(&name).as_str(),
+        "logical": names::logical_chain_name(&name),
+        "normalized": names::normalize_chain_name(name.trim()),
+    }))
+}
+
 // `.mv2` export bridge (Sprint G N12). The TS layer collects records via
 // the existing CLI/MCP machinery, hands them to `mv2_export` as a JSON
 // array, and gets back a Buffer it writes to disk. `mv2_inspect` is the
