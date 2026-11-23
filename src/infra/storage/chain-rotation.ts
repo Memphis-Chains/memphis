@@ -43,7 +43,7 @@ const MAX_ROTATION_KEEP_BLOCKS = 10_000;
  * accepted, validated and ignored: an operator who set it saw no effect
  * and no error.
  */
-function resolveThresholdBytes(rawEnv: NodeJS.ProcessEnv | undefined): number {
+export function resolveThresholdBytes(rawEnv: NodeJS.ProcessEnv | undefined): number {
   const raw = (rawEnv ?? process.env).MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES?.trim();
   if (!raw) return DEFAULT_ROTATION_THRESHOLD_BYTES;
   const parsed = Number.parseInt(raw, 10);
@@ -57,12 +57,122 @@ function resolveThresholdBytes(rawEnv: NodeJS.ProcessEnv | undefined): number {
  * Same story as the threshold: `MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS`
  * was registered and validated and never read.
  */
-function resolveMinKeepBlocks(rawEnv: NodeJS.ProcessEnv | undefined): number {
+export function resolveMinKeepBlocks(rawEnv: NodeJS.ProcessEnv | undefined): number {
   const raw = (rawEnv ?? process.env).MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS?.trim();
   if (!raw) return MIN_KEEP_BLOCKS;
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed)) return MIN_KEEP_BLOCKS;
   return Math.min(Math.max(parsed, MIN_ROTATION_KEEP_BLOCKS), MAX_ROTATION_KEEP_BLOCKS);
+}
+
+/**
+ * The knobs a rotation would use, and where each of them came from.
+ *
+ * The source matters: the service is configured by its systemd drop-in,
+ * a command run from a shell is configured by the shell. An operator who
+ * runs a rotation by hand and gets "nothing to do" needs to know WHICH
+ * threshold it compared against — otherwise a different number silently
+ * decides the outcome.
+ */
+export interface RotationKnobs {
+  thresholdBytes: number;
+  minKeepBlocks: number;
+  /** Where each knob's value came from. */
+  thresholdSource: RotationKnobSource;
+  keepSource: RotationKnobSource;
+}
+
+/** Where a rotation knob's value came from. */
+export type RotationKnobSource = 'flag' | 'shell' | 'service' | 'default';
+
+/**
+ * The effective knobs, and the environment a rotation should run with.
+ *
+ * The precedence is the operator's order of intent:
+ *
+ *   1. `flag` — the operator typed it on this command.
+ *   2. `shell` — the environment of the command they are running.
+ *   3. `service` — the environment the SERVICE is configured with. The
+ *      service reads its drop-in; a command run from a shell has no such
+ *      variables, so without this step the command would compare
+ *      against the code default and quietly do nothing on a chain the
+ *      service would have rotated.
+ *   4. `default` — the code's own default.
+ *
+ * The environment that comes back is the one a rotation should use: the
+ * flag values are written into it, so the rotation code reads exactly
+ * the numbers that were reported.
+ */
+export function resolveRotationKnobs(
+  options: {
+    /** The environment of the command being run. */
+    rawEnv?: NodeJS.ProcessEnv;
+    /** The environment the service is configured with. */
+    serviceEnv?: Record<string, string>;
+    /** An explicit threshold, in bytes. */
+    thresholdBytes?: number;
+    /** An explicit keep-count. */
+    minKeepBlocks?: number;
+  } = {},
+): { env: NodeJS.ProcessEnv; knobs: RotationKnobs } {
+  const shellEnv = options.rawEnv ?? process.env;
+  const serviceEnv = options.serviceEnv ?? {};
+  // The shell wins over the service: the operator's own environment is
+  // the more immediate statement of intent.
+  const env: NodeJS.ProcessEnv = { ...serviceEnv, ...shellEnv };
+
+  // The source is decided by PRESENCE, not by truthiness — an empty
+  // value in the shell is still the shell's value, and it still wins.
+  // The merge above and this report have to agree, or the command would
+  // say "service" while using the default.
+  const thresholdSource: RotationKnobSource =
+    options.thresholdBytes !== undefined
+      ? 'flag'
+      : shellEnv.MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES !== undefined
+        ? 'shell'
+        : serviceEnv.MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES !== undefined
+          ? 'service'
+          : 'default';
+  const keepSource: RotationKnobSource =
+    options.minKeepBlocks !== undefined
+      ? 'flag'
+      : shellEnv.MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS !== undefined
+        ? 'shell'
+        : serviceEnv.MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS !== undefined
+          ? 'service'
+          : 'default';
+
+  // The flag is written into the environment the rotation runs with, so
+  // the rotation code reads exactly the numbers that were reported.
+  if (options.thresholdBytes !== undefined)
+    env.MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES = String(options.thresholdBytes);
+  if (options.minKeepBlocks !== undefined)
+    env.MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS = String(options.minKeepBlocks);
+
+  const resolved = resolveRotationKnobsFromEnv(env);
+  return {
+    env,
+    knobs: {
+      thresholdBytes: resolved.thresholdBytes,
+      minKeepBlocks: resolved.minKeepBlocks,
+      thresholdSource,
+      keepSource,
+    },
+  };
+}
+
+/**
+ * The knobs an environment resolves to, without any precedence logic.
+ */
+export function resolveRotationKnobsFromEnv(rawEnv: NodeJS.ProcessEnv | undefined): {
+  thresholdBytes: number;
+  minKeepBlocks: number;
+} {
+  const env = rawEnv ?? process.env;
+  return {
+    thresholdBytes: resolveThresholdBytes(env),
+    minKeepBlocks: resolveMinKeepBlocks(env),
+  };
 }
 
 /** Minimum blocks to keep in the active chain after rotation. */

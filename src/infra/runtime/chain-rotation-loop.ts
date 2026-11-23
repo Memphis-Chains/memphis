@@ -1,11 +1,11 @@
 /**
  * Scheduled chain rotation loop (closes deferred item #5).
  *
- * Operator-driven `chain rotate` has shipped since Sprint 4. This loop
- * adds the "rotate on a schedule" half: when
- * `MEMPHIS_CHAIN_ROTATE_INTERVAL_MS` is set to a positive integer, the
- * loop calls `rotateAllChains()` on that interval. Default behaviour
- * (env unset) is no-op — operators opt in.
+ * Operator-driven `chain rotate` is the other half: the command runs a
+ * rotation on the operator's say-so, and this loop runs one on an
+ * interval. When `MEMPHIS_CHAIN_ROTATE_INTERVAL_MS` is set to a positive
+ * integer, the loop calls `rotateAllChains()` on that interval. Default
+ * behaviour (env unset) is no-op — operators opt in.
  *
  * The loop reuses the existing rotation pipeline:
  *   - threshold check (`MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES`, default
@@ -16,6 +16,21 @@
  * Errors during a tick are logged and dropped — the loop keeps ticking
  * so a transient I/O failure on one chain doesn't disable rotation for
  * the rest.
+ *
+ * ## The loop says it ticked
+ *
+ * Every tick logs `chain.rotation.scheduled.start`, whether or not
+ * anything was rotated.
+ *
+ * Measured 2026-11-23 on this host: the log held six
+ * `chain.rotation.loop.started` events and not one
+ * `chain.rotation.scheduled`, which reads as "the loop never ticks". The
+ * loop HAD ticked, hourly, and every tick had found nothing to rotate —
+ * because the threshold could not fire. The silence was the symptom, not
+ * the cause.
+ *
+ * The scheduled backup already had this shape (`backup.scheduled.start`
+ * on every tick); this loop now matches it.
  */
 
 import { LOG_LEVEL } from '../../config/env-registry.js';
@@ -102,6 +117,26 @@ export function startChainRotationLoop(
     }
     inFlight = true;
     try {
+      // A heartbeat on EVERY tick.
+      //
+      // The loop used to log only when a chain actually rotated, so a
+      // tick that found nothing to do was invisible. An operator could
+      // not tell a working loop from a dead one — and the symptom of the
+      // threshold bug looked exactly like a dead loop.
+      //
+      // Measured 2026-11-23 on this host: the log held six
+      // `chain.rotation.loop.started` events and not one
+      // `chain.rotation.scheduled`, which reads as "the loop never
+      // ticks". The loop HAD ticked, hourly, and every tick had found
+      // nothing to rotate — because the threshold could not fire. The
+      // silence was the symptom, not the cause.
+      //
+      // The scheduled backup already had this shape (`backup.scheduled
+      // .start` on every tick); the rotation loop now matches it.
+      log.info(
+        { event: 'chain.rotation.scheduled.start' },
+        'scheduled chain rotation tick starting',
+      );
       const results = await rotate();
       state.lastTickAt = new Date().toISOString();
       state.lastResults = results;
