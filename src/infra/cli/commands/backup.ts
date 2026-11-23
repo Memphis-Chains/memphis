@@ -1633,7 +1633,19 @@ export async function handleBackupCommand(context: CliContext): Promise<boolean>
     if (!(await requireOperatorAuth())) {
       throw new Error('Operator authentication failed.');
     }
-    const cleaned = await cleanBackups({ keep: args.keep, dryRun: args.dryRun });
+    // The tag scopes the retention to one class of archive. It used to be
+    // dropped here: the parser read `--tag`, `create` forwarded it, and
+    // `clean` did not — so `memphis backup clean --keep 7 --tag scheduled`
+    // cleaned EVERY class. Measured 2026-11-22 on this host with the real
+    // backup directory: that command would have removed all 20 manual
+    // pre-repair recovery points and none of the scheduled archives — the
+    // exact inversion of the operator's intent, and the archives it would
+    // have destroyed are the only path back from a botched restore.
+    const cleaned = await cleanBackups({
+      keep: args.keep,
+      tag: args.tag,
+      dryRun: args.dryRun,
+    });
     print({ ok: true, mode: 'clean', ...cleaned }, args.json);
     return true;
   }
