@@ -625,6 +625,42 @@ reader cannot parse, and a reader that cannot parse what the writer
 emitted. Reverting either side alone now fails the gate. See
 `tests/unit/chain-archive-roundtrip.test.ts`.
 
+**`chain-hash-parity` — a gate about the blocks that always take the easy
+path.** This one is not a bug that shipped; it is a gate that could not
+have caught the bug it was pointed at.
+
+The parity fixture between the TypeScript hash and the native core held
+FOUR cases, and every one of them carried its own string `content`. That
+is the shape of block that makes the hash trivial: the content is the
+content, on both sides, and the two arms agree for the boring reason that
+the projection never has to decide anything.
+
+The interesting case is the one the fixture did not contain: a payload
+with NO string `content`. There the two arms had to DERIVE the content,
+and they derived it differently — `JSON.stringify(data)` on one side,
+`data.to_string()` on the other. The first keeps the payload's key order,
+the second sorts it. For a payload whose keys were not already sorted,
+the same logical block would have hashed differently in the two arms —
+and the fixture, which had never contained such a payload, was green.
+
+> Measured 2026-11-23 on this host: 0 of 27 439 blocks — every live chain
+> and every archived block — carry a payload without a string `content`.
+> The branch was never taken, so the divergence never bit. The corpus
+> cannot prove a rule, and the fixture could not have caught it either.
+
+The gate now has six cases, including the fallback and the legacy type
+alias, and the TypeScript runner checks every case TWICE — once with the
+payload as it arrives and once with its keys in the opposite order,
+because the TypeScript arm receives a payload as a JavaScript object
+whose key order is the CALLER's business, while the native arm receives a
+`serde_json::Value` whose keys are sorted by byte. The canonical hash must
+not depend on which of the two views an arm got.
+
+The lesson is §5.1's lesson in a new shape: the gate was not weak, it was
+**about the easy half of the contract**. It asked "do the two arms agree
+on the hash of a block?" and answered honestly, about blocks that never
+make the two arms disagree.
+
 ---
 
 ## 6. What is still open
@@ -862,6 +898,62 @@ mode this repository already has a postmortem about.
    different bytes.
    The gate that missed all of this is in §5.1: it tested a writer that
    does not exist.
+10. **The block file had five byte shapes, and the two arms wrote different
+    ones.** Item 9 closed the WHITESPACE of a block file. It did not close
+    its KEY ORDER — and the key order is what `chain verify` cannot see,
+    because the hash covers a block's values, not its bytes.
+    Measured 2026-11-23 on this host, over every block file in
+    `~/.memphis/chains` (11 871 files, 14 chains) plus the two rotation
+    archives (15 568 blocks):
+    - **6 257** files had their keys sorted by byte — the native arm's
+      shape, because `serde_json`'s `Map` is a `BTreeMap`;
+    - **5 606** had the key order of the TypeScript object literal;
+    - **5**, **2** and **1** were legacy shapes, one of them a single line
+      with no indentation at all;
+    - and **9 148** files carried a payload whose own keys were in the
+      caller's order rather than sorted — a shape **no writer in the
+      current tree produces**, which means those files were written by a
+      writer that has since been replaced.
+    The payload rule behind it had the same shape of defect as everything
+    else in this list: **three copies in TypeScript** (`core/chain-hash.ts`,
+    `chain-adapter.ts`, `rust-chain-adapter.ts`) and two in Rust, and the
+    copies DISAGREED on the fallback — what a payload with no string
+    `content` gets as its content. The TypeScript copies used
+    `JSON.stringify(data)`, which keeps the payload's key order; the native
+    core used `data.to_string()`, which sorts it. For a payload whose keys
+    were not already sorted, the two arms would have hashed the same
+    logical block differently. The copies also disagreed on the type
+    fallback: two of them fell back `type` → `journal` while the core fell
+    back `type` → `block_type` → `journal`.
+    **Closed 2026-11-23.** The canonical JSON form has one owner per arm —
+    `src/core/canonical-json.ts` and `crates/memphis-core/src/block_format.rs`
+    — and it is **sorted by byte, not by locale**: `localeCompare` puts
+    `apple` before `Zebra`, the native core does not, and a hash built on
+    the disagreeing order is a hash the other arm cannot reproduce. The
+    payload rule has one owner per arm as well
+    (`src/core/block-payload.ts`, `crates/memphis-core/src/block_format.rs`),
+    the three TypeScript copies collapse into it, the duplicate formula in
+    `case-chain-adapter.ts` is gone, and the native arm's hash is assembled
+    in ONE place (`memphis_core::hash::compute_hash_of_payload`) instead of
+    twice. The block file is written through the one serializer by every
+    writer, including the repair path, which used to add a trailing
+    newline of its own — measured: **224** block files on this host carry
+    it.
+    The hash did not move: **0 mismatches over 27 439 blocks** (every live
+    chain and every archived block) recomputed with the new code against
+    the hashes stored on disk.
+    The gate is one artefact and two runners — `tests/fixtures/block-format-parity.json`,
+    read by `tests/unit/block-format-parity.test.ts` and by
+    `crates/memphis-core/tests/block_format_parity.rs` — and the expected
+    values are GENERATED by the native core
+    (`cargo run -p memphis-core --example emit_block_format_parity`), never
+    hand-written. Six falsifiers: reverting the TypeScript serializer, the
+    TypeScript content fallback, the TypeScript type fallback, the byte
+    order, the native content fallback or the native serializer each fails
+    the gate.
+    What is NOT closed: the 9 148 historical files keep the byte shape they
+    were written with. A chain is append-only, and rewriting committed
+    blocks to a prettier shape is the operator's call, not a commit's.
 
 None of these is a crash. Most of them are the same shape: two copies of
 one rule, with no gate that compares them.
