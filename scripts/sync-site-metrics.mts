@@ -135,6 +135,23 @@ function render(): { src: string; checked: string[] } {
   }
   src = src.replace(totalSubLabel, `$1${totalTools}`);
 
+  // Every version-looking token on the page must be the CURRENT one.
+  //
+  // The gate (`tests/unit/site-claims-contract.test.ts`) says exactly that:
+  // it collects every `v?\d+\.\d+\.\d+` on the page and requires each to
+  // equal `package.json`'s version. Its own comment records why: "the
+  // JSON-LD `"softwareVersion": "1.13.3"` — the copy most search engines
+  // read — drifted to 1.13.3 while the test stayed green".
+  //
+  // So this is the ONE rule: rewrite every version token to the current
+  // version. Before this, the projection rewrote only the noscript
+  // summary, and the JSON-LD, the eyebrow, the typed terminal, the
+  // feature line and the footer kept the version of the release before
+  // last — six copies, one owner, zero gate until the release bumped
+  // the version and the gate went red.
+  src = src.replace(/v?(\d+\.\d+\.\d+)/g, (match) =>
+    `${match.startsWith('v') ? 'v' : ''}${VERSION}`,
+  );
   checked.push('version');
 
   // --- instance counts: only where an operator instance exists ----------
