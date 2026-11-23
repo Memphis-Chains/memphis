@@ -592,6 +592,39 @@ loudly, states the remediation, and blocks only under `--strict`. The
 operator's identifier in the history is a known open item, and it is the
 one thing in this document that a commit cannot fix.
 
+**`chain-archive-restore` — a gate that tested a writer that does not
+exist.** This one was not in the runtime audit's list; it was found on
+2026-11-23 by measuring the rotation archive on the operator's own disk.
+
+The restore test built its fixtures with `JSON.stringify(block)` — compact
+JSON, one block per line. The production writer copied the raw bytes of
+each block file, and block files are pretty-printed
+(`JSON.stringify(block, null, 2)`). The reader split the archive on
+newlines and parsed each line, which is what "JSON Lines" means. So the
+gate exercised a reader against a fixture in a format that no writer in
+this repository ever produced — and it was green while every archive the
+runtime produced was unreadable.
+
+> Measured 2026-11-23 on this host, on a real rotation of the `insights`
+> chain (404 blocks, 31.92 MB, 297 blocks archived): the archive held
+> **172 151 lines for 297 blocks**, and the restore died on line 1 —
+> `parse error in archive: Expected property name or '}' in JSON at
+> position 1 (line 1 column 2)` — because the first line was `{`.
+
+The lesson is the one this section is about, in its sharpest form: the
+gate was not weak, it was **about a different system**. It asked "can the
+reader parse a JSONL archive?" and answered honestly, about a JSONL
+archive that does not exist. What it never asked was "can the reader parse
+an archive the writer produces?" — and that is the question an operator
+asks when the rotation has just eaten 297 blocks of history.
+
+The gate now goes through the real writer (`rotateChain`) and the real
+reader (`restoreChainFromArchive`), and pins each side separately, because
+the two failures were independent: a writer that emits something the
+reader cannot parse, and a reader that cannot parse what the writer
+emitted. Reverting either side alone now fails the gate. See
+`tests/unit/chain-archive-roundtrip.test.ts`.
+
 ---
 
 ## 6. What is still open
@@ -666,6 +699,10 @@ mode this repository already has a postmortem about.
    block" (`f019fc0ff4`), and the publish step took no write lock at all,
    so a reader could observe the chain mid-rotation (`c9d95b8fe5`). The
    rotation's own env knobs were registered, validated and then ignored.
+   **A third bug was found on 2026-11-23, after this item was closed**:
+   the archives the rotation wrote could not be read back, so the history
+   it moved aside was a write-only dead end. The chain was bounded, but
+   the bound was not reversible. See item 9.
 5. **The chain-name allowlist has two rules** — `SAFE_CHAIN_NAME` in
    TypeScript, ad-hoc predicates in Rust — with no parity fixture, the
    same defect §4 just fixed for the journal list.
@@ -740,6 +777,7 @@ mode this repository already has a postmortem about.
    `patterns` (9.90 MB, 5 510 blocks — over the count, under the size) and
    `cases` (1.14 MB, 2 182 blocks). The threshold is inert for every chain
    whose blocks are fat, which is exactly the case the threshold exists
+   for.
    for. **Still open.**
 8. **The operator's account identifier is in the published history** —
    55 commits across 21 files. §5.1 measures it and the scan reports it
@@ -748,6 +786,54 @@ mode this repository already has a postmortem about.
    operator decision. This is the one item here that a commit cannot
    close, and it is the reason the history arm is advisory rather than
    blocking.
+9. **Every rotation archive was unreadable, and the readable part of it
+   was wrong.** Item 4 closed the rotation on 2026-11-22, and the
+   rotation then worked: the `system` chain went from 15 771 blocks /
+   62 MB to 500 blocks / 0.4 MB. What nobody could do was GET THE HISTORY
+   BACK. Three divergences, all in the same feature, all measured on this
+   host on 2026-11-23:
+   - **The writer and the reader disagreed about the format.** The writer
+     copied the raw bytes of each block file — pretty-printed, because
+     `chain-adapter.ts` writes `JSON.stringify(block, null, 2)` — while the
+     reader split the archive on newlines and parsed each line, which is
+     what "JSON Lines" means. A real rotation of the `insights` chain
+     (297 blocks archived) produced an archive of **172 151 lines**, and
+     the restore died on line 1: `parse error in archive: Expected
+     property name or '}' in JSON at position 1`. The archive held the
+     data; nothing could read it.
+   - **The reader decoded a stream, not characters.** `chunk.toString
+     ('utf8')` decodes each chunk on its own, so a multi-byte character
+     that straddles a chunk boundary becomes U+FFFD. On that same
+     archive, **20 of the 297 lines** came back corrupted — the first at
+     block 190, where the restore failed with `hash mismatch at block
+     190`. Every corrupted character sat exactly two bytes before a 16 KB
+     chunk boundary: the two bytes of `ó` (0xC3 0xB3), split in half.
+   - **The block file had two formats.** The append path, the repair path
+     and the restore path all write block files; the first two wrote
+     pretty-printed JSON and the third wrote compact JSON, so a restored
+     chain was not byte-identical to a chain that had never been
+     rotated.
+   **Closed 2026-11-23.** One module now owns what an archive is
+   (`src/infra/storage/chain-archive-format.ts`), and both sides import
+   it. The writer emits true JSON Lines — one object per line, which is
+   also 8.6 % smaller on disk (2 538 453 B against 2 777 704 B for the
+   same 297 blocks). The reader splits the stream into JSON *values*, so
+   it reads the new format AND the legacy one; the archive already on
+   this disk (`system_000001-015271`, 15 271 blocks) was unreadable
+   before and is recoverable now — measured: **15 271 blocks read, 15 271
+   restored, and the restored chain verifies** (`ok: true`). The
+   character decoder is `StringDecoder`, and the block file has one
+   serializer (`serializeBlockForDisk`) in all five places that write one.
+   The gate goes through the real writer and the real reader and pins
+   each side separately: reverting the writer fails it (60 lines for 5
+   blocks), reverting the reader fails it (the legacy archive stops
+   restoring), reverting the decoder fails it (`hash mismatch at block
+   1`). The round trip is now **byte-identical** — 297 of 297 restored
+   blocks compare equal to the originals with `cmp`, which is a property
+   that could not even be stated before, because the two sides wrote
+   different bytes.
+   The gate that missed all of this is in §5.1: it tested a writer that
+   does not exist.
 
 None of these is a crash. Most of them are the same shape: two copies of
 one rule, with no gate that compares them.
@@ -762,7 +848,11 @@ payload into `content`. Finding the copies was the work; the gates that
 now compare them are what keeps them from coming back. Item 6 kept a
 copy of its own after that pass — the payload shrank, the copy of it
 stayed — and it was closed on 2026-11-23 by the same rule applied at the
-writer.
+writer. Item 4 kept a copy of its own too: the rotation wrote archives
+that could not be read back, and the gate that should have caught it was
+testing a fixture instead of the writer. Item 9 was closed on 2026-11-23
+by the same rule applied at the archive format.
+
 
 A later pass of the same day found the same shape in the skills. A
 skill lived in the repository and again in the runtime, with no

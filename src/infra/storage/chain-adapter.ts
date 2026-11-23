@@ -8,7 +8,7 @@
 import * as chainCrypto from 'node:crypto';
 import { lstatSync, readdirSync } from 'node:fs';
 
-import { writeBlockAtomic } from './chain-file-io.js';
+import { serializeBlockForDisk, writeBlockAtomic } from './chain-file-io.js';
 import {
   isValidChainStart,
   readChainRotationHead,
@@ -417,7 +417,7 @@ async function appendBlockConditionalInternal<T>(
 
     // Publish without replacing a committed block, even if index allocation
     // was wrong or another writer ignored the lock.
-    await writeBlockAtomic(chainsDir, nextIndex, JSON.stringify(block, null, 2));
+    await writeBlockAtomic(chainsDir, nextIndex, serializeBlockForDisk(block));
 
     return { value: decision.value, block: {
       index: nextIndex,
@@ -474,7 +474,7 @@ export async function appendPrecomputedBlock(
     ...(block.signature !== undefined ? { signature: block.signature } : {}),
   };
 
-  await writeBlockAtomic(chainsDir, block.index, JSON.stringify(chainBlock, null, 2));
+  await writeBlockAtomic(chainsDir, block.index, serializeBlockForDisk(chainBlock));
 
   return {
     index: block.index,
@@ -924,7 +924,7 @@ async function repairBlockHash(
 
   const filename = `${chainsDir}/${file}`;
   const tmpFilename = `${filename}.tmp-${process.pid}-${Date.now()}`;
-  await fs.writeFile(tmpFilename, JSON.stringify(repairedBlock, null, 2), 'utf8');
+  await fs.writeFile(tmpFilename, serializeBlockForDisk(repairedBlock), 'utf8');
   await fs.rename(tmpFilename, filename);
 
   // Append repair audit block
@@ -1325,7 +1325,7 @@ export async function rebuildChainHashes(
 
       const target = path.join(chainsDir, file);
       const tmp = `${target}.repair-${process.pid}-${Date.now()}`;
-      await fs.writeFile(tmp, `${JSON.stringify(repairedBlock, null, 2)}\n`, 'utf8');
+      await fs.writeFile(tmp, `${serializeBlockForDisk(repairedBlock)}\n`, 'utf8');
       await fs.rename(tmp, target);
       rewritten++;
 

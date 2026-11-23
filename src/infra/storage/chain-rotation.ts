@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 
+import { toArchiveLine } from './chain-archive-format.js';
 import { ROTATION_HEAD_FORMAT, writeChainRotationHead } from './chain-rotation-head.js';
 import { withChainWriteLock } from './chain-write-lock.js';
 import { getChainPath, getChainSnapshotsPath } from '../../config/paths.js';
@@ -213,15 +214,28 @@ async function prepareArchive(
   const archiveName = `${chainName}_${String(firstIdx).padStart(6, '0')}-${String(lastIdx).padStart(6, '0')}_${timestamp}.jsonl.gz`;
   const archivePath = path.join(archiveDir, archiveName);
 
-  // Write all blocks as newline-delimited JSON, gzipped
+  // Write all blocks as newline-delimited JSON, gzipped.
+  //
+  // ONE BLOCK PER LINE — that is what the `.jsonl.gz` name promises and
+  // what the reader expects.
+  //
+  // The block files on disk are pretty-printed (`JSON.stringify(block,
+  // null, 2)` in `chain-adapter.ts`), so they are re-serialized compactly
+  // here. The old code copied the raw file bytes instead, which produced
+  // a stream of multi-line JSON objects that no reader could parse: see
+  // `chain-archive-format.ts` for the measurement.
+  //
+  // A block that is not valid JSON aborts the rotation HERE, before phase
+  // 2 deletes anything — so a corrupt block file can never turn into a
+  // corrupt archive.
   const tmpPath = `${archivePath}.tmp-${process.pid}`;
   const gzip = createGzip({ level: 6 });
   const out = createWriteStream(tmpPath);
   const gzipPipeline = pipeline(gzip, out);
 
   for (const entry of blocks) {
-    const content = await fs.readFile(path.join(chainDir, entry.file), 'utf8');
-    gzip.write(content.trim() + '\n');
+    const raw = await fs.readFile(path.join(chainDir, entry.file), 'utf8');
+    gzip.write(toArchiveLine(raw, entry.file) + '\n');
   }
   gzip.end();
   await gzipPipeline;
