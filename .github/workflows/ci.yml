@@ -72,6 +72,16 @@ jobs:
         # regenerate, never hand-edit.
         run: npm run -s ops:sync-native-tool-contract -- --check
 
+      - name: Bridge export vocabulary matches the Rust core
+        # The N-API bridge's vocabulary was declared in three places — a
+        # hand-written list in the Rust manifest, a hand-written alias map in
+        # TypeScript, and the built binary — and nothing compared them.
+        # Measured 2026-11-23: the binary exports 37 functions, the manifest
+        # named 34, three real exports were missing from it, and nine of its
+        # names were spellings the bridge never exports. The vocabulary is
+        # projected from the Rust core's table; regenerate, never hand-edit.
+        run: npm run -s ops:sync-bridge-export-contract -- --check
+
       - name: Landing page metrics match measured values
         # The metric strip, the typed terminal and the noscript fallback all
         # quote one operator instance's block and chain counts. They were

@@ -1,0 +1,192 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "scripts/sync-bridge-export-contract.mts",
+  "owner": "crates/memphis-napi/src/bridge_exports.rs",
+  "exports": [
+    {
+      "canonical": "bridge_manifest",
+      "jsName": "bridge_manifest",
+      "required": true
+    },
+    {
+      "canonical": "chain_append",
+      "jsName": "chain_append",
+      "required": true
+    },
+    {
+      "canonical": "chain_query",
+      "jsName": "chain_query",
+      "required": true
+    },
+    {
+      "canonical": "chain_validate",
+      "jsName": "chain_validate",
+      "required": true
+    },
+    {
+      "canonical": "case_append",
+      "jsName": "case_append",
+      "required": true
+    },
+    {
+      "canonical": "case_query",
+      "jsName": "case_query",
+      "required": true
+    },
+    {
+      "canonical": "case_rebuild",
+      "jsName": "case_rebuild",
+      "required": true
+    },
+    {
+      "canonical": "embed_clear_in_memory",
+      "jsName": "embed_clear_in_memory",
+      "required": false
+    },
+    {
+      "canonical": "embed_discard_replacement",
+      "jsName": "embed_discard_replacement",
+      "required": false
+    },
+    {
+      "canonical": "embed_flush",
+      "jsName": "embed_flush",
+      "required": true
+    },
+    {
+      "canonical": "embed_index_metadata",
+      "jsName": "embed_index_metadata",
+      "required": false
+    },
+    {
+      "canonical": "embed_reset",
+      "jsName": "embed_reset",
+      "required": true
+    },
+    {
+      "canonical": "embed_search",
+      "jsName": "embed_search",
+      "required": true
+    },
+    {
+      "canonical": "embed_search_tuned",
+      "jsName": "embed_search_tuned",
+      "required": true
+    },
+    {
+      "canonical": "embed_shutdown",
+      "jsName": "embed_shutdown",
+      "required": true
+    },
+    {
+      "canonical": "embed_store",
+      "jsName": "embed_store",
+      "required": true
+    },
+    {
+      "canonical": "embed_store_many",
+      "jsName": "embed_store_many",
+      "required": true
+    },
+    {
+      "canonical": "mv2_export",
+      "jsName": "mv2Export",
+      "required": false
+    },
+    {
+      "canonical": "mv2_inspect",
+      "jsName": "mv2Inspect",
+      "required": false
+    },
+    {
+      "canonical": "paths_normalize_chain_name",
+      "jsName": "pathsNormalizeChainName",
+      "required": true
+    },
+    {
+      "canonical": "paths_resolve_case_index",
+      "jsName": "pathsResolveCaseIndex",
+      "required": true
+    },
+    {
+      "canonical": "paths_resolve_chain_path",
+      "jsName": "pathsResolveChainPath",
+      "required": true
+    },
+    {
+      "canonical": "paths_resolve_chains_dir",
+      "jsName": "pathsResolveChainsDir",
+      "required": true
+    },
+    {
+      "canonical": "paths_resolve_data_dir",
+      "jsName": "pathsResolveDataDir",
+      "required": true
+    },
+    {
+      "canonical": "paths_resolve_database_path",
+      "jsName": "pathsResolveDatabasePath",
+      "required": true
+    },
+    {
+      "canonical": "paths_resolve_embed_index",
+      "jsName": "pathsResolveEmbedIndex",
+      "required": true
+    },
+    {
+      "canonical": "paths_resolve_vault_entries",
+      "jsName": "pathsResolveVaultEntries",
+      "required": true
+    },
+    {
+      "canonical": "paths_resolve_vault_state",
+      "jsName": "pathsResolveVaultState",
+      "required": true
+    },
+    {
+      "canonical": "soul_loop_step",
+      "jsName": "soul_loop_step",
+      "required": true
+    },
+    {
+      "canonical": "soul_replay",
+      "jsName": "soul_replay",
+      "required": true
+    },
+    {
+      "canonical": "vault_decode_entry",
+      "jsName": "vault_decode_entry",
+      "required": true
+    },
+    {
+      "canonical": "vault_init_full",
+      "jsName": "vault_init_full",
+      "required": true
+    },
+    {
+      "canonical": "vault_init_json",
+      "jsName": "vault_init_json",
+      "required": true
+    },
+    {
+      "canonical": "vault_load_state",
+      "jsName": "vault_load_state",
+      "required": true
+    },
+    {
+      "canonical": "vault_parse_entries",
+      "jsName": "vault_parse_entries",
+      "required": true
+    },
+    {
+      "canonical": "vault_retrieve",
+      "jsName": "vault_retrieve",
+      "required": true
+    },
+    {
+      "canonical": "vault_store",
+      "jsName": "vault_store",
+      "required": true
+    }
+  ]
+}

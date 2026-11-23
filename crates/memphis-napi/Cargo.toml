@@ -4,7 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["cdylib"]
+# "rlib" as well as "cdylib": the bridge's export contract is checked by an
+# integration test (`tests/bridge_export_contract.rs`), and an integration
+# test needs to LINK the crate. The shipped artefact is still the cdylib —
+# `scripts/run-rust.sh` copies `libmemphis_napi.so`.
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 memphis-core = { path = "../memphis-core" }

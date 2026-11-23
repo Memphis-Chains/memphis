@@ -26,6 +26,9 @@ use memphis_embed::{
 #[cfg_attr(test, allow(dead_code))]
 mod vault_bridge;
 
+// The bridge's export vocabulary — one owner. See `bridge_exports.rs`.
+pub mod bridge_exports;
+
 use memphis_vault::types::VaultInitRequest;
 use memphis_vault::vault::init_vault;
 use napi_derive::napi;
@@ -58,79 +61,18 @@ fn err(msg: impl Into<String>) -> String {
 
 #[napi(catch_unwind, js_name = "bridge_manifest")]
 pub fn bridge_manifest() -> String {
+    // The vocabulary comes from ONE table — `bridge_exports::BRIDGE_EXPORTS`.
+    // It used to be a hand-written list right here, and it had drifted: it
+    // named 34 exports where the bridge has 37, and it named nine of them
+    // with a spelling the bridge never exports. The table is checked against
+    // this crate's own `#[napi]` declarations by
+    // `crates/memphis-napi/tests/bridge_export_contract.rs`.
     ok(serde_json::json!({
         "name": "memphis-napi",
         "schemaVersion": 1,
-        "exports": [
-            "bridge_manifest",
-            "chain_append",
-            "chain_validate",
-            "chain_query",
-            "vault_init_json",
-            "vault_init_full",
-            "vault_store",
-            "vault_retrieve",
-            "vault_load_state",
-            "vault_parse_entries",
-            "vault_decode_entry",
-            "embed_store",
-            "embed_store_many",
-            "embed_flush",
-            "embed_search",
-            "embed_search_tuned",
-            "embed_reset",
-            "embed_shutdown",
-            "soul_loop_step",
-            "soul_replay",
-            "case_append",
-            "case_query",
-            "case_rebuild",
-            "paths_resolve_data_dir",
-            "paths_resolve_vault_state",
-            "paths_resolve_vault_entries",
-            "paths_resolve_chains_dir",
-            "paths_resolve_chain_path",
-            "paths_resolve_embed_index",
-            "paths_resolve_case_index",
-            "paths_resolve_database_path",
-            "paths_normalize_chain_name",
-            "mv2_export",
-            "mv2_inspect"
-        ],
-        "requiredExports": [
-            "bridge_manifest",
-            "chain_append",
-            "chain_validate",
-            "chain_query",
-            "vault_init_json",
-            "vault_init_full",
-            "vault_store",
-            "vault_retrieve",
-            "vault_load_state",
-            "vault_parse_entries",
-            "vault_decode_entry",
-            "embed_store",
-            "embed_store_many",
-            "embed_flush",
-            "embed_search",
-            "embed_search_tuned",
-            "embed_reset",
-            "embed_shutdown",
-            "soul_loop_step",
-            "soul_replay",
-            "case_append",
-            "case_query",
-            "case_rebuild",
-            "paths_resolve_data_dir",
-            "paths_resolve_vault_state",
-            "paths_resolve_vault_entries",
-            "paths_resolve_chains_dir",
-            "paths_resolve_chain_path",
-            "paths_resolve_embed_index",
-            "paths_resolve_case_index",
-            "paths_resolve_database_path",
-            "paths_normalize_chain_name"
-        ],
+        "exports": bridge_exports::canonical_names(),
+        "requiredExports": bridge_exports::required_names(),
+        "exportBindings": bridge_exports::bindings(),
         "optionalExports": [
             "mv2_export",
             "mv2_inspect"
