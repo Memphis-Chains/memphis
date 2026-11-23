@@ -85,6 +85,66 @@ from TypeScript.
 > `normalize_chain_name` (`crates/memphis-paths/src/lib.rs:149`). No fixture
 > compares them.
 
+**Measured consequence.** The three Rust rules were not three copies of one
+rule — they were THREE RULES, and the third answered a different question.
+`is_active_chain_name` asked "does the name end in `.backup-<digits>`?" and
+nothing else:
+
+| directory under `chains/` | TypeScript registry | Rust `is_active_chain_name` |
+|---|---|---|
+| `journal` | chain | chain |
+| `journal.backup-1784913076785` (epoch stamp) | archive | not a chain |
+| `cases.backup-2026-07-07T15-07-23-108Z` (dated stamp) | archive | **a live chain** |
+| `.archives` (the rotation's dot-directory) | not a chain | **a live chain** |
+| `_quarantine` | a plain name — the taxonomy decides | a plain name — the taxonomy decides |
+
+So the treatment of an archive depended on the SHAPE OF ITS TIMESTAMP, and a
+dot-directory was a chain. Three numbers for one host, measured on the same
+disk state (2026-11-23):
+
+| figure | owner | value |
+|---|---|---|
+| the runtime's status `blocks:` | Rust `count_chain_blocks` | **11 510** blocks in 14 directories |
+| the live chains' own blocks | the chains | **11 234** blocks in 12 directories |
+| the audit's `totalBlocks` | TypeScript `collectBlockVocabulary` | **11 981** blocks |
+
+The 276-block gap between the first two numbers was one archive of `cases`
+(`cases.backup-2026-07-07T15-07-23-108Z`, 276 blocks) counted as if it were
+the chain itself. The same rule counted `.archives` — the dot-directory the
+rotation writes its `.jsonl.gz` files into — as a chain, so the cockpit
+listed it as one.
+
+| file | role |
+|---|---|
+| `crates/memphis-paths/src/chain_names.rs` | **the owner** — one module: the plain-name pattern, the archive stamp forms, the alias table, and `classify_chain_directory()` |
+| `crates/memphis-napi/src/lib.rs` | the owner speaks to the TypeScript arm: `bridge_chain_name_manifest()` (the vocabulary) and `bridge_chain_name_facts()` (one name's verdict) |
+| `scripts/sync-chain-name-contract.mts` | the projection: the owner → `tests/fixtures/chain-name-contract.json` (the artefact, 36 cases) and `src/memory/chain-names.generated.ts` (the mirror, no longer hand-written) |
+| `crates/memphis-paths/tests/chain_name_contract.rs` | the Rust arm: the owner against the artefact |
+| `tests/unit/chain-name-contract.test.ts` | the TypeScript arm: the mirror against the artefact |
+
+The projection reads the owner's answers through the BUILT BRIDGE rather
+than re-implementing the rule, so the artefact carries the owner's verdicts
+and not the projection's own arithmetic.
+
+The falsifier is in `crates/memphis-operator/src/runtime.rs`: it seeds a dated
+archive and a `.archives` directory and asks what the runtime counts. Before
+the fix it answered `[".archives", "cases.backup-2026-07-07T15-07-23-108Z",
+"journal"]` and 2 blocks; after, `["journal"]` and 1.
+
+Measured after: the runtime's status counts **11 234** blocks in **12**
+directories — the live chains and nothing else. The audit still counts
+**11 981**, because verifying an archive IS part of its job, and the label
+it puts on that number now says "scannable" instead of "live" (747 of those
+blocks were copies of a chain, not new memory).
+
+**Residual.** The NAME rule is shared now; the TAXONOMY is not. The
+TypeScript registry knows which chains Memphis has (`CHAIN_CATALOG`), the
+native runtime does not, so the native side lists `_quarantine` as a chain
+and the TypeScript side does not — 12 directories against 11. `_quarantine`
+holds 0 blocks, so no number moves today; a directory with blocks in it
+would. Publishing the taxonomy to the native arm is a decision, not a
+repair, and it belongs to the ADR the ownership question opens.
+
 #### E-04 · One bridge path bypasses the central resolver
 
 > Measured: `src/infra/storage/case-chain-adapter.ts:48` resolved the bridge as
@@ -290,7 +350,8 @@ A gate that cannot fail is a convention.
 
 **What it does NOT close:** the payload types (E-09), the chain-name rule
 (E-03), and everything in Family B. Those are the next steps, and the ledger
-says so.
+says so. (E-03 was closed in the round after, with the same shape; E-09 and
+Family B remain.)
 
 ---
 
@@ -333,20 +394,21 @@ be run rather than admired:
 7. **The measurement is on this host.** Every claim in this ledger is a number
    taken here, and the numbers have dates.
 
-State today, measured 2026-11-23: (1) **fails** — E-01 and E-04 are closed,
-E-03 and E-09 remain; (2) **fails** — E-03 and E-09 remain, the bridge's
-vocabulary now has its artefact and its two runners; (3) **holds** — every
-gate added in the last three rounds ships with proven falsifiers, and the
-bridge gate found a hole in itself on its first run; (4) **fails** — E-02,
-E-05, E-07, E-08; (5) **holds** — the two dead files are gone; (6) **holds**
-— the block-format, tool-contract and bridge-vocabulary artefacts are
-generated; (7) **holds**.
+State today, measured 2026-11-23: (1) **fails** — E-01, E-03 and E-04 are
+closed, E-09 remains; (2) **fails** — the bridge's vocabulary and the
+chain-name vocabulary have their artefacts and their two runners, E-09
+remains; (3) **holds** — every gate added in the last four rounds ships
+with proven falsifiers; the bridge gate found a hole in itself on its first
+run, and the chain-name gate was run BEFORE its fix and failed with
+`[".archives", "cases.backup-2026-07-07T15-07-23-108Z", "journal"]`; (4)
+**fails** — E-02, E-05, E-07, E-08; (5) **holds** — the two dead files are
+gone; (6) **holds** — the block-format, tool-contract, bridge-vocabulary and
+chain-name artefacts are generated; (7) **holds**.
 
 The first step closed (1) and (2) for the bridge's vocabulary, and (5) on the
-way through; the second closed (1) for the bridge path. **Next, in this
-order:** E-03 (the chain-name rule — four owners today, with the ADR-012
-pattern ready: one fixture, two arms), then E-02 (the embed profile — two
-knobs that contradict each other, the cheapest of the quiet-degradation
-family), then E-09 (the payload types), which the projection just built can
-now carry, and only then Family B's wedge (E-05), which needs the operator's
-fifteen acknowledgements before any code can help.
+way through; the second closed (1) for the bridge path; the third closed (1),
+(2) and (3) for the chain-name vocabulary. **Next, in this order:** E-02 (the
+embed profile — two knobs that contradict each other, the cheapest of the
+quiet-degradation family), then E-09 (the payload types), which the projection
+just built can now carry, and only then Family B's wedge (E-05), which needs
+the operator's fifteen acknowledgements before any code can help.
