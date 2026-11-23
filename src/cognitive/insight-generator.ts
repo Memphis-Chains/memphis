@@ -56,6 +56,58 @@ function evidenceTitle(block: Block): string {
 }
 
 /**
+ * The digest the chain stores as the block's `content`.
+ *
+ * ## Why the payload has to carry its own content
+ *
+ * The chain adapter (`normalizeBlockData` in
+ * `src/infra/storage/chain-adapter.ts`) fills a missing `content` with
+ * `JSON.stringify(data)` — the whole payload, serialised. A payload with no
+ * content of its own is therefore stored TWICE: once as structured fields,
+ * once as a copy of itself inside a string.
+ *
+ * That rule cannot change. The canonical hash of every content-less block
+ * already on disk was computed over that copy, in four places that agree
+ * (`chain-adapter.ts`, `core/chain-hash.ts`, `sync/sync-manager.ts` and
+ * `crates/memphis-core/src/hash.rs`), so a different fallback would
+ * invalidate every block that has no content of its own.
+ *
+ * Measured 2026-11-23 on this host: all 404 blocks of the `insights` chain
+ * carried that copy — 13.67 MB of the chain's 31.92 MB, 43 % of it, written
+ * again on every run. The `insights` payload is the one chain payload with
+ * no content of its own, so it is the one that pays for the rule.
+ *
+ * The digest is what the content is FOR: the text a reader and a search
+ * index see. One line per insight — its title and its description — is
+ * that text. The structured payload keeps everything.
+ */
+const INSIGHT_SUMMARY_LIMIT = 4000;
+
+/**
+ * The readable digest of a set of insights.
+ *
+ * Never empty: the native write path rejects a block whose content is an
+ * empty string (`chain_append rejected block: content must not be empty`),
+ * so a window that produced no insights still has to say so.
+ */
+export function toInsightSummary(insights: ModelEInsight[], window = 'insights'): string {
+  const lines: string[] = [];
+  let used = 0;
+
+  for (const insight of insights) {
+    const title = insight.title.trim();
+    const description = insight.description.trim();
+    const line = description ? `${title}: ${description}` : title;
+    if (!line) continue;
+    if (used + line.length + 1 > INSIGHT_SUMMARY_LIMIT) break;
+    lines.push(line);
+    used += line.length + 1;
+  }
+
+  return [`${window} insights (${String(insights.length)})`, ...lines].join('\n');
+}
+
+/**
  * Reduce one source block to the reference that identifies it.
  */
 export function toEvidenceReference(block: Block): InsightEvidenceReference {
@@ -200,12 +252,16 @@ export class InsightGenerator {
     //
     // `evidenceFormat` says which shape is on disk, so a reader never has
     // to guess whether `evidence[].data` is there.
+    // `content` is the block's readable text. It is set here, by the
+    // payload, so the chain adapter does not fill it with a copy of the
+    // whole payload — see `toInsightSummary`.
     await this.store.append('insights', {
       type: 'insight',
       source: 'insight-generator',
       window,
       count: insights.length,
       evidenceFormat: 'reference',
+      content: toInsightSummary(insights, window),
       insights: insights.map((insight) => ({
         ...insight,
         evidence: insight.evidence.map(toEvidenceReference),
