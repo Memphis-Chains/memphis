@@ -61,6 +61,7 @@
  */
 
 import { LOG_LEVEL, NODE_ENV } from '../../config/env-registry.js';
+import { parseCommand } from '../cli/parser.js';
 import { createPinoLogger } from '../logging/pino.js';
 
 /**
@@ -102,15 +103,55 @@ let policy: FatalPolicy = CLI_FATAL_POLICY;
 let installed = false;
 
 /**
+ * The handlers this module registered, so they can be taken back off.
+ *
+ * Without them the reset below could only clear the flag, and a
+ * reinstall would add a SECOND pair of handlers — the double-logging
+ * this module's own docstring calls out. The reset is what a test
+ * needs, so it has to leave the process exactly as it found it.
+ */
+let installedHandlers:
+  | { onUncaughtException: (error: Error) => void; onUnhandledRejection: (reason: unknown) => void }
+  | undefined;
+
+/**
  * True when this process is the `serve` daemon.
  *
  * Read from argv because the decision has to be made before the import
  * graph is evaluated — that is the whole point of installing the guard
  * first. `setFatalPolicy` from the bootstrap is the second, authoritative
  * signal; this is the fast path that closes the import-time window.
+ *
+ * ## Why the command, and not the word "serve"
+ *
+ * This used to be `argv.includes('serve')` — a token scan of the whole
+ * argv. That answer was wrong for every shape where the word appears
+ * anywhere but in the command position:
+ *
+ * | invocation                       | token scan | the truth |
+ * | -------------------------------- | ---------- | --------- |
+ * | `memphis serve`                  | daemon     | daemon    |
+ * | `memphis mcp serve`              | daemon     | daemon    |
+ * | `memphis ask serve`              | **daemon** | one-shot  |
+ * | `memphis chain verify --chain serve` | **daemon** | one-shot |
+ *
+ * Measured on the operator's host (2026-11-23), `memphis ask serve` did
+ * NOT end the process on an unhandled rejection — the guard was in
+ * daemon mode, so the rejection was logged and the one-shot CLI kept
+ * running. That is the exact hang this module's own header warns about:
+ * "the operator's shell would hang".
+ *
+ * The rule now asks the CLI what the command is. `parseCommand` is the
+ * owner of that question — the dispatcher routes on the same value, so
+ * the guard and the router cannot disagree about what is being run.
+ *
+ * `mcp serve` is a server too, and it is the second long-running process
+ * this guard has to keep alive.
  */
 export function isDaemonInvocation(argv: readonly string[] = process.argv ?? []): boolean {
-  return argv.includes('serve');
+  const { command, subcommand } = parseCommand([...argv]);
+  if (command === 'serve') return true;
+  return command === 'mcp' && subcommand === 'serve';
 }
 
 /** The policy currently in force. */
@@ -150,7 +191,7 @@ export function installFatalGuard(argv: readonly string[] = process.argv ?? []):
     setFatalPolicy(DAEMON_FATAL_POLICY);
   }
 
-  process.on('uncaughtException', (error: Error) => {
+  const onUncaughtException = (error: Error) => {
     const detail = describe(error);
     fatalLog.error(
       { err: error, event: 'fatal.uncaught_exception' },
@@ -164,9 +205,9 @@ export function installFatalGuard(argv: readonly string[] = process.argv ?? []):
       // starts a clean one instead of continuing on unknown invariants.
       process.exit(1);
     }
-  });
+  };
 
-  process.on('unhandledRejection', (reason: unknown) => {
+  const onUnhandledRejection = (reason: unknown) => {
     const detail = describe(reason);
     fatalLog.error(
       { err: reason, event: 'fatal.unhandled_rejection' },
@@ -181,13 +222,32 @@ export function installFatalGuard(argv: readonly string[] = process.argv ?? []):
     // Daemon mode: the rejection is recorded and the runtime keeps
     // serving. The failing task is responsible for its own recovery; the
     // process is not the casualty of one task's failure.
-  });
+  };
+
+  process.on('uncaughtException', onUncaughtException);
+  process.on('unhandledRejection', onUnhandledRejection);
+  installedHandlers = { onUncaughtException, onUnhandledRejection };
 
   return getFatalPolicy();
 }
 
-/** Test-only: clear the installed flag so the guard can be reinstalled. */
+/**
+ * Test-only: take the guard off the process and clear the installed
+ * flag so it can be reinstalled.
+ *
+ * Both halves matter. Clearing only the flag would leave the old
+ * handlers on the process, and the next `installFatalGuard()` would add
+ * a second pair — every error logged twice, and every `process.exit`
+ * reached twice. The module promises that installing twice does not
+ * register two handlers; this is the only way that promise survives a
+ * reset.
+ */
 export function __resetFatalGuardForTests(): void {
+  if (installedHandlers) {
+    process.off('uncaughtException', installedHandlers.onUncaughtException);
+    process.off('unhandledRejection', installedHandlers.onUnhandledRejection);
+  }
+  installedHandlers = undefined;
   installed = false;
 }
 
