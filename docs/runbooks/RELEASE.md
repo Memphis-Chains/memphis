@@ -102,6 +102,8 @@ Use this when `ops:release-preflight` cannot be run and you need direct gate-by-
 ```bash
 npm run -s lint
 npm run -s typecheck
+npm run -s ops:check-package-runtime-closure -- --check
+npm run -s ops:validate-package-artifact
 ./scripts/guard-drill-json-gate.sh
 npm run -s ops:validate-strict-handoff-fixtures
 ./scripts/strict-handoff-validator-json-gate.sh
@@ -141,6 +143,24 @@ git push origin vX.Y.Z
 
 - rerun gate: `npm run -s typecheck`
 - fix TypeScript type errors, then rerun: `npm run -s typecheck`
+- verify full preflight: `npm run -s ops:release-preflight -- --json`
+
+<a id="ci-preflight-gate-packageRuntimeClosure"></a>
+
+### CI Preflight Gate packageRuntimeClosure
+
+- rerun gate: `npm run -s ops:check-package-runtime-closure -- --check`
+- the gate lists every file the shipped code imports from outside its own tree; each one must be listed in `package.json`'s `files`
+- if a new import crossed the boundary, list its target in `files`, then regenerate the artefact: `npm run -s ops:check-package-runtime-closure`
+- verify full preflight: `npm run -s ops:release-preflight -- --json`
+
+<a id="ci-preflight-gate-packageArtifact"></a>
+
+### CI Preflight Gate packageArtifact
+
+- rerun gate: `npm run -s ops:validate-package-artifact`
+- the gate packs the tarball, installs it into a temporary prefix and runs the real CLI; a failure here means the published artefact is broken
+- read the error's first line — it names the command and the module that could not be loaded
 - verify full preflight: `npm run -s ops:release-preflight -- --json`
 
 <a id="ci-preflight-gate-guardDrill"></a>
