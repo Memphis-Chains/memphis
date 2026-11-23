@@ -389,6 +389,8 @@ Manual fallback:
 ```bash
 npm run -s lint
 npm run -s typecheck
+npm run -s ops:check-package-runtime-closure -- --check
+npm run -s ops:validate-package-artifact
 ./scripts/guard-drill-json-gate.sh
 npm run -s ops:validate-strict-handoff-fixtures
 ./scripts/strict-handoff-validator-json-gate.sh

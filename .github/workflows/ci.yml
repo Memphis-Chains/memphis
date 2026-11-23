@@ -93,6 +93,18 @@ jobs:
         # never hand-edit.
         run: npm run -s ops:sync-chain-name-contract -- --check
 
+      - name: The published runtime's file closure covers every module it loads
+        # v1.14.0 did not publish. The tarball shipped
+        # `dist/infra/cli/commands/backup-manifest.js` without the
+        # `scripts/backup-manifest.mjs` it imports at module load, so every
+        # CLI command died with "Cannot find module". The defect was in
+        # `package.json`'s `files` list — a denylist of omissions that
+        # nobody checked. This gate discovers the omissions instead: every
+        # file the shipped code imports from outside its own tree must be
+        # listed. Seconds to run, and it fails long before the slow
+        # `ops:validate-package-artifact` proof.
+        run: npm run -s ops:check-package-runtime-closure -- --check
+
       - name: Landing page metrics match measured values
         # The metric strip, the typed terminal and the noscript fallback all
         # quote one operator instance's block and chain counts. They were
