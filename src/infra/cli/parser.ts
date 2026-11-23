@@ -191,6 +191,8 @@ export function parseCommand(argv: string[]): CliArgs {
     restore: readFlagValue(flags, '--restore'),
     verify: hasBooleanFlag(flags, '--verify'),
     keep: readNumberFlag(flags, '--keep'),
+    thresholdBytes: readNumberFlag(flags, '--threshold-bytes'),
+    keepBlocks: readNumberFlag(flags, '--keep-blocks'),
     tag: readFlagValue(flags, '--tag'),
     format: readFlagValue(flags, '--format') as CliArgs['format'],
     include: readFlagValue(flags, '--include'),

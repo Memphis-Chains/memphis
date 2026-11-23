@@ -887,6 +887,35 @@ skill is invisible to the runtime or when the two copies differ. The
 existed, described by an interface document with no implementation,
 which is what "remove what only looks like work" looks like.
 
+The same day's third pass made the rotation OPERABLE, which turned out
+to be the same shape twice more.
+
+**The loop was silent when it had nothing to do.** It logged only when a
+chain actually rotated, so a tick that found nothing was invisible.
+Measured 2026-11-23 on this host: the service log held six
+`chain.rotation.loop.started` events and not one `chain.rotation
+.scheduled` — which reads as "the loop never ticks". The loop HAD
+ticked, hourly, and every tick had found nothing to rotate, because the
+threshold could not fire. The silence was the symptom, not the cause,
+and it cost an hour of looking for a dead timer that was running fine.
+Every tick now logs `chain.rotation.scheduled.start`, which is the shape
+the scheduled backup already had (`backup.scheduled.start`).
+
+**The command the documentation promised did not exist.** The rotation
+loop's own header said "Operator-driven `chain rotate` has shipped since
+Sprint 4". The subcommand was never registered: `memphis chain rotate
+--chain insights` answered "Unknown chain subcommand: rotate". It is
+registered now, and it says which knobs it used — because the third
+shape was hiding behind the second: the operator's threshold lives in
+the service's systemd drop-in, a shell has no such variables, and a
+command run from a shell would have compared against the code default
+(50 MB) while the service compares against the operator's threshold
+(10 MB). "Nothing to do" would have looked like a decision rather than
+a different number. The command now resolves the knobs in the
+operator's order of intent — the flag, then the shell, then the
+service's configured environment, then the code default — and reports
+which one answered.
+
 ---
 
 ## 7. The rule this work ended on
