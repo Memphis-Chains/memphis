@@ -4,6 +4,7 @@ import {
   listBlockFiles,
   parseEnvelope,
   readBlockFile,
+  serializeBlockForDisk,
   withNapiAppendLock,
   writeBlockAtomic,
   type NapiBlock,
@@ -280,7 +281,7 @@ async function writeBlock(
 ): Promise<void> {
   const normalizedChain = normalizeChainName(chain) ?? chain;
   const dir = getChainPath(normalizedChain, rawEnv);
-  const payload = JSON.stringify({ ...block, chain: normalizedChain }, null, 2);
+  const payload = serializeBlockForDisk({ ...block, chain: normalizedChain });
   await writeBlockAtomic(dir, block.index, payload);
 }
 

@@ -5,6 +5,7 @@ import {
   listBlockFiles,
   parseEnvelope,
   readBlockFile,
+  serializeBlockForDisk,
   withNapiAppendLock,
   writeBlockAtomic,
   type NapiBlock,
@@ -75,7 +76,7 @@ async function writeBlock(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
   const dir = getChainPath(chain, rawEnv);
-  const payload = JSON.stringify(block, null, 2);
+  const payload = serializeBlockForDisk(block);
   await writeBlockAtomic(dir, block.index, payload);
 }
 
