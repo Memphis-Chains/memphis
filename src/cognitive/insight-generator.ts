@@ -13,6 +13,114 @@ export interface InsightReport {
   summary: string;
 }
 
+/**
+ * The evidence an insight keeps: a REFERENCE to the block it came from,
+ * not a copy of the block.
+ *
+ * ## Why
+ *
+ * `ModelEInsight.evidence` is `Block[]` — the complete source block, with
+ * its complete `data.content`. The `insights` chain stored those insights
+ * verbatim, so every generated insight carried up to five full copies of
+ * blocks that already live, in full, in their own chains. The chain grew
+ * without bound because every run copied its sources into itself.
+ *
+ * Measured on the operator's host: the `insights` chain held 33.4 MB
+ * across 402 blocks. 13.2 MB of that was `evidence[].data`, and another
+ * 14.1 MB was the block-level `content` string — which the chain adapter
+ * builds by serialising the whole payload, so the duplicated evidence was
+ * stored twice over.
+ *
+ * A reference is enough: the block is still there, in the chain it came
+ * from, under the hash it was written with.
+ */
+export interface InsightEvidenceReference {
+  chain: string;
+  index: number;
+  hash: string;
+  prev_hash: string;
+  timestamp: string;
+  title: string;
+}
+
+/** How much of a source block's text a reference keeps. */
+const EVIDENCE_TITLE_LIMIT = 120;
+
+function evidenceTitle(block: Block): string {
+  const data = (block.data ?? {}) as Record<string, unknown>;
+  const title = typeof data.title === 'string' ? data.title.trim() : '';
+  if (title) return title.slice(0, EVIDENCE_TITLE_LIMIT);
+  const content = typeof data.content === 'string' ? data.content : '';
+  const firstLine = content.split('\n')[0] ?? '';
+  return firstLine.slice(0, EVIDENCE_TITLE_LIMIT);
+}
+
+/**
+ * The digest the chain stores as the block's `content`.
+ *
+ * ## Why the payload has to carry its own content
+ *
+ * The chain adapter (`normalizeBlockData` in
+ * `src/infra/storage/chain-adapter.ts`) fills a missing `content` with
+ * `JSON.stringify(data)` — the whole payload, serialised. A payload with no
+ * content of its own is therefore stored TWICE: once as structured fields,
+ * once as a copy of itself inside a string.
+ *
+ * That rule cannot change. The canonical hash of every content-less block
+ * already on disk was computed over that copy, in four places that agree
+ * (`chain-adapter.ts`, `core/chain-hash.ts`, `sync/sync-manager.ts` and
+ * `crates/memphis-core/src/hash.rs`), so a different fallback would
+ * invalidate every block that has no content of its own.
+ *
+ * Measured 2026-11-23 on this host: all 404 blocks of the `insights` chain
+ * carried that copy — 13.67 MB of the chain's 31.92 MB, 43 % of it, written
+ * again on every run. The `insights` payload is the one chain payload with
+ * no content of its own, so it is the one that pays for the rule.
+ *
+ * The digest is what the content is FOR: the text a reader and a search
+ * index see. One line per insight — its title and its description — is
+ * that text. The structured payload keeps everything.
+ */
+const INSIGHT_SUMMARY_LIMIT = 4000;
+
+/**
+ * The readable digest of a set of insights.
+ *
+ * Never empty: the native write path rejects a block whose content is an
+ * empty string (`chain_append rejected block: content must not be empty`),
+ * so a window that produced no insights still has to say so.
+ */
+export function toInsightSummary(insights: ModelEInsight[], window = 'insights'): string {
+  const lines: string[] = [];
+  let used = 0;
+
+  for (const insight of insights) {
+    const title = insight.title.trim();
+    const description = insight.description.trim();
+    const line = description ? `${title}: ${description}` : title;
+    if (!line) continue;
+    if (used + line.length + 1 > INSIGHT_SUMMARY_LIMIT) break;
+    lines.push(line);
+    used += line.length + 1;
+  }
+
+  return [`${window} insights (${String(insights.length)})`, ...lines].join('\n');
+}
+
+/**
+ * Reduce one source block to the reference that identifies it.
+ */
+export function toEvidenceReference(block: Block): InsightEvidenceReference {
+  return {
+    chain: block.chain ?? 'journal',
+    index: block.index ?? 0,
+    hash: block.hash ?? '',
+    prev_hash: block.prev_hash ?? '',
+    timestamp: block.timestamp ?? '',
+    title: evidenceTitle(block),
+  };
+}
+
 export class InsightGenerator {
   private readonly synthesizer: KnowledgeSynthesizer;
   private readonly discovery: ConnectionDiscovery;
@@ -138,12 +246,26 @@ export class InsightGenerator {
     insights: ModelEInsight[],
     metadata: Record<string, unknown> = {},
   ): Promise<void> {
+    // The stored form keeps a REFERENCE to each evidence block, not the
+    // block. The report the caller receives still carries the full
+    // evidence — only the persisted copy is slimmed.
+    //
+    // `evidenceFormat` says which shape is on disk, so a reader never has
+    // to guess whether `evidence[].data` is there.
+    // `content` is the block's readable text. It is set here, by the
+    // payload, so the chain adapter does not fill it with a copy of the
+    // whole payload — see `toInsightSummary`.
     await this.store.append('insights', {
       type: 'insight',
       source: 'insight-generator',
       window,
       count: insights.length,
-      insights,
+      evidenceFormat: 'reference',
+      content: toInsightSummary(insights, window),
+      insights: insights.map((insight) => ({
+        ...insight,
+        evidence: insight.evidence.map(toEvidenceReference),
+      })),
       metadata,
       timestamp: new Date().toISOString(),
       tags: ['insight-generator', 'insights', window],

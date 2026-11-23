@@ -643,7 +643,7 @@ export async function repairRuntimeState(
       );
     } else if (vocabularyScan.unreadable.length === 0) {
       applied.push(
-        `chain vocabulary: every one of the ${vocabularyScan.blocksScanned} live blocks is in the core's vocabulary`,
+        `chain vocabulary: every one of the ${vocabularyScan.blocksScanned} scannable blocks is in the core's vocabulary`,
       );
     } else {
       const preview = await repairChainVocabulary({
@@ -687,7 +687,7 @@ export async function repairRuntimeState(
     );
   } else if (vocabularyScan.unreadable.length === 0) {
     applied.push(
-      `chain vocabulary: every one of the ${vocabularyScan.blocksScanned} live blocks is in the core's vocabulary`,
+      `chain vocabulary: every one of the ${vocabularyScan.blocksScanned} scannable blocks is in the core's vocabulary`,
     );
   } else {
     const named = vocabularyScan.unreadable

@@ -24,6 +24,12 @@ import {
   tarWarningFlags,
   verifyDatabaseSnapshotEntries,
 } from './backup-db-snapshot.mjs';
+// The manifest is the index of the archives on disk, and the CLI keeps it
+// too. The implementation lives in `scripts/backup-manifest.mjs` so the two
+// writers cannot drift apart — this runner used to publish archives without
+// recording them and delete archives without forgetting them, which left
+// the index wrong in both directions.
+import { removeManifestEntries, upsertManifestEntry } from './backup-manifest.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -147,6 +153,9 @@ function cleanupOldBackups(keepN) {
       console.error(`cleanup failed: ${f}: ${e.message}`);
     }
   }
+  // The index forgets what the disk no longer holds. Without this the
+  // manifest kept a ghost for every archive this runner retired.
+  removeManifestEntries(BACKUPS_DIR, toDelete);
   return toDelete;
 }
 
@@ -319,6 +328,19 @@ async function main() {
     // The archives were previously world-readable at 0664 (umask 002).
     chmodSync(backupPath, 0o600);
     if (existsSync(finalSidecar)) chmodSync(finalSidecar, 0o600);
+
+    // Record the published archive in the index the CLI also keeps. Without
+    // this the archive existed on disk and in no index, so the tag a command
+    // like `backup clean --tag scheduled` filters on was not the one the
+    // operator chose — it had to be guessed from the filename.
+    upsertManifestEntry(BACKUPS_DIR, {
+      file: fileName,
+      tag,
+      timestamp: new Date().toISOString(),
+      size,
+      checksum: `sha256:${checksum}`,
+      fileCount,
+    });
 
     // Retention runs AFTER publication, so it can only ever delete archives
     // that already passed validation.

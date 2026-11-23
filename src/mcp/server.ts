@@ -1,7 +1,6 @@
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
 
 // Codex Round 5 P2 fix: registers the LOG_LEVEL post-apply hook. Without
 // this, MCP-only startup paths (serveMcpStdio/serveMcpHttp) that don't
@@ -21,11 +20,6 @@ import { runMemphisChainQuery } from './tools/chain-query.js';
 import { runMemphisChainVerify } from './tools/chain-verify.js';
 import { runMemphisClassify } from './tools/classify.js';
 import { runMemphisCodeRead } from './tools/code-read.js';
-// Skeleton: memphis_commit_culture is intentionally NOT imported here until
-// tests + audit hook land (see docs/dev/commit-culture-interface.md).
-// The previous import lived here during 2026-09-22 hardening sprint and
-// was rolled back when the tool-surface audit (tests/unit/tool-surface-audit.test.ts)
-// flagged the registry mismatch (server wired, registry absent).
 import {
   runMemphisCognitiveModeSet,
   runMemphisConfigReload,
@@ -87,12 +81,14 @@ import { runMemphisWebSearch } from './tools/web-search.js';
 import { RollbackManager } from '../backup/rollback.js';
 import { stableStringify } from '../core/stable-stringify.js';
 import { resolveToolPolicy } from '../gateway/authorization.js';
+import type { ToolInputShape } from '../gateway/tool-metadata.js';
 import {
   TOOL_REGISTRY,
   getToolDescription,
   isToolEnabledByFeatureFlag,
 } from '../gateway/tool-registry.js';
 import { loadConfig } from '../infra/config/env.js';
+import { canonicalEvolveRequest } from '../infra/runtime/evolve-request.js';
 import { resolveInstallRoot } from '../infra/runtime/install-root.js';
 import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import { createSqliteClient, runMigrations } from '../infra/storage/sqlite/client.js';
@@ -165,7 +161,23 @@ function shouldRegisterTool(
   return shouldRegister(policy) && isToolEnabledByFeatureFlag(toolName, rawEnv);
 }
 
-function registryMcpInputSchema(toolName: string): z.ZodRawShape {
+/**
+ * The input shape the tool registry declares for a tool.
+ *
+ * The registry is the one place a tool's contract lives. The MCP server
+ * used to carry a SECOND copy of the input schema for 48 of its 62 tools
+ * — a second place to change the contract, and a second place to forget.
+ * Measured drift on this host: `memphis_journal` advertised a `chain`
+ * argument that the registry's `.strict()` schema rejected, so the same
+ * call behaved differently depending on which surface it arrived through.
+ *
+ * Asking the registry for the shape keeps the argument types as well:
+ * `z.ZodObject` carries its shape, so the handler still receives typed
+ * arguments instead of `unknown`.
+ */
+function registryMcpInputSchema<K extends keyof typeof TOOL_REGISTRY>(
+  toolName: K,
+): ToolInputShape<(typeof TOOL_REGISTRY)[K]['inputSchema']> {
   const schema = TOOL_REGISTRY[toolName]?.inputSchema;
   const maybeShape =
     (schema as { shape?: unknown; _def?: { shape?: unknown } } | undefined)?.shape ??
@@ -174,7 +186,7 @@ function registryMcpInputSchema(toolName: string): z.ZodRawShape {
   if (!shape || typeof shape !== 'object' || Array.isArray(shape)) {
     throw new Error(`No registry Zod object inputSchema found for MCP tool ${toolName}`);
   }
-  return shape as z.ZodRawShape;
+  return shape as unknown as ToolInputShape<(typeof TOOL_REGISTRY)[K]['inputSchema']>;
 }
 
 function optionalStringArg(args: Record<string, unknown>, key: string): string | undefined {
@@ -190,15 +202,6 @@ function optionalNumberArg(args: Record<string, unknown>, key: string): number |
 function optionalBooleanArg(args: Record<string, unknown>, key: string): boolean | undefined {
   const value = args[key];
   return typeof value === 'boolean' ? value : undefined;
-}
-
-function optionalNonnegativeIntegerArg(
-  args: Record<string, unknown>,
-  key: string,
-): number | undefined {
-  const value = optionalNumberArg(args, key);
-  if (value === undefined) return undefined;
-  return Number.isInteger(value) && value >= 0 ? value : undefined;
 }
 
 function optionalIntegerInRangeArg(
@@ -221,29 +224,6 @@ function requiredStringArg(args: Record<string, unknown>, key: string): string {
     throw new Error(`MCP tool argument ${key} must be a string`);
   }
   return value;
-}
-
-function requiredStringArrayArg(args: Record<string, unknown>, key: string): string[] {
-  const value = args[key];
-  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
-    throw new Error(`MCP tool argument ${key} must be a string array`);
-  }
-  return value;
-}
-
-function requiredStringRecordArg(
-  args: Record<string, unknown>,
-  key: string,
-): Record<string, string> {
-  const value = args[key];
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error(`MCP tool argument ${key} must be a string record`);
-  }
-  const entries = Object.entries(value);
-  if (!entries.every(([, entryValue]) => typeof entryValue === 'string')) {
-    throw new Error(`MCP tool argument ${key} must be a string record`);
-  }
-  return Object.fromEntries(entries) as Record<string, string>;
 }
 
 /**
@@ -398,19 +378,20 @@ export function createMemphisMcpServer(
       'memphis_journal',
       {
         description: getToolDescription('memphis_journal'),
-        inputSchema: {
-          content: z.string().min(1),
-          tags: z.array(z.string()).optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_journal'),
       },
-      withApprovalGate('memphis_journal', journalPolicy, approvals, async ({ content, tags }) => {
-        const result = await runMemphisJournal({ content, tags });
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
-      }),
+      withApprovalGate(
+        'memphis_journal',
+        journalPolicy,
+        approvals,
+        async ({ content, tags, chain }) => {
+          const result = await runMemphisJournal({ content, tags, chain });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+      ),
     );
   }
 
@@ -420,11 +401,7 @@ export function createMemphisMcpServer(
       'memphis_kartograf',
       {
         description: getToolDescription('memphis_kartograf'),
-        inputSchema: {
-          query: z.string().min(1).max(8192),
-          top_k_zones: z.number().int().min(1).max(12).optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_kartograf'),
       },
       withApprovalGate(
         'memphis_kartograf',
@@ -450,15 +427,7 @@ export function createMemphisMcpServer(
       'memphis_classify',
       {
         description: getToolDescription('memphis_classify'),
-        inputSchema: {
-          state: z.string().min(1).max(32_000),
-          question: z.string().min(1).max(2_000),
-          criteria: z.union([z.record(z.string(), z.string()), z.array(z.string()).min(2).max(10)]),
-          type: z.enum(['choice', 'noul', 'score']).optional(),
-          threshold: z.number().min(0).max(1).optional(),
-          orders: z.union([z.literal(1), z.literal(2)]).optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_classify'),
       },
       withApprovalGate('memphis_classify', classifyPolicy, approvals, async (args) => {
         const result = await runMemphisClassify({
@@ -544,12 +513,7 @@ export function createMemphisMcpServer(
       'memphis_decide',
       {
         description: 'Record decisions',
-        inputSchema: {
-          title: z.string().min(1),
-          choice: z.string().min(1),
-          context: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_decide'),
       },
       withApprovalGate(
         'memphis_decide',
@@ -699,10 +663,7 @@ export function createMemphisMcpServer(
       {
         description:
           'List Memphis skills (built-in + local catalog + installed). Filter by installed/draft/all.',
-        inputSchema: {
-          filter: z.enum(['all', 'installed', 'draft']).optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_skill_list'),
       },
       withApprovalGate('memphis_skill_list', skillListPolicy, approvals, async (args) => {
         const result = runMemphisSkillList({ filter: args.filter }, rawEnv);
@@ -721,11 +682,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Show full skill manifest (workflow, prompt hints, examples, notes) by id or file path.',
-        inputSchema: {
-          id: z.string().optional(),
-          file: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_skill_show'),
       },
       withApprovalGate('memphis_skill_show', skillShowPolicy, approvals, async (args) => {
         const result = runMemphisSkillShow({ id: args.id, file: args.file }, rawEnv);
@@ -744,15 +701,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Scaffold a draft skill manifest with placeholder workflow + hints. Returns paths to edit, then call memphis_skill_validate and memphis_skill_install.',
-        inputSchema: {
-          id: z.string().min(1),
-          name: z.string().optional(),
-          description: z.string().optional(),
-          tools: z.array(z.string()).optional(),
-          out: z.string().optional(),
-          force: z.boolean().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_skill_create'),
       },
       withApprovalGate('memphis_skill_create', skillCreatePolicy, approvals, async (args) => {
         const result = runMemphisSkillCreate(
@@ -785,11 +734,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Validate a skill manifest BEFORE install: schema shape + every declared tool must exist in TOOL_REGISTRY. Returns {ok, suggestedFix?} for iteration without polluting the catalog.',
-        inputSchema: {
-          id: z.string().optional(),
-          file: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_skill_validate'),
       },
       withApprovalGate('memphis_skill_validate', skillValidatePolicy, approvals, async (args) => {
         const result = runMemphisSkillValidate({ id: args.id, file: args.file }, rawEnv);
@@ -808,12 +753,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Validate + promote a draft skill to catalog + installed dirs and update the skills registry. Refuses on schema or unknown-tool errors.',
-        inputSchema: {
-          id: z.string().optional(),
-          file: z.string().optional(),
-          force: z.boolean().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_skill_install'),
       },
       withApprovalGate('memphis_skill_install', skillInstallPolicy, approvals, async (args) => {
         const result = runMemphisSkillInstall(
@@ -882,28 +822,7 @@ export function createMemphisMcpServer(
       'memphis_cron',
       {
         description: 'Manage scheduled tasks (list, add, remove, enable, disable)',
-        inputSchema: {
-          action: z.enum(['list', 'add', 'remove', 'enable', 'disable']),
-          cron: z.string().optional(),
-          name: z.string().optional(),
-          taskType: z.enum(['shell', 'reflection', 'git-pull-build', 'builtin', 'http']).optional(),
-          timezone: z.string().optional(),
-          period: z.enum(['daily', 'weekly']).optional(),
-          job: z
-            .enum([
-              'runtime-watch',
-              'scheduled-backup',
-              'doctor-diagnose',
-              'operator-briefing',
-              'attachment-retention',
-            ])
-            .optional(),
-          script: z.string().optional(),
-          url: z.string().optional(),
-          method: z.string().optional(),
-          taskId: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_cron'),
       },
       withApprovalGate('memphis_cron', cronPolicy, approvals, async (args) => {
         const result = runMemphisCron(args);
@@ -921,9 +840,7 @@ export function createMemphisMcpServer(
       'memphis_providers',
       {
         description: 'Inspect configured providers, default models, and discovered model lists',
-        inputSchema: {
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_providers'),
       },
       withApprovalGate('memphis_providers', providersPolicy, approvals, async () => {
         const result = await runMemphisProviders();
@@ -941,9 +858,7 @@ export function createMemphisMcpServer(
       'memphis_system_info',
       {
         description: 'Inspect host and Memphis runtime system details',
-        inputSchema: {
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_system_info'),
       },
       withApprovalGate('memphis_system_info', systemInfoPolicy, approvals, async () => {
         const result = runMemphisSystemInfo();
@@ -962,11 +877,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Fetch a public URL and return its content (blocks internal/private addresses)',
-        inputSchema: {
-          url: z.string().url(),
-          maxBytes: z.number().int().positive().max(32000).optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_web_fetch'),
       },
       withApprovalGate(
         'memphis_web_fetch',
@@ -1019,15 +930,7 @@ export function createMemphisMcpServer(
       'memphis_grep',
       {
         description: 'Search code using regex patterns (ripgrep or grep)',
-        inputSchema: {
-          pattern: z.string().min(1).max(500),
-          path: z.string().optional(),
-          glob: z.string().optional(),
-          limit: z.number().int().min(1).max(200).optional(),
-          context: z.number().int().min(0).max(10).optional(),
-          ignoreCase: z.boolean().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_grep'),
       },
       withApprovalGate(
         'memphis_grep',
@@ -1050,12 +953,7 @@ export function createMemphisMcpServer(
       'memphis_glob',
       {
         description: 'Find files by glob pattern (fd or find)',
-        inputSchema: {
-          pattern: z.string().min(1).max(300),
-          path: z.string().optional(),
-          limit: z.number().int().min(1).max(500).optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_glob'),
       },
       withApprovalGate('memphis_glob', globPolicy, approvals, async ({ pattern, path, limit }) => {
         const result = runMemphisGlob({ pattern, path, limit });
@@ -1073,11 +971,7 @@ export function createMemphisMcpServer(
       'memphis_git',
       {
         description: 'Git operations — status, log, diff, add, commit, push',
-        inputSchema: {
-          subcommand: z.string().min(1),
-          args: z.array(z.string()).optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_git'),
       },
       withApprovalGate('memphis_git', gitPolicy, approvals, async ({ subcommand, args }) => {
         const result = runMemphisGit({ subcommand, args });
@@ -1089,19 +983,6 @@ export function createMemphisMcpServer(
     );
   }
 
-  // Skeleton: memphis_commit_culture was registered during the audit hardening
-  // sprint (2026-09-22) before tests + approval hook landed. The audit-hook
-  // surface-test (tests/unit/tool-surface-audit.test.ts) flags the registry
-  // mismatch because the tool is wired in MCP server.ts but absent from
-  // src/gateway/tool-registry.ts. Unregistered until the wire-up lands
-  // (see docs/dev/commit-culture-interface.md and the inline note above).
-  const _commitCulturePolicy = getToolPolicy(
-    permissions,
-    'memphis_commit_culture',
-    resolvedManifest,
-  );
-  void _commitCulturePolicy;
-
   const loopStepPolicy = getToolPolicy(permissions, 'memphis_loop_step', resolvedManifest);
   if (shouldRegisterTool('memphis_loop_step', loopStepPolicy, rawEnv)) {
     server.registerTool(
@@ -1109,34 +990,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Enforce agent loop limits via Rust LoopEngine (authoritative step enforcement)',
-        inputSchema: {
-          state: z.object({
-            steps: z.number().int().min(0),
-            tool_calls: z.number().int().min(0),
-            wait_ms: z.number().int().min(0),
-            errors: z.number().int().min(0),
-            completed: z.boolean(),
-            halt_reason: z.string().nullable(),
-          }),
-          action: z.discriminatedUnion('type', [
-            z.object({ type: z.literal('tool_call'), data: z.object({ tool: z.string() }) }),
-            z.object({ type: z.literal('wait'), data: z.object({ duration_ms: z.number() }) }),
-            z.object({ type: z.literal('complete'), data: z.object({ summary: z.string() }) }),
-            z.object({
-              type: z.literal('error'),
-              data: z.object({ recoverable: z.boolean(), message: z.string() }),
-            }),
-          ]),
-          limits: z
-            .object({
-              max_steps: z.number().int().min(1),
-              max_tool_calls: z.number().int().min(1),
-              max_wait_ms: z.number().int().min(1),
-              max_errors: z.number().int().min(1),
-            })
-            .optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_loop_step'),
       },
       withApprovalGate(
         'memphis_loop_step',
@@ -1159,11 +1013,7 @@ export function createMemphisMcpServer(
       'memphis_test',
       {
         description: 'Run project tests (typecheck, lint, vitest, cargo test)',
-        inputSchema: {
-          suite: z.enum(['ts', 'rust', 'lint', 'typecheck', 'all']).optional(),
-          filter: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_test'),
       },
       withApprovalGate('memphis_test', testPolicy, approvals, async ({ suite, filter }) => {
         const result = runMemphisTest({ suite, filter });
@@ -1182,18 +1032,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Run deploy, health, and rollback workflows with snapshots, test gates, and post-deploy checks',
-        inputSchema: {
-          action: z.enum(['run', 'health', 'rollback']).optional(),
-          profile: z.enum(['local-service', 'build-only', 'custom']).optional(),
-          buildCommand: z.string().min(1).optional(),
-          deployCommand: z.string().min(1).optional(),
-          healthUrl: z.string().url().optional(),
-          testSuite: z.enum(['ts', 'rust', 'lint', 'typecheck', 'all']).optional(),
-          deep: z.boolean().optional(),
-          dryRun: z.boolean().optional(),
-          rollbackIndex: z.number().int().min(1).optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_deploy'),
       },
       withApprovalGate(
         'memphis_deploy',
@@ -1237,11 +1076,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Pre-exec analysis: parse + classify side-effects, reversibility, dry-run hint, recommendation. No side effects.',
-        inputSchema: {
-          command: z.string().min(1).max(2048),
-          surface_intent: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_exec_analyze'),
       },
       withApprovalGate(
         'memphis_exec_analyze',
@@ -1264,11 +1099,7 @@ export function createMemphisMcpServer(
       'memphis_exec',
       {
         description: 'Execute a shell command',
-        inputSchema: {
-          command: z.string().min(1).max(256),
-          surface_intent: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_exec'),
       },
       withApprovalGate(
         'memphis_exec',
@@ -1295,44 +1126,12 @@ export function createMemphisMcpServer(
 
   const caseAppendPolicy = getToolPolicy(permissions, 'memphis_case_append', resolvedManifest);
   if (shouldRegisterTool('memphis_case_append', caseAppendPolicy, rawEnv)) {
-    const caseTypeSchema = z.enum([
-      'nominative',
-      'genitive',
-      'dative',
-      'accusative',
-      'instrumental',
-      'locative',
-      'ablative',
-      'vocative',
-    ]);
     server.registerTool(
       'memphis_case_append',
       {
         description:
           'Append a case entry to the cognitive knowledge graph. Accepts either {entry:{case_type,...}} or top-level {case_type,...}.',
-        inputSchema: {
-          entry: z.object({ case_type: caseTypeSchema }).passthrough().optional(),
-          case_type: caseTypeSchema.optional(),
-          entity: z.string().optional(),
-          action: z.string().optional(),
-          timestamp: z.string().optional(),
-          owner: z.string().optional(),
-          possessed: z.string().optional(),
-          giver: z.string().optional(),
-          recipient: z.string().optional(),
-          object: z.string().optional(),
-          subject: z.string().optional(),
-          verb: z.string().optional(),
-          actor: z.string().optional(),
-          instrument: z.string().optional(),
-          target: z.string().optional(),
-          location: z.string().optional(),
-          origin: z.string().optional(),
-          destination: z.string().optional(),
-          invoker: z.string().optional(),
-          invocation: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_case_append'),
       },
       withApprovalGate('memphis_case_append', caseAppendPolicy, approvals, async (args) => {
         const result = await runMemphisCaseAppend(normalizeCaseAppendInput(args as never));
@@ -1351,29 +1150,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Query the cognitive knowledge graph by case type, entity, actor, target, instrument, or location',
-        inputSchema: {
-          query: z.object({
-            case_type: z
-              .enum([
-                'nominative',
-                'genitive',
-                'dative',
-                'accusative',
-                'instrumental',
-                'locative',
-                'ablative',
-                'vocative',
-              ])
-              .optional(),
-            entity: z.string().optional(),
-            actor: z.string().optional(),
-            target: z.string().optional(),
-            instrument: z.string().optional(),
-            location: z.string().optional(),
-            limit: z.number().int().min(1).max(100).optional(),
-          }),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_case_query'),
       },
       withApprovalGate('memphis_case_query', caseQueryPolicy, approvals, async ({ query }) => {
         const result = await runMemphisCaseQuery({ query });
@@ -1391,15 +1168,7 @@ export function createMemphisMcpServer(
       'memphis_chain_query',
       {
         description: 'Query raw chain blocks with optional chain, type, content, and tag filters',
-        inputSchema: {
-          chain: z.string().optional(),
-          limit: z.number().int().min(1).max(100).optional(),
-          offset: z.number().int().min(0).max(1000).optional(),
-          blockType: z.string().optional(),
-          contains: z.string().optional(),
-          tag: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_chain_query'),
       },
       withApprovalGate(
         'memphis_chain_query',
@@ -1430,10 +1199,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Authoritatively verify chain hashes, indexes, and prev-hash links before diagnosing corruption',
-        inputSchema: {
-          chain: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_chain_verify'),
       },
       withApprovalGate('memphis_chain_verify', chainVerifyPolicy, approvals, async ({ chain }) => {
         const result = await runMemphisChainVerify({ chain }, rawEnv);
@@ -1451,10 +1217,7 @@ export function createMemphisMcpServer(
       'memphis_soul_read',
       {
         description: 'Read soul memory (persistent identity, user preferences, self-knowledge)',
-        inputSchema: {
-          section: z.enum(['user', 'self', 'context', 'all']).optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_soul_read'),
       },
       withApprovalGate('memphis_soul_read', soulReadPolicy, approvals, async ({ section }) => {
         const result = await runMemphisSoulRead({ section });
@@ -1472,34 +1235,7 @@ export function createMemphisMcpServer(
       'memphis_soul_write',
       {
         description: 'Update soul memory (user preferences, self-learnings, context)',
-        inputSchema: {
-          updates: z.object({
-            user: z
-              .object({
-                name: z.string().optional(),
-                languages: z.array(z.string()).optional(),
-                preferences: z.array(z.string()).optional(),
-                expertise: z.array(z.string()).optional(),
-                integrations: z.array(z.string()).optional(),
-              })
-              .optional(),
-            self: z
-              .object({
-                personality: z.string().optional(),
-                strengths: z.array(z.string()).optional(),
-                learnings: z.array(z.string()).optional(),
-                evolvedCapabilities: z.array(z.string()).optional(),
-              })
-              .optional(),
-            context: z
-              .object({
-                activeWork: z.string().optional(),
-                recentDecisions: z.array(z.string()).optional(),
-              })
-              .optional(),
-          }),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_soul_write'),
       },
       withApprovalGate('memphis_soul_write', soulWritePolicy, approvals, async ({ updates }) => {
         const result = await runMemphisSoulWrite({ updates });
@@ -1523,13 +1259,10 @@ export function createMemphisMcpServer(
       withApprovalGate('memphis_self_modify', selfModifyPolicy, approvals, async (args) => {
         const request = evolveDeps.sessionRepo
           .requestStore()
-          .create(resolveInstallRoot({ rawEnv }), {
-            intent: requiredStringArg(args, 'intent'),
-            files: requiredStringArrayArg(args, 'files'),
-            changes: requiredStringRecordArg(args, 'changes'),
-            plan_id: optionalStringArg(args, 'plan_id'),
-            step_idx: optionalNonnegativeIntegerArg(args, 'step_idx'),
-          });
+          .create(
+            resolveInstallRoot({ rawEnv }),
+            canonicalEvolveRequest(args).request,
+          );
         const result = {
           status: 'operator-review-required',
           requestId: request.id,
@@ -1554,13 +1287,7 @@ export function createMemphisMcpServer(
         description:
           'Write/append/overwrite files. Full access inside ~/memphis/. ' +
           'Outside, create-new only; append or overwrite needs tier 3.',
-        inputSchema: {
-          path: z.string().min(1),
-          content: z.string(),
-          mode: z.enum(['write', 'append', 'overwrite']).optional(),
-          createDirs: z.boolean().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_fs_write'),
       },
       withApprovalGate(
         'memphis_fs_write',
@@ -1585,13 +1312,7 @@ export function createMemphisMcpServer(
         description:
           'Filesystem operations: copy, move, delete, mkdir, stat. ' +
           'Destructive ops on existing paths outside ~/memphis/ require tier 3.',
-        inputSchema: {
-          operation: z.enum(['copy', 'move', 'delete', 'mkdir', 'stat']),
-          source: z.string().min(1),
-          destination: z.string().optional(),
-          recursive: z.boolean().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_fs_ops'),
       },
       withApprovalGate(
         'memphis_fs_ops',
@@ -1614,11 +1335,7 @@ export function createMemphisMcpServer(
       'memphis_web_search',
       {
         description: 'Search the web via DuckDuckGo',
-        inputSchema: {
-          query: z.string().min(1),
-          limit: z.number().int().min(1).max(10).optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_web_search'),
       },
       withApprovalGate(
         'memphis_web_search',
@@ -1664,12 +1381,7 @@ export function createMemphisMcpServer(
       'memphis_media_ingest',
       {
         description: getToolDescription('memphis_media_ingest'),
-        inputSchema: {
-          path: z.string().min(1),
-          type: z.enum(['audio', 'image', 'video', 'auto']).optional(),
-          dryRun: z.boolean().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_media_ingest'),
       },
       withApprovalGate(
         'memphis_media_ingest',
@@ -1692,15 +1404,7 @@ export function createMemphisMcpServer(
       'memphis_minimax_h3',
       {
         description: getToolDescription('memphis_minimax_h3'),
-        inputSchema: {
-          action: z.enum(['create', 'query']),
-          prompt: z.string().min(1).max(2000).optional(),
-          task_id: z.string().min(1).optional(),
-          duration: z.number().int().min(2).max(15).optional(),
-          resolution: z.enum(['768P', '2K']).optional(),
-          ratio: z.string().min(3).max(16).optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_minimax_h3'),
       },
       withApprovalGate('memphis_minimax_h3', minimaxH3Policy, approvals, async (args) => {
         if (args.action === 'create' && !args.prompt)
@@ -1733,13 +1437,7 @@ export function createMemphisMcpServer(
       'memphis_package',
       {
         description: 'Package manager operations (npm, cargo, apt, pip)',
-        inputSchema: {
-          manager: z.enum(['npm', 'cargo', 'apt', 'pip']),
-          action: z.enum(['install', 'remove', 'list', 'search']),
-          packages: z.array(z.string()).optional(),
-          global: z.boolean().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_package'),
       },
       withApprovalGate(
         'memphis_package',
@@ -1762,12 +1460,7 @@ export function createMemphisMcpServer(
       'memphis_db',
       {
         description: 'Query and manage SQLite databases',
-        inputSchema: {
-          action: z.enum(['query', 'execute', 'tables', 'schema']),
-          sql: z.string().optional(),
-          database: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_db'),
       },
       withApprovalGate('memphis_db', dbPolicy, approvals, async ({ action, sql, database }) => {
         const result = runMemphisDb({ action, sql, database });
@@ -1787,12 +1480,7 @@ export function createMemphisMcpServer(
       'memphis_build',
       {
         description: 'Auto-detect project type and run build',
-        inputSchema: {
-          project: z.string().optional(),
-          command: z.string().optional(),
-          profile: z.enum(['debug', 'release']).optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_build'),
       },
       withApprovalGate(
         'memphis_build',
@@ -1815,16 +1503,7 @@ export function createMemphisMcpServer(
       'memphis_health_check',
       {
         description: 'HTTP health checks against targets',
-        inputSchema: {
-          targets: z.array(
-            z.object({
-              url: z.string().min(1),
-              timeout: z.number().int().min(100).max(30000).optional(),
-              expectedStatus: z.number().int().optional(),
-            }),
-          ),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_health_check'),
       },
       withApprovalGate(
         'memphis_health_check',
@@ -1872,10 +1551,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Show current runtime config values (redacted). Pass `key` to narrow to one field; omit to list every known field.',
-        inputSchema: {
-          key: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_config_show'),
       },
       withApprovalGate('memphis_config_show', configShowPolicy, approvals, async ({ key }) => {
         const result = runMemphisConfigShow({ key });
@@ -1894,9 +1570,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Re-read .env, validate, swap hot/warm fields; refuse cold-field changes (restart required). Returns the redacted diff.',
-        inputSchema: {
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_config_reload'),
       },
       withApprovalGate('memphis_config_reload', configReloadPolicy, approvals, async () => {
         const result = await runMemphisConfigReload();
@@ -1918,12 +1592,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Set a single config key/value. Cold fields refuse (restart required); secret fields require the operator `passphrase` in input. Writes to .env and process.env; hot/warm post-apply hooks fire immediately.',
-        inputSchema: {
-          key: z.string(),
-          value: z.string(),
-          passphrase: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_config_set'),
       },
       withApprovalGate(
         'memphis_config_set',
@@ -1955,17 +1624,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Switch cognitive mode (A–E). Writes the soul manifest. Requires operator `passphrase` in input (skipped only in first-run state).',
-        inputSchema: {
-          // Codex Round 5 P2 fix: accept case-insensitive input. The handler
-          // already normalizes; the schema must not reject "b" before the
-          // handler sees it.
-          mode: z.preprocess(
-            (v) => (typeof v === 'string' ? v.toUpperCase() : v),
-            z.enum(['A', 'B', 'C', 'D', 'E']),
-          ),
-          passphrase: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_cognitive_mode_set'),
       },
       withApprovalGate(
         'memphis_cognitive_mode_set',
@@ -1990,11 +1649,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Open a durable multi-step self-coding plan. Returns plan_id for use with the other memphis_self_plan_* tools.',
-        inputSchema: {
-          goal: z.string().min(1),
-          steps: z.array(z.object({ description: z.string().min(1) }).strict()).min(1),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_self_plan_create'),
       },
       withApprovalGate(
         'memphis_self_plan_create',
@@ -2018,10 +1673,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Read a self-coding plan by id. Returns the full plan plus next_step (first pending or failed step).',
-        inputSchema: {
-          plan_id: z.string().min(1),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_self_plan_get'),
       },
       withApprovalGate('memphis_self_plan_get', planGetPolicy, approvals, async ({ plan_id }) => {
         const result = runMemphisSelfPlanGet({ plan_id }, rawEnv);
@@ -2044,14 +1696,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Mark a plan step as done/failed/in_progress/skipped. attempts bumps on in_progress/failed only.',
-        inputSchema: {
-          plan_id: z.string().min(1),
-          step_idx: z.number().int().nonnegative(),
-          status: z.enum(['pending', 'in_progress', 'done', 'failed', 'skipped']),
-          artifact: z.string().optional(),
-          error: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_self_plan_advance'),
       },
       withApprovalGate(
         'memphis_self_plan_advance',
@@ -2077,11 +1722,7 @@ export function createMemphisMcpServer(
       'memphis_self_plan_cancel',
       {
         description: 'Cancel a self-coding plan with a reason recorded for audit.',
-        inputSchema: {
-          plan_id: z.string().min(1),
-          reason: z.string().min(1),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_self_plan_cancel'),
       },
       withApprovalGate(
         'memphis_self_plan_cancel',
@@ -2105,10 +1746,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Pre-PR review of a self-coding plan: gap, scope-creep, TODO/FIXME debt check.',
-        inputSchema: {
-          plan_id: z.string().min(1),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_self_review'),
       },
       withApprovalGate('memphis_self_review', selfReviewPolicy, approvals, async ({ plan_id }) => {
         const result = await runMemphisSelfReview({ plan_id }, { rawEnv });
@@ -2127,14 +1765,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Push the plan branch and open a PR via gh. Memphis NEVER merges — operator-only.',
-        inputSchema: {
-          plan_id: z.string().min(1),
-          title: z.string().optional(),
-          body_prefix: z.string().optional(),
-          branch: z.string().optional(),
-          base: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_self_pr_open'),
       },
       withApprovalGate(
         'memphis_self_pr_open',
@@ -2165,12 +1796,7 @@ export function createMemphisMcpServer(
       {
         description:
           'C-step: confirm a merged plan PR shipped (merge on origin/main + build fresh).',
-        inputSchema: {
-          plan_id: z.string().min(1),
-          build_artifact_path: z.string().optional(),
-          base: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_self_deploy_verify'),
       },
       withApprovalGate(
         'memphis_self_deploy_verify',
@@ -2197,14 +1823,7 @@ export function createMemphisMcpServer(
       {
         description:
           'Self-restart the Memphis agent. Requires the operator passphrase (MCP has no session-based tier-3 flow). Refuses cleanly when no process supervisor is detected unless MEMPHIS_RESTART_ALLOW_SUICIDE=true.',
-        inputSchema: {
-          reason: z.string().optional(),
-          actor_id: z.string().optional(),
-          // Codex P1 (Round 2): operator passphrase required when operator
-          // config is set. Without it the engine refuses with not-elevated.
-          passphrase: z.string().optional(),
-          approval_request_id: z.string().optional(),
-        },
+        inputSchema: registryMcpInputSchema('memphis_restart'),
       },
       withApprovalGate(
         'memphis_restart',

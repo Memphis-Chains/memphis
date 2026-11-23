@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 
 import {
   listBlockFiles,
   parseEnvelope,
   readBlockFile,
+  serializeBlockForDisk,
   withNapiAppendLock,
   writeBlockAtomic,
   type NapiBlock,
@@ -18,8 +18,9 @@ import {
   type BridgeResolution,
 } from './napi-contract.js';
 import { getChainPath, getReadableChainPaths, normalizeChainName } from '../../config/paths.js';
+import { normalizeBlockPayload } from '../../core/block-payload.js';
+import { canonicalHash } from '../../core/chain-hash.js';
 import { normalizeDecisionBlockData } from '../../core/decision-chain.js';
-import { stableStringify } from '../../core/stable-stringify.js';
 import type { Block } from '../../memory/chain.js';
 import { resolveRustBridgePath } from '../runtime/install-root.js';
 
@@ -53,12 +54,6 @@ interface ResolvedChainBridge {
   embed_search?: (query: string, topK?: number) => string;
   soul_replay?: (chainName: string, blocksJson: string) => string;
   soul_loop_step?: (stateJson: string, actionJson: string, limitsJson?: string) => string;
-}
-
-interface CanonicalHashData {
-  type: string;
-  content: string;
-  tags: string[];
 }
 
 interface SoulReplayBlockData {
@@ -157,35 +152,6 @@ function resolveChainBridge(
   );
 }
 
-function normalizeData(data: Record<string, unknown>): NapiBlockData {
-  const tags = Array.isArray(data.tags)
-    ? data.tags.filter((v): v is string => typeof v === 'string')
-    : [];
-
-  const content = typeof data.content === 'string' ? data.content : JSON.stringify(data);
-
-  const blockType = typeof data.type === 'string' ? data.type : 'journal';
-
-  const passthrough = Object.fromEntries(
-    Object.entries(data).filter(([key]) => !['type', 'content', 'tags'].includes(key)),
-  );
-
-  return {
-    ...passthrough,
-    type: blockType,
-    content,
-    tags,
-  };
-}
-
-function toCanonicalHashData(data: NapiBlockData): CanonicalHashData {
-  return {
-    type: data.type,
-    content: data.content,
-    tags: [...data.tags],
-  };
-}
-
 function toNapiBlock(
   chain: string,
   index: number,
@@ -194,14 +160,20 @@ function toNapiBlock(
 ): NapiBlock {
   const normalizedChain = normalizeChainName(chain) ?? chain;
   const timestamp = new Date().toISOString();
-  const normalized = normalizeData(data);
-  const hashPayload = stableStringify({
+  const normalized = normalizeBlockPayload(data) as NapiBlockData;
+
+  // The canonical hash has ONE implementation: `core/chain-hash.ts`.
+  //
+  // This module used to build the payload and hash it inline, with its own
+  // copy of the three-field projection. That is a second rule for one
+  // thing, and the copy had no `block_type` fallback at all.
+  const hashPayload = {
     index,
     timestamp,
     chain: normalizedChain,
-    data: toCanonicalHashData(normalized),
+    data: normalized,
     prev_hash: prevHash,
-  });
+  };
 
   return {
     index,
@@ -209,7 +181,7 @@ function toNapiBlock(
     chain: normalizedChain,
     data: normalized,
     prev_hash: prevHash,
-    hash: createHash('sha256').update(hashPayload).digest('hex'),
+    hash: canonicalHash(hashPayload),
   };
 }
 
@@ -234,13 +206,26 @@ function normalizeSoulReplayBlock(block: NapiBlock | { data: SoulReplayBlockData
 async function readChainBlocks(
   chain: string,
   rawEnv: NodeJS.ProcessEnv = process.env,
+  tail?: number,
 ): Promise<NapiBlock[]> {
   const normalizedChain = normalizeChainName(chain) ?? chain;
   const blocks: NapiBlock[] = [];
   const seen = new Set<string>();
 
   for (const dir of getReadableChainPaths(normalizedChain, rawEnv)) {
-    const files = await listBlockFiles(dir);
+    const allFiles = await listBlockFiles(dir);
+    // Block files are zero-padded and `listBlockFiles` sorts them
+    // lexicographically, so the tail of the listing is the newest
+    // blocks of that directory.
+    //
+    // Reading only the tail is what keeps a caller that wants the last
+    // twenty blocks from materialising fifteen thousand of them. The
+    // `system` chain alone holds 15 730 blocks / 62 MB, and the `insights`
+    // chain 402 blocks / 32 MB.
+    const files =
+      tail !== undefined && tail > 0 && allFiles.length > tail
+        ? allFiles.slice(-tail)
+        : allFiles;
     // Parse errors and unexpected read errors must propagate — a corrupted block must
     // never be silently treated as "chain is empty" because the caller would then
     // regenerate a fresh genesis and overwrite existing blocks (see issue #70).
@@ -256,7 +241,7 @@ async function readChainBlocks(
       const normalizedData =
         normalizedChain === 'decisions' && block.data
           ? (normalizeDecisionBlockData(block.data as Record<string, unknown>) as NapiBlockData)
-          : normalizeData((block.data ?? {}) as Record<string, unknown>);
+          : (normalizeBlockPayload((block.data ?? {}) as Record<string, unknown>) as NapiBlockData);
 
       blocks.push({
         ...block,
@@ -276,7 +261,7 @@ async function writeBlock(
 ): Promise<void> {
   const normalizedChain = normalizeChainName(chain) ?? chain;
   const dir = getChainPath(normalizedChain, rawEnv);
-  const payload = JSON.stringify({ ...block, chain: normalizedChain }, null, 2);
+  const payload = serializeBlockForDisk({ ...block, chain: normalizedChain });
   await writeBlockAtomic(dir, block.index, payload);
 }
 
@@ -295,12 +280,13 @@ export class NapiChainAdapter {
   }
 
   async getRecentBlocks(chain = 'journal', limit = 20): Promise<Block[]> {
-    const blocks = await readChainBlocks(chain, this.rawEnv);
-    return blocks.slice(-Math.max(1, limit));
+    const bounded = Math.max(1, limit);
+    const blocks = await readChainBlocks(chain, this.rawEnv, bounded);
+    return blocks.slice(-bounded);
   }
 
   async appendBlock(chain: string, data: Record<string, unknown>): Promise<AppendBlockResult> {
-    const normalizedData = normalizeData(data);
+    const normalizedData = normalizeBlockPayload(data) as NapiBlockData;
     const result = await this.appendBlockWithDecision(chain, async () => ({ data: normalizedData, value: undefined }), false);
     if (!result.block) throw new Error('chain append unexpectedly skipped');
     return result.block;
@@ -496,6 +482,10 @@ export async function getRecentBlocks(
   limit = 20,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<Block[]> {
-  const blocks = await readChainBlocks(chain, rawEnv);
-  return blocks.slice(-Math.max(1, limit));
+  const bounded = Math.max(1, limit);
+  // The limit is pushed down into the reader. Slicing after the fact
+  // would still have read every block of the chain — which is what turned
+  // a "give me the last 20 blocks" call into a 62 MB read.
+  const blocks = await readChainBlocks(chain, rawEnv, bounded);
+  return blocks.slice(-bounded);
 }

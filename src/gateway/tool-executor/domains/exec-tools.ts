@@ -1,5 +1,6 @@
 import { runMemphisExecAnalyze } from '../../../mcp/tools/exec-analyze.js';
 import { runMemphisExec, runMemphisExecAsync } from '../../../mcp/tools/exec.js';
+import { buildRegistryInputJsonSchema } from '../../tool-json-schema.js';
 import { buildTool, type RuntimeToolDefinition } from '../../tool-runtime.js';
 import { optionalString, requiredString } from '../input-normalization.js';
 
@@ -15,17 +16,12 @@ export function createExecRuntimeTools(deps: ExecRuntimeToolDeps): RuntimeToolDe
       name: 'memphis_exec_analyze',
       description:
         'Pre-exec analysis: parse + classify side-effects, reversibility, dry-run hint, recommendation. No side effects.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          command: { type: 'string', description: 'Shell command to analyze (not executed)' },
-          surface_intent: {
-            type: 'string',
-            description: "Operator's high-level intent — surfaced unchanged for audit context.",
-          },
+      inputSchema: buildRegistryInputJsonSchema('memphis_exec_analyze', {
+        propertyDescriptions: {
+          command: 'Shell command to analyze (not executed)',
+          surface_intent: "Operator's high-level intent — surfaced unchanged for audit context.",
         },
-        required: ['command'],
-      },
+      }),
       isReadOnly: true,
       isConcurrencySafe: true,
       validateInput(args) {
@@ -41,18 +37,13 @@ export function createExecRuntimeTools(deps: ExecRuntimeToolDeps): RuntimeToolDe
     buildTool({
       name: 'memphis_exec',
       description: 'Execute a shell command',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          command: { type: 'string', description: 'Command to execute' },
-          surface_intent: {
-            type: 'string',
-            description:
-              'Optional operator-stated intent (the prompt that prompted this exec). Audit-logged alongside the predicted-vs-actual outcome.',
-          },
+      inputSchema: buildRegistryInputJsonSchema('memphis_exec', {
+        propertyDescriptions: {
+          command: 'Command to execute',
+          surface_intent:
+            'Optional operator-stated intent (the prompt that prompted this exec). Audit-logged alongside the predicted-vs-actual outcome.',
         },
-        required: ['command'],
-      },
+      }),
       isDestructive: true,
       validateInput(args) {
         return {

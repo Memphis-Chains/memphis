@@ -29,18 +29,18 @@
  * nothing is lost and nothing becomes mutable behind the hash's back.
  */
 
-import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { normalizeChainName } from '../../config/paths.js';
+import { canonicalHash, toCanonicalHashData } from '../../core/chain-hash.js';
 import { normalizeDecisionBlockData } from '../../core/decision-chain.js';
-import { stableStringify } from '../../core/stable-stringify.js';
 import {
   CANONICAL_BLOCK_TYPE,
   CANONICAL_KIND_FIELD,
   type BlockVocabulary,
 } from '../storage/block-vocabulary.js';
+import { serializeBlockForDisk } from '../storage/chain-file-io.js';
 
 export const GENESIS_PREV_HASH = '0'.repeat(64);
 
@@ -54,43 +54,32 @@ export type RawChainBlock = {
 };
 
 /**
- * The three fields the block hash covers. Everything else in `data` is
- * passthrough: it is persisted, but it is NOT protected by the hash.
+ * The canonical block hash now lives in `core/chain-hash.ts`.
  *
- * The fallback order mirrors the native core exactly
- * (`crates/memphis-core/src/hash.rs:46`): `type`, then `block_type`, then
- * `journal`. The TS side used to skip `block_type` — a block carrying
- * only `block_type` was hashed as `journal` here and as its own type
- * there, so the two implementations disagreed about the same bytes. No
- * such block exists on this host today (measured), but the disagreement
- * is real and it is the reason the core is the oracle: two canonical
- * shapes would be two vocabularies again.
+ * It used to live HERE, and the two storage modules carried their own
+ * copies: the write path in `chain-adapter.ts` and the N-API write path in
+ * `rust-chain-adapter.ts`. Those copies did not agree with this one about
+ * the fallback type — this module fell back `type` -> `block_type` ->
+ * `journal`, exactly like the native core, while `chain-adapter.ts` fell
+ * back `type` -> `journal`. A block carrying only `block_type` was hashed
+ * as a journal entry by one implementation and as its own type by another.
+ *
+ * Measured on this host: 0 of 27 159 blocks on disk carry `block_type`
+ * without `type`, so the disagreement never bit. It was still a second
+ * vocabulary.
+ *
+ * The hash could not stay in this file for a structural reason: this module
+ * imports `infra/storage/block-vocabulary.ts`, which imports
+ * `infra/storage/rust-chain-adapter.ts`. If the storage modules imported
+ * the hash from here, the import graph would close into a cycle.
+ * `core/chain-hash.ts` depends on nothing but `node:crypto` and
+ * `core/stable-stringify.ts`, so everybody imports it from there.
+ *
+ * The re-export below keeps this module's public surface unchanged for the
+ * callers that already depend on it (`tests/integration/chain-sweep-shape.test.ts`,
+ * `tests/unit/chain-vocabulary.test.ts`, and the repair paths below).
  */
-export function toCanonicalHashData(data: Record<string, unknown>): {
-  type: string;
-  content: string;
-  tags: string[];
-} {
-  const tags = Array.isArray(data.tags)
-    ? data.tags.filter((value): value is string => typeof value === 'string')
-    : [];
-  const content = typeof data.content === 'string' ? data.content : JSON.stringify(data);
-  const type =
-    typeof data.type === 'string'
-      ? data.type
-      : typeof data.block_type === 'string'
-        ? data.block_type
-        : 'journal';
-  return { type, content, tags };
-}
-
-export function canonicalHash(block: Omit<RawChainBlock, 'hash'>): string {
-  const canonical = stableStringify({
-    ...block,
-    data: toCanonicalHashData(block.data),
-  });
-  return createHash('sha256').update(canonical).digest('hex');
-}
+export { canonicalHash, toCanonicalHashData };
 
 /**
  * Parse a block file without judging it. A block that is not JSON, or has
@@ -332,7 +321,14 @@ export function rewriteChainDirectory(
   for (const block of nextBlocks) {
     const target = join(chainDir, block.file);
     const tmp = `${target}.repair-${process.pid}-${Date.now()}`;
-    writeFileSync(tmp, `${JSON.stringify(block.payload, null, 2)}\n`, 'utf8');
+    // The repair writes through the ONE serializer, like every other
+    // writer. It used to write `JSON.stringify(payload, null, 2)` plus a
+    // trailing newline: the same whitespace as the canonical form, with
+    // one byte more at the end, and the key order of the object literal
+    // rather than the canonical one. Measured 2026-11-23 on this host:
+    // 224 block files on disk carry that trailing newline — the repair
+    // path's own byte shape.
+    writeFileSync(tmp, serializeBlockForDisk(block.payload), 'utf8');
     renameSync(tmp, target);
   }
 

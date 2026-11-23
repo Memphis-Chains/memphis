@@ -8,7 +8,12 @@
 import * as chainCrypto from 'node:crypto';
 import { lstatSync, readdirSync } from 'node:fs';
 
-import { writeBlockAtomic } from './chain-file-io.js';
+import { serializeBlockForDisk, writeBlockAtomic } from './chain-file-io.js';
+import {
+  isValidChainStart,
+  readChainRotationHead,
+  ROTATION_HEAD_FILENAME,
+} from './chain-rotation-head.js';
 import { assertChainWriteAllowed } from './chain-write-guard.js';
 import { withChainWriteLock } from './chain-write-lock.js';
 import {
@@ -19,6 +24,8 @@ import {
 } from './napi-contract.js';
 import { NapiChainAdapter } from './rust-chain-adapter.js';
 import { getChainPath, normalizeChainName } from '../../config/paths.js';
+import { normalizeBlockPayload } from '../../core/block-payload.js';
+import { canonicalHash } from '../../core/chain-hash.js';
 import { parseBool } from '../../core/env.js';
 import { stableStringify } from '../../core/stable-stringify.js';
 import {
@@ -217,25 +224,6 @@ export interface ChainBlock {
   signature?: string;
 }
 
-interface CanonicalHashData {
-  type: string;
-  content: string;
-  tags: string[];
-}
-
-function normalizeBlockData(data: Record<string, unknown>): Record<string, unknown> {
-  const tags = Array.isArray(data.tags)
-    ? data.tags.filter((value): value is string => typeof value === 'string')
-    : [];
-  const content = typeof data.content === 'string' ? data.content : JSON.stringify(data);
-  const type = typeof data.type === 'string' ? data.type : 'journal';
-  const passthrough = Object.fromEntries(
-    Object.entries(data).filter(([key]) => !['type', 'content', 'tags'].includes(key)),
-  );
-
-  return { ...passthrough, type, content, tags };
-}
-
 export interface ChainExportEnvelope {
   chainName: string;
   exportedAt: string;
@@ -323,7 +311,7 @@ export async function appendBlock(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<AppendBlockResult> {
   // Capture the block before waiting for a lock, as the old append path did.
-  const normalizedData = normalizeBlockData(data);
+  const normalizedData = normalizeBlockPayload(data);
   const result = await appendBlockConditionalInternal(chainName, async () => ({ data: normalizedData, value: undefined }), rawEnv, false);
   if (!result.block) throw new Error('chain append unexpectedly skipped');
   return result.block;
@@ -362,11 +350,11 @@ async function appendBlockConditionalInternal<T>(
       if (!preflight) {
         const decision = await decide();
         if (!decision.data) return { value: decision.value };
-        return { value: decision.value, block: await adapter.appendBlock(normalizedChainName, normalizeBlockData(decision.data)) };
+        return { value: decision.value, block: await adapter.appendBlock(normalizedChainName, normalizeBlockPayload(decision.data)) };
       }
       return await adapter.appendBlockConditional(normalizedChainName, async () => {
         const decision = await decide();
-        return { ...decision, data: decision.data ? normalizeBlockData(decision.data) : undefined };
+        return { ...decision, data: decision.data ? normalizeBlockPayload(decision.data) : undefined };
       });
     } catch (error) {
       throw new Error(`rust chain append failed: ${String(error)}`, { cause: error });
@@ -398,7 +386,7 @@ async function appendBlockConditionalInternal<T>(
     });
     const decision = await decide();
     if (!decision.data) return { value: decision.value };
-    const normalizedData = normalizeBlockData(decision.data);
+    const normalizedData = normalizeBlockPayload(decision.data);
     const previousBlock = blocks.at(-1);
     const nextIndex = previousBlock ? previousBlock.index + 1 : 1;
 
@@ -417,7 +405,7 @@ async function appendBlockConditionalInternal<T>(
 
     // Publish without replacing a committed block, even if index allocation
     // was wrong or another writer ignored the lock.
-    await writeBlockAtomic(chainsDir, nextIndex, JSON.stringify(block, null, 2));
+    await writeBlockAtomic(chainsDir, nextIndex, serializeBlockForDisk(block));
 
     return { value: decision.value, block: {
       index: nextIndex,
@@ -474,7 +462,7 @@ export async function appendPrecomputedBlock(
     ...(block.signature !== undefined ? { signature: block.signature } : {}),
   };
 
-  await writeBlockAtomic(chainsDir, block.index, JSON.stringify(chainBlock, null, 2));
+  await writeBlockAtomic(chainsDir, block.index, serializeBlockForDisk(chainBlock));
 
   return {
     index: block.index,
@@ -690,20 +678,19 @@ export function hashBlock(
   block: Omit<ChainBlock, 'hash'>,
   crypto: typeof import('node:crypto'),
 ): string {
-  const canonical = stableStringify({
-    ...block,
-    data: toCanonicalHashData(block.data),
-  });
-  return crypto.createHash('sha256').update(canonical).digest('hex');
-}
-
-function toCanonicalHashData(data: Record<string, unknown>): CanonicalHashData {
-  const tags = Array.isArray(data.tags)
-    ? data.tags.filter((value): value is string => typeof value === 'string')
-    : [];
-  const content = typeof data.content === 'string' ? data.content : JSON.stringify(data);
-  const type = typeof data.type === 'string' ? data.type : 'journal';
-  return { type, content, tags };
+  // The canonical hash has ONE implementation: `core/chain-hash.ts`.
+  //
+  // This function used to carry its own copy of the canonical shape, and
+  // it did not agree with the repair path in `infra/runtime/chain-canonical.ts`:
+  // the copy here fell back `type` -> `journal` while the repair path fell
+  // back `type` -> `block_type` -> `journal`, exactly like the native core.
+  // A block carrying only `block_type` was therefore hashed two different
+  // ways by two writers of the same chain.
+  //
+  // Measured on this host: 0 of 27 159 blocks on disk carry `block_type`
+  // without `type`, so the disagreement never bit. It is still the shape of
+  // bug this repository keeps hitting, and the fix is one line.
+  return canonicalHash(block, crypto);
 }
 
 async function readAndValidateChainBlocks(
@@ -764,11 +751,28 @@ async function readAndValidateChainBlocks(
     }
 
     if (blocks.length === 0) {
+      // The chain may CONTINUE an archived prefix instead of starting at
+      // genesis. Rotation archives the old blocks and leaves a marker
+      // with the head of the archive; the first live block then links to
+      // that head, and the chain's history stays provable.
+      //
+      // Without this the validators rejected every rotated chain with
+      // "missing genesis block", which is why rotation was never
+      // enabled. See `src/infra/storage/chain-rotation-head.ts`.
+      const head = await readChainRotationHead(chainsDir);
+      if (isValidChainStart(head, current.index, current.prev_hash)) {
+        blocks.push(current);
+        continue;
+      }
       // Accept index 0 or 1 as valid genesis (Rust uses index 0, TS uses index 1)
       if (current.index !== 0 && current.index !== 1) {
         throw new Error(
           `chain '${chainName}' integrity check failed at block ${current.index} (${file}): ` +
-            `missing genesis block (chain must start at index 0 or 1)`,
+            `missing genesis block (chain must start at index 0 or 1` +
+            (head
+              ? `, or continue the archived prefix recorded in ${ROTATION_HEAD_FILENAME}`
+              : '') +
+            `)`,
         );
       }
       // For index=0 genesis: prev_hash must be GENESIS_PREV_HASH
@@ -856,31 +860,17 @@ function checkBlockHashMismatch(
     .update(stableStringify(blockWithoutHash))
     .digest('hex');
 
-  // Rust-compatible hash: alphabetical on full block + toCanonicalHashData on data
-  // This matches how Rust computes hash via serde_json (json! macro alphabetical) + BlockData serialize
-  const toCanonical = (d: Record<string, unknown>) => ({
-    type: typeof d.type === 'string' ? d.type : 'journal',
-    content: typeof d.content === 'string' ? d.content : JSON.stringify(d),
-    tags: Array.isArray(d.tags) ? d.tags.filter((v): v is string => typeof v === 'string') : [],
-  });
-  const rustCompatBlock = {
-    index: block.index,
-    timestamp: block.timestamp,
-    chain: block.chain,
-    data: toCanonical(block.data as Record<string, unknown>),
-    prev_hash: block.prev_hash,
-  };
-  const rustCompatHash = crypto
-    .createHash('sha256')
-    .update(stableStringify(rustCompatBlock))
-    .digest('hex');
+  // There used to be a THIRD formula here, called `rustCompatHash`: the
+  // canonical payload built inline, with its own copy of the three-field
+  // projection. It was byte-identical to `expectedHash` for every input --
+  // the same five top-level keys, the same three data fields, the same
+  // sorted-key serialisation -- so the branch could never accept a block
+  // that the first comparison had rejected. It was dead code that looked
+  // like a compatibility layer, and it was a third place to change the
+  // hash. It is gone.
 
-  if (
-    block.hash === expectedHash ||
-    block.hash === legacyStableHash ||
-    block.hash === rustCompatHash
-  ) {
-    // Canonical or legacy or rust-compatible hash matches — pass
+  if (block.hash === expectedHash || block.hash === legacyStableHash) {
+    // Canonical or legacy hash matches — pass
     return undefined;
   } else if (!isStrictChainValidation()) {
     // Legacy fallback: accept older hash formats when strict mode is off
@@ -922,7 +912,7 @@ async function repairBlockHash(
 
   const filename = `${chainsDir}/${file}`;
   const tmpFilename = `${filename}.tmp-${process.pid}-${Date.now()}`;
-  await fs.writeFile(tmpFilename, JSON.stringify(repairedBlock, null, 2), 'utf8');
+  await fs.writeFile(tmpFilename, serializeBlockForDisk(repairedBlock), 'utf8');
   await fs.rename(tmpFilename, filename);
 
   // Append repair audit block
@@ -1323,7 +1313,7 @@ export async function rebuildChainHashes(
 
       const target = path.join(chainsDir, file);
       const tmp = `${target}.repair-${process.pid}-${Date.now()}`;
-      await fs.writeFile(tmp, `${JSON.stringify(repairedBlock, null, 2)}\n`, 'utf8');
+      await fs.writeFile(tmp, `${serializeBlockForDisk(repairedBlock)}\n`, 'utf8');
       await fs.rename(tmp, target);
       rewritten++;
 

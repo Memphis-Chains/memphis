@@ -51,7 +51,34 @@ export const recoveryCommandHandler: CommandHandler = {
     if (action === 'list') {
       const turns = listRecoveryTurns(path);
       const legacyOperations = listLegacyOperations(path);
-      console.log(JSON.stringify({ turns, legacyOperations }, null, 2));
+      // The turns that need a decision come first, and the summary says
+      // how many there are.
+      //
+      // Measured on this host before the fix: the list showed 46 turns,
+      // of which 31 had NOTHING outstanding — a turn that failed without
+      // dispatching a tool cannot have left a half-applied side effect.
+      // The Rust console (the authoritative operator cockpit) armed its
+      // recovery guard on the narrow definition and showed 15. Two
+      // surfaces, two definitions of the same thing — the operator could
+      // not tell which list was telling the truth.
+      //
+      // The narrow definition is the one the guard uses, and it is the one
+      // the console now shows first.
+      const ordered = [...turns].sort((a, b) => {
+        if (a.needsAcknowledgement !== b.needsAcknowledgement) return a.needsAcknowledgement ? -1 : 1;
+        return b.updatedAt.localeCompare(a.updatedAt);
+      });
+      const needsAcknowledgement = ordered.filter((turn) => turn.needsAcknowledgement).length;
+      console.log(JSON.stringify({
+        summary: {
+          total: ordered.length,
+          needsAcknowledgement,
+          nothingOutstanding: ordered.length - needsAcknowledgement,
+          legacyOperations: legacyOperations.length,
+        },
+        turns: ordered,
+        legacyOperations,
+      }, null, 2));
       return true;
     }
     if (action !== 'acknowledge' && action !== 'acknowledge-legacy' && action !== 'show') throw new Error('use recovery list, recovery show <turn-id>, recovery acknowledge <turn-id>, or recovery acknowledge-legacy <operation-id>');

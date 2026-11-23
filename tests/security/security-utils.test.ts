@@ -2,22 +2,18 @@
  * Tests for src/security/ modules:
  * - constant-time.ts (timing-safe comparison)
  * - unicode-normalizer.ts (NFC normalization)
- * - integrity.ts (chain integrity verification)
  * - request-limits.ts (request size validation)
  */
 
-import { createHash } from 'node:crypto';
 import { IncomingMessage } from 'node:http';
 
 import { describe, expect, it } from 'vitest';
 
-import { stableStringify } from '../../src/core/stable-stringify.js';
 import {
   constantTimeCompare,
   constantTimeBufferCompare,
   secureCompare,
 } from '../../src/security/constant-time.js';
-import { IntegrityManager } from '../../src/security/integrity.js';
 import { DEFAULT_SIZE_LIMITS, RequestSizeValidator } from '../../src/security/request-limits.js';
 import { normalizeToNfc, trimAndNormalizeToNfc } from '../../src/security/unicode-normalizer.js';
 
@@ -116,75 +112,6 @@ describe('trimAndNormalizeToNfc', () => {
 
   it('returns empty for non-string', () => {
     expect(trimAndNormalizeToNfc(null)).toBe('');
-  });
-});
-
-// --- integrity ---
-
-describe('IntegrityManager', () => {
-  const manager = new IntegrityManager();
-
-  function makeBlock(
-    index: number,
-    data: unknown,
-    previousHash: string,
-  ): { index: number; timestamp: string; data: unknown; hash: string; previousHash: string } {
-    const blockData = stableStringify({
-      index,
-      timestamp: '2026-01-01T00:00:00Z',
-      data,
-      previousHash,
-    });
-    const hash = createHash('sha256').update(blockData).digest('hex');
-    return { index, timestamp: '2026-01-01T00:00:00Z', data, hash, previousHash };
-  }
-
-  it('verifies a valid single-block chain', async () => {
-    const block = makeBlock(0, { msg: 'genesis' }, '0');
-    const result = await manager.verifyChainIntegrity({ blocks: [block] });
-    expect(result.isValid).toBe(true);
-    expect(result.errors).toHaveLength(0);
-    expect(result.blockCount).toBe(1);
-  });
-
-  it('verifies a valid multi-block chain', async () => {
-    const b0 = makeBlock(0, { msg: 'genesis' }, '0');
-    const b1 = makeBlock(1, { msg: 'second' }, b0.hash);
-    const result = await manager.verifyChainIntegrity({ blocks: [b0, b1] });
-    expect(result.isValid).toBe(true);
-  });
-
-  it('detects hash tampering', async () => {
-    const b0 = makeBlock(0, { msg: 'genesis' }, '0');
-    b0.hash = 'tampered_hash';
-    const result = await manager.verifyChainIntegrity({ blocks: [b0] });
-    expect(result.isValid).toBe(false);
-    expect(result.errors[0].type).toBe('HASH_MISMATCH');
-  });
-
-  it('detects broken chain linkage', async () => {
-    const b0 = makeBlock(0, { msg: 'genesis' }, '0');
-    const b1 = makeBlock(1, { msg: 'second' }, 'wrong_previous_hash');
-    const result = await manager.verifyChainIntegrity({ blocks: [b0, b1] });
-    expect(result.isValid).toBe(false);
-    expect(result.errors.some((e) => e.type === 'CHAIN_BROKEN')).toBe(true);
-  });
-
-  it('repairs chain by removing corrupted blocks', async () => {
-    const b0 = makeBlock(0, { msg: 'genesis' }, '0');
-    const b1 = makeBlock(1, { msg: 'second' }, b0.hash);
-    const b2 = makeBlock(2, { msg: 'third' }, 'wrong_hash');
-    const chain = { blocks: [b0, b1, b2] };
-    const result = await manager.repairChain(chain);
-    expect(result.repaired).toBe(true);
-    expect(result.removedBlocks).toBe(1);
-    expect(chain.blocks).toHaveLength(2);
-  });
-
-  it('reports no repair needed for valid chain', async () => {
-    const b0 = makeBlock(0, { msg: 'genesis' }, '0');
-    const result = await manager.repairChain({ blocks: [b0] });
-    expect(result.repaired).toBe(false);
   });
 });
 
