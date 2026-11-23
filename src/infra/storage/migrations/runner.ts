@@ -16,6 +16,7 @@ import * as nodeCrypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
+import { serializeBlockForDisk } from '../chain-file-io.js';
 import { CURRENT_SCHEMA_VERSION, MIGRATIONS } from './registry.js';
 import type {
   ChainMigration,
@@ -199,7 +200,12 @@ async function migrateChain(
   let backupMoved = false;
   try {
     for (const { file, block } of converted) {
-      await fs.writeFile(path.join(tmpDir, file), JSON.stringify(block), 'utf8');
+      // The canonical block format — the same one the append path writes.
+      // A migrated chain used to come out compact while every other chain
+      // on disk was pretty-printed; the hash covers the block's VALUES,
+      // so both verified, but the migrated chain was the only one of its
+      // kind on the disk.
+      await fs.writeFile(path.join(tmpDir, file), serializeBlockForDisk(block), 'utf8');
     }
     await fs.rename(chainDir, backupDir);
     backupMoved = true;
