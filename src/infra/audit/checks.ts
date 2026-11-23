@@ -208,7 +208,12 @@ export function checkBlockVocabulary(input: BlockVocabularyInput): AuditCheckRes
     id: 'block-vocabulary',
     title,
     verdict: input.unreadable.length > 0 ? FAIL : PASS,
-    summary: `${input.unreadable.length} of ${input.totalBlocks} live blocks cannot be parsed by the core`,
+    // "SCANNABLE", not "live": the count covers every directory the
+    // verifier may open, and that set includes the chain ARCHIVES the
+    // operator allowlisted — 747 of the 11 975 blocks on this host were
+    // copies of a chain, not new memory. The old wording said "live"
+    // and was wrong by those 747.
+    summary: `${input.unreadable.length} of ${input.totalBlocks} scannable blocks cannot be parsed by the core`,
     details,
   };
 }
