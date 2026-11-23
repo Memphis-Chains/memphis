@@ -706,7 +706,42 @@ mode this repository already has a postmortem about.
    `title`); the report the caller receives still carries the full
    evidence. See `ed030a9457`. The 32 MB already on disk is reclaimed by
    rotation, not by the writer.
-7. **The operator's account identifier is in the published history** —
+   **Second cause found 2026-11-23.** The first fix shrank the payload but
+   left the SECOND copy of it in place: the adapter fills a missing
+   `content` with `JSON.stringify(data)` — the whole payload, serialised —
+   and four places agree on that rule (`chain-adapter.ts`,
+   `core/chain-hash.ts`, `sync/sync-manager.ts`,
+   `crates/memphis-core/src/hash.rs`), so it cannot change without
+   invalidating the hash of every content-less block already on disk. The
+   cost falls on whoever writes a payload with no content of its own, and
+   measured on this host ALL 404 blocks of the `insights` chain carried
+   that copy: 13.67 MB of the chain's 31.92 MB, 43 % of it, written again
+   on every run. The `insights` payload is the one chain payload with no
+   content of its own; the `journal`, `decisions`, `cases` and `patterns`
+   chains write their own text and are untouched. The payload now carries
+   its own content — a digest, one line per insight — so the block that
+   reaches the chain went from 5 427 B to 3 289 B on the same fixture
+   (2.56x the payload down to 1.44x), and the content from 2 116 B of copy
+   to 147 B of digest. See `36c682e004`. The 32 MB already on disk is
+   reclaimed by rotation, not by the writer — and rotation cannot reach
+   it, which is the next entry.
+7. **The chain-size threshold cannot fire for a chain with few blocks.**
+   `rotateChain` requires BOTH `dirSize > threshold` AND
+   `blocks.length > minKeep` before it rotates. The two knobs are separate
+   bounds — the threshold says WHEN a chain is touched, the keep-count
+   says how much recent context stays live — and the operator's own unit
+   file says so: "the threshold is what actually triggers a rotation".
+   Measured 2026-11-23 on this host: the `insights` chain is 31.92 MB
+   across 404 blocks, so it is three times over the 10 MB threshold and
+   still has fewer than the 500 blocks the keep-count asks for — and it
+   has never rotated, although the service rotates hourly
+   (`MEMPHIS_CHAIN_ROTATE_INTERVAL_MS=3600000`,
+   `MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES=10485760`). The same holds for
+   `patterns` (9.90 MB, 5 510 blocks — over the count, under the size) and
+   `cases` (1.14 MB, 2 182 blocks). The threshold is inert for every chain
+   whose blocks are fat, which is exactly the case the threshold exists
+   for. **Still open.**
+8. **The operator's account identifier is in the published history** —
    55 commits across 21 files. §5.1 measures it and the scan reports it
    on every run. It cannot be fixed by a commit: the history has to be
    rewritten (`git-filter-repo`) and the remote force-pushed, which is an
@@ -714,17 +749,20 @@ mode this repository already has a postmortem about.
    close, and it is the reason the history arm is advisory rather than
    blocking.
 
-None of these is a crash. All of them are the same shape: two copies of
+None of these is a crash. Most of them are the same shape: two copies of
 one rule, with no gate that compares them.
 
-Three of the seven were closed by the cleanup pass of 2026-11-22 —
+Three of the eight were closed by the cleanup pass of 2026-11-22 —
 items 2, 4 and 6 — and each of them turned out to have a second copy
 hiding behind the first: the hash had a third formula that was
 byte-identical to the second, the rotation had two env knobs that were
 validated and ignored, and the insights chain stored its duplicated
 evidence twice over because the chain adapter serialises the whole
 payload into `content`. Finding the copies was the work; the gates that
-now compare them are what keeps them from coming back.
+now compare them are what keeps them from coming back. Item 6 kept a
+copy of its own after that pass — the payload shrank, the copy of it
+stayed — and it was closed on 2026-11-23 by the same rule applied at the
+writer.
 
 A later pass of the same day found the same shape in the skills. A
 skill lived in the repository and again in the runtime, with no
