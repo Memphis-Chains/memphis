@@ -49,6 +49,8 @@ pub struct BridgeExport {
 
 /// Every export of this bridge.
 pub const BRIDGE_EXPORTS: &[BridgeExport] = &[
+    BridgeExport { canonical: "bridge_chain_name_facts", js_name: "bridge_chain_name_facts", required: false },
+    BridgeExport { canonical: "bridge_chain_name_manifest", js_name: "bridge_chain_name_manifest", required: false },
     BridgeExport { canonical: "bridge_manifest", js_name: "bridge_manifest", required: true },
     BridgeExport { canonical: "chain_append", js_name: "chain_append", required: true },
     BridgeExport { canonical: "chain_query", js_name: "chain_query", required: true },
