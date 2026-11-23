@@ -56,7 +56,7 @@ type PublicNote = { chain: string; index: number; hash: string; text: string };
  * annotation is dropped **before** its content is retained, so the
  * large payloads never accumulate.
  */
-type PublicCandidate = {
+export type PublicCandidate = {
   chain: string;
   index: number;
   hash: string;
@@ -128,8 +128,15 @@ function reduceCandidate(chain: string, raw: NapiBlock): PublicCandidate | undef
  *
  * One block is in memory at a time. The journal is read in full because
  * it carries the consent annotations; the other chains are windowed.
+ *
+ * Exported so the gate can exercise the path the SERVER uses — the
+ * in-memory path (`publicNotesFromBlocks`) is a second implementation of
+ * the same rules, and a gate that only tested it would be a gate about
+ * the other system.
  */
-async function readPublicCandidates(rawEnv: NodeJS.ProcessEnv): Promise<PublicCandidate[]> {
+export async function readPublicCandidates(
+  rawEnv: NodeJS.ProcessEnv,
+): Promise<PublicCandidate[]> {
   const candidates: PublicCandidate[] = [];
   for (const chain of chains) {
     const windowed = chain !== ANNOTATION_CHAIN;
