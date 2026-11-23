@@ -183,6 +183,49 @@ bridge, E-09 is the shape of what it carries. Closing E-01 properly is what
 makes E-09 closable (the projection that produces the vocabulary can produce
 the types from the same source).
 
+#### E-10 · The published tarball is not the thing the gates look at
+
+`package.json`'s `files` list decides what npm publishes. It is a list of
+omissions, and nothing read it back.
+
+> Measured 2026-11-23 on this host, on the tagged commit `34cb179074`
+> (v1.14.0): the tarball published
+> `dist/infra/cli/commands/backup-manifest.js` and did **not** publish
+> `scripts/backup-manifest.mjs`, which that module imports at LOAD time. The
+> `release` workflow's first step failed on it:
+>
+> ```
+> [ERROR] Failed to load Memphis CLI: Cannot find module
+>   '.../node_modules/@memphis-chains/memphis/scripts/backup-manifest.mjs'
+> ```
+>
+> The import is at module scope, so the omission broke **every** CLI command,
+> not one — `memphis completion bash` was simply the first probe. Introduced
+> by `f4b9bc2875`; `git log -S"scripts/backup-manifest.mjs" -- package.json`
+> was empty, so the path had never been published.
+
+The second half of the defect was the gate list. The local preflight
+(`ops:release-preflight`) ran nine gates and **none of them touched the
+tarball**, so it reported `ok: true` for an artefact that could not start. The
+proof lived in the `release` workflow only — the one place the operator does
+not run by hand.
+
+**CLOSED 2026-11-23.** The rule is inverted: the omissions are DISCOVERED
+instead of the list being trusted.
+
+| piece | what it is |
+| --- | --- |
+| `scripts/check-package-runtime-closure.mts` | **the owner** — finds every file the shipped code imports from outside its own tree |
+| `tests/fixtures/package-runtime-closure.json` | the artefact of cases (2 edges on this host) |
+| `scripts/check-package-runtime-closure.mts --check` | one runner: the gate |
+| `tests/ops/package-runtime-closure.test.ts` | the other runner: the test, importing the owner |
+
+And the suite is the same on both sides: `ops:release-preflight` now runs
+**both** packaging gates — the fast closure check (seconds) and
+`ops:validate-package-artifact` (packs, installs and executes the real
+binary). Measured: the artefact validation fails with the exact CI message
+when the path is removed from `files`, and passes with it.
+
 ### Family B — the system degrades quietly instead of failing
 
 Every defect here answers with something plausible. The operator cannot tell

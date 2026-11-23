@@ -10,6 +10,50 @@ fail.** Every cross-arm rule that was decided in two places now has one owner
 and a gate; every claim in the notes below is a number measured on the
 operator's host.
 
+### The tarball ships every module the CLI loads
+
+The first attempt to publish v1.14.0 failed. The `release` workflow's first
+step packs the npm tarball, installs it into a temporary prefix and runs the
+real binary — and the binary died on startup:
+
+```
+[ERROR] Failed to load Memphis CLI: Cannot find module
+  '.../node_modules/@memphis-chains/memphis/scripts/backup-manifest.mjs'
+  imported from '.../node_modules/@memphis-chains/memphis/dist/infra/cli/commands/backup-manifest.js'
+```
+
+`src/infra/cli/commands/backup-manifest.ts` imports
+`../../../../scripts/backup-manifest.mjs` — a file OUTSIDE `src/` — and
+`package.json`'s `files` list did not mention it. The import is a
+module-load-time import, so the omission broke **every** command, not one;
+`memphis completion bash` was simply the first probe the validator ran.
+Introduced by `f4b9bc2875`; `git log -S"scripts/backup-manifest.mjs" --
+package.json` was empty, so the path had never been published.
+
+The list in `files` was a denylist of omissions, and a denylist nobody checks
+is a wish. The rule is now inverted: `scripts/check-package-runtime-closure.mts`
+discovers every file the shipped code imports from outside its own tree, and
+each one must be listed. Measured on this host: **2** such edges
+(`scripts/backup-db-snapshot.mjs`, `scripts/backup-manifest.mjs`), both
+covered. The artefact is `tests/fixtures/package-runtime-closure.json`; the
+runners are the script and `tests/ops/package-runtime-closure.test.ts`.
+
+The gap that let this reach CI was the gate list itself: the local preflight
+never checked the tarball, so it reported `ok: true` for a broken artefact.
+Both packaging gates now live in `ops:release-preflight` — the fast closure
+check (seconds) and `ops:validate-package-artifact` (minutes) — so the suite
+the operator runs before a release is the suite CI runs.
+
+### One dependency bump (RUSTSEC-2026-0592)
+
+`url` 2.5.8 → 2.5.9 (with `form_urlencoded` 1.2.2 → 1.2.3). The advisory was
+issued on 2026-11-22: `Url::origin()` recursed into `blob:` URLs without a
+depth limit, so a 50 KB URL with 10 000 nested `blob:` prefixes overflowed the
+stack and killed the process — `catch_unwind()` does not catch a stack
+overflow. `url` reaches Memphis transitively through `ureq` in
+`memphis-embed`. Fixed upstream in 2.5.9; `scripts/cargo-audit-check.sh`
+reports no vulnerabilities against the new lockfile.
+
 ### The chain-name vocabulary has one owner (ledger E-03)
 
 "What is a chain called?" had four owners and three answers. The native
