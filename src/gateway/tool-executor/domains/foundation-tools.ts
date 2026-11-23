@@ -30,16 +30,12 @@ export function createFoundationRuntimeTools(rawEnv?: NodeJS.ProcessEnv): Runtim
       description:
         'Write/append/overwrite files. Inside ~/memphis/: unrestricted. ' +
         'Outside: create-new is always allowed; append and overwrite require tier 3.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: 'File path' },
-          content: { type: 'string', description: 'Content to write' },
-          mode: { type: 'string', enum: ['write', 'append', 'overwrite'] },
-          createDirs: { type: 'boolean' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_fs_write', {
+        propertyDescriptions: {
+          path: 'File path',
+          content: 'Content to write',
         },
-        required: ['path', 'content'],
-      },
+      }),
       isDestructive: true,
       validateInput(args) {
         return {
@@ -56,16 +52,7 @@ export function createFoundationRuntimeTools(rawEnv?: NodeJS.ProcessEnv): Runtim
     buildTool({
       name: 'memphis_fs_ops',
       description: 'Filesystem operations: copy, move, delete, mkdir, stat',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          operation: { type: 'string', enum: ['copy', 'move', 'delete', 'mkdir', 'stat'] },
-          source: { type: 'string' },
-          destination: { type: 'string' },
-          recursive: { type: 'boolean' },
-        },
-        required: ['operation', 'source'],
-      },
+      inputSchema: buildRegistryInputJsonSchema('memphis_fs_ops'),
       isDestructive: true,
       validateInput(args) {
         return {
@@ -87,14 +74,12 @@ export function createFoundationRuntimeTools(rawEnv?: NodeJS.ProcessEnv): Runtim
     buildTool({
       name: 'memphis_web_search',
       description: 'Search the web via DuckDuckGo',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: 'Search query' },
-          limit: { type: 'number', description: 'Max results (1-10)' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_web_search', {
+        propertyDescriptions: {
+          query: 'Search query',
+          limit: 'Max results (1-10)',
         },
-        required: ['query'],
-      },
+      }),
       isReadOnly: true,
       isConcurrencySafe: true,
       validateInput(args) {
@@ -135,19 +120,13 @@ export function createFoundationRuntimeTools(rawEnv?: NodeJS.ProcessEnv): Runtim
     buildTool({
       name: 'memphis_media_ingest',
       description: 'Ingest a media file (audio/image) — transcribe + describe + write to chains',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: 'Path to media file' },
-          type: {
-            type: 'string',
-            enum: ['audio', 'image', 'video', 'auto'],
-            description: 'Override auto-detection',
-          },
-          dryRun: { type: 'boolean', description: 'Skip chain writes' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_media_ingest', {
+        propertyDescriptions: {
+          path: 'Path to media file',
+          type: 'Override auto-detection',
+          dryRun: 'Skip chain writes',
         },
-        required: ['path'],
-      },
+      }),
       isReadOnly: false,
       isConcurrencySafe: false,
       validateInput(args) {
@@ -164,18 +143,14 @@ export function createFoundationRuntimeTools(rawEnv?: NodeJS.ProcessEnv): Runtim
     buildTool({
       name: 'memphis_minimax_h3',
       description: 'Generate or query an asynchronous MiniMax-H3 video task',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          action: { type: 'string', enum: ['create', 'query'] },
-          prompt: { type: 'string', description: 'Video prompt; required when action=create' },
-          task_id: { type: 'string', description: 'Task id; required when action=query' },
-          duration: { type: 'number', description: 'Seconds (2-15; default 5)' },
-          resolution: { type: 'string', enum: ['768P', '2K'] },
-          ratio: { type: 'string', description: 'Optional aspect ratio, e.g. 16:9' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_minimax_h3', {
+        propertyDescriptions: {
+          prompt: 'Video prompt; required when action=create',
+          task_id: 'Task id; required when action=query',
+          duration: 'Seconds (2-15; default 5)',
+          ratio: 'Optional aspect ratio, e.g. 16:9',
         },
-        required: ['action'],
-      },
+      }),
       isReadOnly: false,
       isConcurrencySafe: false,
       validateInput(args) {
@@ -198,16 +173,7 @@ export function createFoundationRuntimeTools(rawEnv?: NodeJS.ProcessEnv): Runtim
     buildTool({
       name: 'memphis_package',
       description: 'Package manager operations (npm, cargo, apt, pip)',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          manager: { type: 'string', enum: ['npm', 'cargo', 'apt', 'pip'] },
-          action: { type: 'string', enum: ['install', 'remove', 'list', 'search'] },
-          packages: { type: 'array', items: { type: 'string' } },
-          global: { type: 'boolean' },
-        },
-        required: ['manager', 'action'],
-      },
+      inputSchema: buildRegistryInputJsonSchema('memphis_package'),
       isDestructive: true,
       validateInput(args) {
         return {
@@ -224,15 +190,7 @@ export function createFoundationRuntimeTools(rawEnv?: NodeJS.ProcessEnv): Runtim
     buildTool({
       name: 'memphis_db',
       description: 'Query and manage SQLite databases',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          action: { type: 'string', enum: ['query', 'execute', 'tables', 'schema'] },
-          sql: { type: 'string' },
-          database: { type: 'string' },
-        },
-        required: ['action'],
-      },
+      inputSchema: buildRegistryInputJsonSchema('memphis_db'),
       validateInput(args) {
         return {
           action: requiredString(args, 'action') as 'query' | 'execute' | 'tables' | 'schema',
@@ -250,14 +208,12 @@ export function createFoundationRuntimeTools(rawEnv?: NodeJS.ProcessEnv): Runtim
     buildTool({
       name: 'memphis_build',
       description: 'Auto-detect project type and run build',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          project: { type: 'string', description: 'Subdirectory to build' },
-          command: { type: 'string', description: 'Override build command' },
-          profile: { type: 'string', enum: ['debug', 'release'] },
+      inputSchema: buildRegistryInputJsonSchema('memphis_build', {
+        propertyDescriptions: {
+          project: 'Subdirectory to build',
+          command: 'Override build command',
         },
-      },
+      }),
       isDestructive: false,
       validateInput(args) {
         return {
@@ -273,24 +229,7 @@ export function createFoundationRuntimeTools(rawEnv?: NodeJS.ProcessEnv): Runtim
     buildTool({
       name: 'memphis_health_check',
       description: 'HTTP health checks against targets',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          targets: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                url: { type: 'string' },
-                timeout: { type: 'number' },
-                expectedStatus: { type: 'number' },
-              },
-              required: ['url'],
-            },
-          },
-        },
-        required: ['targets'],
-      },
+      inputSchema: buildRegistryInputJsonSchema('memphis_health_check'),
       isReadOnly: true,
       isConcurrencySafe: true,
       validateInput(args) {

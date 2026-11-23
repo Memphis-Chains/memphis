@@ -148,6 +148,12 @@ export function registerTelegramTextTurns(
         guard.release(chatId);
       }
     };
-    void run();
+    // The turn body is already guarded, but a throw inside the guard
+    // itself (in `describeTurnError`, or in a logger that fails) would
+    // still reject here. `void` discards the promise, so the rejection
+    // would reach the process-level handler. The channel owns it.
+    void run().catch((err) => {
+      log.error('telegram turn failed outside its guard', { err });
+    });
   });
 }

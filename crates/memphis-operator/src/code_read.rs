@@ -124,7 +124,8 @@ pub fn read_roots() -> Vec<PathBuf> {
         .map(|item| {
             let expanded = match item.strip_prefix("~/") {
                 Some(rest) => {
-                    let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
+                    let home =
+                        std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
                     Path::new(&home).join(rest)
                 }
                 None => PathBuf::from(item),
@@ -226,6 +227,14 @@ pub fn assert_write_contained(resolved: &Path, home: &Path) -> Result<(), String
 ///
 /// The walk follows every component that is a link, at any depth, and
 /// stops at 40 hops like the kernel does for a link loop.
+///
+/// PUBLIC because the write path needs it too: a request that names a
+/// symlink has to be resolved the same way the read path resolves it, and
+/// a second copy of this resolver is a rule that drifts.
+pub fn realpath_resolving(path: &Path) -> PathBuf {
+    realpath_resolving_links(path, 0)
+}
+
 fn realpath_resolving_links(path: &Path, depth: usize) -> PathBuf {
     if depth > 40 {
         return path.to_path_buf();
@@ -303,7 +312,12 @@ mod tests {
 
     #[test]
     fn vault_material_is_refused_on_the_read_path() {
-        for name in [".env", ".env.production", "vault-state.json", "vault-entries.json"] {
+        for name in [
+            ".env",
+            ".env.production",
+            "vault-state.json",
+            "vault-entries.json",
+        ] {
             let path = Path::new("/home/memphis/somewhere").join(name);
             let error = assert_not_blocked(&path).expect_err("must be refused");
             assert!(error.contains("blocked because it matches"), "got: {error}");
@@ -315,7 +329,10 @@ mod tests {
         // Generated state, not a secret: reading it is harmless, writing
         // into it is not.
         let path = Path::new("/home/memphis/memphis/node_modules/pkg/index.js");
-        assert!(assert_not_blocked(path).is_ok(), "the read path must allow it");
+        assert!(
+            assert_not_blocked(path).is_ok(),
+            "the read path must allow it"
+        );
         let error = assert_not_write_blocked(path).expect_err("the write path must refuse it");
         assert!(error.contains("matches node_modules"), "got: {error}");
     }
@@ -323,7 +340,10 @@ mod tests {
     #[test]
     fn the_git_directory_is_readable_but_not_writable() {
         let path = Path::new("/home/memphis/memphis/.git/config");
-        assert!(assert_not_blocked(path).is_ok(), "the read path must allow it");
+        assert!(
+            assert_not_blocked(path).is_ok(),
+            "the read path must allow it"
+        );
         let error = assert_not_write_blocked(path).expect_err("the write path must refuse it");
         assert!(error.contains("matches .git"), "got: {error}");
     }
@@ -341,7 +361,10 @@ mod tests {
         let path = Path::new("/etc/hostname");
         let roots = vec![PathBuf::from("/home/memphis/memphis")];
         let error = assert_within_roots(path, &roots).expect_err("must be refused");
-        assert!(error.contains("outside the allowed read roots"), "got: {error}");
+        assert!(
+            error.contains("outside the allowed read roots"),
+            "got: {error}"
+        );
     }
 
     #[test]

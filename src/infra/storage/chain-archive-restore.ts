@@ -8,7 +8,10 @@
  * an active chain. This module fills that gap.
  *
  * Restore flow:
- *   1. Gunzip the archive into memory (streamed; each line is one block).
+ *   1. Gunzip the archive and split it into its JSON values (streamed).
+ *      The split is by VALUE, not by line: the reader accepts both true
+ *      JSON Lines and the legacy pretty-printed layout that the writer
+ *      produced before 2026-11-23. See `chain-archive-format.ts`.
  *   2. Parse each block, recompute its hash, compare to stored hash.
  *      Any mismatch aborts the restore — the archive is corrupt.
  *   3. Validate the prev_hash chain internally (block[i].prev_hash must
@@ -27,9 +30,12 @@
 import { createReadStream } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 import { createGunzip } from 'node:zlib';
 
 import { hashBlock, type ChainBlock } from './chain-adapter.js';
+import { scanArchiveValues } from './chain-archive-format.js';
+import { serializeBlockForDisk } from './chain-file-io.js';
 import { getChainPath } from '../../config/paths.js';
 import { SAFE_CHAIN_NAME } from '../../memory/chain-catalog.js';
 
@@ -81,16 +87,45 @@ async function readArchiveToBlocks(archivePath: string): Promise<ChainBlock[]> {
   const blocks: ChainBlock[] = [];
   await new Promise<void>((resolve, reject) => {
     const stream = createReadStream(archivePath).pipe(createGunzip());
+    // A UTF-8 DECODER, not `chunk.toString('utf8')`.
+    //
+    // A multi-byte character that straddles a chunk boundary is not a
+    // character plus a fragment — it is one character. Decoding each
+    // chunk on its own replaces the split sequence with U+FFFD, and the
+    // block's content is silently wrong.
+    //
+    // Measured 2026-11-23 on this host, on a real rotation of the
+    // `insights` chain (297 blocks archived): 20 of the 297 lines came
+    // back corrupted, the first of them at block 190 — where the restore
+    // then failed with "hash mismatch at block 190", because the
+    // corrupted byte sat inside a hash-covered field. Every corrupted
+    // character sat exactly two bytes before a 16 KB chunk boundary:
+    // the two bytes of `ó` (0xC3 0xB3), split in half.
+    //
+    // `StringDecoder` holds the incomplete tail of a chunk until the
+    // next one arrives, so the character survives.
+    const decoder = new StringDecoder('utf8');
     let buffer = '';
     stream.on('data', (chunk: Buffer | string) => {
-      buffer += chunk.toString('utf8');
-      let newlineIdx: number;
-      while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
-        const line = buffer.slice(0, newlineIdx).trim();
-        buffer = buffer.slice(newlineIdx + 1);
-        if (!line) continue;
+      buffer += typeof chunk === 'string' ? chunk : decoder.write(chunk);
+
+      // Split the stream into complete JSON VALUES, not into lines.
+      //
+      // The old reader split on newlines and parsed each line — which is
+      // what "JSON Lines" means — while the writer produced pretty-printed
+      // blocks glued together by newlines. Every archive the runtime
+      // produced therefore died on its first line, which was `{`.
+      //
+      // The scanner reads both the current format (one object per line)
+      // and the legacy one (objects spread over many lines), so the
+      // archives already on disk stay recoverable. See
+      // `chain-archive-format.ts`.
+      const scan = scanArchiveValues(buffer);
+      buffer = scan.rest;
+
+      for (const value of scan.values) {
         try {
-          blocks.push(JSON.parse(line) as ChainBlock);
+          blocks.push(JSON.parse(value) as ChainBlock);
         } catch (err) {
           reject(
             new ChainArchiveRestoreError(
@@ -104,6 +139,11 @@ async function readArchiveToBlocks(archivePath: string): Promise<ChainBlock[]> {
       }
     });
     stream.on('end', () => {
+      // Flush the decoder's tail — a truncated character at the very end
+      // of the stream still has to be surfaced, not silently dropped.
+      buffer += decoder.end();
+
+      // Anything left is a truncated value — fail closed.
       const tail = buffer.trim();
       if (tail) {
         try {
@@ -265,7 +305,9 @@ export async function restoreChainFromArchive(
       // file does not exist — proceed to write
     }
     const tmp = `${fullPath}.tmp-${process.pid}`;
-    await fs.writeFile(tmp, JSON.stringify(block), 'utf8');
+    // The same serializer the append path uses, so a restored chain is
+    // byte-identical to a chain that was never rotated.
+    await fs.writeFile(tmp, serializeBlockForDisk(block), 'utf8');
     await fs.rename(tmp, fullPath);
     restored += 1;
   }

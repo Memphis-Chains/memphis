@@ -333,7 +333,16 @@ export function startScheduledBackupLoop(
         }
       }
       inFlight = false;
-      options.onTick?.(state);
+      // The observer is a notification. A throwing observer must not fail
+      // the backup loop.
+      try {
+        options.onTick?.(state);
+      } catch (err) {
+        log.warn(
+          { event: 'backup.scheduled.observer.failed', error: String(err) },
+          'backup tick observer threw (non-fatal)',
+        );
+      }
     }
     return state;
   };
@@ -350,7 +359,16 @@ export function startScheduledBackupLoop(
 
   state.enabled = true;
   state.intervalMs = interval;
-  const timer = setInterval(() => void tickNow(), interval);
+  const timer = setInterval(() => {
+    // `void tickNow()` discards the promise; a rejection would reach the
+    // process-level handler. The loop owns it.
+    void tickNow().catch((err) => {
+      log.error(
+        { event: 'backup.scheduled.tick.failed', error: String(err) },
+        'scheduled backup tick failed (non-fatal)',
+      );
+    });
+  }, interval);
   if (typeof timer === 'object' && 'unref' in timer) {
     timer.unref();
   }

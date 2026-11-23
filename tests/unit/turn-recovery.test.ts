@@ -88,3 +88,70 @@ describe('interrupted turn recovery', () => {
     verify.close();
   });
 });
+
+/**
+ * The recovery list and the recovery guard must agree.
+ *
+ * Measured 2026-11-22 on this host: `memphis recovery list` reported 46
+ * turns to acknowledge, while the Rust console — the authoritative
+ * operator cockpit — armed its guard on 15. The difference was 31 turns
+ * that had NOTHING outstanding: a turn that failed without dispatching a
+ * tool cannot have left a half-applied side effect.
+ *
+ * Two surfaces with two definitions of "unfinished work" is the shape
+ * this repository already has a postmortem about. The narrow definition
+ * is the Rust one (`list_recovery_turns` in
+ * crates/memphis-operator/src/chat_session.rs), and it is the only signal
+ * that measures a possible side effect.
+ */
+describe('the recovery list asks for a decision only where there is one', () => {
+  function fixtureWithOperations(
+    operations: Array<{ id: string; status: string; reviewed?: string }>,
+  ): string {
+    const root = mkdtempSync(join(tmpdir(), 'memphis-recovery-parity-'));
+    process.env.MEMPHIS_DATA_DIR = root;
+    saveOperatorConfig({ schemaVersion: 1, passphraseHash: PASSWORD_HASH, salt: SALT,
+      createdAt: '', updatedAt: '', recoveryQuestionHint: '', recoveryHash: '' });
+    const file = join(root, 'state.db');
+    const db = new Database(file);
+    db.exec(`CREATE TABLE operator_turn_checkpoints (id TEXT PRIMARY KEY, session_id TEXT, status TEXT, pending_json TEXT, partial_text TEXT, partial_truncated INTEGER, updated_at TEXT);
+             CREATE TABLE operator_tool_operations (id TEXT, session_id TEXT, turn_id TEXT, tool_name TEXT, status TEXT, result_summary TEXT, created_at TEXT, reviewed_at TEXT);`);
+    db.prepare('INSERT INTO operator_turn_checkpoints VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(ID, 'session', 'interrupted', '[]', '', 0, '2026-11-07');
+    for (const operation of operations) {
+      db.prepare('INSERT INTO operator_tool_operations VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(operation.id, 'session', ID, 'memphis_exec', operation.status, null, '2026-11-07', operation.reviewed ?? null);
+    }
+    db.close();
+    return file;
+  }
+
+  it('asks for a decision when an operation was dispatched and never settled', () => {
+    const turns = listRecoveryTurns(fixtureWithOperations([{ id: 'op-1', status: 'unknown' }]));
+    expect(turns).toHaveLength(1);
+    expect(turns[0].unsettledCount).toBe(1);
+    expect(turns[0].needsAcknowledgement).toBe(true);
+  });
+
+  it('does NOT ask for a decision when every operation settled', () => {
+    const turns = listRecoveryTurns(fixtureWithOperations([
+      { id: 'op-1', status: 'completed' },
+      { id: 'op-2', status: 'failed' },
+    ]));
+    expect(turns[0].unsettledCount).toBe(0);
+    expect(turns[0].needsAcknowledgement).toBe(false);
+  });
+
+  it('does NOT ask for a decision for an operation the operator already reviewed', () => {
+    const turns = listRecoveryTurns(fixtureWithOperations([
+      { id: 'op-1', status: 'unknown', reviewed: '2026-11-08T00:00:00.000Z' },
+    ]));
+    expect(turns[0].unsettledCount).toBe(0);
+    expect(turns[0].needsAcknowledgement).toBe(false);
+  });
+
+  it('counts a started operation as unsettled', () => {
+    const turns = listRecoveryTurns(fixtureWithOperations([{ id: 'op-1', status: 'started' }]));
+    expect(turns[0].needsAcknowledgement).toBe(true);
+  });
+});

@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 
+import { createUtf8StreamDecoder } from '../../core/utf8-stream.js';
 import { createMemphisMcpServer } from '../server.js';
 import {
   DEFAULT_MCP_HTTP_HOST,
@@ -40,11 +41,18 @@ export async function serveMcpHttp(
     }
 
     if (req.method === 'POST') {
+      // One decoder for the whole body: a multi-byte character that
+      // straddles a chunk boundary is ONE character, and decoding the
+      // halves separately turns it into U+FFFD. MCP tool arguments carry
+      // the operator's own text, and Polish diacritics are two bytes.
+      // See `src/core/utf8-stream.ts`.
+      const decoder = createUtf8StreamDecoder();
       let raw = '';
       req.on('data', (chunk) => {
-        raw += chunk.toString('utf8');
+        raw += decoder.push(chunk);
       });
       req.on('end', async () => {
+        raw += decoder.end();
         try {
           const body = raw.length > 0 ? JSON.parse(raw) : {};
           const sessionId = req.headers['mcp-session-id'] as string | undefined;

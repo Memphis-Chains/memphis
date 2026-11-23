@@ -30,9 +30,20 @@ const conversation = z
   );
 
 // This listener accepts only model inference. Its routes are never registered on the operator HTTP server.
+//
+// `basalReady` is injectable for the same reason `classify` is: the readiness
+// contract has to be testable without the world. `/ready` answers 200 only
+// when the provider is configured AND the basal layer is healthy, and the
+// basal layer is an HTTP service on 127.0.0.1:8000. A test that asks the real
+// service is a test that passes on the operator's host (where the basal
+// service runs) and fails on every CI runner (where it does not) — measured
+// 2026-11-23: `cross-arch (ubuntu-24.04-arm)` failed on the PR with
+// "expected 503 to be 200" while the same test passed locally, because the
+// operator's host answers /health with {"ok":true,"ready":true}.
 export function createPublicMinimaxRelay(
   runtime: Pick<OrchestrationService, 'resolveProvider'>,
   classify = classifyPublicQuestion,
+  basalReady: () => Promise<boolean> = publicBasalReady,
 ) {
   const relay = Fastify({ logger: false, bodyLimit: 48 * 1024, forceCloseConnections: true });
   let active = 0;
@@ -41,7 +52,7 @@ export function createPublicMinimaxRelay(
       if (
         !safeModeEnabled(process.env) &&
         runtime.resolveProvider('minimax').isConfigured() &&
-        (await publicBasalReady())
+        (await basalReady())
       )
         return { ok: true };
     } catch {

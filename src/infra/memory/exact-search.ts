@@ -1,9 +1,15 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { getChainPath, getReadableChainPaths, normalizeChainName } from '../../config/paths.js';
 import { buildDecisionContent, normalizeDecisionBlockData } from '../../core/decision-chain.js';
 import { getSearchableChainNames } from '../../memory/chain-catalog.js';
+import {
+  parseArchiveFileName,
+  readArchiveBlocksSync,
+  type ArchiveBlockValue,
+  type ArchiveFileName,
+} from '../storage/chain-archive-format.js';
 import { createSqliteClient, runMigrations } from '../storage/sqlite/client.js';
 import {
   SqliteMemorySearchRepository,
@@ -40,25 +46,150 @@ export function resolveRecallSources(
   const resolved = new Map<string, ExactSearchIndexEntryInput>();
   for (const chain of chains) {
     for (const block of readChainBlocks(chain, rawEnv)) {
-      const defaultId = `${chain}-${block.index}`;
-      const memoryId =
-        typeof block.data.memory_id === 'string' && block.data.memory_id.trim()
-          ? block.data.memory_id.trim()
-          : defaultId;
-      const keys = [`${chain}:${memoryId}`, `${chain}:${defaultId}`].filter((key) =>
-        wanted.has(key),
-      );
-      if (keys.length === 0) continue;
-      const entry = deriveExactSearchEntry({
-        chain,
-        index: block.index,
-        hash: block.hash,
-        data: block.data,
-      });
-      if (entry) for (const key of keys) resolved.set(key, entry);
+      collectSource(chain, block, wanted, resolved);
     }
+    // The blocks the rotation moved aside are still the operator's memory.
+    resolveArchivedSources(chain, wanted, resolved, rawEnv);
   }
   return resolved;
+}
+
+/**
+ * Match one block against the wanted memory ids and remember its entry.
+ *
+ * One rule for a block's identity, used by the live chain and by the
+ * rotation archives alike: the memory id is the block's own
+ * `data.memory_id` when it has one, and `{chain}-{index}` otherwise.
+ */
+function collectSource(
+  chain: string,
+  block: RawChainBlock,
+  wanted: Set<string>,
+  resolved: Map<string, ExactSearchIndexEntryInput>,
+): void {
+  const defaultId = `${chain}-${block.index}`;
+  const memoryId =
+    typeof block.data.memory_id === 'string' && block.data.memory_id.trim()
+      ? block.data.memory_id.trim()
+      : defaultId;
+  const keys = [`${chain}:${memoryId}`, `${chain}:${defaultId}`].filter((key) => wanted.has(key));
+  if (keys.length === 0) return;
+  const entry = deriveExactSearchEntry({
+    chain,
+    index: block.index,
+    hash: block.hash,
+    data: block.data,
+  });
+  if (entry) for (const key of keys) resolved.set(key, entry);
+}
+
+/**
+ * Resolve the blocks the chain rotation moved into an archive.
+ *
+ * ## Why this exists
+ *
+ * The rotation bounds a chain on disk: it moves the old prefix into
+ * `<chains>/.archives/<chain>_<from>-<to>_<timestamp>.jsonl.gz` and keeps
+ * the tail live. The blocks are NOT deleted — the archive restores them,
+ * whole, with `memphis chain restore`.
+ *
+ * But the semantic index is not the chain: it holds the CHUNKS of every
+ * block that was ever indexed, and its chunk ids point at
+ * `{chain}-{index}`. Nothing told the index that half the chain moved,
+ * so the recall kept finding those chunks — and could not find the
+ * blocks behind them, because they are no longer in the live directory.
+ *
+ * The recall degraded silently: instead of the block's content it
+ * returned the chunk's shortened preview, and said so with
+ * `contentSource: "preview"`.
+ *
+ * > Measured 2026-11-23 on this host, on the real rotation of the
+ * > `insights` chain (297 blocks archived): 2 761 of 12 942 chunks in the
+ * > live embed index point at blocks that are no longer on disk — 21.3 %
+ * > of the index — and 192 of 196 recall hits on archived blocks came
+ * > back as an 81-character preview instead of the content.
+ *
+ * ## Why the reader, and not the index
+ *
+ * The obvious fix is to purge the archived chunks from the index when the
+ * rotation happens. That would DELETE the operator's semantic memory of
+ * 297 blocks — the distilled insights — from every future search, and it
+ * would do so silently, in a feature whose whole purpose is to move
+ * history aside without losing it.
+ *
+ * The blocks are still there. The reader is what was missing them, so the
+ * reader is what has to learn where they went.
+ *
+ * ## What it costs
+ *
+ * An archive is opened only when a wanted block was NOT found live, and
+ * only when its index range can hold a wanted index. Measured on this
+ * host: the `insights` archive (297 blocks) reads in ~380 ms — gunzip,
+ * scan, parse — and the `system` archive (15 271 blocks) in ~260 ms.
+ */
+function resolveArchivedSources(
+  chain: string,
+  wanted: Set<string>,
+  resolved: Map<string, ExactSearchIndexEntryInput>,
+  rawEnv: NodeJS.ProcessEnv,
+): void {
+  const missing = [...wanted].filter((key) => !resolved.has(key));
+  if (missing.length === 0) return;
+
+  const archiveDir = join(dirname(getChainPath(chain, rawEnv)), '.archives');
+  let entries: string[];
+  try {
+    entries = readdirSync(archiveDir);
+  } catch {
+    return; // no archives for this chain
+  }
+
+  const archives = entries
+    .map((file) => ({ file, name: parseArchiveFileName(file) }))
+    .filter((entry): entry is { file: string; name: ArchiveFileName } => entry.name !== null)
+    .filter((entry) => entry.name.chain === chain)
+    // Newest first: the most recent archive holds the most recent prefix.
+    .sort((a, b) => b.name.timestamp.localeCompare(a.name.timestamp));
+  if (archives.length === 0) return;
+
+  // Which block indexes are wanted? A memory id is usually
+  // `{chain}-{index}`, and the archive's NAME carries the index range — so
+  // an archive that cannot hold a wanted index is never opened.
+  const wantedIndexes = new Set<number>();
+  let hasUnindexedId = false;
+  for (const key of missing) {
+    const memoryId = key.slice(key.indexOf(':') + 1);
+    const match = /^(.+)-(\d+)$/.exec(memoryId);
+    if (match) wantedIndexes.add(Number(match[2]));
+    else hasUnindexedId = true;
+  }
+
+  for (const archive of archives) {
+    if (!hasUnindexedId) {
+      let covered = false;
+      for (const index of wantedIndexes) {
+        if (index >= archive.name.firstIndex && index <= archive.name.lastIndex) {
+          covered = true;
+          break;
+        }
+      }
+      if (!covered) continue;
+    }
+
+    let blocks: ArchiveBlockValue[];
+    try {
+      blocks = readArchiveBlocksSync(join(archiveDir, archive.file));
+    } catch {
+      continue; // an unreadable archive must not break the recall
+    }
+
+    for (const block of blocks) {
+      const index = typeof block.index === 'number' ? block.index : -1;
+      const hash = typeof block.hash === 'string' ? block.hash : '';
+      const data = (block.data ?? {}) as Record<string, unknown>;
+      collectSource(chain, { index, hash, data }, wanted, resolved);
+    }
+  }
 }
 
 export type ExactSearchOutput = {

@@ -92,7 +92,9 @@
 
 ### Deterministic hashing
 
-- `IntegrityManager.computeHash` uses `stableStringify` (sorted object keys) for deterministic block hashing
+- A block's hash is computed by ONE rule, `canonicalHash` in `src/core/chain-hash.ts`, mirrored by the native core in `crates/memphis-core/src/hash.rs`. Both sides check themselves against the fixture `tests/fixtures/chain-hash-parity.json`.
+- The hash uses `stableStringify` (sorted object keys) over a payload reduced to the canonical three-field `data` form (`type`, `content`, `tags`), so the same bytes hash the same way in either arm.
+- There is no second, private hash formula anywhere in the TypeScript arm. `src/security/integrity.ts` used to hold one — a copy that hashed a `previousHash` field the real blocks do not have, so it would have declared every block on disk corrupt. It was removed on 2026-11-22; see `docs/design/MEMPHIS-CRASH-REBUILD.md` §3.
 
 ### Operator gate
 

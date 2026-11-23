@@ -5786,6 +5786,27 @@ enum RuntimeErrorPresentation {
 
 fn classify_runtime_error(error: &str) -> RuntimeErrorPresentation {
     let normalized = error.to_lowercase();
+    if normalized.contains("side-effecting tool paused") {
+        // This is a guard, not a crash. The runtime refused to run a
+        // write because an earlier turn may have left a side effect
+        // outstanding. Presenting it as "fatal" gave the operator no next
+        // step at all — the one thing the message needs to say is how to
+        // clear it.
+        return RuntimeErrorPresentation::Recoverable {
+            status: "Status: write tools paused pending review",
+            detail: "An earlier turn in this session left an operation without a settled outcome, so the runtime is not repeating write operations until it is reviewed.",
+            action: "Action: run `/recovery` to see the pending work, acknowledge it, and continue.",
+        };
+    }
+    if normalized.contains("a turn is active in this session")
+        || normalized.contains("another turn started in this session")
+    {
+        return RuntimeErrorPresentation::Recoverable {
+            status: "Status: another turn is still active",
+            detail: "This session already has a turn in flight. A turn left behind by a killed process is reclaimed automatically on the next attempt.",
+            action: "Action: wait for the running turn, or start a fresh session with `/clear`.",
+        };
+    }
     if normalized.contains("tool outcome unknown") {
         return RuntimeErrorPresentation::Recoverable {
             status: "Status: tool outcome unknown",

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "memphis-rebuild-rust",
+  "name": "Memphis Rebuild Rust",
+  "description": "Rebuild the Memphis NAPI binary after Rust crate changes and verify the runtime will actually load the new code. Use whenever files under crates/ have been modified — the TS host loads crates/memphis-napi/index.node at module-load time and ESM caches it, so Rust source edits are silent until the binary is rebuilt.",
+  "tags": ["build", "napi", "rust"],
+  "tools": ["memphis_exec", "memphis_journal"],
+  "workflow": [
+    "CHECK THE DELTA: compare the mtime of crates/memphis-napi/index.node with the timestamp of the newest commit under crates/. If the commit is newer, the runtime is stale.",
+    "BUILD: run npm run build:rust, which builds the workspace through scripts/run-rust.sh and copies the NAPI shared library into crates/memphis-napi/index.node.",
+    "RESTART: restart the memphis service so the new binary is loaded, then confirm with memphis health.",
+    "VERIFY: run the Rust tests for the touched crate (npm run test:rust) and one TS-level smoke check of the behaviour that was broken."
+  ],
+  "promptHints": [
+    "This is the number one source of 'I changed the code but Memphis still behaves the old way'.",
+    "A local checkout ships Rust source only — CI builds artifacts upstream, so a git pull that touches crates/ leaves the local binary stale.",
+    "npm run build:rust builds the workspace; npm run build:rust:release additionally produces the release artifact."
+  ],
+  "examples": [
+    {
+      "prompt": "Zmieniłem crates/memphis-core, Memphis wciąż zachowuje się jak przed zmianą",
+      "outcome": "The skill confirms the binary is older than the commit, rebuilds the workspace, restarts the service and verifies the behaviour that was broken."
+    }
+  ],
+  "notes": [
+    "Tier 0: build tooling only, no vault and no passphrase.",
+    "The paths trigger for this skill is crates/**/*.rs and crates/**/Cargo.toml."
+  ]
+}

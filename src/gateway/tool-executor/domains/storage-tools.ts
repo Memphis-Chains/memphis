@@ -41,13 +41,11 @@ export function createStorageRuntimeTools(
     buildTool({
       name: 'memphis_case_query',
       description: 'Query the case chain index',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          query: { type: 'object', description: 'Case chain query payload' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_case_query', {
+        propertyDescriptions: {
+          query: 'Case chain query payload',
         },
-        required: ['query'],
-      },
+      }),
       isConcurrencySafe: true,
       isReadOnly: true,
       validateInput(args) {

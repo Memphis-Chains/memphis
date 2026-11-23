@@ -16,3 +16,10 @@ description = "Pure-function path resolvers for Memphis runtime data layout (dat
 [dependencies]
 # Intentionally minimal. The crate must stay leaf-level so it can be
 # pulled in by every other crate without creating cycles.
+
+[dev-dependencies]
+# The contract runner reads the artefact of cases
+# (`tests/fixtures/chain-name-contract.json`), which is JSON. A
+# dev-dependency keeps the crate itself free of a serializer — the leaf
+# property is about the PRODUCTION dependency graph.
+serde_json.workspace = true

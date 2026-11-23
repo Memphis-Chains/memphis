@@ -219,7 +219,8 @@ mod tests {
     /// The limit must cut the window, not the window cut the limit.
     #[test]
     fn the_limit_bounds_the_returned_window() {
-        let range = resolve_code_read_range(1000, Some(1), Some(1000), Some(10)).expect("must resolve");
+        let range =
+            resolve_code_read_range(1000, Some(1), Some(1000), Some(10)).expect("must resolve");
         // Lines 1..=1000 inclusive: 1000 lines, not 999.
         assert_eq!(range.span(), 1000);
         assert_eq!(range.slice_end(), 10);
@@ -230,8 +231,7 @@ mod tests {
     /// is not truncated.
     #[test]
     fn an_explicit_range_inside_a_long_file_is_not_truncated() {
-        let range =
-            resolve_code_read_range(5000, Some(1), Some(10), None).expect("must resolve");
+        let range = resolve_code_read_range(5000, Some(1), Some(10), None).expect("must resolve");
         assert!(!range.is_truncated());
     }
 }

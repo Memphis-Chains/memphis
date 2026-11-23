@@ -34,6 +34,18 @@ import {
   verifyDatabaseSnapshotEntries,
   type DatabaseSnapshotResult,
 } from './backup-db-snapshot.js';
+// The manifest is one index of the archives on disk, and both writers of
+// archives — this CLI and the systemd runner — keep it. The implementation
+// lives in `scripts/backup-manifest.mjs` so the two cannot drift apart;
+// `backup-manifest-contract.test.ts` holds them to the same list of exports.
+import {
+  deriveTagFromFileName,
+  readManifest,
+  removeManifestEntries,
+  upsertManifestEntry as upsertManifestEntryShared,
+  type BackupManifest,
+  type BackupManifestEntry,
+} from './backup-manifest.js';
 import { getDataDir } from '../../../config/paths.js';
 import { requireOperatorAuth } from '../../auth/operator-gate.js';
 import { resolveDotEnvPath } from '../../config/dotenv-file.js';
@@ -149,23 +161,9 @@ export type RestoreOptions = {
   pepperRestore?: string;
 };
 
-export type ManifestEntry = {
-  file: string;
-  tag: string;
-  timestamp: string;
-  size: number;
-  checksum: string;
-  fileCount: number;
-};
+export type ManifestEntry = BackupManifestEntry;
 
-type Manifest = {
-  backups: ManifestEntry[];
-  retentionPolicy: {
-    keepDaily: number;
-    keepWeekly: number;
-    keepMonthly: number;
-  };
-};
+type Manifest = BackupManifest;
 
 type BackupArchiveEntry = {
   path: string;
@@ -188,14 +186,6 @@ const BACKUP_SUFFIX = '.tar.gz';
 const PARTIAL_SUFFIX = '.partial';
 const CHECKSUM_SUFFIX = '.sha256';
 const DEFAULT_TAG = 'backup';
-const DEFAULT_MANIFEST: Manifest = {
-  backups: [],
-  retentionPolicy: {
-    keepDaily: 7,
-    keepWeekly: 4,
-    keepMonthly: 12,
-  },
-};
 
 function getMemphisRoot(override?: string): string {
   return resolve(override ?? getDataDir());
@@ -550,30 +540,11 @@ export function listArchiveContents(
 }
 
 function loadManifest(backupRoot: string): Manifest {
-  const manifestPath = join(backupRoot, 'manifest.json');
-  if (!existsSync(manifestPath)) return { ...DEFAULT_MANIFEST, backups: [] };
-  try {
-    const parsed = JSON.parse(readFileSync(manifestPath, 'utf8')) as Manifest;
-    return {
-      retentionPolicy: parsed.retentionPolicy ?? DEFAULT_MANIFEST.retentionPolicy,
-      backups: Array.isArray(parsed.backups) ? parsed.backups : [],
-    };
-  } catch {
-    return { ...DEFAULT_MANIFEST, backups: [] };
-  }
-}
-
-function saveManifest(backupRoot: string, manifest: Manifest): void {
-  const manifestPath = join(backupRoot, 'manifest.json');
-  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+  return readManifest(backupRoot);
 }
 
 function upsertManifestEntry(backupRoot: string, entry: ManifestEntry): void {
-  const manifest = loadManifest(backupRoot);
-  manifest.backups = [entry, ...manifest.backups.filter((b) => b.file !== entry.file)].sort(
-    (a, b) => (a.timestamp < b.timestamp ? 1 : -1),
-  );
-  saveManifest(backupRoot, manifest);
+  upsertManifestEntryShared(backupRoot, entry);
 }
 
 function getBackupArchives(
@@ -601,9 +572,13 @@ function getBackupArchives(
         return {
           file,
           path,
-          tag:
-            fromManifest?.tag ??
-            (file.replace(BACKUP_SUFFIX, '').split('-').slice(0, -5).join('-') || DEFAULT_TAG),
+          // The tag the index records, or the one the name carries when the
+          // index has no entry for this archive. The name is what the
+          // operator chose, and both writers put a timestamp at the end of
+          // it — in two different shapes, which is why the rule lives in
+          // one place (`scripts/backup-manifest.mjs`) instead of a field
+          // count that only fitted the CLI's shape.
+          tag: fromManifest?.tag ?? deriveTagFromFileName(file),
           timestamp,
           size: fromManifest?.size ?? stat.size,
           checksum:
@@ -1486,11 +1461,13 @@ export async function cleanBackups(
     }
   }
 
-  const manifest = loadManifest(backupRoot);
-  manifest.backups = manifest.backups.filter(
-    (entry) => !toRemove.some((rm) => rm.file === entry.file),
+  // The index is reconciled with the disk at the same time: the archives
+  // that were removed leave it, and any archive that was never recorded
+  // enters it. The archives on disk are the truth; the index follows.
+  removeManifestEntries(
+    backupRoot,
+    toRemove.map((archive) => archive.file),
   );
-  saveManifest(backupRoot, manifest);
 
   return {
     removed: toRemove.map((a) => a.file),
@@ -1633,7 +1610,19 @@ export async function handleBackupCommand(context: CliContext): Promise<boolean>
     if (!(await requireOperatorAuth())) {
       throw new Error('Operator authentication failed.');
     }
-    const cleaned = await cleanBackups({ keep: args.keep, dryRun: args.dryRun });
+    // The tag scopes the retention to one class of archive. It used to be
+    // dropped here: the parser read `--tag`, `create` forwarded it, and
+    // `clean` did not — so `memphis backup clean --keep 7 --tag scheduled`
+    // cleaned EVERY class. Measured 2026-11-22 on this host with the real
+    // backup directory: that command would have removed all 20 manual
+    // pre-repair recovery points and none of the scheduled archives — the
+    // exact inversion of the operator's intent, and the archives it would
+    // have destroyed are the only path back from a botched restore.
+    const cleaned = await cleanBackups({
+      keep: args.keep,
+      tag: args.tag,
+      dryRun: args.dryRun,
+    });
     print({ ok: true, mode: 'clean', ...cleaned }, args.json);
     return true;
   }

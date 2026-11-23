@@ -233,7 +233,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[test]
     fn input_drops_the_cursor_sequences_a_paste_carries() {
         // The exact shape from issue #647: xfce4-terminal's mouse
         // tracking wraps the operator's command in CSI sequences.
@@ -296,6 +295,7 @@ mod tests {
         assert_eq!(sanitize_input("\x1b[31m日本語\x1b[0m"), "日本語");
     }
 
+    #[test]
     fn strips_ansi_sequences() {
         let input = "\x1b[31mRED\x1b[0m";
         assert_eq!(sanitize_for_tui(input), "RED");
