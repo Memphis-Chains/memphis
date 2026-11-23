@@ -12,7 +12,7 @@ import * as path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 
-import { toArchiveLine } from './chain-archive-format.js';
+import { archiveFileName, parseArchiveFileName, toArchiveLine } from './chain-archive-format.js';
 import { ROTATION_HEAD_FORMAT, writeChainRotationHead } from './chain-rotation-head.js';
 import { withChainWriteLock } from './chain-write-lock.js';
 import { getChainPath, getChainSnapshotsPath } from '../../config/paths.js';
@@ -385,7 +385,7 @@ async function prepareArchive(
     // falls back to the genesis rule.
   }
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const archiveName = `${chainName}_${String(firstIdx).padStart(6, '0')}-${String(lastIdx).padStart(6, '0')}_${timestamp}.jsonl.gz`;
+  const archiveName = archiveFileName(chainName, firstIdx, lastIdx, timestamp);
   const archivePath = path.join(archiveDir, archiveName);
 
   // Write all blocks as newline-delimited JSON, gzipped.
@@ -471,15 +471,14 @@ function isSnapshotEnabled(options: ChainRotationOptions): boolean {
 
 function parseArchiveTimestamp(filename: string): number | null {
   // archives are named: {chain}_{firstIdx}-{lastIdx}_{ISO-with-dashes}.jsonl.gz
-  // Treat the trailing component before .jsonl.gz as a sortable string; we
-  // additionally use mtime as a fallback in case the format ever changes.
-  if (!filename.endsWith('.jsonl.gz')) return null;
-  const stem = filename.slice(0, -'.jsonl.gz'.length);
-  const lastUnderscore = stem.lastIndexOf('_');
-  if (lastUnderscore < 0) return null;
-  const stampToken = stem.slice(lastUnderscore + 1);
-  const parsed = Date.parse(stampToken.replace(/-/g, ':').replace('T:', 'T'));
-  return Number.isFinite(parsed) ? parsed : null;
+  // The NAME has one owner (`chain-archive-format.ts`); this only reads
+  // the timestamp out of it. We additionally use mtime as a fallback in
+  // case the format ever changes.
+  const parsed = parseArchiveFileName(filename);
+  if (!parsed) return null;
+  const stampToken = parsed.timestamp;
+  const stamp = Date.parse(stampToken.replace(/-/g, ':').replace('T:', 'T'));
+  return Number.isFinite(stamp) ? stamp : null;
 }
 
 interface ArchiveFileInfo {

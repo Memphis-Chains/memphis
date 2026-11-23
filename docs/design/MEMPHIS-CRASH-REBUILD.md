@@ -661,6 +661,37 @@ The lesson is §5.1's lesson in a new shape: the gate was not weak, it was
 on the hash of a block?" and answered honestly, about blocks that never
 make the two arms disagree.
 
+**`chain-archive-roundtrip` — a gate that proved the archive survives, and
+never asked who reads it.** This one is about a gate that was GREEN and
+still left a hole the size of a fifth of the operator's memory.
+
+The round-trip gate asks the right question about the archive's BYTES:
+what the writer wrote, the reader reads, and the restored chain is
+byte-identical. After the 2026-11-23 fix it proves that — through the
+real writer and the real reader, with the legacy archive still readable.
+
+What it never asked is: **who else looks at those blocks?** The semantic
+index does, and the index is not the chain. It holds the chunks of every
+block that was ever indexed, and a chunk's id points at `{chain}-{index}`.
+When the rotation moved a chain's prefix into the archive and deleted the
+live files, the index kept pointing at the moved blocks, and the recall
+kept finding them — and could not find the content behind them.
+
+> Measured 2026-11-23 on this host: **2 761 of 12 942 chunks** (21.3 %) in
+> the live embed index pointed at blocks that were no longer on disk, and
+> **192 of 196** recall hits on archived blocks answered with an
+> 81-character preview instead of the content — a degradation the recall
+> reported honestly (`contentSource: "preview"`) and nobody read.
+
+The gate now rotates a REAL chain and then asks the resolver for a block
+that is no longer live. Without the archive fallback it resolves nothing:
+`expected undefined to be defined`.
+
+The lesson is the same one, one level up: a gate proves the contract it
+was written against. The round-trip gate's contract was the archive's
+BYTES; the hole was in the contract NEXT to it — the index, the recall,
+and what a rotation does to the things that point at the blocks it moves.
+
 ---
 
 ## 6. What is still open
@@ -954,6 +985,42 @@ mode this repository already has a postmortem about.
     What is NOT closed: the 9 148 historical files keep the byte shape they
     were written with. A chain is append-only, and rewriting committed
     blocks to a prettier shape is the operator's call, not a commit's.
+11. **The rotation moved the blocks, and nothing followed them.** Item 4
+    bounded the chains; item 9 made the archives readable. What neither
+    asked was: who else LOOKED AT those blocks?
+    The semantic index does. It holds the chunks of every block that was
+    ever indexed, and a chunk's id points at `{chain}-{index}`. The
+    rotation moved a chain's prefix into
+    `~/.memphis/chains/.archives/<chain>_<from>-<to>_<timestamp>.jsonl.gz`
+    and deleted the live files — and the index kept pointing at them. The
+    recall kept finding those chunks, and could not find the blocks behind
+    them, because the blocks were no longer in the live directory. So it
+    degraded SILENTLY: instead of the block's content it answered with
+    the chunk's shortened preview, and said so with
+    `contentSource: "preview"`.
+    > Measured 2026-11-23 on this host, on the real rotation of the
+    > `insights` chain (297 blocks archived): **2 761 of 12 942 chunks** in
+    > the live embed index point at blocks that are no longer on disk —
+    > **21.3 % of the index** — and **192 of 196** recall hits on archived
+    > blocks came back as an 81-character preview instead of the content.
+    **Closed 2026-11-23, and not the way it first looked.** The obvious
+    fix is to purge the archived chunks from the index when the rotation
+    happens. That would DELETE the operator's semantic memory of 297
+    blocks — the distilled insights — from every future search, silently,
+    in a feature whose whole purpose is to move history aside without
+    losing it. The blocks are still there: the archive restores them,
+    whole, with `memphis chain restore`. So the READER is what was
+    missing them, and the reader is what learned where they went.
+    `resolveRecallSources` now falls back to the rotation's archives when
+    a wanted block is not live — and the archive is opened only when it
+    can hold the wanted index, which its NAME says. Measured after the
+    fix: **0 previews, 196 of 196 archived hits resolved to the full
+    content.** The cost is an archive read, ~380 ms for the `insights`
+    archive (297 blocks) and ~260 ms for the `system` archive (15 271
+    blocks), paid only by a recall that hits an archived block.
+    The gate rotates a REAL chain and then asks the resolver for a block
+    that is no longer live; without the fallback it resolves nothing
+    (`expected undefined to be defined`).
 
 None of these is a crash. Most of them are the same shape: two copies of
 one rule, with no gate that compares them.
