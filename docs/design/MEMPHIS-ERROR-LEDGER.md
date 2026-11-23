@@ -193,15 +193,51 @@ Every defect here answers with something plausible. The operator cannot tell
 The dimension and the index path are configured separately, and their DEFAULTS
 belong to two different eras.
 
-> Measured 2026-11-23 on this host:
+> Measured 2026-11-23 on this host, at the recall surface
+> (`runMemphisRecall` — the path the operator and the agent actually use):
 >
 > | process | index it reads | dim | result |
 > | --- | --- | --- | --- |
-> | with the service env | `embed/bge-m3-20261106/index-v1.json` | 1024 | search works, 3 hits |
-> | without it (any script, any spawned process) | `embed/index-v1.json` (stale, 82 KB) | 768 on disk vs **32** configured | `embed_search: index_dimension_mismatch: disk_dim=768 config_dim=32` |
+> | the service (full `.env`, systemd `EnvironmentFile`) | `embed/bge-m3-20261106/index-v1.json` | 1024 | `mode: semantic`, `degraded: false`, 3 hits |
+> | dim and path only, no provider model | the same index | 1024 | `provider returned invalid response: ollama returned embedding dimension 768, expected 1024` |
+> | without it (any script, any spawned process, the CLI) | `embed/index-v1.json` (stale, 82 KB) | 768 on disk vs **32** configured | `embed_search: index_dimension_mismatch: disk_dim=768 config_dim=32` |
 >
-> The recall swallows that error and falls back to exact search. The operator
-> gets plausible answers and never learns the semantic half is off.
+> **CORRECTION (2026-11-23, later the same day).** This entry used to end
+> with "the recall swallows that error and falls back to exact search. The
+> operator gets plausible answers and never learns the semantic half is
+> off." The first half was measured and true; the second half was not. The
+> recall result carries `degraded: true` and the error message itself
+> (`warning: "embed_search: embed_search_failed: … index_dimension_mismatch:
+> disk_dim=768 config_dim=32"`), and the mode tells the caller which half
+> answered. So the operator is not left in the dark at the tool level.
+>
+> What the operator genuinely does NOT learn:
+>
+> 1. **Which profile is right.** The message names the numbers (768 on
+>    disk, 32 configured) and says nothing about the working profile on
+>    the same host (1024 + the bge-m3 index), so there is nothing to act
+>    on.
+> 2. **That the failure is decided by the environment.** The process that
+>    fails is the process that did not get `.env` — a shell, the CLI, the
+>    TUI started by hand, any spawned script.
+> 3. **That the defaults are wrong.** The dim default `32` is written in
+>    FOUR places (`src/infra/http/health.ts:405`,
+>    `src/infra/tensors/status.ts:68`, and it is what
+>    `src/infra/cli/commands/setup.ts:293` and
+>    `src/infra/cli/onboarding-wizard.ts:68` write into a fresh install),
+>    and the index-path default in TWO
+>    (`src/infra/runtime/embedding-metadata.ts:25`,
+>    `src/infra/http/health.ts:402`). So a fresh install reproduces the
+>    broken profile by construction.
+> 4. **That the two surfaces disagree.** `/health` runs in the service,
+>    which HAS the env, and reports "dim=1024 matches index" — green. The
+>    surfaces that fail are the ones without it. The green light is
+>    measured in a different process than the one that breaks.
+>
+> The fix is the shape E-03 just took: ONE owner for the embed profile
+> (dimension and path together), published to the TypeScript side the way
+> the chain-name vocabulary now is, with the default derived from the index
+> on disk instead of hard-coded in four places.
 
 #### E-05 · Fifteen recovery turns wait for an operator who cannot clear them from where he is
 
