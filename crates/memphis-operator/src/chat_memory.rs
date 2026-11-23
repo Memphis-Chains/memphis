@@ -1025,96 +1025,39 @@ pub(crate) fn validate_generic_block(
     Ok(())
 }
 
-/// The longest a chain name may be.
-///
-/// The TypeScript registry's `SAFE_CHAIN_NAME` is `^[A-Za-z0-9_-]{1,64}$`, and
-/// the registry is the authority on what a chain is called. The native rule
-/// used to have no limit at all, so a directory of sixty-five characters was
-/// a chain natively and nothing on the TypeScript side.
-const MAX_CHAIN_NAME_LEN: usize = 64;
-
-/// A plain chain directory name: the registry's `SAFE_CHAIN_NAME`.
-///
-/// One to sixty-four characters of `[A-Za-z0-9_-]`. The rule lives here so
-/// the read path, the write path and the verifier cannot drift apart — they
-/// used to be three predicates with three answers.
-fn is_plain_chain_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.chars().count() <= MAX_CHAIN_NAME_LEN
-        && name
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
-}
-
 /// A chain archive directory: `<chain>.backup-<stamp>`.
 ///
-/// The TypeScript arm calls this `isChainBackupDirectory` and accepts
-/// `<chain>.backup-<digits>` or `<chain>.backup-<ISO-ish stamp>`. The
-/// archive holds the same blocks the chain holds, so it IS scannable —
+/// The rule lives in `memphis_paths::chain_names` — the module that owns
+/// the chain-name vocabulary for every arm. This file used to keep its
+/// own copy of it, with its own copy of the dated-stamp check beside it,
+/// and the copy of the copy had already drifted once (the native rule
+/// accepted stamps the registry refused).
+///
+/// The archive holds the same blocks the chain holds, so it IS scannable —
 /// treating it as unsafe made the native verifier refuse to open any
 /// archive while the TypeScript verifier opened all three.
 pub fn is_chain_backup_directory(name: &str) -> bool {
-    let Some((chain, stamp)) = name.split_once(".backup-") else {
-        return false;
-    };
-    if chain.is_empty()
-        || !chain
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
-    {
-        return false;
-    }
-    if stamp.is_empty() || !stamp.chars().all(|ch| ch.is_ascii_digit()) {
-        return is_dated_backup_stamp(stamp);
-    }
-    true
-}
-
-/// The dated archive stamp: `YYYY-MM-DDTHH-MM-SS-mmmZ`.
-///
-/// The TypeScript arm's form is `\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z`
-/// — twenty-four characters in exactly that arrangement. The native rule
-/// used to ask only for twenty-four characters that ended in `Z` and
-/// contained a `T`, so it accepted stamps the registry refuses. The shape
-/// is checked here POSITION BY POSITION, because "the right length, the
-/// right characters, in the wrong order" is not the dated form.
-fn is_dated_backup_stamp(stamp: &str) -> bool {
-    let bytes = stamp.as_bytes();
-    if bytes.len() != 24 {
-        return false;
-    }
-    let digit = |index: usize| bytes[index].is_ascii_digit();
-    // YYYY-MM-DD
-    let date = digit(0) && digit(1) && digit(2) && digit(3) && bytes[4] == b'-' && digit(5)
-        && digit(6)
-        && bytes[7] == b'-'
-        && digit(8)
-        && digit(9);
-    // T HH-MM-SS
-    let time = bytes[10] == b'T' && digit(11) && digit(12) && bytes[13] == b'-' && digit(14)
-        && digit(15)
-        && bytes[16] == b'-'
-        && digit(17)
-        && digit(18);
-    // -mmmZ
-    let millis = bytes[19] == b'-' && digit(20) && digit(21) && digit(22) && bytes[23] == b'Z';
-    date && time && millis
+    memphis_paths::chain_names::is_chain_backup_directory(name)
 }
 
 /// A chain directory the verifier may open: a plain chain or an archive.
 pub fn is_scannable_chain_directory_name(name: &str) -> bool {
-    is_plain_chain_name(name) || is_chain_backup_directory(name)
+    let kind = memphis_paths::chain_names::classify_chain_directory(name);
+    kind == memphis_paths::chain_names::ChainDirectoryKind::Chain
+        || kind == memphis_paths::chain_names::ChainDirectoryKind::Archive
 }
 
+/// Is this a name the runtime may write to?
+///
+/// The name rule is the vocabulary's. The extra rejections here
+/// (`..`, `/`, `\`) are already implied by the character set, but they are
+/// kept because a traversal that reaches the filesystem is worth naming
+/// in the place that refuses it.
 pub(crate) fn validate_chain_name(chain_name: &str) -> Result<(), OperatorError> {
-    if chain_name.is_empty()
-        || chain_name.chars().count() > MAX_CHAIN_NAME_LEN
-        || chain_name.contains("..")
+    if chain_name.contains("..")
         || chain_name.contains('/')
         || chain_name.contains('\\')
-        || !chain_name
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+        || !memphis_paths::chain_names::is_plain_chain_name(chain_name)
     {
         return Err(OperatorError::Message("invalid chain name".to_string()));
     }

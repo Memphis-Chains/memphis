@@ -860,11 +860,21 @@ fn list_chain_names(data_dir: &Path) -> Vec<String> {
     names
 }
 
+/// Is this directory a LIVE chain?
+///
+/// The rule is the vocabulary's, not this file's: `memphis_paths::chain_names`
+/// owns what a chain directory may be called, and this function asks it.
+///
+/// The rule used to live here, and it was a third answer to the question
+/// "what is a chain?". It read "the name does not end in `.backup-<digits>`"
+/// and concluded "live chain" — so an archive whose stamp was a DATE was a
+/// live chain, a dot-directory was a live chain, and an archive whose stamp
+/// was a number was not. The cockpit listed `.archives` as a chain, and the
+/// runtime's status counted an archive of `cases` as 276 blocks of live
+/// memory.
 fn is_active_chain_name(name: &str) -> bool {
-    let Some((_, suffix)) = name.rsplit_once(".backup-") else {
-        return true;
-    };
-    !suffix.is_empty() && !suffix.chars().all(|ch| ch.is_ascii_digit())
+    memphis_paths::chain_names::classify_chain_directory(name)
+        == memphis_paths::chain_names::ChainDirectoryKind::Chain
 }
 
 fn count_chain_blocks(data_dir: &Path) -> usize {
@@ -1673,5 +1683,54 @@ mod tests {
         }
         // This remains an explicit authorized export type, not a diagnostic DTO.
         assert_eq!(serde_json::to_value(&value).unwrap()["plaintext"], secret);
+    }
+
+    /// The falsifier for the chain-name divergence.
+    ///
+    /// The old rule here was `is_active_chain_name`, which asked "does the
+    /// name end in `.backup-<digits>?`" and nothing else. So a chain
+    /// archive whose stamp was a DATE was counted as a live chain, and a
+    /// dot-directory was counted as a live chain, while an archive whose
+    /// stamp was a number was not. Measured on the operator's host: the
+    /// runtime's status answered 11 504 blocks, the audit answered 11 975
+    /// and the live chains hold 11 228 — the 276-block gap is one archive
+    /// of `cases` counted as if it were the chain itself.
+    ///
+    /// The rule now comes from the one owner
+    /// (`memphis_paths::chain_names`), so this test states the rule
+    /// instead of restating the implementation.
+    #[test]
+    fn live_chain_listing_ignores_archives_and_dot_directories() {
+        let runtime_dir = TestRuntimeDir::new("live-chain-listing");
+
+        // An archive whose stamp is a date — the shape the old rule
+        // mistook for a live chain.
+        let dated = runtime_dir
+            .path
+            .join("chains")
+            .join("cases.backup-2026-07-07T15-07-23-108Z");
+        fs::create_dir_all(&dated).expect("create dated archive dir");
+        fs::write(dated.join("000001.json"), "{}").expect("seed dated archive block");
+
+        // The dot-directory the rotation writes its `.jsonl.gz` files into.
+        let archives = runtime_dir.path.join("chains").join(".archives");
+        fs::create_dir_all(&archives).expect("create archives dir");
+        fs::write(
+            archives.join("insights_000001-000297_2026-11-23T03-09-21-606Z.jsonl.gz"),
+            "gzip",
+        )
+        .expect("seed rotated archive");
+
+        let names = super::list_chain_names(runtime_dir.data_dir());
+        assert_eq!(
+            names,
+            vec!["journal".to_string()],
+            "only a live chain is a live chain"
+        );
+        assert_eq!(
+            super::count_chain_blocks(runtime_dir.data_dir()),
+            1,
+            "an archive holds a copy of the chain, not more memory"
+        );
     }
 }
