@@ -56,6 +56,25 @@ export { parseEnvelope, callBridge, type BridgeEnvelope } from './bridge-envelop
 // ── Block file I/O ───────────────────────────────────────────────────────────
 
 /**
+ * The canonical on-disk form of a block file.
+ *
+ * One rule, one place.
+ *
+ * Three paths write block files — the append path, the repair path and
+ * the archive restore path — and they have to write them the SAME way.
+ *
+ * The restore path used to write compact JSON while everything else
+ * wrote pretty-printed JSON. The chain still verified either way (the
+ * hash covers the block's VALUES, not its bytes), but a restored chain
+ * was not byte-identical to a chain that had never been rotated, and
+ * nothing said why. With one serializer, "the archive round trip is
+ * lossless" becomes a property that can be checked with `cmp`.
+ */
+export function serializeBlockForDisk(block: unknown): string {
+  return JSON.stringify(block, null, 2);
+}
+
+/**
  * List `.json` block files in a chain directory, sorted lexicographically.
  * Returns an empty array when the directory does not exist (first-run case).
  * Any other `readdir` error (permission, I/O) is propagated — we never want
