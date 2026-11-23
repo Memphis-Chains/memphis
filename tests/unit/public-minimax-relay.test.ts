@@ -307,23 +307,66 @@ describe('the public chat relay', () => {
     await relay.close();
   });
 
-  it('reports readiness only when the provider is configured', async () => {
-    const ready = createPublicMinimaxRelay(runtimeWith({ content: 'ok' }), async () => ({
-      model: 'test-model',
-      route: 'general',
-    }));
-    const readyResponse = await ready.inject({ method: 'GET', url: '/ready' });
-    expect(readyResponse.statusCode).toBe(200);
-    expect(readyResponse.json()).toEqual({ ok: true });
-    await ready.close();
+  // The readiness gate has THREE inputs, and the test used to pin one of
+  // them by accident.
+  //
+  // `/ready` answers 200 only when the provider is configured AND the basal
+  // layer is healthy. The basal layer is an HTTP service on 127.0.0.1:8000,
+  // so the old test — which asked the REAL service — passed on the
+  // operator's host (where the basal service runs and answers
+  // {"ok":true,"ready":true}) and failed on every CI runner with
+  // "expected 503 to be 200" (measured 2026-11-23 on
+  // `cross-arch (ubuntu-24.04-arm)`).
+  //
+  // A test that is green where it was measured and red where it was not is
+  // a test that hides itself. The readiness check is injected instead, so
+  // every case below is the same on every host.
+  it('reports readiness only when the provider is configured AND the basal layer is ready', async () => {
+    // Point the AMBIENT basal URL at a closed port for the duration of this
+    // test. The readiness check is injected, so this changes nothing — and
+    // that is the point: it makes the test its own falsifier. If the
+    // injection is ever dropped, the relay falls back to the real service
+    // lookup, the fetch to 127.0.0.1:9 is refused, and this test answers
+    // 503 instead of 200 — which is exactly how it failed in CI
+    // (measured 2026-11-23 on `cross-arch (ubuntu-24.04-arm)`).
+    const previousBasalUrl = process.env.MEMPHIS_PUBLIC_BASAL_URL;
+    process.env.MEMPHIS_PUBLIC_BASAL_URL = 'http://127.0.0.1:9/v1/systemone';
 
-    const unconfigured = createPublicMinimaxRelay(
-      runtimeWith({ content: 'ok' }, false),
-      async () => ({ model: 'test-model', route: 'general' }),
-    );
-    const unconfiguredResponse = await unconfigured.inject({ method: 'GET', url: '/ready' });
-    expect(unconfiguredResponse.statusCode).toBe(503);
-    expect(unconfiguredResponse.json()).toEqual({ ok: false });
-    await unconfigured.close();
+    try {
+      const ready = createPublicMinimaxRelay(
+        runtimeWith({ content: 'ok' }),
+        async () => ({ model: 'test-model', route: 'general' }),
+        async () => true,
+      );
+      const readyResponse = await ready.inject({ method: 'GET', url: '/ready' });
+      expect(readyResponse.statusCode).toBe(200);
+      expect(readyResponse.json()).toEqual({ ok: true });
+      await ready.close();
+
+      const unconfigured = createPublicMinimaxRelay(
+        runtimeWith({ content: 'ok' }, false),
+        async () => ({ model: 'test-model', route: 'general' }),
+        async () => true,
+      );
+      const unconfiguredResponse = await unconfigured.inject({ method: 'GET', url: '/ready' });
+      expect(unconfiguredResponse.statusCode).toBe(503);
+      expect(unconfiguredResponse.json()).toEqual({ ok: false });
+      await unconfigured.close();
+
+      // The case the old test could not tell apart from the one above: the
+      // provider is configured, but the basal layer is not answering.
+      const basalDown = createPublicMinimaxRelay(
+        runtimeWith({ content: 'ok' }),
+        async () => ({ model: 'test-model', route: 'general' }),
+        async () => false,
+      );
+      const basalDownResponse = await basalDown.inject({ method: 'GET', url: '/ready' });
+      expect(basalDownResponse.statusCode).toBe(503);
+      expect(basalDownResponse.json()).toEqual({ ok: false });
+      await basalDown.close();
+    } finally {
+      if (previousBasalUrl === undefined) delete process.env.MEMPHIS_PUBLIC_BASAL_URL;
+      else process.env.MEMPHIS_PUBLIC_BASAL_URL = previousBasalUrl;
+    }
   });
 });
