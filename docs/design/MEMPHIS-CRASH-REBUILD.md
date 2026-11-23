@@ -762,6 +762,14 @@ mode this repository already has a postmortem about.
    to 147 B of digest. See `36c682e004`. The 32 MB already on disk is
    reclaimed by rotation, not by the writer — and rotation cannot reach
    it, which is the next entry.
+   **Reclaimed 2026-11-23.** The scheduled rotation reached it. Measured
+   on this host, on the live chain: the tick at 04:09 archived **297
+   blocks** and left **107** (10 414 700 B of 33 472 248 B — 23 MB back),
+   and the chain still verifies (`chain verify` → `ok: true`, 107
+   blocks). The archive it wrote restores in full: 297 blocks read, 297
+   restored, and the restored chain verifies too. That is the whole
+   point of item 9 — before it, the rotation would have moved 23 MB of
+   history somewhere it could not be read back from.
 7. **The chain-size threshold cannot fire for a chain with few blocks.**
    `rotateChain` requires BOTH `dirSize > threshold` AND
    `blocks.length > minKeep` before it rotates. The two knobs are separate
