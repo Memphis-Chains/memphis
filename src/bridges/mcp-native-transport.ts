@@ -1,6 +1,7 @@
 import { Socket, createServer } from 'node:net';
 
 import type { NativeMcpRequest, NativeMcpResponse } from './mcp-native-gateway.js';
+import { createUtf8StreamDecoder } from '../core/utf8-stream.js';
 
 export type NativeMcpTransportOptions = {
   host?: string;
@@ -35,6 +36,13 @@ export async function startNativeMcpTransport(
     let buffer = '';
     let timeoutId: NodeJS.Timeout | null = null;
 
+    // One decoder for this connection's whole lifetime: a multi-byte
+    // character that straddles a chunk boundary is ONE character, and
+    // decoding the halves separately turns it into U+FFFD. The request
+    // carries the operator's own text.
+    // See `src/core/utf8-stream.ts`.
+    const decoder = createUtf8StreamDecoder();
+
     const clearBufferTimeout = () => {
       if (timeoutId !== null) {
         clearTimeout(timeoutId);
@@ -57,7 +65,7 @@ export async function startNativeMcpTransport(
     };
 
     socket.on('data', async (chunk) => {
-      buffer += chunk.toString('utf8');
+      buffer += decoder.push(chunk);
       if (buffer.length > MAX_BUFFER_SIZE) {
         socket.write(
           JSON.stringify({
