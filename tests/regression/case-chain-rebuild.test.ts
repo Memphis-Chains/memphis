@@ -7,12 +7,27 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { CaseChainAdapter } from '../../src/infra/storage/case-chain-adapter.js';
 import type { CaseEntry } from '../../src/memory/case-types.js';
+
+/**
+ * Where the Rust bridge actually is.
+ *
+ * This test used to say `RUST_CHAIN_BRIDGE_PATH: './crates/memphis-napi'` —
+ * a RELATIVE path that only resolved because the test process's working
+ * directory happened to be the checkout. That is the footgun the central
+ * resolver (`resolveRustBridgePath`) closed on 2026-11-23: a relative path
+ * is anchored on the install root, not on `process.cwd()`. The test now
+ * says where the bridge is, instead of relying on where it happens to
+ * stand.
+ */
+const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const bridgePath = join(repo, 'crates/memphis-napi');
 
 function makeTmpDir(): string {
   const dir = join(tmpdir(), `memphis-case-rebuild-${randomUUID()}`);
@@ -123,7 +138,7 @@ describe('case-chain rebuild regression', () => {
     env = {
       ...env,
       RUST_CHAIN_ENABLED: 'true',
-      RUST_CHAIN_BRIDGE_PATH: './crates/memphis-napi',
+      RUST_CHAIN_BRIDGE_PATH: bridgePath,
     };
     const adapter = new CaseChainAdapter(env);
 

@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 
+import { BRIDGE_EXPORT_ALIASES } from './bridge-exports.generated.js';
 import {
   listBlockFiles,
   parseEnvelope,
@@ -29,11 +30,20 @@ import type {
   CaseQueryResult,
   CaseRebuildReport,
 } from '../../memory/case-types.js';
+import { resolveRustBridgePath } from '../runtime/install-root.js';
 
+/**
+ * The case bridge's spellings come from the GENERATED vocabulary.
+ *
+ * They used to be written out here — a hand-written copy of three entries
+ * of the bridge's export map, which is itself generated from the Rust
+ * core. Two copies of one rule, and the copy here was the one that could
+ * not name an export the bridge actually has.
+ */
 const CASE_BRIDGE_ALIASES = {
-  case_append: ['case_append', 'caseAppend'],
-  case_query: ['case_query', 'caseQuery'],
-  case_rebuild: ['case_rebuild', 'caseRebuild'],
+  case_append: BRIDGE_EXPORT_ALIASES.case_append,
+  case_query: BRIDGE_EXPORT_ALIASES.case_query,
+  case_rebuild: BRIDGE_EXPORT_ALIASES.case_rebuild,
 } satisfies BridgeAliasMap<'case_append' | 'case_query' | 'case_rebuild'>;
 
 type CaseBridgeKey = keyof typeof CASE_BRIDGE_ALIASES;
@@ -44,8 +54,22 @@ interface ResolvedCaseBridge {
   case_rebuild?: (blocksJson: string, indexDbPath: string) => string;
 }
 
+/**
+ * Where the bridge lives — the CENTRAL resolver, not a local copy.
+ *
+ * This used to be `rawEnv.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi'`:
+ * a relative path, resolved against `process.cwd()`. The footgun was
+ * already documented and centralised away in `install-root.ts` after the
+ * 2026-04-26 incident ("Rust vault bridge not found at ./crates/memphis-napi"
+ * for an operator running `memphis` from $HOME) — and this file survived it.
+ *
+ * The consequence of the bypass: in a shell whose working directory is not
+ * the checkout, the case bridge silently failed to load and the adapter fell
+ * back to the TypeScript implementation of the same rule. A silent switch
+ * between two implementations, decided by the working directory.
+ */
 function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
-  return rawEnv.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi';
+  return resolveRustBridgePath(rawEnv);
 }
 
 function resolveCaseBridge(
@@ -56,6 +80,38 @@ function resolveCaseBridge(
 
 function getIndexDbPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
   return join(getDataDir(rawEnv), 'case-index.sqlite');
+}
+
+/**
+ * What the case adapter sees of the bridge.
+ *
+ * The vault adapter has the same shape (`getRustVaultAdapterStatus`), and it
+ * exists for the same reason: the doctor has to be able to say WHERE the
+ * bridge was looked for and whether it was found, because a bridge that is
+ * not found does not fail — it silently hands the work to the TypeScript
+ * implementation of the same rule.
+ */
+export interface CaseChainAdapterStatus {
+  rustEnabled: boolean;
+  rustBridgePath: string;
+  bridgeLoaded: boolean;
+  caseApiAvailable: boolean;
+}
+
+export function getCaseChainAdapterStatus(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): CaseChainAdapterStatus {
+  const resolution = resolveCaseBridge(rawEnv);
+  return {
+    rustEnabled: parseBool(rawEnv.RUST_CHAIN_ENABLED, false),
+    rustBridgePath: getBridgePath(rawEnv),
+    bridgeLoaded: resolution.bridgeLoaded,
+    caseApiAvailable: hasRequiredBridgeExports(resolution, [
+      'case_append',
+      'case_query',
+      'case_rebuild',
+    ]),
+  };
 }
 
 const CHAIN_NAME = 'cases';
