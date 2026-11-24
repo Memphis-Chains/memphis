@@ -1,5 +1,38 @@
 ## Unreleased
 
+### The embed-profile family has one owner — and the last hand-written type is gone
+
+The last family of bridge payloads, and the last surface that owned a
+payload type by hand.
+
+Measured on the built module: the manifest answers six keys and the facts
+fourteen, and the manifest's own `modes` carries **three** — `local`,
+`alias` and `providers`.
+
+- **The type did not describe the wire.** The hand-written
+  `EmbedProfileManifest` declared `modes` with two keys; the wire has
+  carried three since the manifest was written. The missing one is
+  `alias` — the word that means "the OpenAI-compatible provider"
+  (`RUST_EMBED_MODE=provider`). The shape comes from the owner now, and
+  the closed vocabularies come with it.
+- **The gate learned a third kind of source.** The embed profile's words
+  live in constants (`SOURCE_ENV`, the four `VERDICT_*`,
+  `PROVIDER_MODE_NAMES`), so the gate reads a constant as the source of a
+  closed vocabulary — one word (`&str`) or a list of them (`&[&str]`). A
+  name that resolves to two things is refused, not guessed.
+- **A list of words is as closed as one word.** The manifest's three
+  lists are rendered as unions —
+  `('env' | 'index' | 'local-deterministic')[]` — with the brackets,
+  because `'a' | 'b'[]` is a union of a word and an array.
+- **The `Option` fields are present and null**, measured: an environment
+  without an index answers `indexDimension: null`, and a process without a
+  mismatch answers `dimensionRemedy: null`.
+
+The ratchet counts the surfaces that still own a payload type: **one down
+to zero**. No TypeScript surface declares a bridge payload type by hand any
+more — every shape the bridge carries is the owner's, projected into one
+mirror and checked by two runners.
+
 ### The manifest family has one owner too
 
 The fourth family of bridge payloads, and the one the runtime reads first:

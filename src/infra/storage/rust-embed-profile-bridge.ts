@@ -51,6 +51,7 @@
 
 import { callBridge as callBridgeEnvelope } from './bridge-envelope.js';
 import { BRIDGE_EXPORT_ALIASES } from './bridge-exports.generated.js';
+import type { BridgePayloadOf } from './bridge-payloads.generated.js';
 import {
   hasRequiredBridgeExports,
   loadPlatformAwareBridge,
@@ -69,59 +70,33 @@ const EMBED_PROFILE_BRIDGE_ALIASES = {
 
 type EmbedProfileBridgeKey = keyof typeof EMBED_PROFILE_BRIDGE_ALIASES;
 
-/** The rule, as the owner publishes it. */
-export interface EmbedProfileManifest {
-  schemaVersion: number;
-  env: {
-    indexPath: string;
-    dimension: string;
-    model: string;
-    mode: string;
-  };
-  defaults: {
-    indexPath: string;
-    dimension: string;
-    model: string;
-    localDimension: number;
-  };
-  dimensionSources: string[];
-  verdicts: string[];
-  modes: {
-    local: string;
-    providers: string[];
-  };
-}
+/**
+ * The rule, as the owner publishes it.
+ *
+ * THE SHAPE IS THE OWNER'S. It used to be written down here, by hand —
+ * and it was WRONG: the interface declared `modes` with two keys (`local`
+ * and `providers`), while the wire has carried THREE since the manifest
+ * was written. The third one is `alias` — the word that means "the
+ * OpenAI-compatible provider" (`RUST_EMBED_MODE=provider`), and it was
+ * missing from the type, so the type did not describe the wire.
+ *
+ * The owner is `crates/memphis-embed/src/profile.rs`; its shapes are
+ * projected into `bridge-payloads.generated.ts` by
+ * `scripts/sync-bridge-payload-contract.mts`, and the closed vocabularies
+ * come with them — `dimensionSources` is a list of three words, not a
+ * list of strings.
+ */
+export type EmbedProfileManifest = BridgePayloadOf<'bridge_embed_profile_manifest'>;
 
-/** The profile of one process, as the owner resolves it. */
-export interface EmbedProfileFacts {
-  schemaVersion: number;
-  /** The index the runtime reads and writes. */
-  indexPath: string;
-  /** The dimension recorded in the index on disk, if the index is readable. */
-  indexDimension: number | null;
-  /** The dimension the operator configured explicitly. */
-  configuredDimension: number | null;
-  /** The dimension the embedder must produce. */
-  dimension: number;
-  /** `env`, `index` or `local-deterministic`. */
-  dimensionSource: string;
-  /** The embedding model, if one is configured. */
-  model: string | null;
-  /** `env` or `unknown`. */
-  modelSource: string;
-  /** Whether a provider is configured for this process. */
-  providerConfigured: boolean;
-  /** Whether the configured dimension disagrees with the index on disk. */
-  dimensionMismatch: boolean;
-  /** The mode in force: `local`, a provider name, or `cascade[...]`. */
-  mode: string;
-  /** `ok`, `no-provider`, `no-index` or `dimension-mismatch`. */
-  verdict: string;
-  /** What to do about the verdict, in one sentence. */
-  remedy: string | null;
-  /** What to do about the dimension disagreement, in one sentence. */
-  dimensionRemedy: string | null;
-}
+/**
+ * The profile of one process, as the owner resolves it.
+ *
+ * The `Option` fields are PRESENT and null when they have no value —
+ * MEASURED on the built module: an environment without an index answers
+ * `indexDimension: null`, and a process without a mismatch answers
+ * `dimensionRemedy: null`.
+ */
+export type EmbedProfileFacts = BridgePayloadOf<'bridge_embed_profile_facts'>;
 
 const bridgeCache = new Map<string, BridgeResolution<EmbedProfileBridgeKey>>();
 

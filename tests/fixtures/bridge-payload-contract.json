@@ -124,6 +124,441 @@
       "fields": [
         {
           "legacyName": null,
+          "name": "schemaVersion",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "env",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "named",
+            "name": "EmbedProfileEnvPayload"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "defaults",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "named",
+            "name": "EmbedProfileDefaultsPayload"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "dimensionSources",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "enum"
+            }
+          },
+          "vocabulary": {
+            "extraLiterals": [],
+            "sources": [
+              "SOURCE_ENV",
+              "SOURCE_INDEX",
+              "SOURCE_LOCAL"
+            ],
+            "values": [
+              "env",
+              "index",
+              "local-deterministic"
+            ]
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "verdicts",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "enum"
+            }
+          },
+          "vocabulary": {
+            "extraLiterals": [],
+            "sources": [
+              "VERDICT_OK",
+              "VERDICT_NO_PROVIDER",
+              "VERDICT_NO_INDEX",
+              "VERDICT_DIMENSION_MISMATCH"
+            ],
+            "values": [
+              "ok",
+              "no-provider",
+              "no-index",
+              "dimension-mismatch"
+            ]
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "modes",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "named",
+            "name": "EmbedProfileModesPayload"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "EmbedProfileManifestPayload",
+      "naming": "serde",
+      "rustType": "EmbedProfileManifest"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "indexPath",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "dimension",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "model",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "mode",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "EmbedProfileEnvPayload",
+      "naming": "serde",
+      "rustType": "EmbedProfileEnv"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "indexPath",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "dimension",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "model",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "localDimension",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "EmbedProfileDefaultsPayload",
+      "naming": "serde",
+      "rustType": "EmbedProfileDefaults"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "local",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "alias",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "providers",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "enum"
+            }
+          },
+          "vocabulary": {
+            "extraLiterals": [],
+            "sources": [
+              "PROVIDER_MODE_NAMES"
+            ],
+            "values": [
+              "openai-compatible",
+              "ollama",
+              "cohere",
+              "voyage",
+              "jina",
+              "mistral",
+              "together",
+              "nvidia",
+              "mixedbread"
+            ]
+          }
+        }
+      ],
+      "name": "EmbedProfileModesPayload",
+      "naming": "serde",
+      "rustType": "EmbedProfileModes"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "schemaVersion",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "indexPath",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "indexDimension",
+          "nullable": true,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "configuredDimension",
+          "nullable": true,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "dimension",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "dimensionSource",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "enum"
+          },
+          "vocabulary": {
+            "extraLiterals": [],
+            "sources": [
+              "SOURCE_ENV",
+              "SOURCE_INDEX",
+              "SOURCE_LOCAL"
+            ],
+            "values": [
+              "env",
+              "index",
+              "local-deterministic"
+            ]
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "model",
+          "nullable": true,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "modelSource",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "enum"
+          },
+          "vocabulary": {
+            "extraLiterals": [],
+            "sources": [
+              "SOURCE_ENV",
+              "SOURCE_UNKNOWN"
+            ],
+            "values": [
+              "env",
+              "unknown"
+            ]
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "providerConfigured",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "dimensionMismatch",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "mode",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "verdict",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "enum"
+          },
+          "vocabulary": {
+            "extraLiterals": [],
+            "sources": [
+              "VERDICT_OK",
+              "VERDICT_NO_PROVIDER",
+              "VERDICT_NO_INDEX",
+              "VERDICT_DIMENSION_MISMATCH"
+            ],
+            "values": [
+              "ok",
+              "no-provider",
+              "no-index",
+              "dimension-mismatch"
+            ]
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "remedy",
+          "nullable": true,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "dimensionRemedy",
+          "nullable": true,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "EmbedProfileFactsPayload",
+      "naming": "serde",
+      "rustType": "EmbedProfile"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
           "name": "salt",
           "nullable": false,
           "optional": false,
@@ -1891,6 +2326,16 @@
     {
       "export": "bridge_manifest",
       "shape": "BridgeManifestPayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "bridge_embed_profile_manifest",
+      "shape": "EmbedProfileManifestPayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "bridge_embed_profile_facts",
+      "shape": "EmbedProfileFactsPayload",
       "transport": "envelopeJson"
     },
     {

@@ -52,6 +52,10 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import type {
+  EmbedProfileFactsPayload,
+  EmbedProfileManifestPayload,
+} from '../../src/infra/storage/bridge-payloads.generated.js';
 import {
   EMBED_PROFILE_DIMENSION_SOURCES,
   EMBED_PROFILE_ENV,
@@ -63,6 +67,13 @@ import {
 } from '../../src/infra/storage/embed-profile.generated.js';
 import { bridgeEmbedProfileFacts } from '../../src/infra/storage/rust-embed-profile-bridge.js';
 
+/**
+ * The cases, as the ARTEFACT holds them.
+ *
+ * The closed words are the OWNER's, taken from the payload shapes the
+ * Rust core projects — so a word the owner cannot write is a type error
+ * in the fixture, not a string that slips through.
+ */
 interface ContractCase {
   name: string;
   env: Record<string, string>;
@@ -70,23 +81,23 @@ interface ContractCase {
   indexDimension: number | null;
   configuredDimension: number | null;
   dimension: number;
-  dimensionSource: string;
+  dimensionSource: EmbedProfileFactsPayload['dimensionSource'];
   model: string | null;
-  modelSource: string;
+  modelSource: EmbedProfileFactsPayload['modelSource'];
   providerConfigured: boolean;
   dimensionMismatch: boolean;
   mode: string;
-  verdict: string;
+  verdict: EmbedProfileFactsPayload['verdict'];
   dimensionRemedy: string | null;
 }
 
 interface ContractManifest {
   schemaVersion: number;
-  env: { indexPath: string; dimension: string; model: string; mode: string };
-  defaults: { indexPath: string; dimension: string; model: string; localDimension: number };
-  dimensionSources: string[];
-  verdicts: string[];
-  modes: { local: string; alias: string; providers: string[] };
+  env: EmbedProfileManifestPayload['env'];
+  defaults: EmbedProfileManifestPayload['defaults'];
+  dimensionSources: EmbedProfileManifestPayload['dimensionSources'];
+  verdicts: EmbedProfileManifestPayload['verdicts'];
+  modes: EmbedProfileManifestPayload['modes'];
 }
 
 const here = path.dirname(fileURLToPath(import.meta.url));
