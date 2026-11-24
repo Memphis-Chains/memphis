@@ -319,8 +319,9 @@ gate fails if a surface outside the list starts declaring a payload type
 of its own. The envelope families (chain, case, soul, mv2, manifest) are
 the next phase; the vault and embed families are closed.
 
-**PHASE 3 CLOSED 2026-11-24 — the chain, soul and case families.** The
-third family, and the one that had NO shape at all: the `chain_*`,
+**PHASE 3 CLOSED 2026-11-24 — the chain, soul and case families** (PR #781,
+squash `fe1d7c8e92`). The third family, and the one that had NO shape at
+all: the `chain_*`,
 `soul_*` and `case_*` answers were built from `serde_json::json!`
 literals — a payload with no owner, which is exactly how the TypeScript
 side ended up hand-writing its shape.
@@ -902,7 +903,10 @@ way through; the second closed (1) for the bridge path; the third closed (1),
 for the embed profile; the fifth closed (2) for the artefact that ships — the
 package-artifact gate now installs under a declared policy, proves the native
 binding, and probes a command that opens the database (E-12).
-**Next, in this order:** E-09 (the payload types),
-which the projection just built can now carry, and only then Family B's wedge
-(E-05), which needs the operator's fifteen acknowledgements before any code
-can help.
+**Next, in this order:** the REST of E-09 — the manifest family and the
+embed-profile family (the ratchet is at TWO surfaces, and it may only go
+down), then the per-variant shapes of `CaseEntry`, then the two napi
+naming conventions in one crate, which is a WIRE change and needs a
+compatibility window rather than a quiet edit. And only then Family B's
+wedge (E-05), which needs the operator's fifteen acknowledgements before
+any code can help.
