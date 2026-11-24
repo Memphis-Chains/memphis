@@ -285,6 +285,51 @@ fn the_owner_answers_every_case_the_way_the_artefact_says() {
             ));
         }
 
+        // The remedy is the owner's PROSE, and it must name the two
+        // numbers and the way out. It is checked, not merely recorded.
+        let expected_remedy = case["dimensionRemedy"].as_str().unwrap_or("");
+        if expected_mismatch && expected_remedy.is_empty() {
+            failures.push(format!("{name}: a mismatching case must carry a remedy"));
+        }
+        if !expected_mismatch && !expected_remedy.is_empty() {
+            failures.push(format!("{name}: a matching case must carry no remedy"));
+        }
+        if !expected_remedy.is_empty() {
+            let configured = case["configuredDimension"]
+                .as_u64()
+                .expect("a mismatching case must carry a configured dimension");
+            let on_disk = case["indexDimension"]
+                .as_u64()
+                .expect("a mismatching case must carry the dimension on disk");
+            if !expected_remedy.contains(&format!("RUST_EMBED_DIM={configured}")) {
+                failures.push(format!(
+                    "{name}: the remedy does not name the configured dimension {configured}"
+                ));
+            }
+            if !expected_remedy.contains(&format!("dim={on_disk}")) {
+                failures.push(format!(
+                    "{name}: the remedy does not name the dimension on disk {on_disk}"
+                ));
+            }
+            if !expected_remedy.contains("embed reindex") {
+                failures.push(format!("{name}: the remedy does not say how to rebuild"));
+            }
+            // The remedy names the index it talks about, and in the
+            // artefact that name must be the ROOT-RELATIVE one: an
+            // absolute path would make the artefact different on every
+            // machine, and the gate would fail on every runner but the
+            // one that wrote it. (This is not hypothetical — the first
+            // version of the artefact carried this machine's directory
+            // layout, and CI caught it as "fixture is stale".)
+            let absolute_path = root.join(expected_path).to_string_lossy().to_string();
+            if expected_remedy.contains(&absolute_path) {
+                failures.push(format!(
+                    "{name}: the remedy names an absolute path, so the artefact is \
+                     machine-dependent"
+                ));
+            }
+        }
+
         let expected_provider = case["providerConfigured"]
             .as_bool()
             .expect("every case must carry the provider flag");

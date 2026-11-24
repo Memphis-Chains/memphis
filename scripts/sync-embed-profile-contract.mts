@@ -274,6 +274,25 @@ function relativize(absolutePath: string): string {
   return rel;
 }
 
+/**
+ * The remedy, with the absolute path replaced by the relative form.
+ *
+ * The owner's remedy is PROSE for a live host, and it names the index it
+ * is talking about — an absolute path, because that is what the operator
+ * needs to see. In the artefact that same string would carry this
+ * machine's directory layout into every other machine's checkout, and the
+ * gate would fail on every runner but this one.
+ *
+ * This is a PRESENTATION normalisation, not a second implementation of the
+ * rule: the words are the owner's, only the path is spelled the way the
+ * artefact spells paths everywhere else.
+ */
+function relativizeRemedy(remedy: string | null, absolutePath: string, relativePath: string): string | null {
+  if (!remedy) return null;
+  if (absolutePath === relativePath) return remedy;
+  return remedy.split(absolutePath).join(relativePath);
+}
+
 function buildFixture(manifest: Manifest, cases: Array<Record<string, unknown>>): string {
   return `${JSON.stringify(
     {
@@ -385,10 +404,11 @@ function main(): number {
 
   const cases = CORPUS.map((entry) => {
     const facts = readFacts(bridge, entry.env);
+    const indexPath = relativize(facts.indexPath);
     return {
       name: entry.name,
       env: entry.env,
-      indexPath: relativize(facts.indexPath),
+      indexPath,
       indexDimension: facts.indexDimension,
       configuredDimension: facts.configuredDimension,
       dimension: facts.dimension,
@@ -399,7 +419,7 @@ function main(): number {
       dimensionMismatch: facts.dimensionMismatch,
       mode: facts.mode,
       verdict: facts.verdict,
-      dimensionRemedy: facts.dimensionRemedy,
+      dimensionRemedy: relativizeRemedy(facts.dimensionRemedy, facts.indexPath, indexPath),
     };
   });
 
