@@ -550,21 +550,23 @@ be run rather than admired:
 7. **The measurement is on this host.** Every claim in this ledger is a number
    taken here, and the numbers have dates.
 
-State today, measured 2026-11-23: (1) **fails** — E-01, E-03 and E-04 are
-closed, E-09 remains; (2) **fails** — the bridge's vocabulary and the
-chain-name vocabulary have their artefacts and their two runners, E-09
-remains; (3) **holds** — every gate added in the last four rounds ships
+State today, measured 2026-11-24: (1) **fails** — E-01, E-02, E-03 and E-04 are
+closed, E-09 remains; (2) **fails** — the bridge's vocabulary, the chain-name
+vocabulary and the embed profile have their artefacts and their two runners,
+E-09 remains; (3) **holds** — every gate added in the last four rounds ships
 with proven falsifiers; the bridge gate found a hole in itself on its first
-run, and the chain-name gate was run BEFORE its fix and failed with
-`[".archives", "cases.backup-2026-07-07T15-07-23-108Z", "journal"]`; (4)
-**fails** — E-02, E-05, E-07, E-08; (5) **holds** — the two dead files are
-gone; (6) **holds** — the block-format, tool-contract, bridge-vocabulary and
-chain-name artefacts are generated; (7) **holds**.
+run, the chain-name gate was run BEFORE its fix and failed with
+`[".archives", "cases.backup-2026-07-07T15-07-23-108Z", "journal"]`, and the
+embed-profile gate was run before the fix and failed with
+`left: 32, right: 768`; (4) **fails** — E-05, E-07, E-08; (5) **holds** — the
+two dead files are gone; (6) **holds** — the block-format, tool-contract,
+bridge-vocabulary, chain-name and embed-profile artefacts are generated;
+(7) **holds**.
 
 The first step closed (1) and (2) for the bridge's vocabulary, and (5) on the
 way through; the second closed (1) for the bridge path; the third closed (1),
-(2) and (3) for the chain-name vocabulary. **Next, in this order:** E-02 (the
-embed profile — two knobs that contradict each other, the cheapest of the
-quiet-degradation family), then E-09 (the payload types), which the projection
-just built can now carry, and only then Family B's wedge (E-05), which needs
-the operator's fifteen acknowledgements before any code can help.
+(2) and (3) for the chain-name vocabulary; the fourth closed (1), (2) and (3)
+for the embed profile. **Next, in this order:** E-09 (the payload types),
+which the projection just built can now carry, and only then Family B's wedge
+(E-05), which needs the operator's fifteen acknowledgements before any code
+can help.
