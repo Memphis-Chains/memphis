@@ -228,7 +228,8 @@ entries_json, but napi-rs will export entriesJson"*; putting the hedge back
 into the TypeScript adapter fails the ratchet; a stale artefact fails the
 projection's check mode, which runs in CI.
 
-**PHASE 2 CLOSED 2026-11-24 — the embed family.** The same mechanism, the
+**PHASE 2 CLOSED 2026-11-24 — the embed family** (PR #779, squash
+`67e5db32c1`). The same mechanism, the
 second family. Measured on the built module against an ISOLATED index
 (`RUST_EMBED_PERSIST_PATH` pointed at a scratch directory, so the
 operator's own index was not touched):
