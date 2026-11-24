@@ -10,5 +10,10 @@ serde_json.workspace = true
 sha2.workspace = true
 chrono.workspace = true
 memphis-core = { path = "../memphis-core" }
+# The embed profile owns the index path, and the path rule lives in
+# `memphis-paths` (a leaf crate with no dependencies of its own). Depending on
+# it keeps ONE path rule: `crates/memphis-operator/src/config.rs` used to
+# carry a second copy of it.
+memphis-paths = { path = "../memphis-paths" }
 ureq = { version = "2", features = ["json"] }
 
