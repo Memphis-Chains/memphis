@@ -323,11 +323,19 @@ runners — the same shape as E-03 and E-01.
 | `scripts/sync-embed-profile-contract.mts` | the projection: the rule and every verdict, asked of the owner THROUGH THE BUILT BRIDGE |
 | `src/infra/storage/embed-profile.generated.ts` | the TypeScript mirror — the names, the sources, the verdicts, the local width |
 | `crates/memphis-operator/tests/embed_profile_contract.rs` | the native runner (7 tests) |
-| `tests/unit/embed-profile-contract.test.ts` | the TypeScript runner (9 tests) |
+| `tests/unit/embed-profile-contract.test.ts` | the TypeScript runner (10 tests) |
 
 The dimension follows the INDEX on disk — the vectors a query has to match
 — and only falls back to the local deterministic width when there is no
 index to contradict it. The model is never guessed from a name.
+
+The MODE vocabulary had one owner on the Rust side after this change and
+THREE on the TypeScript side (the config schema's enum, the doctor's
+`KNOWN_REMOTE_EMBED_MODES`, the wizard's validity check). All three now
+take it from the projection, and the TypeScript arm checks that they do —
+a provider the owner accepts and the wizard rejects is a setup that cannot
+be finished; a provider the doctor does not know is a backend mislabelled
+as local.
 
 > Measured 2026-11-24 on this host, the owner asked for the two processes
 > this machine actually has:
