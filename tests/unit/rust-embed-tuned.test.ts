@@ -17,9 +17,9 @@ describe('rust embed tuned adapter', () => {
       bridgePath,
       `module.exports = {
   embed_reset: () => JSON.stringify({ ok: true, data: { cleared: true } }),
-  embed_store: () => JSON.stringify({ ok: true, data: { id: 'x', count: 1, dim: 32, provider: 'p' } }),
-  embed_search: (query) => JSON.stringify({ ok: true, data: { query, count: 1, hits: [{ id: 'plain', score: 0.1, text_preview: '' }] } }),
-  embed_search_tuned: (query) => JSON.stringify({ ok: true, data: { query, count: 1, hits: [{ id: 'tuned', score: 0.9, text_preview: '' }] } })
+  embed_store: () => JSON.stringify({ ok: true, data: { id: 'x', count: 1, dim: 32, dtype: 'f32', provider: 'p', normalized: 'provider-dependent' } }),
+  embed_search: (query) => JSON.stringify({ ok: true, data: { query, count: 1, dim: 32, dtype: 'f32', provider: 'p', normalized: 'provider-dependent', hits: [{ id: 'plain', score: 0.1, text_preview: '', tags: [] }] } }),
+  embed_search_tuned: (query) => JSON.stringify({ ok: true, data: { query, count: 1, dim: 32, dtype: 'f32', provider: 'p', normalized: 'provider-dependent', hits: [{ id: 'tuned', score: 0.9, text_preview: '', tags: [] }] } })
 };`,
       'utf8',
     );

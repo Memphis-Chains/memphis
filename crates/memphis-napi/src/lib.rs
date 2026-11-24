@@ -137,6 +137,53 @@ struct EmbedStoreManyOut {
     persistence_enabled: bool,
 }
 
+/// The answer of `embed_clear_in_memory`.
+///
+/// It used to be a `serde_json::json!({ "cleared": true })` literal — a
+/// payload with no owner, which is how the TypeScript side ended up
+/// hand-writing its shape. The struct makes the shape checkable.
+#[derive(Serialize)]
+struct EmbedClearOut {
+    cleared: bool,
+}
+
+/// The answer of `embed_reset`.
+///
+/// Same wire as `EmbedClearOut`, different meaning: `embed_reset` commits
+/// the empty index to disk, `embed_clear_in_memory` does not. Two exports,
+/// two payloads — the TypeScript side used to read both as "cleared",
+/// which is true of the key and silent about the difference.
+#[derive(Serialize)]
+struct EmbedResetOut {
+    cleared: bool,
+}
+
+/// The answer of `embed_discard_replacement`.
+///
+/// MEASURED 2026-11-24 on the built module: this payload has TWO shapes.
+/// Without an initialized pipeline it carries three keys; with one it
+/// carries seven. The four variant-only keys are `Option`s with
+/// `skip_serializing_if`, so they stay ABSENT — the wire keeps exactly the
+/// keys it had, in exactly the order it had them.
+///
+/// The TypeScript side declared `{ discarded: boolean }` and threw the
+/// other six away without knowing they were there. The owner declares
+/// all seven now, and the gate checks the struct against the table.
+#[derive(Serialize)]
+struct EmbedDiscardOut {
+    discarded: bool,
+    was_initialized: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    previous_replacement_state: Option<String>,
+    replacement_state: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    persistence_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    persistence_load_state: Option<String>,
+}
+
 #[derive(Serialize)]
 struct EmbedFlushOut {
     flushed: bool,
@@ -701,7 +748,7 @@ pub fn embed_reset() -> String {
         Err(_) => return err("embed_pipeline_lock_failed"),
     };
     match pipeline.clear() {
-        Ok(()) => ok(serde_json::json!({ "cleared": true })),
+        Ok(()) => ok(EmbedResetOut { cleared: true }),
         Err(e) => err(format!("embed_reset_failed: {e}")),
     }
 }
@@ -727,7 +774,7 @@ pub fn embed_clear_in_memory() -> String {
         Err(_) => return err("embed_pipeline_lock_failed"),
     };
     pipeline.clear_in_memory_only();
-    ok(serde_json::json!({ "cleared": true }))
+    ok(EmbedClearOut { cleared: true })
 }
 
 /// Explicitly abandon an armed or failed index replacement.
@@ -748,11 +795,15 @@ pub fn embed_discard_replacement() -> String {
         // Nothing was ever initialized: there is no replacement in
         // flight and nothing to discard. Not an error — the caller
         // asked for a no-op and got one.
-        return ok(serde_json::json!({
-            "discarded": false,
-            "was_initialized": false,
-            "replacement_state": replacement_state_to_str(ReplacementState::Idle),
-        }));
+        return ok(EmbedDiscardOut {
+            discarded: false,
+            was_initialized: false,
+            previous_replacement_state: None,
+            replacement_state: replacement_state_to_str(ReplacementState::Idle).to_string(),
+            count: None,
+            persistence_enabled: None,
+            persistence_load_state: None,
+        });
     };
 
     let mut pipeline = match pipeline_mutex.lock() {
@@ -762,15 +813,17 @@ pub fn embed_discard_replacement() -> String {
 
     let previous = pipeline.replacement_state();
     match pipeline.discard_replacement() {
-        Ok(()) => ok(serde_json::json!({
-            "discarded": true,
-            "was_initialized": true,
-            "previous_replacement_state": replacement_state_to_str(previous),
-            "replacement_state": replacement_state_to_str(ReplacementState::Idle),
-            "count": pipeline.len(),
-            "persistence_enabled": pipeline.persistence_enabled(),
-            "persistence_load_state": load_state_to_str(pipeline.persistence_load_state()),
-        })),
+        Ok(()) => ok(EmbedDiscardOut {
+            discarded: true,
+            was_initialized: true,
+            previous_replacement_state: Some(replacement_state_to_str(previous).to_string()),
+            replacement_state: replacement_state_to_str(ReplacementState::Idle).to_string(),
+            count: Some(pipeline.len()),
+            persistence_enabled: Some(pipeline.persistence_enabled()),
+            persistence_load_state: Some(
+                load_state_to_str(pipeline.persistence_load_state()).to_string(),
+            ),
+        }),
         // Fail closed: a replacement that cannot be restored from
         // unreadable storage is still NOT published, but the caller
         // must see the failure.

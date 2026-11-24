@@ -62,11 +62,11 @@ module.exports = {
   embed_reset: () => JSON.stringify({ ok: true, data: { cleared: true } }),
   embed_store: (id, text) => {
     rows.push({ id, text });
-    return JSON.stringify({ ok: true, data: { id, count: rows.length, dim: 32, provider: 'local-deterministic' } });
+    return JSON.stringify({ ok: true, data: { id, count: rows.length, dim: 32, dtype: 'f32', provider: 'local-deterministic', normalized: 'true' } });
   },
   embed_search: (query) => {
     const hit = rows.find((r) => r.text.includes(query)) || rows[0];
-    return JSON.stringify({ ok: true, data: { query, count: 1, hits: [{ id: hit.id, score: 0.9, text_preview: hit.text.slice(0, 20) }] } });
+    return JSON.stringify({ ok: true, data: { query, count: 1, dim: 32, dtype: 'f32', provider: 'local-deterministic', normalized: 'true', hits: [{ id: hit.id, score: 0.9, text_preview: hit.text.slice(0, 20), tags: [] }] } });
   }
 };`,
       'utf8',
@@ -106,12 +106,12 @@ module.exports = {
   embed_reset: () => JSON.stringify({ ok: true, data: { cleared: true } }),
   embed_store: (id, text) => {
     rows.push({ id, text });
-    return JSON.stringify({ ok: true, data: { id, count: rows.length, dim: 32, provider: 'local-deterministic' } });
+    return JSON.stringify({ ok: true, data: { id, count: rows.length, dim: 32, dtype: 'f32', provider: 'local-deterministic', normalized: 'true' } });
   },
   embed_search: (query) => {
     searchCalls += 1;
     const hit = rows.find((r) => r.text.includes(query)) || rows[0];
-    return JSON.stringify({ ok: true, data: { query, count: 1, hits: [{ id: hit.id, score: 0.9, text_preview: hit.text.slice(0, 20) }] } });
+    return JSON.stringify({ ok: true, data: { query, count: 1, dim: 32, dtype: 'f32', provider: 'local-deterministic', normalized: 'true', hits: [{ id: hit.id, score: 0.9, text_preview: hit.text.slice(0, 20), tags: [] }] } });
   },
   __search_calls: () => searchCalls,
 };`,
@@ -143,11 +143,11 @@ module.exports = {
   embedReset: () => JSON.stringify({ ok: true, data: { cleared: true } }),
   embedStore: (id, text) => {
     rows.push({ id, text });
-    return JSON.stringify({ ok: true, data: { id, count: rows.length, dim: 32, provider: 'legacy-compat' } });
+    return JSON.stringify({ ok: true, data: { id, count: rows.length, dim: 32, dtype: 'f32', provider: 'legacy-compat', normalized: 'provider-dependent' } });
   },
   embedSearch: (query) => {
     const hit = rows.find((r) => r.text.includes(query)) || rows[0];
-    return JSON.stringify({ ok: true, data: { query, count: 1, hits: [{ id: hit.id, score: 0.8, text_preview: hit.text.slice(0, 20) }] } });
+    return JSON.stringify({ ok: true, data: { query, count: 1, dim: 32, dtype: 'f32', provider: 'legacy-compat', normalized: 'provider-dependent', hits: [{ id: hit.id, score: 0.8, text_preview: hit.text.slice(0, 20), tags: [] }] } });
   }
 };`,
       'utf8',
@@ -177,10 +177,10 @@ module.exports = {
       `let searchCalls = 0;
 module.exports = {
   embed_reset: () => JSON.stringify({ ok: true, data: { cleared: true } }),
-  embed_store: (id, text) => JSON.stringify({ ok: true, data: { id, count: 1, dim: 32, provider: 'base-only' } }),
+  embed_store: (id, text) => JSON.stringify({ ok: true, data: { id, count: 1, dim: 32, dtype: 'f32', provider: 'base-only', normalized: 'provider-dependent' } }),
   embed_search: (query) => {
     searchCalls += 1;
-    return JSON.stringify({ ok: true, data: { query, count: 1, hits: [{ id: 'doc-base', score: 0.7, text_preview: query }] } });
+    return JSON.stringify({ ok: true, data: { query, count: 1, dim: 32, dtype: 'f32', provider: 'base-only', normalized: 'provider-dependent', hits: [{ id: 'doc-base', score: 0.7, text_preview: query, tags: [] }] } });
   },
   __search_calls: () => searchCalls,
 };`,
