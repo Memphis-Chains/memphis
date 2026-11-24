@@ -11,6 +11,8 @@ import { buildSecretAwareness, type SecretAwareness } from '../secret-awareness.
 import {
   EMBED_PROFILE_ENV,
   EMBED_PROFILE_LOCAL_MODE,
+  EMBED_PROFILE_PROVIDER_ALIAS,
+  EMBED_PROFILE_PROVIDER_MODES,
 } from '../storage/embed-profile.generated.js';
 import {
   generateSecureToken,
@@ -295,20 +297,19 @@ export function checklistFromEnv(
     { step: 'provider', done: Boolean(rawEnv.DEFAULT_PROVIDER), note: 'Choose DEFAULT_PROVIDER' },
     {
       step: 'embed-mode',
+      // The mode vocabulary is the OWNER's, projected — it used to be a
+      // hand-written list of the same eleven words, in this file and in
+      // two others.
       done: [
-        'local',
-        'openai-compatible',
-        'provider',
-        'ollama',
-        'cohere',
-        'voyage',
-        'jina',
-        'mistral',
-        'together',
-        'nvidia',
-        'mixedbread',
-      ].includes((rawEnv.RUST_EMBED_MODE ?? 'local').toLowerCase()),
-      note: 'Set RUST_EMBED_MODE to local/openai-compatible/ollama/cohere/voyage/jina/mistral/together/nvidia/mixedbread',
+        EMBED_PROFILE_LOCAL_MODE,
+        ...EMBED_PROFILE_PROVIDER_MODES,
+        EMBED_PROFILE_PROVIDER_ALIAS,
+      ].includes((rawEnv.RUST_EMBED_MODE ?? EMBED_PROFILE_LOCAL_MODE).toLowerCase()),
+      note: `Set ${EMBED_PROFILE_ENV.mode} to ${[
+        EMBED_PROFILE_LOCAL_MODE,
+        ...EMBED_PROFILE_PROVIDER_MODES,
+        EMBED_PROFILE_PROVIDER_ALIAS,
+      ].join('/')}`,
     },
   ];
 }
