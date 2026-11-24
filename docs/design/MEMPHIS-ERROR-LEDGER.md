@@ -720,6 +720,97 @@ binding is there and `memphis vault list --json` answers
 `{"ok": true, "entries": []}`. The old gate passed on the same tarball —
 that is the measurement of the hole, not an argument about it.
 
+#### E-13 · The case index is a cache that lost a third of its entries, and the repair was dead code
+
+> Measured 2026-11-24 on this host, through the adapter's own public API:
+>
+> | | |
+> | --- | --- |
+> | the `cases` chain | **2 190** case blocks (accusative 2 058, genitive 129, instrumental 2, nominative 1) |
+> | `~/.memphis/case-index.sqlite` | **1 372** rows (accusative 1 313, genitive 59) |
+> | the index's `block_index` range | **818 … 2 189** — the chain's LAST block |
+> | the Rust path (the LIVE one, `RUST_CHAIN_ENABLED=true`) | **1 372** entries |
+> | the TypeScript path (the chain files) | **2 190** entries |
+>
+> So the index had lost the **first 818** entries — 37% of the corpus — and
+> the missing ones included the host's **only nominative entry** and **both**
+> instrumental ones. The two paths of the SAME adapter answered different
+> questions, and the one that answers at runtime answered with the subset.
+
+**THE FINDING, and it is two findings.** First: nothing noticed. The
+index's **highest** block index was the chain's last, so every signal that
+looks at the tail said "fine" — a gap at the HEAD is invisible to the
+highest index, and the gap was at the head. Second, and this is the one
+that matters: **the mechanism that was written to repair exactly this
+state had no caller in the tree.** `reconcileIfNeeded()` — whose own doc
+says *"Startup reconciliation: rebuild the Rust index from chain block
+files. Ensures the index matches the filesystem after a potential partial
+write"* — was never called, and neither was `rebuildIndex()` beside it.
+The repair existed. It was idle.
+
+**THE FIX — three pieces, in the house pattern.** The rule is: *the index
+is a cache of the chain, and the chain is the truth; so the cache is
+checked before it is read.*
+
+| piece | what it is |
+| --- | --- |
+| `crates/memphis-case-index/src/lib.rs` | `CaseIndex::status()` — the owner answers how many entries the index holds, and the highest block among them |
+| `crates/memphis-napi/src/lib.rs` | `case_index_status` — the bridge export that serves it (OPTIONAL: a binary from before 2026-11-24 does not have it, and a runtime that cannot ask keeps using the index as it finds it) |
+| `src/infra/storage/case-chain-adapter.ts` | the reconciliation: compare the index's COUNT with the chain's count of case blocks, and rebuild when they differ |
+
+The bridge exports **43** now, not 42 — the 43rd is `case_index_status`,
+and it is OPTIONAL, so a binary from before 2026-11-24 still loads.
+
+**The COUNT, and not the highest index** — that is the whole difference
+between a check that sees this defect and one that does not. The count is
+the chain's count of **case** blocks, not its count of files: a chain that
+held a block of another type would make the cheap comparison wrong, and a
+wrong comparison would rebuild on every query for ever. The exact count
+costs a scan of the chain — MEASURED: **233 ms** for 2 190 blocks, against
+3 ms for the file list alone. And it **cannot loop**: the rebuild makes
+the index hold exactly the chain's case blocks, so the next comparison is
+equal.
+
+**Falsifiers, measured on this host (three of them):** with the
+reconciliation removed from the query path, the TypeScript runner fails
+with *"expected 3 to be 4"*; with the check written against the **highest
+index** instead of the count, it fails with the same message — the count
+is the only signal that sees a gap at the head; and with the bridge unable
+to answer (`case_index_status` missing), it fails the same way again. The
+Rust arm's own test pins the blindness: index the tail of a chain, and
+`last_indexed_block` is the chain's last block while `indexed` is three
+short of the truth.
+
+**THE HOST IS REPAIRED, and it was repaired by the code's own path.** One
+query through the adapter after the fix: the index holds **2 190** rows,
+the two paths agree to the entry, and the types match the chain's exactly
+(accusative 2 058, genitive 129, instrumental 2, nominative 1). The
+rebuild costs **169 ms**. The second query rebuilds nothing — the counts
+are equal, and equal counts are the whole check.
+
+**The cost, stated plainly, because it is not free:** the Rust path now
+answers in **323 ms** and the TypeScript fallback in **283 ms** — the
+Rust path's speed advantage on this host is **gone**, because the check
+costs what the fallback costs (it scans the chain too). The old speed was
+bought with a wrong answer. The cheaper check — the chain's FILE count,
+3 ms — rests on "every block in the `cases` chain is a case block", which
+is true (MEASURED: 2 190 of 2 190) and is the writer's rule (only
+`case_append` writes that chain), but it would rebuild on every query on a
+chain that ever holds another block type. The exact check was chosen
+because it is right without an assumption, and because it lands only on
+the MCP tool and the CLI — human and LLM scale, not request scale.
+
+**What this does NOT close, said out loud:** the index's PRIMARY KEY is
+`block_index` ALONE, and this host has a second case chain —
+`chains/cases.backup-2026-07-07T15-07-23-108Z` — whose **276** blocks
+carry the **same** indices 0…275 as the live chain. Two chains in one
+index would collide, and `INSERT OR REPLACE` would make the older entry
+disappear without a word. Today the reconciliation rebuilds from ONE chain,
+so nothing collides — but the key is still wrong for a chain that rotates,
+and a rotation is close: `MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES` is
+10 MB and the `cases` chain is 8.8 MB. That is the next step, and it needs
+a schema migration rather than a quiet edit.
+
 ### Family B — the system degrades quietly instead of failing
 
 Every defect here answers with something plausible. The operator cannot tell
