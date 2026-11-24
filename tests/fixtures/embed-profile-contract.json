@@ -83,7 +83,7 @@
       "dimensionMismatch": true,
       "mode": "ollama",
       "verdict": "dimension-mismatch",
-      "dimensionRemedy": "RUST_EMBED_DIM=32 but /home/memphis/memphis/tests/fixtures/embed-profile/index-768.json holds dim=768. The provider's vector is REJECTED because its width does not match the configured one (the provider path is strict), and the local embedder's vectors score 0 against the stored ones. Set RUST_EMBED_DIM=768 to match the existing index, or rebuild it with `memphis embed reindex`."
+      "dimensionRemedy": "RUST_EMBED_DIM=32 but tests/fixtures/embed-profile/index-768.json holds dim=768. The provider's vector is REJECTED because its width does not match the configured one (the provider path is strict), and the local embedder's vectors score 0 against the stored ones. Set RUST_EMBED_DIM=768 to match the existing index, or rebuild it with `memphis embed reindex`."
     },
     {
       "name": "a provider with no explicit dimension follows the index on disk",

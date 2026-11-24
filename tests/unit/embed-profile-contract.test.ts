@@ -166,6 +166,35 @@ describe('the embed-profile contract — the two arms agree', () => {
     const mismatch = fixture.cases.find((entry) => entry.dimensionMismatch);
     expect(mismatch, 'the corpus must hold a mismatching case').toBeDefined();
     expect(mismatch?.dimensionRemedy).toContain('RUST_EMBED_DIM=');
+    expect(mismatch?.dimensionRemedy).toContain('embed reindex');
+
+    // The remedy names the index it talks about, and in the artefact that
+    // name must be the ROOT-RELATIVE one. An absolute path would make the
+    // artefact different on every machine — and the gate would fail on
+    // every runner but the one that wrote it. (CI caught exactly that on
+    // the first version of this artefact: "fixture is stale".)
+    const absolute = path.join(REPO_ROOT, mismatch?.indexPath ?? '');
+    expect(mismatch?.dimensionRemedy ?? '').not.toContain(absolute);
+  });
+
+  it('computes a remedy that names the same index on every machine', () => {
+    for (const testCase of fixture.cases) {
+      const facts = bridgeEmbedProfileFacts(testCase.env as NodeJS.ProcessEnv);
+      if (!facts.dimensionRemedy) {
+        expect(testCase.dimensionRemedy, testCase.name).toBeNull();
+        continue;
+      }
+      // The owner's remedy is prose for a live host, so it names the index
+      // by its ABSOLUTE path — right for the operator, wrong for an
+      // artefact. The artefact holds the relative spelling; this arm
+      // compares the two modulo that one spelling, which is the same
+      // PRESENTATION rule the projection applies.
+      const normalized = facts.dimensionRemedy
+        .split(facts.indexPath)
+        .join(testCase.indexPath);
+      expect(normalized, testCase.name).toBe(testCase.dimensionRemedy);
+      expect(facts.dimensionRemedy, testCase.name).toContain('embed reindex');
+    }
   });
 });
 
