@@ -145,6 +145,132 @@ export interface EmbedIndexMetadataPayload {
   sizeBytes: number;
 }
 
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface ChainValidatePayload {
+  valid: boolean;
+  errors?: string[];
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface ChainAppendPayload {
+  appended: boolean;
+  errors?: string[];
+  length?: number;
+  chain?: BlockPayload[];
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface ChainQueryPayload {
+  count: number;
+  blocks: BlockPayload[];
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface BlockPayload {
+  index: number;
+  timestamp: string;
+  chain: string;
+  data: BlockDataPayload;
+  prev_hash: string;
+  hash: string;
+  signer?: string;
+  signature?: string;
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface BlockDataPayload {
+  type: 'journal' | 'ask' | 'decision' | 'system' | 'system_event' | 'insight' | 'tool_call' | 'tool_result' | 'error' | 'case' | 'wallet_tx_requested' | 'wallet_tx_signed' | 'wallet_tx_broadcast' | 'wallet_tx_confirmed' | 'wallet_tx_failed';
+  content: string;
+  tags: string[];
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface SoulLoopStepPayload {
+  applied: boolean;
+  reason?: string;
+  state: LoopStatePayload;
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface LoopStatePayload {
+  steps: number;
+  tool_calls: number;
+  wait_ms: number;
+  errors: number;
+  completed: boolean;
+  halt_reason: string | null;
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface SoulReplayPayload {
+  accepted: number;
+  rejected: number;
+  errors: string[];
+  snapshot: ReplaySnapshotPayload;
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface ReplaySnapshotPayload {
+  blocks: number;
+  last_hash: string | null;
+  state_hash: string;
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface CaseAppendPayload {
+  appended: boolean;
+  errors?: string[];
+  indexed?: boolean;
+  length?: number;
+  chain?: BlockPayload[];
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface CaseQueryPayload {
+  count: number;
+  entries: CaseIndexRowPayload[];
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface CaseIndexRowPayload {
+  block_index: number;
+  block_hash: string;
+  chain: string;
+  case_type: string;
+  full_json: string;
+  entry: CaseEntryPayload;
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface CaseEntryPayload {
+  case_type: 'nominative' | 'genitive' | 'dative' | 'accusative' | 'instrumental' | 'locative' | 'ablative' | 'vocative';
+  entity?: string;
+  action?: string;
+  timestamp?: string;
+  owner?: string;
+  possessed?: string;
+  giver?: string;
+  recipient?: string;
+  object?: string;
+  subject?: string;
+  verb?: string;
+  actor?: string;
+  instrument?: string;
+  target?: string;
+  location?: string;
+  origin?: string;
+  destination?: string;
+  invoker?: string;
+  invocation?: string;
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface CaseRebuildPayload {
+  indexed: number;
+  skipped: number;
+  errors: number;
+}
+
 /** The payload each bridge export carries. */
 export interface BridgePayloadMap {
   vault_init_full: VaultInitPayload;
@@ -162,6 +288,14 @@ export interface BridgePayloadMap {
   embed_reset: EmbedResetPayload;
   embed_discard_replacement: EmbedDiscardPayload;
   embed_index_metadata: EmbedIndexMetadataPayload;
+  chain_validate: ChainValidatePayload;
+  chain_append: ChainAppendPayload;
+  chain_query: ChainQueryPayload;
+  soul_loop_step: SoulLoopStepPayload;
+  soul_replay: SoulReplayPayload;
+  case_append: CaseAppendPayload;
+  case_query: CaseQueryPayload;
+  case_rebuild: CaseRebuildPayload;
 }
 
 export type BridgePayloadExport = keyof BridgePayloadMap;

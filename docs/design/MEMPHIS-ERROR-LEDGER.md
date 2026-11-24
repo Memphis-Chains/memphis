@@ -290,17 +290,133 @@ the crate never writes fails it with *"the vocabulary of normalized is
 {…'false'…}, but the source writes {…}"*; a hand edit in the generated
 mirror fails the projection's check mode with exit 1; putting
 `RawEmbedStoreResult` back fails the ratchet with *"the embed family has
-no hand-written payload type left"*. The WIRE itself did not move: the
-probe before and after the struct conversion answers the same keys, in
-the same order, with the same values.
+no hand-written payload type left"*. The WIRE did not move in MEANING:
+the probe before and after the struct conversion answers the same keys
+with the same values. Its key ORDER did move, and the ledger used to
+claim otherwise — see the note on key order below.
 
-**What remains (the ratchet, in the TS runner):** FOUR surfaces still
+**A NOTE ON KEY ORDER (measured 2026-11-24, phase 3).** A payload built
+from a `serde_json::json!` literal is a `serde_json::Value`, and its map
+is a `BTreeMap` — so the literal's keys reach the wire ALPHABETICALLY.
+A payload built from a struct serializes in DECLARATION order. MEASURED
+on this host with the project's own `serde_json`:
+`json!({ "appended": true, "length": 1, "chain": [] })` answers
+`{"appended":true,"chain":[],"length":1}` — `appended`, `chain`,
+`length` — while the struct answers `appended`, `length`, `chain`. So
+converting a literal into a struct MOVES the key order, and the phase-2
+line above ("the same keys, in the same order") was wrong about it. The
+correction does not change anything a consumer can observe: a JSON
+object is unordered by specification, every reader in this tree reads by
+name, and the block hash is computed over the block's data through
+`canonicalStringify`, which sorts its own keys. The key SET and the
+VALUES are identical — that is the part the contract is about.
+
+**What remains after phase 2 (the ratchet, in the TS runner):** FOUR surfaces still
 declare a bridge payload type by hand — `rust-chain-adapter.ts` (the
 chain family), `case-chain-adapter.ts`, `rust-bridge-manifest.ts` and
 `rust-embed-profile-bridge.ts`. The counter may only go down, and the
 gate fails if a surface outside the list starts declaring a payload type
 of its own. The envelope families (chain, case, soul, mv2, manifest) are
 the next phase; the vault and embed families are closed.
+
+**PHASE 3 CLOSED 2026-11-24 — the chain, soul and case families.** The
+third family, and the one that had NO shape at all: the `chain_*`,
+`soul_*` and `case_*` answers were built from `serde_json::json!`
+literals — a payload with no owner, which is exactly how the TypeScript
+side ended up hand-writing its shape.
+
+MEASURED on the built module (the case family's SQLite index pointed at
+a scratch directory, so the operator's own index was never touched):
+
+| export | the payload on the wire |
+| --- | --- |
+| `chain_validate` | `valid` — and `errors` ONLY on the failure path (absent, not null) |
+| `chain_append` | `appended`, `length`, `chain` — and `errors` only on the rejected path |
+| `chain_query` | `count`, `blocks` |
+| `soul_loop_step` | `applied`, `state` — and `reason` only when the step did not apply |
+| `soul_replay` | `accepted`, `rejected`, `errors`, `snapshot` |
+| `case_append` | `appended`, `indexed`, `length`, `chain` — and `errors` only on the rejected path |
+| `case_query` | `count`, `entries` |
+| `case_rebuild` | `indexed`, `skipped`, `errors` |
+
+Three findings, all of them wrong guesses on the TypeScript side:
+
+1. **`CaseIndexRow` had TWENTY-FOUR fields; the wire sends SIX.** The
+   hand-written row in `src/memory/case-types.ts` declared `entity`,
+   `actor`, `target`, `instrument`, `location`, `origin`, `destination`,
+   `owner`, `possessed`, `giver`, `recipient`, `object`, `subject`,
+   `verb`, `invoker`, `invocation`, `entry_timestamp`, `indexed_at` and
+   more — none of which the wire ever sends — and it was MISSING `entry`,
+   the one key that carries the case itself. So the adapter's two query
+   paths (Rust and TypeScript) answered with two different shapes, and
+   `memphis explain --case-type` read `entry.entity` and
+   `entry_timestamp`, which on the Rust path never arrive: it printed an
+   empty entity and a `?` for every row.
+2. **`CaseRebuildReport` knew TWO of the three keys** — it had never
+   heard of `skipped`.
+3. **The chain and soul families had no owner at all.** Their answers
+   were `json!` literals, so nothing could be checked against them. They
+   are structs now (`ChainValidateOut`, `ChainAppendOut`,
+   `ChainQueryOut`, `SoulLoopStepOut`, `CaseAppendOut`, `CaseQueryOut`),
+   with `#[serde(skip_serializing_if)]` keeping the wire exactly as it
+   was measured: the keys a variant does not carry are ABSENT, not null.
+
+The chain family's own vocabulary was measured on the operator's disk on
+the same day: 12 645 blocks carry EIGHT distinct `data.type` words —
+seven variants (`insight`, `case`, `system_event`, `journal`,
+`decision`, `tool_call`, `system`) and ONE read-side alias
+(`security_event`, 2 blocks). No block was missing its `type`, and no
+block carried a word the Rust core cannot parse, so the append path
+cannot trip over the corpus. The wire itself carries the FIFTEEN variant
+names and never the fourteen aliases: the bridge parses a block into a
+`BlockType` and serializes the VARIANT name back.
+
+**The owner grew a rule it did not have: the ENUM shape.** A tagged
+enum (`CaseEntry`, `#[serde(tag = "case_type")]`) has no struct and no
+field list — the wire carries the tag plus the fields OF THAT VARIANT.
+So the owner declares the tag and the UNION of the variants' fields, and
+the gate checks three things the struct rule could not: the tag's name
+comes from the enum's own `#[serde(tag = ...)]`; the union is the
+variants' fields in order of first appearance; and a field only SOME
+variants carry is ABSENT on the wire, not null. The gate also learned to
+read a vocabulary from an ENUM (its variant names, renamed by the enum's
+own `rename_all` — serde's variant rule, which splits `WalletTxRequested`
+into `wallet_tx_requested`, unlike its field rule) and to REFUSE a
+read-side alias in a vocabulary: an alias is a word the crate accepts on
+read, never a word the wire writes.
+
+**Falsifiers, measured on this host (phase 3), six of them:**
+a misspelled word in the `BlockType` vocabulary fails the Rust runner
+with *"the vocabulary of type is {…toolcall…}, but the source writes
+{…tool_call…}"*; a misspelled word in the `CaseEntry` tag vocabulary
+fails it the same way; dropping the `#[serde(skip_serializing_if)]` from
+`ChainAppendOut.errors` fails it with *"the table says
+optional=true nullable=false for errors, but the struct declares
+Option<Vec<String>>"*; putting a read-side alias into the `BlockType`
+vocabulary fails it with *"the vocabulary of type declares the read-side
+alias security_event, which the wire never writes"*; putting the
+hand-written `CaseIndexRow` back into `case-types.ts` fails the
+TypeScript ratchet with *"src/memory/case-types.ts: interface CaseIndexRow
+{"*; a hand edit in the generated mirror fails the projection's check
+mode with exit 1 and *"mirror … is stale"*. The binary was probed after
+every change, and the answers kept their key set and their values.
+
+**The ratchet: FOUR surfaces → TWO.** `rust-chain-adapter.ts` and
+`case-chain-adapter.ts` no longer declare a bridge payload type by
+hand — they read the owner's shapes, and so does `src/memory/case-types.ts`
+(it keeps only the DOMAIN model: the eight cases as a strict union, so a
+genitive cannot carry a `verb`). What remains is
+`rust-bridge-manifest.ts` and `rust-embed-profile-bridge.ts` — the
+manifest and embed-profile families, which are the next phase.
+
+**What phase 3 does NOT close, said out loud:** the per-variant shapes
+of `CaseEntry` (the owner declares the loose union; the eight per-case
+shapes are the explicit residue), the query INPUT shapes (`CaseQuery` and
+the soul loop's `action`/`limits` — they are what the TypeScript side
+SENDS, they match the Rust structs field for field, and the payload
+contract owns what the bridge RETURNS), and the two napi naming
+conventions in one crate, which is a WIRE change and needs a
+compatibility window rather than a quiet edit.
 
 **One thing the owner still does wrong, and this entry does not hide it:**
 the same crate spells the same idea two ways. `JsEntriesResult` has no

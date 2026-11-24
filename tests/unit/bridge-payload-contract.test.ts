@@ -46,6 +46,7 @@ import path from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
+import { canonicalHash } from '../../src/core/chain-hash.js';
 import { resolveRustBridgePath } from '../../src/infra/runtime/install-root.js';
 
 type FieldType =
@@ -55,7 +56,12 @@ type FieldType =
 
 type Vocabulary = {
   values: string[];
-  sourceFunctions: string[];
+  /**
+   * Where the words come from — a FUNCTION (its string literals are the
+   * words) or an ENUM (its variant names are the words). The Rust gate
+   * resolves the same sources out of the crate and compares.
+   */
+  sources: string[];
   extraLiterals: string[];
 };
 
@@ -138,6 +144,19 @@ function shapeOf(name: string): PayloadShape {
   const shape = artefact.shapes.find((candidate) => candidate.name === name);
   expect(shape, `the artefact has no shape ${name}`).toBeDefined();
   return shape!;
+}
+
+/**
+ * The source of a surface, with its COMMENTS removed.
+ *
+ * The ratchet looks for hand-written payload types, and the migration
+ * notes that document their removal name them — in prose. A comment is
+ * not a declaration, so the scan reads the code only.
+ */
+function codeOf(surface: string): string {
+  return readFileSync(surface, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/[^\n]*/g, ' ');
 }
 
 describe('the bridge payload contract', () => {
@@ -288,8 +307,152 @@ describe('the bridge payload contract', () => {
     }
   });
 
-  it('the mirror renders the closed vocabularies, not a bare string', () => {
-    const mirror = readFileSync(MIRROR, 'utf8');
+  it('the chain family answers with the projected keys', () => {
+    if (!bridge) return;
+
+    // A block the bridge ACCEPTS — the hash is the canonical one, so the
+    // validation succeeds and the success path is the one without
+    // `errors`.
+    const data = { type: 'journal', content: 'contract probe', tags: ['probe'] };
+    const timestamp = '2026-11-24T00:00:00.000Z';
+    const prevHash = '0'.repeat(64);
+    const block = {
+      index: 0,
+      timestamp,
+      chain: 'journal',
+      data,
+      prev_hash: prevHash,
+      hash: canonicalHash({
+        index: 0,
+        timestamp,
+        chain: 'journal',
+        data,
+        prev_hash: prevHash,
+      }),
+    };
+
+    const probes: Array<{ export: string; shape: string; args: unknown[]; keys: string[] }> = [
+      {
+        export: 'chain_validate',
+        shape: 'ChainValidatePayload',
+        args: [JSON.stringify(block)],
+        // The success path: `errors` is ABSENT, not null.
+        keys: ['valid'],
+      },
+      {
+        export: 'chain_append',
+        shape: 'ChainAppendPayload',
+        args: ['[]', JSON.stringify(block)],
+        keys: ['appended', 'length', 'chain'],
+      },
+      {
+        export: 'chain_query',
+        shape: 'ChainQueryPayload',
+        args: ['[]'],
+        keys: ['count', 'blocks'],
+      },
+    ];
+
+    for (const probe of probes) {
+      const payload = envelopeData(probe.export, ...probe.args);
+      expect(payload, `${probe.export} answered nothing`).not.toBeNull();
+      const declared = shapeOf(probe.shape).fields.map((field) => field.name);
+      for (const key of Object.keys(payload!)) {
+        expect(declared, `${probe.export} carries the undeclared key ${key}`).toContain(key);
+      }
+      expect(Object.keys(payload!).sort(), `${probe.export} answered another variant`).toEqual(
+        [...probe.keys].sort(),
+      );
+    }
+  });
+
+  it('the soul family answers with the projected keys', () => {
+    if (!bridge) return;
+
+    const state = {
+      steps: 0,
+      tool_calls: 0,
+      wait_ms: 0,
+      errors: 0,
+      completed: false,
+      halt_reason: null,
+    };
+
+    const step = envelopeData(
+      'soul_loop_step',
+      JSON.stringify(state),
+      JSON.stringify({ type: 'wait', data: { duration_ms: 10 } }),
+    );
+    expect(step).not.toBeNull();
+    // The applied path: `reason` is ABSENT.
+    expect(Object.keys(step!).sort()).toEqual(['applied', 'state']);
+    const declared = shapeOf('SoulLoopStepPayload').fields.map((field) => field.name);
+    for (const key of Object.keys(step!)) {
+      expect(declared, `soul_loop_step carries the undeclared key ${key}`).toContain(key);
+    }
+    expect(Object.keys(step!.state as Record<string, unknown>).sort()).toEqual([
+      'completed',
+      'errors',
+      'halt_reason',
+      'steps',
+      'tool_calls',
+      'wait_ms',
+    ]);
+
+    const replay = envelopeData('soul_replay', 'journal', '[]');
+    expect(replay).not.toBeNull();
+    expect(Object.keys(replay!).sort()).toEqual(['accepted', 'errors', 'rejected', 'snapshot']);
+    expect(Object.keys(replay!.snapshot as Record<string, unknown>).sort()).toEqual([
+      'blocks',
+      'last_hash',
+      'state_hash',
+    ]);
+  });
+
+  it('the case family answers with the projected keys', () => {
+    if (!bridge) return;
+
+    // The case index lives in the scratch directory — the operator's own
+    // index is never touched by this probe.
+    const indexDbPath = path.join(scratch, 'case-index.sqlite');
+
+    const entry = {
+      case_type: 'nominative',
+      entity: 'Contract Probe',
+      action: 'probed',
+      timestamp: '2026-11-24T00:00:00.000Z',
+    };
+
+    const appended = envelopeData('case_append', '[]', JSON.stringify(entry), indexDbPath);
+    expect(appended).not.toBeNull();
+    expect(Object.keys(appended!).sort()).toEqual(['appended', 'chain', 'indexed', 'length']);
+
+    const queried = envelopeData('case_query', JSON.stringify({}), indexDbPath);
+    expect(queried).not.toBeNull();
+    expect(Object.keys(queried!).sort()).toEqual(['count', 'entries']);
+
+    const rows = queried!.entries as Array<Record<string, unknown>>;
+    expect(rows.length).toBe(1);
+    // The row carries SIX keys — and the one that carries the case
+    // itself. The hand-written TypeScript row had twenty-four fields and
+    // was missing this one.
+    expect(Object.keys(rows[0]!).sort()).toEqual([
+      'block_hash',
+      'block_index',
+      'case_type',
+      'chain',
+      'entry',
+      'full_json',
+    ]);
+    expect((rows[0]!.entry as Record<string, unknown>).case_type).toBe('nominative');
+
+    const rebuilt = envelopeData('case_rebuild', '[]', indexDbPath);
+    expect(rebuilt).not.toBeNull();
+    // Three keys — the TypeScript side knew two of them.
+    expect(Object.keys(rebuilt!).sort()).toEqual(['errors', 'indexed', 'skipped']);
+  });
+
+  it('the mirror renders the closed vocabularies, not a bare string', () => {    const mirror = readFileSync(MIRROR, 'utf8');
     for (const shape of artefact.shapes) {
       for (const field of shape.fields) {
         if (!field.vocabulary) continue;
@@ -371,16 +534,14 @@ describe('the bridge payload contract', () => {
     // that proves it. It may only go DOWN — when a surface is migrated, it
     // leaves this list and the count drops.
     //
-    // The vault family and the embed family are already migrated: their
-    // shapes come from `bridge-payloads.generated.ts`.
+    // The vault, embed, chain, soul and case families are already
+    // migrated: their shapes come from `bridge-payloads.generated.ts`.
     const stillToMigrate: Record<string, string> = {
-      'src/infra/storage/rust-chain-adapter.ts': 'interface ResolvedChainBridge',
-      'src/infra/storage/case-chain-adapter.ts': 'interface ResolvedCaseBridge',
       'src/infra/storage/rust-bridge-manifest.ts': 'interface RustBridgeManifest',
       'src/infra/storage/rust-embed-profile-bridge.ts': 'interface EmbedProfileManifest',
     };
 
-    expect(Object.keys(stillToMigrate).length).toBe(4);
+    expect(Object.keys(stillToMigrate).length).toBe(2);
 
     for (const [surface, marker] of Object.entries(stillToMigrate)) {
       expect(readFileSync(surface, 'utf8')).toContain(marker);
@@ -392,12 +553,69 @@ describe('the bridge payload contract', () => {
       'src/infra/storage/rust-vault-adapter.ts',
       'src/infra/storage/rust-embed-adapter.ts',
       'src/infra/runtime/embedding-metadata.ts',
+      'src/infra/storage/rust-chain-adapter.ts',
+      'src/infra/storage/case-chain-adapter.ts',
     ];
     for (const surface of migrated) {
       expect(Object.keys(stillToMigrate)).not.toContain(surface);
       // The migrated surface must read the shape through the OWNER.
       expect(readFileSync(surface, 'utf8')).toContain('bridge-payloads.generated.js');
     }
+  });
+
+  it('the chain, soul and case families have no hand-written payload type left', () => {
+    // The case family was the worst of them: `case-types.ts` declared a
+    // row with TWENTY-FOUR fields, while the wire sends SIX — and the
+    // one that carries the case itself was missing. The two query paths
+    // of the same adapter therefore answered with two different shapes.
+    const offenders: string[] = [];
+    const surfaces = [
+      'src/infra/storage/rust-chain-adapter.ts',
+      'src/infra/storage/case-chain-adapter.ts',
+      'src/memory/case-types.ts',
+      'src/infra/cli/commands/explain.ts',
+    ];
+    const handWritten = [
+      'interface ValidateBlockResult {',
+      'interface QueryBlocksResult {',
+      'interface SoulReplayResult {',
+      'interface SoulReplaySnapshot {',
+      'interface SoulLoopState {',
+      'interface SoulLoopStepResult {',
+      'interface CaseIndexRow {',
+      'interface CaseQueryResult {',
+      'interface CaseRebuildReport {',
+      // The flat fields the wire never sends.
+      'entry_timestamp',
+      'indexed_at',
+      'extractFields',
+    ];
+
+    for (const surface of surfaces) {
+      const source = codeOf(surface);
+      for (const marker of handWritten) {
+        if (source.includes(marker)) offenders.push(`${surface}: ${marker}`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('the case domain model still knows the eight cases', () => {
+    // The domain union is the stricter half of the contract — it says
+    // which fields belong to which case. Its tag words must be the
+    // owner's: the two lists are the same eight names, spelled the same
+    // way, or the query would filter on words the entry never carries.
+    const artefactRow = shapeOf('CaseEntryPayload');
+    const tag = artefactRow.fields.find((field) => field.name === 'case_type');
+    expect(tag).toBeDefined();
+    expect(tag!.type.kind).toBe('enum');
+
+    const source = readFileSync('src/memory/case-types.ts', 'utf8');
+    const list = source.match(/export const CASE_TYPES = \[([^\]]*)\]/s);
+    expect(list, 'the domain model has no CASE_TYPES list').toBeDefined();
+    const words = (list![1].match(/'[a-z]+'/g) ?? []).map((word) => word.replace(/'/g, ''));
+    expect(words.sort()).toEqual([...(tag!.vocabulary?.values ?? [])].sort());
   });
 
   it('every compat read pairs a canonical name with a DECLARED legacy one', () => {

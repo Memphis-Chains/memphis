@@ -1,6 +1,13 @@
 import { join } from 'node:path';
 
 import { BRIDGE_EXPORT_ALIASES } from './bridge-exports.generated.js';
+import type {
+  BlockPayload,
+  CaseAppendPayload,
+  CaseIndexRowPayload,
+  CaseQueryPayload,
+  CaseRebuildPayload,
+} from './bridge-payloads.generated.js';
 import {
   listBlockFiles,
   parseEnvelope,
@@ -25,10 +32,7 @@ import { parseBool } from '../../core/env.js';
 import type {
   CaseAppendResult,
   CaseEntry,
-  CaseIndexRow,
   CaseQuery,
-  CaseQueryResult,
-  CaseRebuildReport,
 } from '../../memory/case-types.js';
 import { resolveRustBridgePath } from '../runtime/install-root.js';
 
@@ -116,6 +120,32 @@ export function getCaseChainAdapterStatus(
 
 const CHAIN_NAME = 'cases';
 
+/**
+ * The wire's block, as the file wants it.
+ *
+ * The bridge's `Block` carries EXACTLY the three data fields the chain
+ * contract gives a meaning to — the Rust struct drops anything else the
+ * file had — so this is a projection, not a translation. It is also what
+ * the adapter has always written: the block it wrote came from the
+ * bridge, and the bridge's block never had more than those three.
+ */
+function toFileBlock(block: BlockPayload): NapiBlock {
+  return {
+    index: block.index,
+    timestamp: block.timestamp,
+    chain: block.chain,
+    data: {
+      type: block.data.type,
+      content: block.data.content,
+      tags: block.data.tags,
+    },
+    prev_hash: block.prev_hash,
+    hash: block.hash,
+    ...(block.signer !== undefined ? { signer: block.signer } : {}),
+    ...(block.signature !== undefined ? { signature: block.signature } : {}),
+  };
+}
+
 async function readChainBlocks(
   chain: string,
   rawEnv: NodeJS.ProcessEnv = process.env,
@@ -190,18 +220,22 @@ export class CaseChainAdapter {
     return this.appendViaTs(entry, writeEnv);
   }
 
-  async queryCases(query: CaseQuery): Promise<CaseQueryResult> {
+  async queryCases(query: CaseQuery): Promise<CaseQueryPayload> {
     if (this.rustAvailable) {
       return this.queryViaRust(query);
     }
     return this.queryViaTs(query);
   }
 
-  async rebuildIndex(): Promise<CaseRebuildReport> {
+  async rebuildIndex(): Promise<CaseRebuildPayload> {
     if (this.rustAvailable) {
       return this.rebuildViaRust();
     }
-    return { indexed: 0, errors: 0 };
+    // The owner's shape has THREE keys — `indexed`, `skipped` and
+    // `errors`. The TypeScript path does not rebuild anything, so it
+    // reports zero of each; it used to report two of the three, because
+    // nobody had heard of `skipped`.
+    return { indexed: 0, skipped: 0, errors: 0 };
   }
 
   /**
@@ -209,7 +243,7 @@ export class CaseChainAdapter {
    * Ensures the index matches the filesystem after a potential partial write.
    * Returns null if Rust bridge is unavailable or no case blocks exist.
    */
-  async reconcileIfNeeded(): Promise<CaseRebuildReport | null> {
+  async reconcileIfNeeded(): Promise<CaseRebuildPayload | null> {
     if (!this.rustAvailable) return null;
 
     const chainBlocks = await readChainBlocks(CHAIN_NAME, this.rawEnv);
@@ -238,14 +272,7 @@ export class CaseChainAdapter {
 
       const raw = appendFn(chainJson, entryJson, indexDbPath);
 
-      type AppendData = {
-        appended: boolean;
-        indexed: boolean;
-        length: number;
-        chain: NapiBlock[];
-        errors?: string[];
-      };
-      const out = parseEnvelope<AppendData>(raw, 'case_append');
+      const out = parseEnvelope<CaseAppendPayload>(raw, 'case_append');
 
       if (!out.appended) {
         throw new Error(
@@ -253,10 +280,13 @@ export class CaseChainAdapter {
         );
       }
 
-      const block = out.chain[out.chain.length - 1];
+      const block = out.chain?.at(-1);
+      if (!block) {
+        throw new Error('case_append returned no block');
+      }
 
       try {
-        await writeBlock(CHAIN_NAME, block, writeEnv);
+        await writeBlock(CHAIN_NAME, toFileBlock(block), writeEnv);
       } catch (writeErr) {
         // writeBlock failed after Rust already updated the SQLite index — rebuild to re-sync
         try {
@@ -317,20 +347,31 @@ export class CaseChainAdapter {
     };
   }
 
-  private async queryViaRust(query: CaseQuery): Promise<CaseQueryResult> {
+  private async queryViaRust(query: CaseQuery): Promise<CaseQueryPayload> {
     const bridge = this.bridge.resolved as ResolvedCaseBridge;
     const queryFn = bridge.case_query!;
     const indexDbPath = getIndexDbPath(this.rawEnv);
 
     const raw = queryFn(JSON.stringify(query), indexDbPath);
-    return parseEnvelope<CaseQueryResult>(raw, 'case_query');
+    return parseEnvelope<CaseQueryPayload>(raw, 'case_query');
   }
 
-  private async queryViaTs(query: CaseQuery): Promise<CaseQueryResult> {
+  /**
+   * The TypeScript path — and it answers with the SAME shape as the Rust
+   * path, which is the whole point.
+   *
+   * It used to answer with the hand-written `CaseIndexRow`: TWENTY-FOUR
+   * flat fields, none of which the wire sends, and MISSING the `entry`
+   * that carries the case. So the two paths of the same adapter
+   * answered differently, and the explain command read fields that only
+   * one of them had.
+   */
+  private async queryViaTs(query: CaseQuery): Promise<CaseQueryPayload> {
     const chainBlocks = await readChainBlocks(CHAIN_NAME, this.rawEnv);
-    const entries: CaseIndexRow[] = [];
+    const entries: CaseIndexRowPayload[] = [];
 
-    // Scan blocks in reverse (most recent first)
+    // Scan blocks in reverse (most recent first) — the SQLite query
+    // orders by `block_index DESC`, so the two paths agree.
     for (let i = chainBlocks.length - 1; i >= 0; i--) {
       const block = chainBlocks[i]!;
       if (block.data.type !== 'case') continue;
@@ -345,8 +386,7 @@ export class CaseChainAdapter {
           chain: CHAIN_NAME,
           case_type: parsed.case_type,
           full_json: block.data.content,
-          indexed_at: new Date().toISOString(),
-          ...extractFields(parsed),
+          entry: parsed,
         });
 
         if (query.limit && entries.length >= query.limit) break;
@@ -360,7 +400,7 @@ export class CaseChainAdapter {
 
   private async rebuildViaRust(
     rawEnv: NodeJS.ProcessEnv = this.rawEnv,
-  ): Promise<CaseRebuildReport> {
+  ): Promise<CaseRebuildPayload> {
     const bridge = this.bridge.resolved as ResolvedCaseBridge;
     const rebuildFn = bridge.case_rebuild!;
 
@@ -368,44 +408,62 @@ export class CaseChainAdapter {
     const indexDbPath = getIndexDbPath(rawEnv);
 
     const raw = rebuildFn(JSON.stringify(chainBlocks), indexDbPath);
-    return parseEnvelope<CaseRebuildReport>(raw, 'case_rebuild');
+    return parseEnvelope<CaseRebuildPayload>(raw, 'case_rebuild');
   }
 }
 
+/**
+ * The filter the case index applies — and the one the TypeScript path
+ * has to apply too, or the two paths answer different questions.
+ *
+ * The SQLite index filters on the DENORMALIZED columns, and it fills
+ * those from the entry's accessors (`CaseEntry::entity()`,
+ * `::actor()`, `::target()`, `::instrument()`, `::location()`). So the
+ * accessors below are the same five, with the same cases.
+ */
 function matchesQuery(entry: CaseEntry, query: CaseQuery): boolean {
   if (query.case_type && entry.case_type !== query.case_type) return false;
 
-  const fields = extractFields(entry);
-
-  if (query.entity && fields.entity !== query.entity) return false;
-  if (query.actor && fields.actor !== query.actor) return false;
-  if (query.target && fields.target !== query.target) return false;
-  if (query.instrument && fields.instrument !== query.instrument) return false;
-  if (query.location && fields.location !== query.location) return false;
+  if (query.entity && entryField(entry, 'entity') !== query.entity) return false;
+  if (query.actor && entryField(entry, 'actor') !== query.actor) return false;
+  if (query.target && entryField(entry, 'target') !== query.target) return false;
+  if (query.instrument && entryField(entry, 'instrument') !== query.instrument) return false;
+  if (query.location && entryField(entry, 'location') !== query.location) return false;
 
   return true;
 }
 
-function extractFields(entry: CaseEntry): Partial<CaseIndexRow> {
+/**
+ * One of the five common fields of a case entry — the same ones the Rust
+ * core exposes as accessors.
+ */
+function entryField(
+  entry: CaseEntry,
+  field: 'entity' | 'actor' | 'target' | 'instrument' | 'location',
+): string | undefined {
   switch (entry.case_type) {
     case 'nominative':
-      return { entity: entry.entity, entry_timestamp: entry.timestamp };
+      return field === 'entity' ? entry.entity : undefined;
     case 'genitive':
-      return { owner: entry.owner, possessed: entry.possessed };
     case 'dative':
-      return { giver: entry.giver, recipient: entry.recipient, object: entry.object };
     case 'accusative':
-      return { subject: entry.subject, verb: entry.verb, object: entry.object };
+      return undefined;
     case 'instrumental':
-      return { actor: entry.actor, instrument: entry.instrument, target: entry.target };
+      if (field === 'actor') return entry.actor;
+      if (field === 'target') return entry.target;
+      if (field === 'instrument') return entry.instrument;
+      return undefined;
     case 'locative':
-      return { entity: entry.entity, location: entry.location };
+      if (field === 'entity') return entry.entity;
+      if (field === 'location') return entry.location;
+      return undefined;
     case 'ablative':
-      return { entity: entry.entity, origin: entry.origin, destination: entry.destination };
+      return field === 'entity' ? entry.entity : undefined;
     case 'vocative':
-      return { invoker: entry.invoker, invocation: entry.invocation, target: entry.target };
+      return field === 'target' ? entry.target : undefined;
     default: {
-      // Exhaustive check - this should never be reached if CaseEntry type is properly maintained
+      // Exhaustive check — this cannot be reached while CaseEntry is
+      // maintained, and the Rust side throws on an unknown case too.
       throw new Error(`Unknown case_type: ${(entry as { case_type?: string }).case_type}`);
     }
   }

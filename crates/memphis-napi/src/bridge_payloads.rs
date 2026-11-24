@@ -69,19 +69,45 @@
 //! (`EmbedDiscardOut`) whose `#[serde(skip_serializing_if)]` keeps the
 //! wire exactly as it was measured — absent, not null.
 //!
+//! ## The third measurement: the chain, soul and case families (2026-11-24)
+//!
+//! The chain, soul and case families were measured on the same day, and
+//! they found the same disease as the embed family: the TypeScript side
+//! had written the shape down by hand, and had written it WRONG.
+//!
+//! - `src/memory/case-types.ts` declared `CaseIndexRow` with TWENTY-FOUR
+//!   fields — `entity`, `actor`, `target`, `instrument`, `location`,
+//!   `origin`, `destination`, `owner`, `possessed`, `giver`, `recipient`,
+//!   `object`, `subject`, `verb`, `invoker`, `invocation`,
+//!   `entry_timestamp`, `indexed_at` among them — while the wire sends
+//!   SIX keys, and the one that carries the case itself (`entry`) was
+//!   MISSING. The two query paths (Rust and TypeScript) therefore
+//!   answered with two different shapes, and `memphis case explain` read
+//!   `entry.entity`, which on the Rust path never arrives.
+//! - `CaseRebuildReport` knew two of the three keys the wire carries — it
+//!   had never heard of `skipped`.
+//!
+//! The same day, the `chain_*` and `soul_*` answers were built from
+//! `serde_json::json!` literals — a payload with no owner at all. They
+//! are structs now (`ChainAppendOut`, `SoulLoopStepOut`, …), with
+//! `skip_serializing_if` keeping the wire exactly as it was measured:
+//! the keys a variant does not carry are ABSENT, not null.
+//!
 //! ## The closed vocabularies
 //!
 //! Some fields cannot carry an arbitrary string: `normalized` is
 //! `"true"` or `"provider-dependent"`, `persistence_load_state` is one of
-//! five load states, the replacement state is one of three, and the index
-//! metadata's `state` is one of six. A TypeScript side that does not know
-//! that has to guess — and the guess shows up as a helper that maps
-//! "whatever came" onto "whatever it meant".
+//! five load states, the replacement state is one of three, the index
+//! metadata's `state` is one of six, a block's `type` is one of fifteen
+//! and a case entry's tag is one of eight. A TypeScript side that does
+//! not know that has to guess — and the guess shows up as a helper that
+//! maps "whatever came" onto "whatever it meant".
 //!
 //! So the owner declares the vocabulary AND where it comes from: the
-//! function whose string literals are the words. The gate
+//! function whose string literals are the words, or the ENUM whose
+//! variants are the words. The gate
 //! (`crates/memphis-napi/tests/bridge_payload_contract.rs`) parses that
-//! function out of the crate's source and compares — every literal in it
+//! source out of the crate's source and compares — every literal in it
 //! must be a declared word, or be declared as an EXTRA (a literal that
 //! is not a word of this field, like the provider name
 //! `embed_normalized_to_str` compares against). The owner can therefore
@@ -119,13 +145,26 @@ pub enum PayloadType {
 pub struct Vocabulary {
     /// The words the field can carry.
     pub values: &'static [&'static str],
-    /// The functions whose string literals ARE those words.
+    /// WHERE the words come from — the source of truth for them.
     ///
-    /// The gate parses them out of the crate's source and compares: every
-    /// literal in them must be a word of this field, or be declared in
-    /// `extra_literals`.
-    pub source_functions: &'static [&'static str],
-    /// Literals in those functions that are NOT words of this field.
+    /// A source is one of two things, told apart by its spelling:
+    ///
+    /// - a FUNCTION name — the string literals in its body are the words
+    ///   (`embed_normalized_to_str` writes `"true"` and
+    ///   `"provider-dependent"`);
+    /// - an ENUM name — the names of its variants, renamed by the enum's
+    ///   own `rename_all`, are the words (`BlockType` has fifteen,
+    ///   `CaseEntry` has eight).
+    ///
+    /// The gate parses the source out of the crate's source and compares:
+    /// every word it produces must be a word of this field, or be declared
+    /// in `extra_literals`.
+    ///
+    /// An ENUM source also says which ALIASES the enum accepts on read:
+    /// those are read-side compatibility, never words the wire carries, so
+    /// the gate refuses a vocabulary that lists one of them.
+    pub sources: &'static [&'static str],
+    /// Literals in the sources that are NOT words of this field.
     ///
     /// `embed_normalized_to_str` compares the provider against the
     /// literal `"local-deterministic"` — that literal is not a word the
@@ -327,21 +366,21 @@ pub const VAULT_ENTRIES_SHAPE: PayloadShape = PayloadShape {
 /// arrive either.
 const NORMALIZED_VOCABULARY: Vocabulary = Vocabulary {
     values: &["true", "provider-dependent"],
-    source_functions: &["embed_normalized_to_str"],
+    sources: &["embed_normalized_to_str"],
     extra_literals: &["local-deterministic"],
 };
 
 /// The words `persistence_load_state` can carry.
 const LOAD_STATE_VOCABULARY: Vocabulary = Vocabulary {
     values: &["disabled", "missing", "empty", "loaded", "corrupt"],
-    source_functions: &["load_state_to_str"],
+    sources: &["load_state_to_str"],
     extra_literals: &[],
 };
 
 /// The words the replacement state can carry.
 const REPLACEMENT_STATE_VOCABULARY: Vocabulary = Vocabulary {
     values: &["idle", "armed", "failed"],
-    source_functions: &["replacement_state_to_str"],
+    sources: &["replacement_state_to_str"],
     extra_literals: &[],
 };
 
@@ -357,7 +396,7 @@ const REPLACEMENT_STATE_VOCABULARY: Vocabulary = Vocabulary {
 /// say so out loud.
 const INDEX_STATE_VOCABULARY: Vocabulary = Vocabulary {
     values: &["missing", "unreadable", "empty", "corrupt", "degraded", "loaded"],
-    source_functions: &["inspect_index"],
+    sources: &["inspect_index"],
     extra_literals: &["ndjson"],
 };
 
@@ -367,7 +406,7 @@ const INDEX_STATE_VOCABULARY: Vocabulary = Vocabulary {
 /// own; it is not a dtype, so it is declared as an extra.
 const DTYPE_VOCABULARY: Vocabulary = Vocabulary {
     values: &["f32"],
-    source_functions: &[
+    sources: &[
         "embed_store",
         "embed_store_many",
         "embed_flush",
@@ -525,6 +564,309 @@ pub const EMBED_INDEX_METADATA_SHAPE: PayloadShape = PayloadShape {
     ],
 };
 
+/// The words a block's `type` can carry.
+///
+/// The Rust core writes fifteen words — the variants of `BlockType` — and
+/// accepts fourteen more on READ (the `#[serde(alias = "...")]` list:
+/// `security_event`, `memory.action`, …). The aliases are read-side
+/// compatibility, so the wire the bridge PUTS on the wire carries the
+/// fifteen: the bridge parses the block into a `BlockType` and serializes
+/// the VARIANT name back, so an aliased block comes back as
+/// `system_event`.
+///
+/// MEASURED on the operator's disk, 2026-11-24: 12 645 blocks carry EIGHT
+/// distinct words — seven variants (`insight`, `case`, `system_event`,
+/// `journal`, `decision`, `tool_call`, `system`) and ONE alias
+/// (`security_event`, 2 blocks). No block was missing its `type`, and no
+/// block carried a word the Rust core cannot parse — so the append path
+/// cannot trip over the corpus.
+///
+/// The TypeScript side keeps `type` open on the READ path, because the
+/// chain FILE is free-form by contract — but what the BRIDGE writes is
+/// these fifteen.
+const BLOCK_TYPE_VOCABULARY: Vocabulary = Vocabulary {
+    values: &[
+        "journal",
+        "ask",
+        "decision",
+        "system",
+        "system_event",
+        "insight",
+        "tool_call",
+        "tool_result",
+        "error",
+        "case",
+        "wallet_tx_requested",
+        "wallet_tx_signed",
+        "wallet_tx_broadcast",
+        "wallet_tx_confirmed",
+        "wallet_tx_failed",
+    ],
+    sources: &["BlockType"],
+    extra_literals: &[],
+};
+
+/// The words the `case_type` TAG of a case entry can carry.
+///
+/// The tag is the variant name of the `CaseEntry` enum, renamed by the
+/// enum's own `rename_all = "snake_case"` — so the words are the eight
+/// cases, exactly as the Rust core spells them.
+const CASE_ENTRY_TAG_VOCABULARY: Vocabulary = Vocabulary {
+    values: &[
+        "nominative",
+        "genitive",
+        "dative",
+        "accusative",
+        "instrumental",
+        "locative",
+        "ablative",
+        "vocative",
+    ],
+    sources: &["CaseEntry"],
+    extra_literals: &[],
+};
+
+/// `chain_validate` — the block is valid, or why it is not.
+///
+/// `errors` is ABSENT on the success path: the Rust struct skips it, and
+/// the TypeScript side used to declare it optional for the same reason
+/// without knowing why.
+pub const CHAIN_VALIDATE_SHAPE: PayloadShape = PayloadShape {
+    name: "ChainValidatePayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "ChainValidateOut",
+    fields: &[
+        PayloadField { name: "valid", ty: PayloadType::Boolean, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "errors", ty: PayloadType::Array(&PayloadType::String), optional: true, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
+/// `chain_append` — the block was taken, or why it was not.
+///
+/// TWO variants, one shape: the accepted path carries `length` and
+/// `chain`, the rejected path carries `errors`. The keys that are not
+/// there are absent, not null.
+pub const CHAIN_APPEND_SHAPE: PayloadShape = PayloadShape {
+    name: "ChainAppendPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "ChainAppendOut",
+    fields: &[
+        PayloadField { name: "appended", ty: PayloadType::Boolean, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "errors", ty: PayloadType::Array(&PayloadType::String), optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "length", ty: PayloadType::Integer, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "chain", ty: PayloadType::Array(&PayloadType::Named("BlockPayload")), optional: true, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
+/// `chain_query` — the chain and how many blocks it holds.
+pub const CHAIN_QUERY_SHAPE: PayloadShape = PayloadShape {
+    name: "ChainQueryPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "ChainQueryOut",
+    fields: &[
+        PayloadField { name: "count", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "blocks", ty: PayloadType::Array(&PayloadType::Named("BlockPayload")), optional: false, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
+/// One chain block, as the bridge carries it.
+///
+/// `signer` and `signature` are ABSENT when the block carries none — the
+/// Rust struct skips them. The TypeScript side declared them optional
+/// for the same reason, without knowing why.
+pub const BLOCK_SHAPE: PayloadShape = PayloadShape {
+    name: "BlockPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "Block",
+    fields: &[
+        PayloadField { name: "index", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "timestamp", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "chain", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "data", ty: PayloadType::Named("BlockDataPayload"), optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "prev_hash", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "hash", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "signer", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "signature", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
+/// A block's payload — the three fields the chain contract gives a
+/// meaning to.
+///
+/// The Rust field is `block_type` and the wire key is `type`: the struct
+/// sets `#[serde(rename = "type")]`. The TypeScript side read the same
+/// key, but declared its type as an open `string` — and the bridge only
+/// ever writes the fifteen words above.
+pub const BLOCK_DATA_SHAPE: PayloadShape = PayloadShape {
+    name: "BlockDataPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "BlockData",
+    fields: &[
+        PayloadField { name: "type", ty: PayloadType::Enum, optional: false, nullable: false, legacy_name: None, vocabulary: Some(BLOCK_TYPE_VOCABULARY) },
+        PayloadField { name: "content", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "tags", ty: PayloadType::Array(&PayloadType::String), optional: false, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
+/// `soul_loop_step` — the step applied, or why it did not.
+pub const SOUL_LOOP_STEP_SHAPE: PayloadShape = PayloadShape {
+    name: "SoulLoopStepPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "SoulLoopStepOut",
+    fields: &[
+        PayloadField { name: "applied", ty: PayloadType::Boolean, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "reason", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "state", ty: PayloadType::Named("LoopStatePayload"), optional: false, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
+/// The soul loop's state after a step.
+pub const LOOP_STATE_SHAPE: PayloadShape = PayloadShape {
+    name: "LoopStatePayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "LoopState",
+    fields: &[
+        PayloadField { name: "steps", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "tool_calls", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "wait_ms", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "errors", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "completed", ty: PayloadType::Boolean, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "halt_reason", ty: PayloadType::String, optional: false, nullable: true, legacy_name: None, vocabulary: None },
+    ],
+};
+
+/// `soul_replay` — what the replay made of the blocks.
+pub const SOUL_REPLAY_SHAPE: PayloadShape = PayloadShape {
+    name: "SoulReplayPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "ReplayReport",
+    fields: &[
+        PayloadField { name: "accepted", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "rejected", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "errors", ty: PayloadType::Array(&PayloadType::String), optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "snapshot", ty: PayloadType::Named("ReplaySnapshotPayload"), optional: false, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
+/// The state the replay left the chain in.
+pub const REPLAY_SNAPSHOT_SHAPE: PayloadShape = PayloadShape {
+    name: "ReplaySnapshotPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "ReplaySnapshot",
+    fields: &[
+        PayloadField { name: "blocks", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "last_hash", ty: PayloadType::String, optional: false, nullable: true, legacy_name: None, vocabulary: None },
+        PayloadField { name: "state_hash", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
+/// `case_append` — the entry was taken, or why it was not.
+pub const CASE_APPEND_SHAPE: PayloadShape = PayloadShape {
+    name: "CaseAppendPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "CaseAppendOut",
+    fields: &[
+        PayloadField { name: "appended", ty: PayloadType::Boolean, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "errors", ty: PayloadType::Array(&PayloadType::String), optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "indexed", ty: PayloadType::Boolean, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "length", ty: PayloadType::Integer, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "chain", ty: PayloadType::Array(&PayloadType::Named("BlockPayload")), optional: true, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
+/// `case_query` — the rows the case index holds.
+pub const CASE_QUERY_SHAPE: PayloadShape = PayloadShape {
+    name: "CaseQueryPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "CaseQueryOut",
+    fields: &[
+        PayloadField { name: "count", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "entries", ty: PayloadType::Array(&PayloadType::Named("CaseIndexRowPayload")), optional: false, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
+/// One row of the case index.
+///
+/// MEASURED 2026-11-24 on the built module: the row carries SIX keys —
+/// `block_index`, `block_hash`, `chain`, `case_type`, `full_json` and
+/// `entry`, the last one being the case entry itself.
+///
+/// The TypeScript side declared TWENTY-FOUR keys: it invented
+/// `entity`, `actor`, `target`, `instrument`, `location`, `origin`,
+/// `destination`, `owner`, `possessed`, `giver`, `recipient`, `object`,
+/// `subject`, `verb`, `invoker`, `invocation`, `entry_timestamp` and
+/// `indexed_at` — none of which the wire ever sends — and it was MISSING
+/// `entry`, the one key that carries the case. The two query paths
+/// (Rust and TypeScript) therefore answered with two different shapes,
+/// and `memphis case explain` read fields that were never there.
+pub const CASE_INDEX_ROW_SHAPE: PayloadShape = PayloadShape {
+    name: "CaseIndexRowPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "CaseIndexRow",
+    fields: &[
+        PayloadField { name: "block_index", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "block_hash", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "chain", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "case_type", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "full_json", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "entry", ty: PayloadType::Named("CaseEntryPayload"), optional: false, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
+/// One case entry — the eight Polish cases, as the Rust core spells them.
+///
+/// The Rust type is an ENUM tagged with `case_type`
+/// (`#[serde(tag = "case_type", rename_all = "snake_case")]`), so the wire
+/// carries the tag plus the fields OF THAT CASE: a nominative entry
+/// carries `entity`, `action` and `timestamp`, a genitive one `owner`
+/// and `possessed`.
+///
+/// This shape declares the tag and the union of the variants' fields; the
+/// fields that are not this case's are absent. The per-variant shapes
+/// are the next step of E-09 — the TypeScript side still spells the
+/// eight variants by hand, and the ledger says so.
+pub const CASE_ENTRY_SHAPE: PayloadShape = PayloadShape {
+    name: "CaseEntryPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "CaseEntry",
+    fields: &[
+        PayloadField { name: "case_type", ty: PayloadType::Enum, optional: false, nullable: false, legacy_name: None, vocabulary: Some(CASE_ENTRY_TAG_VOCABULARY) },
+        PayloadField { name: "entity", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "action", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "timestamp", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "owner", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "possessed", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "giver", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "recipient", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "object", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "subject", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "verb", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "actor", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "instrument", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "target", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "location", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "origin", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "destination", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "invoker", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "invocation", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
+/// `case_rebuild` — what the index took of the blocks.
+///
+/// MEASURED: the wire carries THREE keys. The TypeScript side declared
+/// TWO — it had never heard of `skipped`.
+pub const CASE_REBUILD_SHAPE: PayloadShape = PayloadShape {
+    name: "CaseRebuildPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "RebuildReport",
+    fields: &[
+        PayloadField { name: "indexed", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "skipped", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "errors", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
 /// Every payload shape, by name.
 pub const PAYLOAD_SHAPES: &[PayloadShape] = &[
     VAULT_SHAPE,
@@ -541,14 +883,30 @@ pub const PAYLOAD_SHAPES: &[PayloadShape] = &[
     EMBED_RESET_SHAPE,
     EMBED_DISCARD_SHAPE,
     EMBED_INDEX_METADATA_SHAPE,
+    CHAIN_VALIDATE_SHAPE,
+    CHAIN_APPEND_SHAPE,
+    CHAIN_QUERY_SHAPE,
+    BLOCK_SHAPE,
+    BLOCK_DATA_SHAPE,
+    SOUL_LOOP_STEP_SHAPE,
+    LOOP_STATE_SHAPE,
+    SOUL_REPLAY_SHAPE,
+    REPLAY_SNAPSHOT_SHAPE,
+    CASE_APPEND_SHAPE,
+    CASE_QUERY_SHAPE,
+    CASE_INDEX_ROW_SHAPE,
+    CASE_ENTRY_SHAPE,
+    CASE_REBUILD_SHAPE,
 ];
 
 /// Every payload the bridge carries.
 ///
 /// The vault family is here first because it is the family the TypeScript
-/// side guessed hardest. The envelope families (chain, case, soul) follow
-/// in the next phases of E-09; the ratchet in the gate counts what is
-/// left.
+/// side guessed hardest; the embed family next, because it is the family
+/// whose guess was measurably wrong; and the chain, soul and case
+/// families last, because they were the family that had NO shape at all
+/// — the answers were built from `json!` literals. The ratchet in the
+/// gate counts what is left.
 pub const BRIDGE_PAYLOADS: &[BridgePayload] = &[
     BridgePayload {
         export: "vault_init_full",
@@ -626,6 +984,50 @@ pub const BRIDGE_PAYLOADS: &[BridgePayload] = &[
         transport: PayloadTransport::EnvelopeJson,
         shape: Some("EmbedIndexMetadataPayload"),
     },
+    // The chain family — the blocks a chain is made of, and what the
+    // append and query paths answer.
+    BridgePayload {
+        export: "chain_validate",
+        transport: PayloadTransport::EnvelopeJson,
+        shape: Some("ChainValidatePayload"),
+    },
+    BridgePayload {
+        export: "chain_append",
+        transport: PayloadTransport::EnvelopeJson,
+        shape: Some("ChainAppendPayload"),
+    },
+    BridgePayload {
+        export: "chain_query",
+        transport: PayloadTransport::EnvelopeJson,
+        shape: Some("ChainQueryPayload"),
+    },
+    // The soul family — the loop's state, and what a replay made of it.
+    BridgePayload {
+        export: "soul_loop_step",
+        transport: PayloadTransport::EnvelopeJson,
+        shape: Some("SoulLoopStepPayload"),
+    },
+    BridgePayload {
+        export: "soul_replay",
+        transport: PayloadTransport::EnvelopeJson,
+        shape: Some("SoulReplayPayload"),
+    },
+    // The case family — the case index and the entries it holds.
+    BridgePayload {
+        export: "case_append",
+        transport: PayloadTransport::EnvelopeJson,
+        shape: Some("CaseAppendPayload"),
+    },
+    BridgePayload {
+        export: "case_query",
+        transport: PayloadTransport::EnvelopeJson,
+        shape: Some("CaseQueryPayload"),
+    },
+    BridgePayload {
+        export: "case_rebuild",
+        transport: PayloadTransport::EnvelopeJson,
+        shape: Some("CaseRebuildPayload"),
+    },
 ];
 
 fn field_type(ty: PayloadType) -> Value {
@@ -645,7 +1047,7 @@ fn field_type(ty: PayloadType) -> Value {
 fn render_vocabulary(vocabulary: &Vocabulary) -> Value {
     json!({
         "values": vocabulary.values,
-        "sourceFunctions": vocabulary.source_functions,
+        "sources": vocabulary.sources,
         "extraLiterals": vocabulary.extra_literals,
     })
 }

@@ -265,7 +265,7 @@
             "extraLiterals": [
               "embed_pipeline_lock_failed"
             ],
-            "sourceFunctions": [
+            "sources": [
               "embed_store",
               "embed_store_many",
               "embed_flush",
@@ -299,7 +299,7 @@
             "extraLiterals": [
               "local-deterministic"
             ],
-            "sourceFunctions": [
+            "sources": [
               "embed_normalized_to_str"
             ],
             "values": [
@@ -328,7 +328,7 @@
           },
           "vocabulary": {
             "extraLiterals": [],
-            "sourceFunctions": [
+            "sources": [
               "load_state_to_str"
             ],
             "values": [
@@ -389,7 +389,7 @@
             "extraLiterals": [
               "embed_pipeline_lock_failed"
             ],
-            "sourceFunctions": [
+            "sources": [
               "embed_store",
               "embed_store_many",
               "embed_flush",
@@ -423,7 +423,7 @@
             "extraLiterals": [
               "local-deterministic"
             ],
-            "sourceFunctions": [
+            "sources": [
               "embed_normalized_to_str"
             ],
             "values": [
@@ -481,7 +481,7 @@
             "extraLiterals": [
               "embed_pipeline_lock_failed"
             ],
-            "sourceFunctions": [
+            "sources": [
               "embed_store",
               "embed_store_many",
               "embed_flush",
@@ -592,7 +592,7 @@
             "extraLiterals": [
               "embed_pipeline_lock_failed"
             ],
-            "sourceFunctions": [
+            "sources": [
               "embed_store",
               "embed_store_many",
               "embed_flush",
@@ -626,7 +626,7 @@
             "extraLiterals": [
               "local-deterministic"
             ],
-            "sourceFunctions": [
+            "sources": [
               "embed_normalized_to_str"
             ],
             "values": [
@@ -720,7 +720,7 @@
           },
           "vocabulary": {
             "extraLiterals": [],
-            "sourceFunctions": [
+            "sources": [
               "replacement_state_to_str"
             ],
             "values": [
@@ -740,7 +740,7 @@
           },
           "vocabulary": {
             "extraLiterals": [],
-            "sourceFunctions": [
+            "sources": [
               "replacement_state_to_str"
             ],
             "values": [
@@ -780,7 +780,7 @@
           },
           "vocabulary": {
             "extraLiterals": [],
-            "sourceFunctions": [
+            "sources": [
               "load_state_to_str"
             ],
             "values": [
@@ -841,7 +841,7 @@
             "extraLiterals": [
               "ndjson"
             ],
-            "sourceFunctions": [
+            "sources": [
               "inspect_index"
             ],
             "values": [
@@ -898,6 +898,876 @@
       "name": "EmbedIndexMetadataPayload",
       "naming": "serde",
       "rustType": "IndexMetadata"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "valid",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "errors",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "string"
+            }
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "ChainValidatePayload",
+      "naming": "serde",
+      "rustType": "ChainValidateOut"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "appended",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "errors",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "string"
+            }
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "length",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "chain",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "named",
+              "name": "BlockPayload"
+            }
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "ChainAppendPayload",
+      "naming": "serde",
+      "rustType": "ChainAppendOut"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "count",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "blocks",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "named",
+              "name": "BlockPayload"
+            }
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "ChainQueryPayload",
+      "naming": "serde",
+      "rustType": "ChainQueryOut"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "index",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "timestamp",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "chain",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "data",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "named",
+            "name": "BlockDataPayload"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "prev_hash",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "hash",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "signer",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "signature",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "BlockPayload",
+      "naming": "serde",
+      "rustType": "Block"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "type",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "enum"
+          },
+          "vocabulary": {
+            "extraLiterals": [],
+            "sources": [
+              "BlockType"
+            ],
+            "values": [
+              "journal",
+              "ask",
+              "decision",
+              "system",
+              "system_event",
+              "insight",
+              "tool_call",
+              "tool_result",
+              "error",
+              "case",
+              "wallet_tx_requested",
+              "wallet_tx_signed",
+              "wallet_tx_broadcast",
+              "wallet_tx_confirmed",
+              "wallet_tx_failed"
+            ]
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "content",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "tags",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "string"
+            }
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "BlockDataPayload",
+      "naming": "serde",
+      "rustType": "BlockData"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "applied",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "reason",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "state",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "named",
+            "name": "LoopStatePayload"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "SoulLoopStepPayload",
+      "naming": "serde",
+      "rustType": "SoulLoopStepOut"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "steps",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "tool_calls",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "wait_ms",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "errors",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "completed",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "halt_reason",
+          "nullable": true,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "LoopStatePayload",
+      "naming": "serde",
+      "rustType": "LoopState"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "accepted",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "rejected",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "errors",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "string"
+            }
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "snapshot",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "named",
+            "name": "ReplaySnapshotPayload"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "SoulReplayPayload",
+      "naming": "serde",
+      "rustType": "ReplayReport"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "blocks",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "last_hash",
+          "nullable": true,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "state_hash",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "ReplaySnapshotPayload",
+      "naming": "serde",
+      "rustType": "ReplaySnapshot"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "appended",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "errors",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "string"
+            }
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "indexed",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "length",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "chain",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "named",
+              "name": "BlockPayload"
+            }
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "CaseAppendPayload",
+      "naming": "serde",
+      "rustType": "CaseAppendOut"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "count",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "entries",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "named",
+              "name": "CaseIndexRowPayload"
+            }
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "CaseQueryPayload",
+      "naming": "serde",
+      "rustType": "CaseQueryOut"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "block_index",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "block_hash",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "chain",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "case_type",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "full_json",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "entry",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "named",
+            "name": "CaseEntryPayload"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "CaseIndexRowPayload",
+      "naming": "serde",
+      "rustType": "CaseIndexRow"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "case_type",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "enum"
+          },
+          "vocabulary": {
+            "extraLiterals": [],
+            "sources": [
+              "CaseEntry"
+            ],
+            "values": [
+              "nominative",
+              "genitive",
+              "dative",
+              "accusative",
+              "instrumental",
+              "locative",
+              "ablative",
+              "vocative"
+            ]
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "entity",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "action",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "timestamp",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "owner",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "possessed",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "giver",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "recipient",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "object",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "subject",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "verb",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "actor",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "instrument",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "target",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "location",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "origin",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "destination",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "invoker",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "invocation",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "CaseEntryPayload",
+      "naming": "serde",
+      "rustType": "CaseEntry"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "indexed",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "skipped",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "errors",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "CaseRebuildPayload",
+      "naming": "serde",
+      "rustType": "RebuildReport"
     }
   ],
   "payloads": [
@@ -974,6 +1844,46 @@
     {
       "export": "embed_index_metadata",
       "shape": "EmbedIndexMetadataPayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "chain_validate",
+      "shape": "ChainValidatePayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "chain_append",
+      "shape": "ChainAppendPayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "chain_query",
+      "shape": "ChainQueryPayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "soul_loop_step",
+      "shape": "SoulLoopStepPayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "soul_replay",
+      "shape": "SoulReplayPayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "case_append",
+      "shape": "CaseAppendPayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "case_query",
+      "shape": "CaseQueryPayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "case_rebuild",
+      "shape": "CaseRebuildPayload",
       "transport": "envelopeJson"
     }
   ]

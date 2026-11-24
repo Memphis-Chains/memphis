@@ -114,6 +114,11 @@ jobs:
         # `Option` is `null`, a `skip_serializing_if` field is absent), and
         # the closed vocabularies against the source that writes them.
         #
+        # Since phase 3 (2026-11-24) it also knows the ENUM shape: a tagged
+        # enum carries its tag plus the union of its variants' fields, its
+        # vocabulary is read from the enum's variant names, and a read-side
+        # alias may not be declared as a wire word.
+        #
         # It ran only in the local preflight until now, so a Rust-side
         # rename or a new vocabulary word could have reached `main` with the
         # owner silent — the owner is the whole point of E-09.

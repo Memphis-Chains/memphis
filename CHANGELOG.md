@@ -31,8 +31,52 @@ had no callers anywhere in the tree, and with them three hand-written copies
 of the embed payloads, one of which silently dropped the `tags` field of
 every hit.
 
-The wire itself did not move: the probe before and after the change answers
-the same keys, in the same order, with the same values.
+The wire itself did not move in MEANING: the probe before and after the
+change answers the same keys with the same values. Its key ORDER did move —
+a `json!` literal is a `serde_json::Value`, whose map is sorted, while a
+struct serializes in declaration order. Nothing reads a JSON object by
+position, so no consumer can observe the difference; the correction is
+recorded in the ledger.
+
+### The chain, soul and case families have one owner too
+
+The third family of bridge payloads, and the one that had NO shape at all:
+the `chain_*`, `soul_*` and `case_*` answers were built from `json!`
+literals — a payload with no owner, which is how the TypeScript side
+ended up hand-writing its shape.
+
+Measured on the built module (the case family's SQLite index pointed at a
+scratch directory, so the operator's own index was never touched):
+
+- **`case_query` answers with SIX keys per row** — `block_index`,
+  `block_hash`, `chain`, `case_type`, `full_json` and `entry`. The
+  hand-written `CaseIndexRow` declared TWENTY-FOUR fields, none of which
+  the wire sends, and was missing `entry`, the one key that carries the
+  case itself. The adapter's two query paths therefore answered with two
+  different shapes.
+- **`memphis explain --case-type` read fields that never arrive.** It
+  printed `entry.entity` and `entry_timestamp` off the row; on the Rust
+  path those keys do not exist, so it printed an empty entity and a `?`
+  for every row. It reads the case under `entry` now.
+- **`case_rebuild` answers with THREE keys** — `indexed`, `skipped` and
+  `errors`. The TypeScript side knew two of them.
+
+The owner grew a rule it did not have: the ENUM shape. A tagged enum has
+no struct and no field list — the wire carries the tag plus the fields of
+that one variant — so the owner declares the tag and the union of the
+variants' fields, and the gate checks the tag's name, the union's order
+and the presence of each field. The gate also reads a vocabulary from an
+enum now (its variant names, renamed by the enum's own rule) and refuses
+a read-side alias in one: an alias is a word the crate accepts on read,
+never a word the wire writes.
+
+The ratchet counts the surfaces that still own a payload type — four down
+to two, and the two that remain are the manifest and embed-profile
+families.
+
+Dead code went with it: the case adapter's `extractFields` built the
+eighteen flat fields the wire never sends, and the row it fed them into
+was the hand-written type. Both are gone.
 
 ### The bridge's payload shapes have one owner
 
