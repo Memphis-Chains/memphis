@@ -23,6 +23,7 @@ use crate::client::{
 };
 use crate::config::TuiConfig;
 use crate::error_log::record_error;
+use crate::sanitize::sanitize_input;
 
 const OUTPUT_BUFFER_LIMIT: usize = 1200;
 
@@ -1193,8 +1194,14 @@ impl AppState {
 
     /// Type into the search query.
     pub fn search_insert(&mut self, text: &str) {
+        // The search query is operator input too — same rule as the
+        // command buffer (issue #647).
+        let text = sanitize_input(text);
+        if text.is_empty() {
+            return;
+        }
         if let Some(search) = self.search.as_mut() {
-            search.query.push_str(text);
+            search.query.push_str(&text);
         }
         self.recompute_search_matches();
     }
@@ -1348,8 +1355,17 @@ impl AppState {
 
     /// Insert text at the caret.
     pub fn input_insert(&mut self, text: &str) {
+        // Operator input, not output: strip terminal control sequences
+        // before they reach the buffer. A paste from a terminal that
+        // reports mouse position carries CSI sequences, and they used to
+        // land in the buffer verbatim, wrapping the intended command in
+        // garbage (issue #647).
+        let text = sanitize_input(text);
+        if text.is_empty() {
+            return;
+        }
         self.normalize_input_cursor();
-        self.input_buffer.insert_str(self.input_cursor, text);
+        self.input_buffer.insert_str(self.input_cursor, &text);
         self.input_cursor += text.len();
     }
 
@@ -5770,6 +5786,27 @@ enum RuntimeErrorPresentation {
 
 fn classify_runtime_error(error: &str) -> RuntimeErrorPresentation {
     let normalized = error.to_lowercase();
+    if normalized.contains("side-effecting tool paused") {
+        // This is a guard, not a crash. The runtime refused to run a
+        // write because an earlier turn may have left a side effect
+        // outstanding. Presenting it as "fatal" gave the operator no next
+        // step at all — the one thing the message needs to say is how to
+        // clear it.
+        return RuntimeErrorPresentation::Recoverable {
+            status: "Status: write tools paused pending review",
+            detail: "An earlier turn in this session left an operation without a settled outcome, so the runtime is not repeating write operations until it is reviewed.",
+            action: "Action: run `/recovery` to see the pending work, acknowledge it, and continue.",
+        };
+    }
+    if normalized.contains("a turn is active in this session")
+        || normalized.contains("another turn started in this session")
+    {
+        return RuntimeErrorPresentation::Recoverable {
+            status: "Status: another turn is still active",
+            detail: "This session already has a turn in flight. A turn left behind by a killed process is reclaimed automatically on the next attempt.",
+            action: "Action: wait for the running turn, or start a fresh session with `/clear`.",
+        };
+    }
     if normalized.contains("tool outcome unknown") {
         return RuntimeErrorPresentation::Recoverable {
             status: "Status: tool outcome unknown",
@@ -6387,6 +6424,40 @@ mod tests {
         app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
 
         assert!(app.search.is_none());
+    }
+
+    #[test]
+    fn a_paste_with_mouse_reports_lands_as_plain_text() {
+        // Issue #647: pasting from a terminal with mouse tracking put
+        // the raw cursor-position reports into the input buffer, so the
+        // operator saw garbage wrapped around their command.
+        let mut app = AppState::new(config());
+        app.handle_paste(
+            "\x1b[<35;55;5M\x1b[<35;85;12M\x1b[89;18M\x1b[<35;120;45M\x1b[<35;120;45M\x1b[5;120;46M\x1b[<35;118;47M\x1b[<35;120;47M\x1b[29M/mode",
+        );
+
+        assert_eq!(app.input_buffer, "/mode");
+    }
+
+    #[test]
+    fn a_paste_with_reports_that_lost_their_escape_lands_as_plain_text() {
+        // The same paste as the clipboard delivered it — the escape bytes
+        // gone, three fragments missing their bracket.
+        let mut app = AppState::new(config());
+        app.handle_paste(
+            "[<35;55;5M[<35;85;12M89;18M[<35;120;45M[<35;120;45M5;120;46M[<35;118;47M[<35;120;47M29M/mode",
+        );
+
+        assert_eq!(app.input_buffer, "/mode");
+    }
+
+    #[test]
+    fn a_paste_keeps_the_operators_own_text() {
+        // The sanitiser removes control sequences, not content.
+        let mut app = AppState::new(config());
+        app.handle_paste("ls -la /home/memphis\ndf -h");
+
+        assert_eq!(app.input_buffer, "ls -la /home/memphis\ndf -h");
     }
 
     #[test]

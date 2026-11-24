@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "halt-aware-destructive-ops",
+  "name": "HALT-Aware Destructive Ops",
+  "description": "Pre-flight guard for destructive operations (rm, rm -rf, mv, git rm, gio trash, unlink) against resources the operator or a peer council has marked HALT. Runs check.sh before the deletion, blocks on a match, and logs every pass, block and bypass to an append-only JSONL audit log outside the chains.",
+  "tags": ["audit", "destructive", "halt", "safety"],
+  "tools": ["memphis_decide", "memphis_exec", "memphis_journal"],
+  "workflow": [
+    "PRE-FLIGHT: run skills/halt-aware-destructive-ops/check.sh with every path the operation will touch. Exit 0 means safe to proceed; exit 1 means a halted resource matched; exit 2 means a bypass is required.",
+    "BLOCK: on exit 1, stop the operation and report the matched resource, the halted-by chain reference and the reason. Do not retry with a different spelling of the path — the guard matches by basename as well as by full path.",
+    "BYPASS: only with a conscious operator trigger. Set HALT_BYPASS=1 together with HALT_BYPASS_REASON describing why; the bypass is written to the audit log with that reason.",
+    "REGISTER: to mark a resource as HALT, use register.sh <resource-path> <halted-by-chain-ref> <reason> [expires-at]. Unregister with unregister.sh, which asks for a typed confirmation.",
+    "AUDIT: read the trail with audit.sh [last-N] (default 10 entries) and verify scheduled integrity with verify.sh."
+  ],
+  "promptHints": [
+    "check.sh FIRST — the guard is cheap and the deletion is not recoverable.",
+    "Never set HALT_HOOK_DISABLED=1 and never bypass a block without an explicit operator instruction.",
+    "The halt list lives in ~/.memphis/halt/ and the audit log in ~/.memphis/audit/halt/events.jsonl — deliberately OUTSIDE chains/, because a non-conforming block there crashes memphis at the next BOOT.",
+    "Use memphis_decide to record why a resource was halted, and memphis_journal for the bypass trail."
+  ],
+  "examples": [
+    {
+      "prompt": "Usuń ten katalog z repo",
+      "outcome": "The skill runs check.sh on the target first. On a pass it proceeds; on a block it reports the halted resource, the halted-by reference and the reason, and waits for the operator."
+    },
+    {
+      "prompt": "Oznacz plik jako HALT do czasu decyzji council",
+      "outcome": "The skill registers the resource with register.sh, naming the chain reference that halted it and the reason, then confirms the registry file it wrote."
+    }
+  ],
+  "notes": [
+    "Requires jq (standard on Ubuntu/Debian). The bash hook in ~/.bashrc only fires for interactive shells, not for `bash -c` scripts.",
+    "Tier 0: no vault, no passphrase. HALT_BYPASS is a plain environment variable and is NOT a tier-2 protected override.",
+    "Created 2026-09-22 after a peer agent deleted a file under an active council-request HALT (decisions #227, #228)."
+  ]
+}

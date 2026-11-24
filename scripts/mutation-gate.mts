@@ -105,7 +105,12 @@ const MUTATIONS: Mutation[] = [
   {
     name: 'site-claims contract accepts a stale version in JSON-LD',
     file: 'sites/memphis-v5/index.html',
-    anchor: '"softwareVersion": "1.13.5"',
+    // `<VERSION>` is resolved against `package.json` — the very file the
+    // guard compares against. The anchor used to spell the version out
+    // ("1.13.5"), so every release broke this mutation: the anchor was
+    // gone, the mutation refused to run, and the gate failed the commit
+    // for the wrong reason. A mutation must survive the thing it guards.
+    anchor: '"softwareVersion": "<VERSION>"',
     replacement: '"softwareVersion": "0.0.1"',
     guard: ['npx', 'vitest', 'run', 'tests/unit/site-claims-contract.test.ts'],
   },
@@ -134,6 +139,10 @@ function mutate(m: Mutation): boolean {
   // `<TOOL_COUNT>` is resolved against the live file so this mutation keeps
   // working as the tool count changes. If the marker ever disappears, the
   // guard below refuses to mutate rather than silently surviving.
+  // `<VERSION>` is the same trick for the release version: the landing
+  // page's version changes with every release, and a mutation anchored to
+  // a spelled-out version stops existing on the next release — which is
+  // how this gate failed the v1.14.0 commit.
   const resolvedAnchor = m.anchor.includes('<TOOL_COUNT>')
     ? m.anchor.replace(
         /<TOOL_COUNT>/g,
@@ -148,7 +157,17 @@ function mutate(m: Mutation): boolean {
           return toolCount;
         })(),
       )
-    : m.anchor;
+    : m.anchor.includes('<VERSION>')
+      ? m.anchor.replace(/<VERSION>/g, () => {
+          const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as {
+            version?: string;
+          };
+          if (!pkg.version) {
+            throw new Error('package.json carries no version for the "<VERSION>" anchor');
+          }
+          return pkg.version;
+        })
+      : m.anchor;
 
   const count = src.split(resolvedAnchor).length - 1;
   if (count !== 1) {

@@ -15,6 +15,7 @@ import Fastify from 'fastify';
 
 import { isAuthRequired } from './auth-policy.js';
 import { handleHttpError } from './error-handler.js';
+import { attachPublicMinimaxRelay } from './public-minimax.js';
 import { globalLimiter, sensitiveLimiter } from './rate-limit.js';
 import { registerOperationalConfigRoutes } from './routes/operational-config.js';
 import { registerTierCapabilityRoutes } from './routes/tier-capabilities.js';
@@ -378,6 +379,8 @@ export function createHttpServer(
   registerSoulRoutes(app as never);
   registerChatRoutes(app as never, orchestration, repos, chatRuntime);
   registerChatCompletionsRoutes(app, orchestration);
+  const publicMinimaxSocket = process.env.MEMPHIS_PUBLIC_MINIMAX_SOCKET;
+  if (publicMinimaxSocket) attachPublicMinimaxRelay(app, orchestration, publicMinimaxSocket);
   registerConfigRoutes(app);
   registerMemoryRoutes(app);
   registerWebhookRoutes(app, repos?.webhookEventRepository);

@@ -241,15 +241,28 @@ struct MeasuredStream<R> {
 
 impl<R: Read> MeasuredStream<R> {
     fn new(inner: R) -> Self {
-        Self { inner, started: std::time::Instant::now(), last_byte_at: None, stats: StreamReadStats {
-            first_byte_after_headers_ms: None, last_byte_after_headers_ms: None,
-            max_interread_gap_ms: 0, idle_before_error_ms: None, bytes: 0,
-        }}
+        Self {
+            inner,
+            started: std::time::Instant::now(),
+            last_byte_at: None,
+            stats: StreamReadStats {
+                first_byte_after_headers_ms: None,
+                last_byte_after_headers_ms: None,
+                max_interread_gap_ms: 0,
+                idle_before_error_ms: None,
+                bytes: 0,
+            },
+        }
     }
     fn snapshot(&self, failed: bool) -> StreamReadStats {
         let mut stats = self.stats.clone();
         if failed {
-            stats.idle_before_error_ms = Some(self.last_byte_at.unwrap_or(self.started).elapsed().as_millis() as u64);
+            stats.idle_before_error_ms = Some(
+                self.last_byte_at
+                    .unwrap_or(self.started)
+                    .elapsed()
+                    .as_millis() as u64,
+            );
         }
         stats
     }
@@ -261,9 +274,14 @@ impl<R: Read> Read for MeasuredStream<R> {
         if count > 0 {
             let now = std::time::Instant::now();
             let since_headers = now.duration_since(self.started).as_millis() as u64;
-            if self.stats.first_byte_after_headers_ms.is_none() { self.stats.first_byte_after_headers_ms = Some(since_headers); }
+            if self.stats.first_byte_after_headers_ms.is_none() {
+                self.stats.first_byte_after_headers_ms = Some(since_headers);
+            }
             if let Some(last) = self.last_byte_at {
-                self.stats.max_interread_gap_ms = self.stats.max_interread_gap_ms.max(now.duration_since(last).as_millis() as u64);
+                self.stats.max_interread_gap_ms = self
+                    .stats
+                    .max_interread_gap_ms
+                    .max(now.duration_since(last).as_millis() as u64);
             }
             self.stats.last_byte_after_headers_ms = Some(since_headers);
             self.stats.bytes = self.stats.bytes.saturating_add(count as u64);
@@ -954,17 +972,26 @@ impl ProviderRuntime {
         };
 
         let stream_url = format!("{}/chat/completions", base_url);
-        let payload = openai_compatible_request_body(self.kind, model, all_messages, opts, tools, true);
+        let payload =
+            openai_compatible_request_body(self.kind, model, all_messages, opts, tools, true);
         let response = if self.kind == ProviderKind::Minimax {
             post_stream_response_with_provider(
-                &stream_url, payload, Some(api_key), stream_connect_timeout_ms(self.timeout_ms),
-                stream_read_idle_timeout_ms(self.timeout_ms), &[("Accept", "text/event-stream")],
+                &stream_url,
+                payload,
+                Some(api_key),
+                stream_connect_timeout_ms(self.timeout_ms),
+                stream_read_idle_timeout_ms(self.timeout_ms),
+                &[("Accept", "text/event-stream")],
                 Some(self.name.as_str()),
             )?
         } else {
             post_response_with_provider(
-                &stream_url, payload, Some(api_key), self.timeout_ms,
-                &[("Accept", "text/event-stream")], Some(self.name.as_str()),
+                &stream_url,
+                payload,
+                Some(api_key),
+                self.timeout_ms,
+                &[("Accept", "text/event-stream")],
+                Some(self.name.as_str()),
             )?
         };
         let mut reader = BufReader::new(MeasuredStream::new(response.into_reader()));
@@ -977,26 +1004,40 @@ impl ProviderRuntime {
 
         loop {
             if let Err(error) = ensure_not_cancelled(cancel_flag) {
-                on_event(ChatStreamEvent::StreamStats(reader.get_ref().snapshot(false)));
+                on_event(ChatStreamEvent::StreamStats(
+                    reader.get_ref().snapshot(false),
+                ));
                 return Err(error);
             }
             let mut line = String::new();
             // A provider can send a never-ending line. Bound its memory
             // before parsing rather than allowing `read_line` to grow forever.
             const MAX_SSE_LINE_BYTES: u64 = 1024 * 1024;
-            let read_result = (&mut reader).take(MAX_SSE_LINE_BYTES + 1).read_line(&mut line);
+            let read_result = (&mut reader)
+                .take(MAX_SSE_LINE_BYTES + 1)
+                .read_line(&mut line);
             match read_result {
                 Ok(0) => break,
                 Ok(bytes) if bytes as u64 > MAX_SSE_LINE_BYTES => {
-                    on_event(ChatStreamEvent::StreamStats(reader.get_ref().snapshot(false)));
-                    return Err(OperatorError::Message("provider stream line exceeds 1 MiB".into()));
+                    on_event(ChatStreamEvent::StreamStats(
+                        reader.get_ref().snapshot(false),
+                    ));
+                    return Err(OperatorError::Message(
+                        "provider stream line exceeds 1 MiB".into(),
+                    ));
                 }
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(error) => {
-                    on_event(ChatStreamEvent::StreamStats(reader.get_ref().snapshot(true)));
+                    on_event(ChatStreamEvent::StreamStats(
+                        reader.get_ref().snapshot(true),
+                    ));
                     return Err(match error.kind() {
-                        ErrorKind::TimedOut | ErrorKind::WouldBlock => OperatorError::ProviderStreamTimeout,
-                        _ => OperatorError::Message(format!("invalid provider stream response: {error}")),
+                        ErrorKind::TimedOut | ErrorKind::WouldBlock => {
+                            OperatorError::ProviderStreamTimeout
+                        }
+                        _ => OperatorError::Message(format!(
+                            "invalid provider stream response: {error}"
+                        )),
                     });
                 }
             }
@@ -1088,7 +1129,9 @@ impl ProviderRuntime {
             }
         }
 
-        on_event(ChatStreamEvent::StreamStats(reader.get_ref().snapshot(false)));
+        on_event(ChatStreamEvent::StreamStats(
+            reader.get_ref().snapshot(false),
+        ));
         let token_usage = token_usage.or_else(|| {
             Some(estimated_chat_usage(
                 messages,
@@ -2017,7 +2060,9 @@ pub fn resolve_provider(
                 api_key,
                 api_key_missing_hint,
                 default_model: normalize_minimax_model_id(
-                    config.env("MINIMAX_MODEL").unwrap_or(MINIMAX_M31_FLASH_MODEL),
+                    config
+                        .env("MINIMAX_MODEL")
+                        .unwrap_or(MINIMAX_M31_FLASH_MODEL),
                 ),
                 timeout_ms: minimax_timeout_ms,
             })
@@ -2131,11 +2176,7 @@ pub fn configured_provider_statuses(config: &OperatorConfig) -> Vec<ProviderStat
 
         handles
             .into_iter()
-            .map(|handle| {
-                handle
-                    .join()
-                    .unwrap_or_else(|_| None)
-            })
+            .map(|handle| handle.join().unwrap_or_else(|_| None))
             .collect()
     });
 
@@ -2159,7 +2200,6 @@ fn build_tools_json(tools: &[ChatToolDefinition]) -> Vec<Value> {
 }
 
 const MINIMAX_M31_FLASH_MODEL: &str = "MiniMax-M3.1-Flash";
-const MINIMAX_M3_RECOMMENDED_COMPLETION_TOKENS: u32 = 131_072;
 const MINIMAX_M3_MAX_COMPLETION_TOKENS: u32 = 524_288;
 
 /// The reasoning effort the native MiniMax path uses when the operator
@@ -2755,7 +2795,14 @@ fn post_response_with_provider(
     let request = ureq::post(url)
         .timeout(Duration::from_millis(timeout_ms))
         .set("Content-Type", "application/json");
-    send_json_request(request, payload, url, bearer_token, extra_headers, provider_name)
+    send_json_request(
+        request,
+        payload,
+        url,
+        bearer_token,
+        extra_headers,
+        provider_name,
+    )
 }
 
 /// Only these provider finish reasons describe an incomplete answer.
@@ -2814,7 +2861,14 @@ fn post_stream_response_with_provider(
         .timeout_write(Duration::from_millis(read_idle_timeout_ms))
         .build();
     let request = agent.post(url).set("Content-Type", "application/json");
-    send_json_request(request, payload, url, bearer_token, extra_headers, provider_name)
+    send_json_request(
+        request,
+        payload,
+        url,
+        bearer_token,
+        extra_headers,
+        provider_name,
+    )
 }
 
 /// Send a JSON body and map the provider's failure shapes onto
@@ -2871,14 +2925,24 @@ fn send_json_request(
                 }
             }
             let hint = extract_provider_error_hint(body.as_str());
-            OperatorError::ProviderHttp { status: code, message: format!(
-                "provider request failed: {url}: status code {code}: {hint}"
-            ) }
+            OperatorError::ProviderHttp {
+                status: code,
+                message: format!("provider request failed: {url}: status code {code}: {hint}"),
+            }
         }
         ureq::Error::Transport(error) => {
-            let transient = matches!(error.kind(), ureq::ErrorKind::Dns | ureq::ErrorKind::ConnectionFailed | ureq::ErrorKind::Io | ureq::ErrorKind::ProxyConnect);
-            OperatorError::ProviderTransport { transient, message: format!("provider request failed: {url}: {error}") }
-        },
+            let transient = matches!(
+                error.kind(),
+                ureq::ErrorKind::Dns
+                    | ureq::ErrorKind::ConnectionFailed
+                    | ureq::ErrorKind::Io
+                    | ureq::ErrorKind::ProxyConnect
+            );
+            OperatorError::ProviderTransport {
+                transient,
+                message: format!("provider request failed: {url}: {error}"),
+            }
+        }
     })
 }
 
@@ -3844,7 +3908,9 @@ mod tests {
             Some(1_050_000)
         );
         assert_eq!(
-            provider.model_capability("unknown-model").context_window_tokens,
+            provider
+                .model_capability("unknown-model")
+                .context_window_tokens,
             None
         );
     }
@@ -4280,8 +4346,15 @@ mod tests {
     fn minimax_m3_family_is_multimodal() {
         // M3.1-Flash accepts text, image and video input through the
         // OpenAI-compatible endpoint. The legacy M2 family is text-only.
-        for model in ["minimax-m3.1-flash", "MiniMax-M3.1-Flash-Preview", "minimax-m3"] {
-            assert!(super::minimax_supports_vision(model), "{model} must be multimodal");
+        for model in [
+            "minimax-m3.1-flash",
+            "MiniMax-M3.1-Flash-Preview",
+            "minimax-m3",
+        ] {
+            assert!(
+                super::minimax_supports_vision(model),
+                "{model} must be multimodal"
+            );
         }
         for model in ["minimax-m2.7", "MiniMax-M2.7", "abab6.5s-chat"] {
             assert!(
@@ -4705,7 +4778,9 @@ mod tests {
             let (mut socket, _) = listener.accept().unwrap();
             let mut request = [0u8; 4096];
             socket.read(&mut request).unwrap();
-            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 6\r\nConnection: close\r\n\r\n").unwrap();
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 6\r\nConnection: close\r\n\r\n")
+                .unwrap();
             socket.flush().unwrap();
             for _ in 0..6 {
                 socket.write_all(b"x").unwrap();
@@ -4713,7 +4788,16 @@ mod tests {
                 std::thread::sleep(std::time::Duration::from_millis(250));
             }
         });
-        let response = post_stream_response_with_provider(&format!("http://{address}"), json!({}), None, 1000, 700, &[], None).unwrap();
+        let response = post_stream_response_with_provider(
+            &format!("http://{address}"),
+            json!({}),
+            None,
+            1000,
+            700,
+            &[],
+            None,
+        )
+        .unwrap();
         let started = std::time::Instant::now();
         let mut bytes = Vec::new();
         response.into_reader().read_to_end(&mut bytes).unwrap();
@@ -4731,24 +4815,48 @@ mod tests {
             let (mut socket, _) = listener.accept().unwrap();
             let mut request = [0u8; 4096];
             socket.read(&mut request).unwrap();
-            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nx").unwrap();
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nx")
+                .unwrap();
             socket.flush().unwrap();
             std::thread::sleep(std::time::Duration::from_millis(900));
         });
-        let response = post_stream_response_with_provider(&format!("http://{address}"), json!({}), None, 1000, 250, &[], None).unwrap();
+        let response = post_stream_response_with_provider(
+            &format!("http://{address}"),
+            json!({}),
+            None,
+            1000,
+            250,
+            &[],
+            None,
+        )
+        .unwrap();
         let mut bytes = Vec::new();
         let error = response.into_reader().read_to_end(&mut bytes).unwrap_err();
-        assert!(matches!(error.kind(), std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock));
+        assert!(matches!(
+            error.kind(),
+            std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+        ));
         server.join().unwrap();
     }
 
     #[test]
     fn minimax_flash_respects_explicit_output_limits() {
-        let opts = ChatRequestOptions { max_tokens: Some(4096), ..ChatRequestOptions::default() };
+        let opts = ChatRequestOptions {
+            max_tokens: Some(4096),
+            ..ChatRequestOptions::default()
+        };
         assert_eq!(minimax_flash_max_completion_tokens(&opts), 4096);
-        let opts = ChatRequestOptions { max_tokens: Some(4096), minimax_max_completion_tokens: Some(8192), ..ChatRequestOptions::default() };
+        let opts = ChatRequestOptions {
+            max_tokens: Some(4096),
+            minimax_max_completion_tokens: Some(8192),
+            ..ChatRequestOptions::default()
+        };
         assert_eq!(minimax_flash_max_completion_tokens(&opts), 8192);
-        assert_eq!(minimax_flash_max_completion_tokens(&ChatRequestOptions::default()), 32768);
+        assert_eq!(
+            minimax_flash_max_completion_tokens(&ChatRequestOptions::default()),
+            32768
+        );
     }
 
     #[test]

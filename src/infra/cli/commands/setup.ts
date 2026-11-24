@@ -42,6 +42,10 @@ import { resolveInstallRoot } from '../../runtime/install-root.js';
 import { repairRuntimeState, type RuntimeRepairResult } from '../../runtime/runtime-repair.js';
 import { reconcileScheduledTasks } from '../../runtime/scheduler.js';
 import { buildSecretAwareness, type SecretAwareness } from '../../secret-awareness.js';
+import {
+  EMBED_PROFILE_ENV,
+  EMBED_PROFILE_LOCAL_MODE,
+} from '../../storage/embed-profile.generated.js';
 import type { CliContext } from '../context.js';
 import {
   generateSecureToken as generateApiToken,
@@ -230,7 +234,7 @@ export function buildSetupEnv(answers: SetupAnswers): {
     RUST_CHAIN_ENABLED: 'true',
     LOCAL_FALLBACK_ENABLED: 'true',
     RUST_EMBED_PERSIST_ENABLED: 'true',
-    RUST_EMBED_PERSIST_PATH: `${normalized.directory}/embed-index.json`,
+    [EMBED_PROFILE_ENV.indexPath]: `${normalized.directory}/embed-index.json`,
   };
 
   switch (answers.provider) {
@@ -289,17 +293,23 @@ export function buildSetupEnv(answers: SetupAnswers): {
   }
 
   if (embeddingMode === 'local') {
-    env.RUST_EMBED_MODE = 'local';
-    env.RUST_EMBED_DIM = '32';
+    env[EMBED_PROFILE_ENV.mode] = EMBED_PROFILE_LOCAL_MODE;
+    // No RUST_EMBED_DIM here. The dimension is the OWNER's business
+    // (`crates/memphis-embed/src/profile.rs`): the environment first, then
+    // the index on disk, then the local deterministic width. This used to
+    // write `RUST_EMBED_DIM=32` — the local embedder's own width — which
+    // pinned the profile to 32 even when the index on disk held a
+    // different width, and turned a working setup into a
+    // `dimension-mismatch` the operator had to diagnose by hand.
     env.RUST_EMBED_MAX_TEXT_BYTES = '4096';
   } else if (embeddingMode === 'ollama') {
-    env.RUST_EMBED_MODE = 'ollama';
+    env[EMBED_PROFILE_ENV.mode] = 'ollama';
     if (embeddingEndpoint) env.RUST_EMBED_PROVIDER_URL = embeddingEndpoint;
-    env.RUST_EMBED_PROVIDER_MODEL = embeddingModel;
+    env[EMBED_PROFILE_ENV.model] = embeddingModel;
   } else {
-    env.RUST_EMBED_MODE = 'openai-compatible';
+    env[EMBED_PROFILE_ENV.mode] = 'openai-compatible';
     if (embeddingEndpoint) env.RUST_EMBED_PROVIDER_URL = embeddingEndpoint;
-    env.RUST_EMBED_PROVIDER_MODEL = embeddingModel;
+    env[EMBED_PROFILE_ENV.model] = embeddingModel;
     if (providerApiKey) env.RUST_EMBED_PROVIDER_API_KEY = providerApiKey;
   }
 
@@ -342,14 +352,14 @@ function renderEnvFile(env: Record<string, string>, provider: SetupProviderChoic
     'GLM_MODEL',
     'DATABASE_URL',
     'RUST_CHAIN_ENABLED',
-    'RUST_EMBED_MODE',
-    'RUST_EMBED_DIM',
+    EMBED_PROFILE_ENV.mode,
+    EMBED_PROFILE_ENV.dimension,
     'RUST_EMBED_MAX_TEXT_BYTES',
     'RUST_EMBED_PROVIDER_URL',
     'RUST_EMBED_PROVIDER_API_KEY',
-    'RUST_EMBED_PROVIDER_MODEL',
+    EMBED_PROFILE_ENV.model,
     'RUST_EMBED_PERSIST_ENABLED',
-    'RUST_EMBED_PERSIST_PATH',
+    EMBED_PROFILE_ENV.indexPath,
     'MEMPHIS_VAULT_PEPPER',
   ];
 

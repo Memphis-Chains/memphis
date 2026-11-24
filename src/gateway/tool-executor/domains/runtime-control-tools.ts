@@ -8,6 +8,7 @@ import {
 import { runMemphisLoopStep } from '../../../mcp/tools/loop-step.js';
 import { runMemphisPresence } from '../../../mcp/tools/presence.js';
 import { runMemphisRestart } from '../../../mcp/tools/restart.js';
+import { buildRegistryInputJsonSchema } from '../../tool-json-schema.js';
 import { buildTool, type RuntimeToolDefinition } from '../../tool-runtime.js';
 import { optionalString, requiredRecord, requiredString } from '../input-normalization.js';
 
@@ -16,12 +17,11 @@ export function createRuntimeControlTools(): RuntimeToolDefinition[] {
     buildTool({
       name: 'memphis_config_show',
       description: 'Show current runtime config (redacted view of hot-reloadable env)',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          key: { type: 'string', description: 'Optional single config key to inspect' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_config_show', {
+        propertyDescriptions: {
+          key: 'Optional single config key to inspect',
         },
-      },
+      }),
       isReadOnly: true,
       isConcurrencySafe: true,
       validateInput(args) {
@@ -35,15 +35,13 @@ export function createRuntimeControlTools(): RuntimeToolDefinition[] {
       name: 'memphis_config_set',
       description:
         'Set a single config key/value. Cold fields refuse; secret fields require operator passphrase.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          key: { type: 'string', description: 'Config key (must be in known-fields whitelist)' },
-          value: { type: 'string', description: 'New value' },
-          passphrase: { type: 'string', description: 'Operator passphrase if key is secret' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_config_set', {
+        propertyDescriptions: {
+          key: 'Config key (must be in known-fields whitelist)',
+          value: 'New value',
+          passphrase: 'Operator passphrase if key is secret',
         },
-        required: ['key', 'value'],
-      },
+      }),
       isReadOnly: false,
       validateInput(args) {
         const value = args.value;
@@ -67,10 +65,7 @@ export function createRuntimeControlTools(): RuntimeToolDefinition[] {
     buildTool({
       name: 'memphis_config_reload',
       description: 'Re-read .env and hot-swap mutable fields (cold fields refuse — restart needed)',
-      inputSchema: {
-        type: 'object',
-        properties: {},
-      },
+      inputSchema: buildRegistryInputJsonSchema('memphis_config_reload'),
       isReadOnly: false,
       validateInput() {
         return {};
@@ -83,14 +78,12 @@ export function createRuntimeControlTools(): RuntimeToolDefinition[] {
       name: 'memphis_cognitive_mode_set',
       description:
         'Switch cognitive mode (A–E: ConsciousCapture / InferredDecisions / PredictivePatterns / CollectiveCoord / MetaCognitiveRef). Requires operator passphrase.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          mode: { type: 'string', description: 'Target mode: A | B | C | D | E' },
-          passphrase: { type: 'string', description: 'Operator passphrase' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_cognitive_mode_set', {
+        propertyDescriptions: {
+          mode: 'Target mode: A | B | C | D | E',
+          passphrase: 'Operator passphrase',
         },
-        required: ['mode'],
-      },
+      }),
       isReadOnly: false,
       validateInput(args) {
         return {
@@ -105,10 +98,7 @@ export function createRuntimeControlTools(): RuntimeToolDefinition[] {
     buildTool({
       name: 'memphis_presence',
       description: 'Cross-surface presence snapshot (TUI / Telegram / HTTP / CLI activity)',
-      inputSchema: {
-        type: 'object',
-        properties: {},
-      },
+      inputSchema: buildRegistryInputJsonSchema('memphis_presence'),
       isReadOnly: true,
       isConcurrencySafe: true,
       validateInput() {
@@ -122,15 +112,13 @@ export function createRuntimeControlTools(): RuntimeToolDefinition[] {
       name: 'memphis_loop_step',
       description:
         'Cognitive loop enforcement step (Rust LoopEngine via NAPI, TS fallback if bridge unavailable)',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          state: { type: 'object', description: 'Current loop state' },
-          action: { type: 'object', description: 'Proposed action' },
-          limits: { type: 'object', description: 'Optional override limits' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_loop_step', {
+        propertyDescriptions: {
+          state: 'Current loop state',
+          action: 'Proposed action',
+          limits: 'Optional override limits',
         },
-        required: ['state', 'action'],
-      },
+      }),
       isReadOnly: true,
       isConcurrencySafe: true,
       validateInput(args) {
@@ -148,14 +136,13 @@ export function createRuntimeControlTools(): RuntimeToolDefinition[] {
       name: 'memphis_restart',
       description:
         'Request a self-restart of the Memphis daemon. Requires operator passphrase (no per-surface tier-3 session is minted via tools).',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          reason: { type: 'string', description: 'Reason for the restart (audited)' },
-          actor_id: { type: 'string', description: 'Actor identifier (audit context)' },
-          passphrase: { type: 'string', description: 'Operator passphrase' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_restart', {
+        propertyDescriptions: {
+          reason: 'Reason for the restart (audited)',
+          actor_id: 'Actor identifier (audit context)',
+          passphrase: 'Operator passphrase',
         },
-      },
+      }),
       isReadOnly: false,
       isDestructive: true,
       validateInput(args) {

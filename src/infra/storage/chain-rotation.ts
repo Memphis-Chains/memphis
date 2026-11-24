@@ -12,11 +12,168 @@ import * as path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 
+import { archiveFileName, parseArchiveFileName, toArchiveLine } from './chain-archive-format.js';
+import { ROTATION_HEAD_FORMAT, writeChainRotationHead } from './chain-rotation-head.js';
+import { withChainWriteLock } from './chain-write-lock.js';
 import { getChainPath, getChainSnapshotsPath } from '../../config/paths.js';
 import { SAFE_CHAIN_NAME } from '../../memory/chain-catalog.js';
 
 /** Default rotation threshold: 50 MB per chain directory. */
 const DEFAULT_ROTATION_THRESHOLD_BYTES = 50 * 1024 * 1024;
+
+/**
+ * The bounds the env schema enforces for the threshold
+ * (`src/infra/config/schema.ts`). The code clamps to the same range, so a
+ * caller that bypassed the schema still cannot ask for a nonsensical
+ * threshold.
+ */
+const MIN_ROTATION_THRESHOLD_BYTES = 1024 * 1024;
+const MAX_ROTATION_THRESHOLD_BYTES = 1024 * 1024 * 1024;
+
+/** The bounds the env schema enforces for the minimum kept block count. */
+const MIN_ROTATION_KEEP_BLOCKS = 1;
+const MAX_ROTATION_KEEP_BLOCKS = 10_000;
+
+/**
+ * The rotation threshold in bytes.
+ *
+ * `MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES` is registered in the env
+ * schema, listed as a warm setting, and named in the rotation loop's own
+ * documentation — but the rotation code never read it. The knob was
+ * accepted, validated and ignored: an operator who set it saw no effect
+ * and no error.
+ */
+export function resolveThresholdBytes(rawEnv: NodeJS.ProcessEnv | undefined): number {
+  const raw = (rawEnv ?? process.env).MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES?.trim();
+  if (!raw) return DEFAULT_ROTATION_THRESHOLD_BYTES;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_ROTATION_THRESHOLD_BYTES;
+  return Math.min(Math.max(parsed, MIN_ROTATION_THRESHOLD_BYTES), MAX_ROTATION_THRESHOLD_BYTES);
+}
+
+/**
+ * How many blocks stay in the live chain after a rotation.
+ *
+ * Same story as the threshold: `MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS`
+ * was registered and validated and never read.
+ */
+export function resolveMinKeepBlocks(rawEnv: NodeJS.ProcessEnv | undefined): number {
+  const raw = (rawEnv ?? process.env).MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS?.trim();
+  if (!raw) return MIN_KEEP_BLOCKS;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return MIN_KEEP_BLOCKS;
+  return Math.min(Math.max(parsed, MIN_ROTATION_KEEP_BLOCKS), MAX_ROTATION_KEEP_BLOCKS);
+}
+
+/**
+ * The knobs a rotation would use, and where each of them came from.
+ *
+ * The source matters: the service is configured by its systemd drop-in,
+ * a command run from a shell is configured by the shell. An operator who
+ * runs a rotation by hand and gets "nothing to do" needs to know WHICH
+ * threshold it compared against — otherwise a different number silently
+ * decides the outcome.
+ */
+export interface RotationKnobs {
+  thresholdBytes: number;
+  minKeepBlocks: number;
+  /** Where each knob's value came from. */
+  thresholdSource: RotationKnobSource;
+  keepSource: RotationKnobSource;
+}
+
+/** Where a rotation knob's value came from. */
+export type RotationKnobSource = 'flag' | 'shell' | 'service' | 'default';
+
+/**
+ * The effective knobs, and the environment a rotation should run with.
+ *
+ * The precedence is the operator's order of intent:
+ *
+ *   1. `flag` — the operator typed it on this command.
+ *   2. `shell` — the environment of the command they are running.
+ *   3. `service` — the environment the SERVICE is configured with. The
+ *      service reads its drop-in; a command run from a shell has no such
+ *      variables, so without this step the command would compare
+ *      against the code default and quietly do nothing on a chain the
+ *      service would have rotated.
+ *   4. `default` — the code's own default.
+ *
+ * The environment that comes back is the one a rotation should use: the
+ * flag values are written into it, so the rotation code reads exactly
+ * the numbers that were reported.
+ */
+export function resolveRotationKnobs(
+  options: {
+    /** The environment of the command being run. */
+    rawEnv?: NodeJS.ProcessEnv;
+    /** The environment the service is configured with. */
+    serviceEnv?: Record<string, string>;
+    /** An explicit threshold, in bytes. */
+    thresholdBytes?: number;
+    /** An explicit keep-count. */
+    minKeepBlocks?: number;
+  } = {},
+): { env: NodeJS.ProcessEnv; knobs: RotationKnobs } {
+  const shellEnv = options.rawEnv ?? process.env;
+  const serviceEnv = options.serviceEnv ?? {};
+  // The shell wins over the service: the operator's own environment is
+  // the more immediate statement of intent.
+  const env: NodeJS.ProcessEnv = { ...serviceEnv, ...shellEnv };
+
+  // The source is decided by PRESENCE, not by truthiness — an empty
+  // value in the shell is still the shell's value, and it still wins.
+  // The merge above and this report have to agree, or the command would
+  // say "service" while using the default.
+  const thresholdSource: RotationKnobSource =
+    options.thresholdBytes !== undefined
+      ? 'flag'
+      : shellEnv.MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES !== undefined
+        ? 'shell'
+        : serviceEnv.MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES !== undefined
+          ? 'service'
+          : 'default';
+  const keepSource: RotationKnobSource =
+    options.minKeepBlocks !== undefined
+      ? 'flag'
+      : shellEnv.MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS !== undefined
+        ? 'shell'
+        : serviceEnv.MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS !== undefined
+          ? 'service'
+          : 'default';
+
+  // The flag is written into the environment the rotation runs with, so
+  // the rotation code reads exactly the numbers that were reported.
+  if (options.thresholdBytes !== undefined)
+    env.MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES = String(options.thresholdBytes);
+  if (options.minKeepBlocks !== undefined)
+    env.MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS = String(options.minKeepBlocks);
+
+  const resolved = resolveRotationKnobsFromEnv(env);
+  return {
+    env,
+    knobs: {
+      thresholdBytes: resolved.thresholdBytes,
+      minKeepBlocks: resolved.minKeepBlocks,
+      thresholdSource,
+      keepSource,
+    },
+  };
+}
+
+/**
+ * The knobs an environment resolves to, without any precedence logic.
+ */
+export function resolveRotationKnobsFromEnv(rawEnv: NodeJS.ProcessEnv | undefined): {
+  thresholdBytes: number;
+  minKeepBlocks: number;
+} {
+  const env = rawEnv ?? process.env;
+  return {
+    thresholdBytes: resolveThresholdBytes(env),
+    minKeepBlocks: resolveMinKeepBlocks(env),
+  };
+}
 
 /** Minimum blocks to keep in the active chain after rotation. */
 const MIN_KEEP_BLOCKS = 10;
@@ -36,6 +193,24 @@ export interface ChainRotationResult {
   dirSizeBytes: number;
   /** Populated when this chain's rotation threw (per-chain isolation). */
   error?: string;
+}
+
+/**
+ * The archive a rotation has written but not yet published.
+ *
+ * The archive exists as a temporary file until phase 2 renames it and
+ * removes the original blocks — and that phase runs under the chains write
+ * lock, together with the write of the rotation head marker.
+ */
+interface ArchivePreparation {
+  /** Where the archive will live once it is published. */
+  archivePath: string;
+  /** Where the archive is written before it is published. */
+  tmpPath: string;
+  /** The index of the last archived block. */
+  lastIndex: number;
+  /** The hash of the last archived block — the head of the archived prefix. */
+  lastHash: string;
 }
 
 export interface ChainRotationOptions {
@@ -106,49 +281,175 @@ async function listBlockFiles(chainDir: string): Promise<{ file: string; index: 
 }
 
 /**
- * Archive blocks to a gzipped JSON file and remove originals.
+ * How many of the NEWEST blocks fit under the threshold.
+ *
+ * Counted from the newest backwards, because recency is what the
+ * keep-count is about: the blocks that stay live are the recent ones.
  */
-async function archiveBlocks(
+async function countBlocksFitting(
+  chainDir: string,
+  blocks: { file: string; index: number }[],
+  threshold: number,
+): Promise<number> {
+  let used = 0;
+  let fitting = 0;
+
+  for (let position = blocks.length - 1; position >= 0; position -= 1) {
+    const entry = blocks[position]!;
+    let size: number;
+    try {
+      size = (await fs.stat(path.join(chainDir, entry.file))).size;
+    } catch {
+      // The block is already gone — it is not live, so it does not count
+      // towards what stays.
+      continue;
+    }
+    if (used + size > threshold) break;
+    used += size;
+    fitting += 1;
+  }
+
+  return fitting;
+}
+
+/**
+ * How many blocks stay in the live chain after a rotation.
+ *
+ * Two bounds, and the smaller of them only where the keep-count cannot
+ * apply at all:
+ *
+ *   - the keep-count (`MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS`) says how
+ *     much recent context stays live. It applies whenever the chain HAS
+ *     that many blocks — that is the operator's contract, and it is
+ *     pinned by `tests/unit/chain-rotation-thresholds.test.ts`.
+ *   - the threshold says how big the live chain may get. It applies when
+ *     the chain has FEWER blocks than the keep-count asks for, because
+ *     there the keep-count is vacuous: you cannot keep 500 blocks of a
+ *     404-block chain.
+ *
+ * A chain that is over the threshold but under the keep-count therefore
+ * keeps what fits under the threshold — measured on this host, the 107
+ * newest blocks of the `insights` chain (9.93 MB of its 31.92 MB).
+ *
+ * The chain is never emptied: one block always stays.
+ */
+async function resolveKeepBlocks(
+  chainDir: string,
+  blocks: { file: string; index: number }[],
+  threshold: number,
+  minKeep: number,
+): Promise<number> {
+  if (blocks.length >= minKeep) return minKeep;
+  const fitting = await countBlocksFitting(chainDir, blocks, threshold);
+  return Math.max(1, fitting);
+}
+
+/**
+ * Phase 1 of archiving: write the gzipped archive of the blocks.
+ *
+ * No lock is needed here, and that is deliberate.
+ *
+ * The blocks being archived are OLD ones, and the only thing an append
+ * does is add a NEW highest-index block. It never rewrites an existing
+ * block, so the bytes read here cannot change under us.
+ *
+ * The lock IS needed for phase 2, and it is the whole reason this
+ * function is split in two: writing 62 MB through gzip takes seconds, and
+ * the chains write lock is a global one — the append path waits for it
+ * with a 10 second deadline and gives up rather than queueing. Holding
+ * that lock for the whole compression would make appends fail while the
+ * rotation compressed.
+ */
+async function prepareArchive(
   chainDir: string,
   chainName: string,
   blocks: { file: string; index: number }[],
-): Promise<string> {
+): Promise<ArchivePreparation> {
   const archiveDir = path.join(path.dirname(chainDir), '.archives');
   await fs.mkdir(archiveDir, { recursive: true });
 
   const firstIdx = blocks[0]!.index;
   const lastIdx = blocks[blocks.length - 1]!.index;
+  // The head of the archived prefix. Read BEFORE the originals are
+  // removed: it is the `prev_hash` of the first live block, and the only
+  // thing that proves the live chain continues this archive.
+  let lastHash = '';
+  try {
+    const lastBlock = JSON.parse(
+      await fs.readFile(path.join(chainDir, blocks[blocks.length - 1]!.file), 'utf8'),
+    ) as { hash?: unknown };
+    if (typeof lastBlock.hash === 'string') lastHash = lastBlock.hash;
+  } catch {
+    // A block that cannot be parsed is a block the validator would reject
+    // anyway; the marker is then written without a hash and the chain
+    // falls back to the genesis rule.
+  }
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const archiveName = `${chainName}_${String(firstIdx).padStart(6, '0')}-${String(lastIdx).padStart(6, '0')}_${timestamp}.jsonl.gz`;
+  const archiveName = archiveFileName(chainName, firstIdx, lastIdx, timestamp);
   const archivePath = path.join(archiveDir, archiveName);
 
-  // Write all blocks as newline-delimited JSON, gzipped
+  // Write all blocks as newline-delimited JSON, gzipped.
+  //
+  // ONE BLOCK PER LINE — that is what the `.jsonl.gz` name promises and
+  // what the reader expects.
+  //
+  // The block files on disk are pretty-printed (`JSON.stringify(block,
+  // null, 2)` in `chain-adapter.ts`), so they are re-serialized compactly
+  // here. The old code copied the raw file bytes instead, which produced
+  // a stream of multi-line JSON objects that no reader could parse: see
+  // `chain-archive-format.ts` for the measurement.
+  //
+  // A block that is not valid JSON aborts the rotation HERE, before phase
+  // 2 deletes anything — so a corrupt block file can never turn into a
+  // corrupt archive.
   const tmpPath = `${archivePath}.tmp-${process.pid}`;
   const gzip = createGzip({ level: 6 });
   const out = createWriteStream(tmpPath);
   const gzipPipeline = pipeline(gzip, out);
 
   for (const entry of blocks) {
-    const content = await fs.readFile(path.join(chainDir, entry.file), 'utf8');
-    gzip.write(content.trim() + '\n');
+    const raw = await fs.readFile(path.join(chainDir, entry.file), 'utf8');
+    gzip.write(toArchiveLine(raw, entry.file) + '\n');
   }
   gzip.end();
   await gzipPipeline;
 
+  return { archivePath, tmpPath, lastIndex: lastIdx, lastHash };
+}
+
+/**
+ * Phase 2 of archiving: publish the archive and remove the originals.
+ *
+ * MUST run under the chains write lock, together with the write of the
+ * rotation head marker.
+ *
+ * Why it matters: between removing the archived blocks and writing the
+ * marker, the live chain starts at an index above 1 and carries no proof
+ * that it continues an archive. Every validator rejects that shape as
+ * "missing genesis block" — the exact failure that made rotation
+ * unusable on this host. A reader that arrives in that window sees an
+ * invalid chain.
+ *
+ * The append path takes the same lock (see `chain-write-lock.ts`, shared
+ * with the native writer), so an append cannot observe the window either.
+ */
+async function publishArchive(
+  chainDir: string,
+  blocks: { file: string; index: number }[],
+  prepared: ArchivePreparation,
+): Promise<void> {
   // Atomic rename
   try {
-    await fs.rename(tmpPath, archivePath);
+    await fs.rename(prepared.tmpPath, prepared.archivePath);
   } catch {
-    await fs.unlink(tmpPath).catch(() => undefined);
-    throw new Error(`failed to finalize archive: ${archivePath}`);
+    await fs.unlink(prepared.tmpPath).catch(() => undefined);
+    throw new Error(`failed to finalize archive: ${prepared.archivePath}`);
   }
 
   // Remove archived block files
   for (const entry of blocks) {
     await fs.unlink(path.join(chainDir, entry.file)).catch(() => undefined);
   }
-
-  return archivePath;
 }
 
 function isGcEnabled(options: ChainRotationOptions): boolean {
@@ -170,15 +471,14 @@ function isSnapshotEnabled(options: ChainRotationOptions): boolean {
 
 function parseArchiveTimestamp(filename: string): number | null {
   // archives are named: {chain}_{firstIdx}-{lastIdx}_{ISO-with-dashes}.jsonl.gz
-  // Treat the trailing component before .jsonl.gz as a sortable string; we
-  // additionally use mtime as a fallback in case the format ever changes.
-  if (!filename.endsWith('.jsonl.gz')) return null;
-  const stem = filename.slice(0, -'.jsonl.gz'.length);
-  const lastUnderscore = stem.lastIndexOf('_');
-  if (lastUnderscore < 0) return null;
-  const stampToken = stem.slice(lastUnderscore + 1);
-  const parsed = Date.parse(stampToken.replace(/-/g, ':').replace('T:', 'T'));
-  return Number.isFinite(parsed) ? parsed : null;
+  // The NAME has one owner (`chain-archive-format.ts`); this only reads
+  // the timestamp out of it. We additionally use mtime as a fallback in
+  // case the format ever changes.
+  const parsed = parseArchiveFileName(filename);
+  if (!parsed) return null;
+  const stampToken = parsed.timestamp;
+  const stamp = Date.parse(stampToken.replace(/-/g, ':').replace('T:', 'T'));
+  return Number.isFinite(stamp) ? stamp : null;
 }
 
 interface ArchiveFileInfo {
@@ -357,10 +657,21 @@ export async function rotateChain(
   chainName: string,
   options: ChainRotationOptions = {},
 ): Promise<ChainRotationResult> {
-  const threshold = options.thresholdBytes ?? DEFAULT_ROTATION_THRESHOLD_BYTES;
-  const minKeep = options.minKeepBlocks ?? MIN_KEEP_BLOCKS;
+  const threshold = options.thresholdBytes ?? resolveThresholdBytes(options.rawEnv);
+  const minKeep = options.minKeepBlocks ?? resolveMinKeepBlocks(options.rawEnv);
 
-  const chainDir = getChainPath(chainName);
+  // The caller's environment decides WHICH chain is rotated.
+  //
+  // It used to be `getChainPath(chainName)`, which resolved from
+  // `process.env` only — so a caller with its own data dir rotated the
+  // OPERATOR'S LIVE CHAIN instead of its own. Measured 2026-11-22: a
+  // test that asked to rotate a temporary fixture archived 1052 blocks
+  // of the live `journal` chain. The blocks were recoverable from the
+  // archive and the chain verified again, but the call was made against
+  // a different chain than the one that was asked for.
+  //
+  // Every other function in this file already passed `options.rawEnv`.
+  const chainDir = getChainPath(chainName, options.rawEnv);
   let dirSize: number;
 
   try {
@@ -387,7 +698,29 @@ export async function rotateChain(
   }
 
   const blocks = await listBlockFiles(chainDir);
-  if (blocks.length <= minKeep) {
+
+  // How many blocks stay live.
+  //
+  // The knobs are separate: the threshold says WHEN a chain is touched, the
+  // keep-count says how much recent context stays live. The operator's own
+  // unit file puts it plainly — "the threshold is what actually triggers a
+  // rotation. A chain that stays under 10 MB is never touched" — and 500
+  // blocks stay live after one.
+  //
+  // A chain can be over the threshold and still hold fewer blocks than the
+  // keep-count asks for. Measured 2026-11-23 on this host: the `insights`
+  // chain is 31.92 MB across 404 blocks — three times over the 10 MB
+  // threshold and under the 500 the keep-count asks for. Requiring BOTH
+  // conditions meant such a chain never rotated, however large it grew: the
+  // threshold was inert for exactly the chains whose blocks are fat, which
+  // is the case the threshold exists for.
+  //
+  // So the threshold alone decides WHEN a chain is touched, and the
+  // keep-count still says how much stays — except where it cannot apply at
+  // all, because the chain has fewer blocks than it asks for. See
+  // `resolveKeepBlocks`.
+  const keep = await resolveKeepBlocks(chainDir, blocks, threshold, minKeep);
+  if (blocks.length <= keep) {
     return {
       chain: chainName,
       rotated: false,
@@ -406,9 +739,52 @@ export async function rotateChain(
     }
   }
 
-  // Archive all but the last minKeep blocks
-  const toArchive = blocks.slice(0, blocks.length - minKeep);
-  const archivePath = await archiveBlocks(chainDir, chainName, toArchive);
+  // Archive all but the last `keep` blocks.
+  //
+  // The count has to be the one the retention decided — `keep`, not
+  // `minKeep`. The two differ exactly when the chain has fewer blocks than
+  // the keep-count asks for, and there the old formula
+  // `slice(0, length - minKeep)` produced a NEGATIVE end index: on a
+  // three-block chain with a keep-count of seven it selected nothing, and
+  // on a chain with a few blocks more it would have selected the NEWEST
+  // blocks. The guard that used to hide that (`blocks.length <= minKeep`)
+  // is gone, so the formula has to move with it.
+  const toArchive = blocks.slice(0, blocks.length - keep);
+  // Phase 1 — write the archive. Outside the lock on purpose: compressing
+  // 62 MB takes seconds, and the chains write lock is global. An append
+  // that waits for it gives up after 10 seconds rather than queueing, so
+  // holding the lock across the compression would make appends fail.
+  const prepared = await prepareArchive(chainDir, chainName, toArchive);
+
+  // Phase 2 — publish the archive, remove the originals, and write the
+  // head marker. All of it under the chains write lock, which is the same
+  // lock the append path takes.
+  //
+  // Why the lock matters: between removing the archived blocks and writing
+  // the marker, the live chain starts at an index above 1 and carries no
+  // proof that it continues an archive. Every validator rejects that shape
+  // as "missing genesis block" — the exact failure that made rotation
+  // unusable on this host. Without the lock, a reader — or an append —
+  // could arrive inside that window and see an invalid chain.
+  //
+  // The marker itself is what lets the validators prove that the live
+  // chain continues this archive instead of starting at genesis.
+  // See `src/infra/storage/chain-rotation-head.ts`.
+  const chainsDir = getChainPath(undefined, options.rawEnv);
+  await withChainWriteLock(chainsDir, async () => {
+    await publishArchive(chainDir, toArchive, prepared);
+    await writeChainRotationHead(chainDir, {
+      format: ROTATION_HEAD_FORMAT,
+      chain: chainName,
+      archivedFrom: toArchive[0]!.index,
+      archivedTo: prepared.lastIndex,
+      lastArchivedIndex: prepared.lastIndex,
+      lastArchivedHash: prepared.lastHash,
+      archivePath: prepared.archivePath,
+      rotatedAt: new Date().toISOString(),
+    });
+  });
+
   const newDirSize = await measureChainDirSize(chainDir);
 
   // GC stale archives — opt-in via MEMPHIS_CHAIN_GC_ENABLED.
@@ -418,7 +794,7 @@ export async function rotateChain(
     chain: chainName,
     rotated: true,
     archivedBlocks: toArchive.length,
-    archivePath,
+    archivePath: prepared.archivePath,
     remainingBlocks: blocks.length - toArchive.length,
     dirSizeBytes: newDirSize,
   };
@@ -436,7 +812,9 @@ export async function rotateChain(
 export async function rotateAllChains(
   options: ChainRotationOptions = {},
 ): Promise<ChainRotationResult[]> {
-  const baseDir = getChainPath();
+  // The caller's environment decides WHICH chains are rotated — see the
+  // note in `rotateChain`.
+  const baseDir = getChainPath(undefined, options.rawEnv);
   let entries: string[];
 
   try {

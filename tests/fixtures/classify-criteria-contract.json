@@ -1,0 +1,169 @@
+{
+  "comment": "How `memphis_classify` turns the caller's `criteria` into the options a question is asked over. Both arms read THIS file: TypeScript (src/mcp/tools/classify.ts, `normalizeClassifyOptions`) and Rust (crates/memphis-operator/src/chat_basal.rs, `normalize_classify_criteria`). The runners are tests/unit/classify-criteria-contract.test.ts and crates/memphis-operator/tests/classify_criteria_contract.rs. WHY: the registry declares `criteria` as a UNION — an object of labels, or an array of 2-10 labels — and the native arm accepted only the object, so a model that had learned the array form on Telegram got a refusal in the cockpit. ONE normalisation, checked from both sides, is the fix; two copies of the rule are the bug. The object cases use keys that are ALREADY in sorted order: the gateway keeps an object's insertion order and a serde_json::Map is sorted, so an object whose keys are not sorted is the one case where the arms differ — and then only under `orders: 1`, the mode the BASAL service documents as order-sensitive. That difference is recorded in docs/adr/012-one-tool-contract-across-the-bridge.md, not hidden here.",
+  "cases": [
+    {
+      "name": "an object of labels",
+      "criteria": {
+        "cards": "Reklamacje kart",
+        "loans": "Reklamacje kredytów"
+      },
+      "type": "choice",
+      "expected": [
+        [
+          "cards",
+          "Reklamacje kart"
+        ],
+        [
+          "loans",
+          "Reklamacje kredytów"
+        ]
+      ]
+    },
+    {
+      "name": "an array of labels",
+      "criteria": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "type": "choice",
+      "expected": [
+        [
+          "low",
+          "low"
+        ],
+        [
+          "medium",
+          "medium"
+        ],
+        [
+          "high",
+          "high"
+        ]
+      ]
+    },
+    {
+      "name": "a score question over an array gets ordinal keys",
+      "criteria": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "type": "score",
+      "expected": [
+        [
+          "0",
+          "low"
+        ],
+        [
+          "1",
+          "medium"
+        ],
+        [
+          "2",
+          "high"
+        ]
+      ]
+    },
+    {
+      "name": "a score question over an object keeps its keys",
+      "criteria": {
+        "0": "low",
+        "1": "medium"
+      },
+      "type": "score",
+      "expected": [
+        [
+          "0",
+          "low"
+        ],
+        [
+          "1",
+          "medium"
+        ]
+      ]
+    },
+    {
+      "name": "a non-string description is stringified, not dropped",
+      "criteria": {
+        "a": "first",
+        "b": 5
+      },
+      "type": "choice",
+      "expected": [
+        [
+          "a",
+          "first"
+        ],
+        [
+          "b",
+          "5"
+        ]
+      ]
+    },
+    {
+      "name": "an empty key is filtered out",
+      "criteria": {
+        "": "ignored",
+        "b": "kept",
+        "c": "also kept"
+      },
+      "type": "choice",
+      "expected": [
+        [
+          "b",
+          "kept"
+        ],
+        [
+          "c",
+          "also kept"
+        ]
+      ]
+    },
+    {
+      "name": "an empty label in an array is filtered out",
+      "criteria": [
+        "",
+        "kept",
+        "also"
+      ],
+      "type": "choice",
+      "expected": [
+        [
+          "kept",
+          "kept"
+        ],
+        [
+          "also",
+          "also"
+        ]
+      ]
+    },
+    {
+      "name": "a single option carries no decision",
+      "criteria": [
+        "only"
+      ],
+      "type": "choice",
+      "error": "memphis_classify requires at least two criteria options"
+    },
+    {
+      "name": "eleven options are refused",
+      "criteria": [
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+        "eleven"
+      ],
+      "type": "choice",
+      "error": "memphis_classify supports at most 10 options, got 11"
+    }
+  ]
+}

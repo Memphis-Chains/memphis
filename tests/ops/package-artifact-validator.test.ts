@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -61,10 +61,11 @@ function ensurePackedArtifactPath(): string {
   return packedArtifactPath;
 }
 
-function runPackageArtifactValidator(args: string[]) {
+function runPackageArtifactValidator(args: string[], env: NodeJS.ProcessEnv = process.env) {
   return spawnSync('npm', ['run', '-s', 'ops:validate-package-artifact', '--', ...args], {
     cwd: repoRoot,
     encoding: 'utf8',
+    env,
     timeout: 300_000,
   });
 }
@@ -96,10 +97,19 @@ describe('ops:validate-package-artifact', () => {
 
   it('emits stable machine-readable output in --json mode', () => {
     const artifactPath = ensurePackedArtifactPath();
-    const result = runPackageArtifactValidator(['--artifact-path', artifactPath, '--json']);
+    const parentConfig = path.join(path.dirname(artifactPath), 'parent.env');
+    const journalDir = `${parentConfig}.transactions`;
+    mkdirSync(journalDir);
+    const journal = path.join(journalDir, 'journal.sqlite');
+    writeFileSync(journal, 'parent fixture');
+    const result = runPackageArtifactValidator(['--artifact-path', artifactPath, '--json'], {
+      ...process.env,
+      MEMPHIS_ENV_FILE: parentConfig,
+    });
     const contract = JSON.parse(readFileSync(outputContractPath, 'utf8')) as OutputContract;
 
     expect(result.status).toBe(0);
+    expect(readFileSync(journal, 'utf8')).toBe('parent fixture');
     const parsed = JSON.parse(result.stdout) as {
       schemaVersion: number;
       ok: boolean;

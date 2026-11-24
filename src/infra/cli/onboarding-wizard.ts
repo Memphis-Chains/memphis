@@ -9,6 +9,12 @@ import { initializeVault, probeVaultCipherCycle } from '../../security/vault-bou
 import { DEFAULT_AGENT_NAME, DEFAULT_OWNER_NAME, writeAgentProfile } from '../agent-profile.js';
 import { buildSecretAwareness, type SecretAwareness } from '../secret-awareness.js';
 import {
+  EMBED_PROFILE_ENV,
+  EMBED_PROFILE_LOCAL_MODE,
+  EMBED_PROFILE_PROVIDER_ALIAS,
+  EMBED_PROFILE_PROVIDER_MODES,
+} from '../storage/embed-profile.generated.js';
+import {
   generateSecureToken,
   generateVaultPepper,
   checkRustBridgeStatus,
@@ -64,8 +70,12 @@ function buildProfileEnv(
       'DEFAULT_PROVIDER=local-fallback',
       'LOCAL_FALLBACK_ENABLED=true',
       'RUST_CHAIN_ENABLED=false',
-      'RUST_EMBED_MODE=local',
-      'RUST_EMBED_DIM=32',
+      `${EMBED_PROFILE_ENV.mode}=${EMBED_PROFILE_LOCAL_MODE}`,
+      // No RUST_EMBED_DIM — the dimension belongs to the owner
+      // (`crates/memphis-embed/src/profile.rs`): the environment first, then
+      // the index on disk, then the local deterministic width. Writing 32
+      // here pinned the profile to the local embedder's width even when
+      // the index on disk held another one.
       'RUST_EMBED_MAX_TEXT_BYTES=4096',
       'RUST_EMBED_PERSIST_ENABLED=true',
       // RUST_EMBED_PERSIST_PATH unset → defaults to ~/.memphis/embed/index-v1.json
@@ -287,20 +297,19 @@ export function checklistFromEnv(
     { step: 'provider', done: Boolean(rawEnv.DEFAULT_PROVIDER), note: 'Choose DEFAULT_PROVIDER' },
     {
       step: 'embed-mode',
+      // The mode vocabulary is the OWNER's, projected — it used to be a
+      // hand-written list of the same eleven words, in this file and in
+      // two others.
       done: [
-        'local',
-        'openai-compatible',
-        'provider',
-        'ollama',
-        'cohere',
-        'voyage',
-        'jina',
-        'mistral',
-        'together',
-        'nvidia',
-        'mixedbread',
-      ].includes((rawEnv.RUST_EMBED_MODE ?? 'local').toLowerCase()),
-      note: 'Set RUST_EMBED_MODE to local/openai-compatible/ollama/cohere/voyage/jina/mistral/together/nvidia/mixedbread',
+        EMBED_PROFILE_LOCAL_MODE,
+        ...EMBED_PROFILE_PROVIDER_MODES,
+        EMBED_PROFILE_PROVIDER_ALIAS,
+      ].includes((rawEnv.RUST_EMBED_MODE ?? EMBED_PROFILE_LOCAL_MODE).toLowerCase()),
+      note: `Set ${EMBED_PROFILE_ENV.mode} to ${[
+        EMBED_PROFILE_LOCAL_MODE,
+        ...EMBED_PROFILE_PROVIDER_MODES,
+        EMBED_PROFILE_PROVIDER_ALIAS,
+      ].join('/')}`,
     },
   ];
 }

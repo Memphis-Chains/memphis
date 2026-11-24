@@ -11,7 +11,7 @@ pub struct JsVaultStateResult {
     pub error: Option<String>,
 }
 
-#[napi(js_name = "vault_load_state")]
+#[napi(catch_unwind, js_name = "vault_load_state")]
 pub fn vault_load_state(path: String, pepper: String) -> JsVaultStateResult {
     match memphis_vault::state::load_persisted_state(std::path::Path::new(&path), &pepper) {
         Ok(state) => JsVaultStateResult {
@@ -36,7 +36,7 @@ pub struct JsEntriesResult {
     pub error_code: Option<String>,
 }
 
-#[napi(js_name = "vault_parse_entries")]
+#[napi(catch_unwind, js_name = "vault_parse_entries")]
 pub fn vault_parse_entries(raw: String, key: Option<String>, latest: bool) -> JsEntriesResult {
     use memphis_vault::entries::{parse_entries, select_entries};
     match parse_entries(&raw) {
@@ -56,7 +56,7 @@ pub fn vault_parse_entries(raw: String, key: Option<String>, latest: bool) -> Js
     }
 }
 
-#[napi(js_name = "vault_decode_entry")]
+#[napi(catch_unwind, js_name = "vault_decode_entry")]
 pub fn vault_decode_entry(raw: String) -> JsEntriesResult {
     use memphis_vault::entries::parse_entry;
     match parse_entry(&raw).and_then(|entry| entry.to_vault_entry()) {
@@ -164,7 +164,7 @@ impl From<VaultInitResult> for JsVaultInitResult {
     }
 }
 
-#[napi(js_name = "vault_init_full")]
+#[napi(catch_unwind, js_name = "vault_init_full")]
 pub fn vault_init_full(
     passphrase: String,
     qa_question: String,
@@ -181,7 +181,7 @@ pub fn vault_init_full(
     Ok(JsVaultInitResult::from(result))
 }
 
-#[napi(js_name = "vault_store")]
+#[napi(catch_unwind, js_name = "vault_store")]
 pub fn vault_store(
     vault: JsVault,
     key: String,
@@ -194,7 +194,7 @@ pub fn vault_store(
     Ok(JsVaultEntry::from(entry))
 }
 
-#[napi(js_name = "vault_retrieve")]
+#[napi(catch_unwind, js_name = "vault_retrieve")]
 pub fn vault_retrieve(vault: JsVault, entry: JsVaultEntry) -> Result<Buffer, napi::Error> {
     let inner = vault.to_inner()?;
     let plaintext = inner

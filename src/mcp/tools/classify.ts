@@ -54,7 +54,7 @@ export interface MemphisClassifyInput {
   serviceUrl?: string;
 }
 
-type CriteriaEntry = { key: string; description: string };
+export type CriteriaEntry = { key: string; description: string };
 
 type ServiceAnswer = {
   type: string;
@@ -109,7 +109,16 @@ function resolveUrl(rawEnv: NodeJS.ProcessEnv): string {
   return explicit && explicit.length > 0 ? explicit : DEFAULT_URL;
 }
 
-function normalizeCriteria(criteria: MemphisClassifyInput['criteria']): CriteriaEntry[] {
+/**
+ * Turn the caller's criteria into the options a question is asked over.
+ *
+ * Exported because the native arm normalises criteria the same way, and
+ * the two are checked against ONE fixture
+ * (`tests/fixtures/classify-criteria-contract.json`) — the pattern the
+ * journal-target allowlist uses. A normaliser that is private cannot be
+ * compared with the other arm's.
+ */
+export function normalizeCriteria(criteria: MemphisClassifyInput['criteria']): CriteriaEntry[] {
   if (Array.isArray(criteria)) {
     return criteria
       .map((c) => ({ key: String(c), description: String(c) }))
@@ -121,6 +130,38 @@ function normalizeCriteria(criteria: MemphisClassifyInput['criteria']): Criteria
       .filter((c) => c.key.trim().length > 0);
   }
   return [];
+}
+
+/**
+ * The whole criteria normalisation, in the shape the native arm uses.
+ *
+ * `normalizeCriteria` turns the caller's criteria into options; this
+ * adds the two rules that follow: a score question over an ARRAY gets
+ * ordinal keys 0..n-1, and a set of options has to carry at least two
+ * and at most ten of them.
+ *
+ * It is exported because the native arm normalises criteria the same
+ * way and the two are checked against ONE fixture
+ * (`tests/fixtures/classify-criteria-contract.json`) — the pattern the
+ * journal-target allowlist uses. A normaliser that cannot be called
+ * cannot be compared with the other arm's.
+ */
+export function normalizeClassifyOptions(
+  criteria: MemphisClassifyInput['criteria'],
+  type: ClassifyQuestionType | undefined,
+): { options: CriteriaEntry[]; error?: undefined } | { options?: undefined; error: string } {
+  const options = normalizeCriteria(criteria).map((option, index) =>
+    type === 'score' && Array.isArray(criteria)
+      ? { key: String(index), description: option.description }
+      : option,
+  );
+  if (options.length < 2) {
+    return { error: 'memphis_classify requires at least two criteria options' };
+  }
+  if (options.length > 10) {
+    return { error: `memphis_classify supports at most 10 options, got ${options.length}` };
+  }
+  return { options };
 }
 
 const PROBABILITY_TOLERANCE = 1e-4;
@@ -290,26 +331,16 @@ export async function runMemphisClassify(
     };
   }
 
-  const options = normalizeCriteria(input.criteria).map((option, index) =>
-    input.type === 'score' && Array.isArray(input.criteria)
-      ? { key: String(index), description: option.description }
-      : option,
-  );
-  if (options.length < 2) {
+  const normalized = normalizeClassifyOptions(input.criteria, input.type);
+  if (!normalized.options) {
     return {
       ok: false,
-      error: 'memphis_classify requires at least two criteria options',
+      error: normalized.error,
       stateKind: 'bad-request',
       hint: 'A single option carries no decision. Pass {key: description} pairs.',
     };
   }
-  if (options.length > 10) {
-    return {
-      ok: false,
-      error: `memphis_classify supports at most 10 options, got ${options.length}`,
-      stateKind: 'bad-request',
-    };
-  }
+  const options = normalized.options;
 
   if (
     new Set(options.map((option) => option.key)).size !== options.length ||

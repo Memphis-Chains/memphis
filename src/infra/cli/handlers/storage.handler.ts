@@ -292,6 +292,61 @@ async function handleChainCommand(context: CliContext): Promise<boolean> {
     print(result, json);
     return true;
   }
+  // chain rotate — run a rotation NOW, on the operator's command.
+  //
+  // The scheduled loop does this on an interval, and the loop's own
+  // header has claimed since Sprint 4 that "operator-driven `chain
+  // rotate` has shipped". It had not: the subcommand was never
+  // registered, and `memphis chain rotate` answered "Unknown chain
+  // subcommand: rotate".
+  //
+  // The knobs are resolved in the operator's order of intent — the flag,
+  // then the shell, then the environment the SERVICE is configured with,
+  // then the code default — and the answer says which one it used. That
+  // last part is the point: without it, a command run from a shell would
+  // compare against the code default (50 MB) while the service compares
+  // against the operator's threshold (10 MB), and "nothing to do" would
+  // look like a decision rather than a different number.
+  if (subcommand === 'rotate') {
+    const { rotateChain, rotateAllChains, resolveRotationKnobs } = await import(
+      '../../storage/chain-rotation.js'
+    );
+    const { readServiceEnvironment } = await import('../../config/service-env.js');
+
+    const flagThreshold =
+      typeof context.args.thresholdBytes === 'number'
+        ? context.args.thresholdBytes
+        : typeof context.args.thresholdBytes === 'string'
+          ? Number.parseInt(context.args.thresholdBytes, 10)
+          : undefined;
+    const flagKeep =
+      typeof context.args.keepBlocks === 'number'
+        ? context.args.keepBlocks
+        : typeof context.args.keepBlocks === 'string'
+          ? Number.parseInt(context.args.keepBlocks, 10)
+          : undefined;
+
+    const { env, knobs } = resolveRotationKnobs({
+      rawEnv: process.env,
+      serviceEnv: readServiceEnvironment(),
+      thresholdBytes: Number.isFinite(flagThreshold) ? flagThreshold : undefined,
+      minKeepBlocks: Number.isFinite(flagKeep) ? flagKeep : undefined,
+    });
+
+    const report = {
+      knobs: {
+        thresholdBytes: knobs.thresholdBytes,
+        thresholdSource: knobs.thresholdSource,
+        minKeepBlocks: knobs.minKeepBlocks,
+        keepSource: knobs.keepSource,
+      },
+      ...(chain
+        ? { chain: await rotateChain(chain, { rawEnv: env }) }
+        : { chains: await rotateAllChains({ rawEnv: env }) }),
+    };
+    print(report, json);
+    return true;
+  }
   // Explicit unknown-subcommand error so the operator sees the closed
   // door instead of a silent fall-through. Throws (Codex P1 fix in
   // PR #99) so `memphis chain verfiy` typos exit non-zero in CI.
@@ -305,6 +360,7 @@ async function handleChainCommand(context: CliContext): Promise<boolean> {
       'rebuild-hashes',
       'restore',
       'migrate',
+      'rotate',
     ];
     throw new Error(`Unknown chain subcommand: ${subcommand}. Available: ${available.join(', ')}.`);
   }
@@ -580,6 +636,7 @@ async function handleSoulShow(context: CliContext): Promise<boolean> {
           preferences: memory.user.preferences.length,
           learnings: memory.self.learnings.length,
           activeWork: memory.context.activeWork ?? null,
+          operatorTodo: memory.context.operatorTodo ?? [],
         }
       : null,
   };

@@ -31,6 +31,7 @@ Stdlib only — the dashboard must keep running with no dependencies.
 """
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 # Live endpoints, measured 2026-10-29.
 PROBES = [
@@ -55,6 +56,9 @@ ALL_PROBES = PROBES + RETIRED_PROBES
 
 USER_AGENT = "MemphisDashboard/1.0"
 TIMEOUT_SECONDS = 8
+# The probes are independent HTTP requests; more workers than this buys
+# nothing and only adds load on the host being probed.
+MAX_PROBE_WORKERS = 8
 
 
 def probe_one(url):
@@ -98,5 +102,22 @@ def probe_one(url):
 
 
 def probe_all(urls=None):
-    """Probe every URL and return the rows in dashboard order."""
-    return [probe_one(url) for url in (urls if urls is not None else ALL_PROBES)]
+    """Probe every URL and return the rows in dashboard order.
+
+    Measured 2026-11-19: the probes ran one after another, each with an
+    8 second timeout, so the worst case was 22 x 8 = 176 seconds. The
+    contract test that generates the dashboard allows 180 seconds for the
+    whole hook, and on a CI runner the probes ran past it — the test file
+    then failed with "Hook timed out in 180000ms" and nothing about the
+    dashboard was checked at all.
+
+    The probes are independent, so they run concurrently. The result is
+    the same list in the same order; the wall clock is now the slowest
+    single probe instead of the sum of all of them.
+    """
+    targets = list(urls if urls is not None else ALL_PROBES)
+    if not targets:
+        return []
+    with ThreadPoolExecutor(max_workers=min(len(targets), MAX_PROBE_WORKERS)) as pool:
+        rows = list(pool.map(probe_one, targets))
+    return rows

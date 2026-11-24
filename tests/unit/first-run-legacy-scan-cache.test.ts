@@ -2,8 +2,9 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import * as paths from '../../src/config/paths.js';
 import {
   clearLegacyScanCache,
   getLegacyFullScanCount,
@@ -49,8 +50,20 @@ describe('legacy chain scan cache', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     process.env = { ...originalEnv };
     clearLegacyScanCache();
+  });
+
+  it('resolves each chain name once while checking all its blocks', () => {
+    const dir = join(root, 'chains', 'journal');
+    writeFileSync(join(dir, '000001.json'), goodBlock(1, 'journal'));
+    writeFileSync(join(dir, '000002.json'), badBlock(2, 'journal'));
+    const normalize = vi.spyOn(paths, 'normalizeChainName');
+    const result = scanLegacyChainState({ ...env, MEMPHIS_FIRST_RUN_SCAN: 'full' });
+    expect(result.files).toBe(2);
+    expect(result.chains).toEqual(['journal']);
+    expect(normalize.mock.calls).toEqual([['journal']]);
   });
 
   // The cache is a performance fix for a 5-second scan on the hot path

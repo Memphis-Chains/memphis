@@ -1,0 +1,20 @@
+[Unit]
+Description=Local Basal classifier for public Memphis chat
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/basal/engine-v2.8.1
+Environment=BASAL_PUBLIC_MODEL_DIR=%h/.local/share/basal/models/basal-2.0-mini
+Environment=BASAL_PUBLIC_GGUF=%h/.local/share/basal/models/gguf/basal-2.0-mini-Q5_K_M.gguf
+Environment=HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2
+ExecStart=%h/.local/share/basal/venv/bin/python -m basal.server --model ${BASAL_PUBLIC_MODEL_DIR} --mode gguf --gguf ${BASAL_PUBLIC_GGUF} --host 127.0.0.1 --port 18000 --max-batch 1 --mcp off
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=yes
+MemoryMax=8G
+TasksMax=100
+
+[Install]
+WantedBy=default.target

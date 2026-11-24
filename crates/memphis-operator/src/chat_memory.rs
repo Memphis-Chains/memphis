@@ -25,7 +25,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use memphis_case_index::CaseIndex;
-use memphis_core::hash::to_canonical_hash_data;
+use memphis_core::block_format::{normalize_block_payload, serialize_block_for_disk};
+use memphis_core::hash::compute_hash_of_payload;
 use memphis_core::{
     block::{Block, BlockData, BlockType},
     case_entry::CaseEntry,
@@ -49,13 +50,18 @@ struct SoulMemoryLock(rusqlite::Connection);
 
 impl SoulMemoryLock {
     fn acquire(path: &Path) -> Result<Self, OperatorError> {
-        let parent = path.parent().ok_or_else(|| OperatorError::Io("soul memory has no parent".into()))?;
+        let parent = path
+            .parent()
+            .ok_or_else(|| OperatorError::Io("soul memory has no parent".into()))?;
         fs::create_dir_all(parent).map_err(|error| OperatorError::Io(error.to_string()))?;
         let mut legacy_name = path.as_os_str().to_os_string();
         legacy_name.push(".lock");
         let legacy_path = PathBuf::from(legacy_name);
         let reject_legacy = || match fs::symlink_metadata(&legacy_path) {
-            Ok(_) => Err(OperatorError::Io(format!("legacy soul-memory lock exists: {}; operator inspection required", legacy_path.display()))),
+            Ok(_) => Err(OperatorError::Io(format!(
+                "legacy soul-memory lock exists: {}; operator inspection required",
+                legacy_path.display()
+            ))),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
             Err(error) => Err(OperatorError::Io(error.to_string())),
         };
@@ -65,21 +71,40 @@ impl SoulMemoryLock {
         let lock_path = PathBuf::from(lock_name);
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
-        #[cfg(unix)] { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
         match options.open(&lock_path) {
             Ok(file) => drop(file),
             Err(error) if error.kind() == ErrorKind::AlreadyExists => (),
             Err(error) => return Err(OperatorError::Io(error.to_string())),
         }
-        let metadata = fs::symlink_metadata(&lock_path).map_err(|e| OperatorError::Io(e.to_string()))?;
-        if !metadata.is_file() { return Err(OperatorError::Io(format!("unsafe soul-memory lock file: {}", lock_path.display()))); }
-        #[cfg(unix)] {
-            use std::os::unix::fs::PermissionsExt;
-            if metadata.permissions().mode() & 0o077 != 0 { return Err(OperatorError::Io(format!("unsafe soul-memory lock file: {}", lock_path.display()))); }
+        let metadata =
+            fs::symlink_metadata(&lock_path).map_err(|e| OperatorError::Io(e.to_string()))?;
+        if !metadata.is_file() {
+            return Err(OperatorError::Io(format!(
+                "unsafe soul-memory lock file: {}",
+                lock_path.display()
+            )));
         }
-        let db = rusqlite::Connection::open(&lock_path).map_err(|e| OperatorError::Io(e.to_string()))?;
-        db.busy_timeout(std::time::Duration::from_secs(5)).map_err(|e| OperatorError::Io(e.to_string()))?;
-        db.execute_batch("BEGIN IMMEDIATE").map_err(|e| OperatorError::Io(e.to_string()))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if metadata.permissions().mode() & 0o077 != 0 {
+                return Err(OperatorError::Io(format!(
+                    "unsafe soul-memory lock file: {}",
+                    lock_path.display()
+                )));
+            }
+        }
+        let db =
+            rusqlite::Connection::open(&lock_path).map_err(|e| OperatorError::Io(e.to_string()))?;
+        db.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e| OperatorError::Io(e.to_string()))?;
+        db.execute_batch("BEGIN IMMEDIATE")
+            .map_err(|e| OperatorError::Io(e.to_string()))?;
         reject_legacy()?;
         Ok(Self(db))
     }
@@ -94,12 +119,20 @@ impl Drop for SoulMemoryLock {
 }
 
 fn write_soul_memory_atomic(path: &Path, value: &Value) -> Result<(), OperatorError> {
-    let parent = path.parent().ok_or_else(|| OperatorError::Io("soul memory has no parent".into()))?;
-    let bytes = serde_json::to_vec_pretty(value).map_err(|error| OperatorError::Json(error.to_string()))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| OperatorError::Io("soul memory has no parent".into()))?;
+    let bytes =
+        serde_json::to_vec_pretty(value).map_err(|error| OperatorError::Json(error.to_string()))?;
     let nonce = TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_nanos()).unwrap_or(0);
-    let temporary = parent.join(format!(".soul-memory.tmp-{}-{nanos}-{nonce}", std::process::id()));
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or(0);
+    let temporary = parent.join(format!(
+        ".soul-memory.tmp-{}-{nanos}-{nonce}",
+        std::process::id()
+    ));
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -107,16 +140,22 @@ fn write_soul_memory_atomic(path: &Path, value: &Value) -> Result<(), OperatorEr
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options.open(&temporary).map_err(|error| OperatorError::Io(error.to_string()))?;
+    let mut file = options
+        .open(&temporary)
+        .map_err(|error| OperatorError::Io(error.to_string()))?;
     let result = (|| -> Result<(), OperatorError> {
-        file.write_all(&bytes).map_err(|error| OperatorError::Io(error.to_string()))?;
-        file.sync_all().map_err(|error| OperatorError::Io(error.to_string()))?;
+        file.write_all(&bytes)
+            .map_err(|error| OperatorError::Io(error.to_string()))?;
+        file.sync_all()
+            .map_err(|error| OperatorError::Io(error.to_string()))?;
         // Match the existing TypeScript snapshot ring while holding the same lock.
         if path.exists() {
             for index in (1..8).rev() {
                 let source = format!("{}.bak-{index}", path.display());
                 let target = format!("{}.bak-{}", path.display(), index + 1);
-                if Path::new(&source).exists() { let _ = fs::rename(source, target); }
+                if Path::new(&source).exists() {
+                    let _ = fs::rename(source, target);
+                }
             }
             let backup = format!("{}.bak-1", path.display());
             if fs::copy(path, &backup).is_ok() {
@@ -129,10 +168,14 @@ fn write_soul_memory_atomic(path: &Path, value: &Value) -> Result<(), OperatorEr
         }
         fs::rename(&temporary, path).map_err(|error| OperatorError::Io(error.to_string()))?;
         #[cfg(unix)]
-        fs::File::open(parent).and_then(|dir| dir.sync_all()).map_err(|error| OperatorError::Io(error.to_string()))?;
+        fs::File::open(parent)
+            .and_then(|dir| dir.sync_all())
+            .map_err(|error| OperatorError::Io(error.to_string()))?;
         Ok(())
     })();
-    if result.is_err() { let _ = fs::remove_file(&temporary); }
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
     result
 }
 
@@ -140,11 +183,67 @@ fn write_soul_memory_atomic(path: &Path, value: &Value) -> Result<(), OperatorEr
 pub(crate) const GENESIS_PREV_HASH: &str =
     "0000000000000000000000000000000000000000000000000000000000000000";
 
+/// The chains a tool may append to when the operator names one explicitly.
+///
+/// Issue #645: there was no way to append to the soul chain — the only
+/// writer was an internal memory event, so an explicit entry meant
+/// hand-computing a chain hash and writing the block file by hand.
+///
+/// The TypeScript arm carries the same list in
+/// `src/memory/chain-catalog.ts` — `JOURNAL_TARGET_CHAINS`. Both are
+/// checked against `tests/fixtures/journal-target-chains-contract.json`,
+/// so the two arms cannot drift apart silently.
+///
+/// `system` and `security` are deliberately absent: they are written by
+/// the runtime's own audit path, which refuses writes from processes
+/// that have not opted in.
+pub const JOURNAL_TARGET_CHAINS: &[&str] = &["journal", "soul", "reflections", "cases", "patterns"];
+
+/// Is this chain one a tool may write to on the operator's request?
+pub fn is_journal_target_chain(name: &str) -> bool {
+    JOURNAL_TARGET_CHAINS.contains(&name)
+}
+
 pub(crate) fn run_native_journal(
     runtime: &OperatorRuntime,
     content: &str,
     tags: Vec<String>,
+    chain: Option<&str>,
 ) -> Result<JournalWriteResult, OperatorError> {
+    // An explicitly named chain must be one a TOOL may write to on the
+    // operator's request. Without this check the call could append to
+    // `system` or `security` — the audit-guarded chains — and would write
+    // wherever it was pointed.
+    //
+    // The check belongs at the tool boundary, not inside the append: the
+    // runtime's own audit path writes to `system` and `security` through
+    // other routes, and a check placed there would refuse the runtime's
+    // own writes. The boundary is where an operator-supplied name
+    // arrives, so the boundary is where the name is validated.
+    //
+    // This mirrors the TypeScript arm's boundary in
+    // `src/mcp/tools/journal.ts` — including the refusal being a
+    // structured failure, not a thrown error, so both surfaces answer
+    // the same way for the same input.
+    let requested = chain.map(str::trim).filter(|name| !name.is_empty());
+    if let Some(requested) = requested {
+        if !is_journal_target_chain(requested) {
+            return Ok(JournalWriteResult {
+                success: false,
+                memory_id: String::new(),
+                index: 0,
+                hash: String::new(),
+                indexed: false,
+                error: Some(format!(
+                    "refusing to write to chain \"{requested}\": a tool may append to {} only",
+                    JOURNAL_TARGET_CHAINS.join(", ")
+                )),
+                pattern_id: None,
+            });
+        }
+    }
+    let target_chain = requested.unwrap_or("journal");
+
     if let Err((pattern_id, reason)) = scan_memory_content(content) {
         emit_runtime_security_event(
             runtime,
@@ -175,25 +274,26 @@ pub(crate) fn run_native_journal(
     // regresses the runtime to `legacy-migrateable` and
     // `memphis repair runtime --force` becomes a recurring chore
     // instead of a one-shot migration.
+    let block_type = journal_block_type(target_chain);
     let append = append_generic_block(
         &runtime.config.data_dir,
-        "journal",
+        target_chain,
         json!({
-            "type": "journal",
+            "type": block_type,
             "content": content,
             "tags": tags,
             "source": "memphis-rust",
         }),
     )?;
-    let memory_id = format!("journal-{}", append.index);
+    let memory_id = format!("{}-{}", target_chain, append.index);
     let exact_indexed = upsert_exact_search_entry(
         &runtime.config.database_path,
         ExactSearchEntry {
-            source_key: format!("journal:{}", append.index),
-            chain: "journal".to_string(),
+            source_key: format!("{}:{}", target_chain, append.index),
+            chain: target_chain.to_string(),
             block_index: append.index,
             block_hash: append.hash.clone(),
-            block_type: "journal".to_string(),
+            block_type: block_type.to_string(),
             content: content.to_string(),
             summary: summarize_content(content),
             tags: tags.clone(),
@@ -205,7 +305,7 @@ pub(crate) fn run_native_journal(
         runtime,
         &memory_id,
         content,
-        &embed_tags_for_chain("journal", &tags),
+        &embed_tags_for_chain(target_chain, &tags),
     )
     .is_ok();
 
@@ -218,6 +318,193 @@ pub(crate) fn run_native_journal(
         error: None,
         pattern_id: None,
     })
+}
+
+/// The block type a journal-style write carries in a given chain.
+///
+/// Mirrors the TypeScript arm's `inferredType` in
+/// `src/infra/memory/durable-memory.ts`. The block type is part of what
+/// the two arms answer, so it cannot be one arm's invention: the
+/// TypeScript arm writes `decision` for the decisions chain,
+/// `system_event` for soul and system, and `journal` everywhere else —
+/// and so does this one.
+pub(crate) fn journal_block_type(chain: &str) -> &'static str {
+    match chain {
+        "decisions" => "decision",
+        "soul" | "system" => "system_event",
+        _ => "journal",
+    }
+}
+
+/// Query raw chain blocks with the filters the registry declares.
+///
+/// ## Why this mirrors a TypeScript function instead of being its own
+///
+/// `memphis_chain_query` is a FILTERING tool: what it returns IS the
+/// answer. Two arms that filter differently are two answers to one
+/// question, which is the failure mode ADR-012 exists to remove — and
+/// the native arm was quietly one of them:
+///
+///   - `offset` was not read at all, so the cockpit could not page;
+///   - `blockType` was not read at all, so the cockpit could not filter
+///     by block type;
+///   - `contains` was a contiguous substring match, while the gateway
+///     tokenises the query and requires EVERY token (decision #190);
+///   - `tag` matched case-insensitively, while the gateway matches the
+///     tag exactly;
+///   - the window was "read everything, filter, take the last N",
+///     while the gateway reads the most recent `limit + offset` blocks
+///     and then pages inside that window.
+///
+/// The order matters and is the gateway's: window → offset → filters →
+/// limit. Paging before filtering returns "the page after the offset",
+/// not "the page of the filtered set", and the two are different
+/// answers for the same call.
+///
+/// The output carries `count` (what the gateway returns) AND `total` /
+/// `returned` (what the cockpit returned before), so the two arms agree
+/// on the shared key and the cockpit keeps its extra information.
+pub(crate) fn run_native_chain_query(
+    data_dir: &Path,
+    input: &ChainQueryInput,
+) -> Result<ChainQueryResult, OperatorError> {
+    let chain_name = input.chain.as_deref().unwrap_or("journal");
+    let limit = input.limit.unwrap_or(20);
+    let offset = input.offset.unwrap_or(0);
+    validate_chain_name(chain_name)?;
+
+    let chain_dir = data_dir.join("chains").join(chain_name);
+    if !chain_dir.exists() {
+        return Ok(ChainQueryResult {
+            chain: chain_name.to_string(),
+            blocks: Vec::new(),
+            total: 0,
+            found: false,
+        });
+    }
+
+    let mut blocks: Vec<Value> = read_chain_blocks(&chain_dir)?
+        .into_iter()
+        .map(|block| {
+            json!({
+                "index": block.index,
+                "timestamp": block.timestamp,
+                "chain": block.chain,
+                "data": block.data,
+                "prev_hash": block.prev_hash,
+                "hash": block.hash,
+            })
+        })
+        .collect();
+
+    // The filters, as one predicate, so the answer and the count are
+    // filtered by the same rule. The `contains` filter tokenises the
+    // query once and requires EVERY token: a contiguous substring match
+    // returns false negatives for any query that is not an exact phrase
+    // — "embed reindex" missed "rebuild derived embeddings" — so the
+    // query is split on whitespace and every token has to appear
+    // somewhere in the block.
+    let tokens: Vec<String> = input
+        .contains
+        .as_deref()
+        .map(|query| {
+            query
+                .to_lowercase()
+                .split_whitespace()
+                .map(|token| token.trim().to_string())
+                .filter(|token| !token.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    // An empty query after tokenisation matches nothing rather than
+    // silently matching everything.
+    let empty_query = input.contains.is_some() && tokens.is_empty();
+
+    let matches = |block: &Value| -> bool {
+        if empty_query {
+            return false;
+        }
+        if let Some(target_type) = input.block_type.as_deref() {
+            let block_type = block.pointer("/data/type").and_then(Value::as_str);
+            if block_type != Some(target_type) {
+                return false;
+            }
+        }
+        if !tokens.is_empty() {
+            let haystack = serde_json::to_string(&block["data"])
+                .unwrap_or_default()
+                .to_lowercase();
+            if !tokens.iter().all(|token| haystack.contains(token.as_str())) {
+                return false;
+            }
+        }
+        if let Some(target_tag) = input.tag.as_deref() {
+            let has_tag = block
+                .pointer("/data/tags")
+                .and_then(Value::as_array)
+                .map(|tags| {
+                    tags.iter()
+                        .any(|value| value.as_str().map(|tag| tag == target_tag).unwrap_or(false))
+                })
+                .unwrap_or(false);
+            if !has_tag {
+                return false;
+            }
+        }
+        true
+    };
+
+    // The count of matching blocks in the WHOLE chain. The gateway does
+    // not report it — it returns only `count` — but the cockpit has
+    // always told the operator how many blocks matched, and that is
+    // information worth keeping. The shared keys (`count`, `blocks`)
+    // stay identical to the gateway's answer.
+    let total = blocks.iter().filter(|block| matches(block)).count();
+
+    // The window: the most recent `limit + offset` blocks, oldest first.
+    let window = limit.saturating_add(offset);
+    if window > 0 && blocks.len() > window {
+        blocks = blocks.split_off(blocks.len() - window);
+    }
+
+    // The page: skip the oldest `offset` blocks of that window.
+    if offset > 0 {
+        blocks = blocks.split_off(offset);
+    }
+
+    // The filters, applied to the window.
+    blocks.retain(|block| matches(block));
+
+    // The limit, applied AFTER filtering — the gateway's order.
+    blocks.truncate(limit);
+
+    Ok(ChainQueryResult {
+        chain: chain_name.to_string(),
+        blocks,
+        total,
+        found: true,
+    })
+}
+
+/// The arguments `memphis_chain_query` accepts, as the registry declares
+/// them.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct ChainQueryInput {
+    pub(crate) chain: Option<String>,
+    pub(crate) limit: Option<usize>,
+    pub(crate) offset: Option<usize>,
+    pub(crate) block_type: Option<String>,
+    pub(crate) contains: Option<String>,
+    pub(crate) tag: Option<String>,
+}
+
+/// What `memphis_chain_query` answers.
+#[derive(Debug, Clone)]
+pub(crate) struct ChainQueryResult {
+    pub(crate) chain: String,
+    pub(crate) blocks: Vec<Value>,
+    pub(crate) total: usize,
+    pub(crate) found: bool,
 }
 
 pub(crate) fn run_soul_read(
@@ -380,6 +667,24 @@ pub(crate) fn run_soul_write(
     }))
 }
 
+/// The entry a `memphis_case_append` call carries.
+///
+/// The registry accepts the flat form as well as `{entry: {...}}`, and
+/// the gateway normalises the two into one shape
+/// (`normalizeCaseAppendInput` in `src/mcp/tools/case-entry.ts`): the
+/// wrapped form yields its `entry`, the flat form yields the arguments
+/// themselves.
+///
+/// The native arm used to require the wrapped form, so a model that had
+/// learned the flat form on Telegram got a refusal in the cockpit — and
+/// the flat form is the one the registry's own help text shows first.
+pub fn normalize_case_append_input(arguments: &Value) -> Value {
+    match arguments.get("entry") {
+        Some(entry) => entry.clone(),
+        None => arguments.clone(),
+    }
+}
+
 pub(crate) fn append_case_entry(
     runtime: &OperatorRuntime,
     entry: &CaseEntry,
@@ -437,25 +742,30 @@ pub(crate) fn append_generic_block(
     let prev_hash = previous
         .map(|block| block.hash.clone())
         .unwrap_or_else(|| GENESIS_PREV_HASH.to_string());
-    let canonical_data = to_canonical_hash_data(&data);
-    let block_without_hash = json!({
-        "index": index,
-        "timestamp": timestamp,
-        "chain": chain_name,
-        "data": canonical_data,
-        "prev_hash": prev_hash,
-    });
-    let hash = sha256_hex(stable_json(block_without_hash.clone())?.as_bytes());
+    // The payload is normalised BEFORE it is hashed and BEFORE it is
+    // written: the three canonical fields (`type`, `content`, `tags`) get
+    // their defined values, and everything else the payload carried is
+    // kept.
+    //
+    // Hashing the normalised payload gives the same hash as hashing the
+    // raw one: the canonical projection reads the same three fields
+    // either way, because the normalisation fills them with exactly the
+    // values the projection would have derived.
+    //
+    // Normalising before writing also means this arm writes the same
+    // bytes as the TypeScript arm: measured 2026-11-23, the two wrote
+    // 6 248 and 5 606 block files in two different key orders.
+    let normalized = normalize_block_payload(&data);
+    let hash = compute_hash_of_payload(index, &timestamp, chain_name, &normalized, &prev_hash);
     let block = json!({
         "index": index,
         "timestamp": timestamp,
         "chain": chain_name,
-        "data": data,
+        "data": normalized,
         "prev_hash": prev_hash,
         "hash": hash,
     });
-    let payload = serde_json::to_vec_pretty(&block)
-        .map_err(|error| OperatorError::Json(error.to_string()))?;
+    let payload = serialize_block_for_disk(&block);
     publish_chain_block(&chain_dir, index, &payload)?;
     Ok(GenericAppendResult {
         index,
@@ -538,11 +848,7 @@ fn create_unique_temp_file(
 /// stay untouched. The temp file is removed after the attempt, whether
 /// it won or lost, so a scratch file never survives to be mistaken for
 /// a chain block.
-fn publish_chain_block(
-    chain_dir: &Path,
-    index: u64,
-    bytes: &[u8],
-) -> Result<(), OperatorError> {
+fn publish_chain_block(chain_dir: &Path, index: u64, bytes: &[u8]) -> Result<(), OperatorError> {
     let file_path = chain_dir.join(format!("{index:06}.json"));
     let tmp_path = create_unique_temp_file(chain_dir, index, bytes)?;
 
@@ -590,6 +896,14 @@ pub(crate) fn read_chain_blocks(chain_dir: &Path) -> Result<Vec<GenericChainBloc
     entries.sort_by_key(|entry| entry.file_name());
 
     let mut blocks = Vec::new();
+    // A rotated chain CONTINUES an archived prefix instead of starting at
+    // genesis. The marker carries the head of the archive, so the link
+    // from the live chain to the archive can be proven.
+    //
+    // Without this the validator rejected every rotated chain with
+    // "missing genesis block", which is why rotation was never enabled.
+    // See `chat_rotation_head.rs`.
+    let rotation_head = crate::chat_rotation_head::read_chain_rotation_head(chain_dir);
     for entry in entries {
         let value = serde_json::from_slice::<Value>(
             &fs::read(entry.path()).map_err(|error| OperatorError::Io(error.to_string()))?,
@@ -619,10 +933,53 @@ pub(crate) fn read_chain_blocks(chain_dir: &Path) -> Result<Vec<GenericChainBloc
                 .unwrap_or_default()
                 .to_string(),
         };
+        if blocks.is_empty() {
+            if crate::chat_rotation_head::is_valid_chain_start(
+                rotation_head.as_ref(),
+                block.index as i64,
+                block.prev_hash.as_str(),
+            ) {
+                verify_block_hash(&block)?;
+                blocks.push(block);
+                continue;
+            }
+        }
         validate_generic_block(&block, blocks.last())?;
         blocks.push(block);
     }
     Ok(blocks)
+}
+
+/// Verify the hash of one block against its canonical form.
+///
+/// Split out of `validate_generic_block` because the first live block of
+/// a ROTATED chain is validated against the rotation head instead of a
+/// previous block — and its hash still has to be checked. A block whose
+/// hash does not match its content is a tampered block, whether it is the
+/// first of the chain or the thousandth.
+fn verify_block_hash(block: &GenericChainBlock) -> Result<(), OperatorError> {
+    // Use the canonical 3-field form of `data` (type/content/tags), matching
+    // the TS-side chain-adapter writer. Without this, TS-written blocks with
+    // extra fields (source, turn_id, conversation_id, session_id, consent,
+    // ...) fail validation here with `chain integrity check failed for
+    // {chain}:{index} hash mismatch` even though they are valid.
+    //
+    // The hash is assembled in ONE place — `memphis_core::hash` — so this
+    // arm and the write path cannot drift apart.
+    let expected_hash = compute_hash_of_payload(
+        block.index,
+        &block.timestamp,
+        &block.chain,
+        &block.data,
+        &block.prev_hash,
+    );
+    if block.hash != expected_hash {
+        return Err(OperatorError::Message(format!(
+            "chain integrity check failed for {}:{} hash mismatch",
+            block.chain, block.index
+        )));
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_generic_block(
@@ -634,21 +991,7 @@ pub(crate) fn validate_generic_block(
     // extra fields (source, turn_id, conversation_id, session_id, consent,
     // ...) fail validation here with `chain integrity check failed for
     // {chain}:{index} hash mismatch` even though they are valid.
-    let canonical_data = to_canonical_hash_data(&block.data);
-    let block_without_hash = json!({
-        "index": block.index,
-        "timestamp": block.timestamp,
-        "chain": block.chain,
-        "data": canonical_data,
-        "prev_hash": block.prev_hash,
-    });
-    let expected_hash = sha256_hex(stable_json(block_without_hash)?.as_bytes());
-    if block.hash != expected_hash {
-        return Err(OperatorError::Message(format!(
-            "chain integrity check failed for {}:{} hash mismatch",
-            block.chain, block.index
-        )));
-    }
+    verify_block_hash(block)?;
     match previous {
         None => {
             if block.index != 0 && block.index != 1 {
@@ -682,41 +1025,43 @@ pub(crate) fn validate_generic_block(
     Ok(())
 }
 
+/// A chain archive directory: `<chain>.backup-<stamp>`.
+///
+/// The rule lives in `memphis_paths::chain_names` — the module that owns
+/// the chain-name vocabulary for every arm. This file used to keep its
+/// own copy of it, with its own copy of the dated-stamp check beside it,
+/// and the copy of the copy had already drifted once (the native rule
+/// accepted stamps the registry refused).
+///
+/// The archive holds the same blocks the chain holds, so it IS scannable —
+/// treating it as unsafe made the native verifier refuse to open any
+/// archive while the TypeScript verifier opened all three.
+pub fn is_chain_backup_directory(name: &str) -> bool {
+    memphis_paths::chain_names::is_chain_backup_directory(name)
+}
+
+/// A chain directory the verifier may open: a plain chain or an archive.
+pub fn is_scannable_chain_directory_name(name: &str) -> bool {
+    let kind = memphis_paths::chain_names::classify_chain_directory(name);
+    kind == memphis_paths::chain_names::ChainDirectoryKind::Chain
+        || kind == memphis_paths::chain_names::ChainDirectoryKind::Archive
+}
+
+/// Is this a name the runtime may write to?
+///
+/// The name rule is the vocabulary's. The extra rejections here
+/// (`..`, `/`, `\`) are already implied by the character set, but they are
+/// kept because a traversal that reaches the filesystem is worth naming
+/// in the place that refuses it.
 pub(crate) fn validate_chain_name(chain_name: &str) -> Result<(), OperatorError> {
-    if chain_name.is_empty()
-        || chain_name.contains("..")
+    if chain_name.contains("..")
         || chain_name.contains('/')
         || chain_name.contains('\\')
-        || !chain_name
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+        || !memphis_paths::chain_names::is_plain_chain_name(chain_name)
     {
         return Err(OperatorError::Message("invalid chain name".to_string()));
     }
     Ok(())
-}
-
-pub(crate) fn stable_json(value: Value) -> Result<String, OperatorError> {
-    serde_json::to_string(&canonicalize(value))
-        .map_err(|error| OperatorError::Json(error.to_string()))
-}
-
-pub(crate) fn canonicalize(value: Value) -> Value {
-    match value {
-        Value::Array(items) => Value::Array(items.into_iter().map(canonicalize).collect()),
-        Value::Object(map) => {
-            let mut next = serde_json::Map::new();
-            let mut sorted = BTreeMap::new();
-            for (key, value) in map {
-                sorted.insert(key, value);
-            }
-            for (key, value) in sorted {
-                next.insert(key, canonicalize(value));
-            }
-            Value::Object(next)
-        }
-        other => other,
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -1147,7 +1492,13 @@ pub(crate) const SOUL_LIST_FIELDS: &[(&str, &[&str])] = &[
         &["languages", "preferences", "expertise", "integrations"],
     ),
     ("self", &["strengths", "learnings", "evolvedCapabilities"]),
-    ("context", &["recentDecisions"]),
+    // `operatorTodo` lives here, not in `activeWork`. Measured
+    // 2026-11-21: a note addressed to the OPERATOR sat inside the
+    // free-text `activeWork` field, the Telegram agent read it as its
+    // own assignment, and burned sixteen tool calls on a one-word
+    // greeting. A list field with an explicit name is the enforcement;
+    // a Polish phrase in prose is not.
+    ("context", &["recentDecisions", "operatorTodo"]),
 ];
 
 pub(crate) const SOUL_SECTIONS: &[&str] = &["user", "self", "context"];

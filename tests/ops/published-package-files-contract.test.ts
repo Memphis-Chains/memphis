@@ -8,6 +8,17 @@ const thisDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(thisDir, '..', '..');
 
 describe('published package files contract', () => {
+  it('packs its Node install hooks and the files served by the public gateway', () => {
+    const pkg = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+    for (const hook of ['preinstall', 'postinstall', 'prepare']) {
+      expect(pkg.files).toContain(pkg.scripts[hook].replace(/^node /, ''));
+    }
+    for (const file of ['scripts/public-chat-gateway.mjs', 'sites/memphis-v5/chat/index.html',
+      'sites/memphis-v5/chat/chat.js', 'sites/memphis-v5/chat/style.css', 'sites/memphis-v5/favicon.svg']) {
+      expect(pkg.files).toContain(file);
+    }
+  });
+
   it('keeps deprecated OpenClaw docs out of the published package file list', () => {
     const pkg = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
       files?: string[];

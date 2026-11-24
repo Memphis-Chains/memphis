@@ -1,0 +1,90 @@
+{
+  "description": "The chain directory names the two arms of memphis_chain_verify used to disagree about. The native arm refused every archive directory (a dot is not in [A-Za-z0-9_-]), so 'verify all chains' aborted on the first archive and checked nothing. The TypeScript arm skipped them and kept going. {HOME} = <home>. The fixture holds the directory names only — the verifier's decision about a name is what both arms must agree on. MEASURED 2026-11-22: the first twelve cases were NOT enough — both runners were green while the rules still disagreed, because none of the cases reached a shape where they differ. The rules are the TypeScript registry's (SAFE_CHAIN_NAME: one to sixty-four characters of [A-Za-z0-9_-], plus the two archive stamp forms), and the native arm accepted three shapes the registry refuses: a plain name of sixty-five characters, and the dated archive stamp with a shape that is not YYYY-MM-DDTHH-MM-SS-mmmZ. The corpus now reaches them.",
+  "cases": [
+    {
+      "name": "a plain chain name is scannable",
+      "directory": "journal",
+      "scannable": true
+    },
+    {
+      "name": "a plain chain name with a digit suffix is scannable",
+      "directory": "cases2",
+      "scannable": true
+    },
+    {
+      "name": "an underscore in a chain name is scannable",
+      "directory": "_quarantine",
+      "scannable": true
+    },
+    {
+      "name": "a numeric archive suffix is an archive and therefore scannable",
+      "directory": "journal.backup-1784913076785",
+      "scannable": true
+    },
+    {
+      "name": "a dated archive suffix is an archive and therefore scannable",
+      "directory": "cases.backup-2026-07-07T15-07-23-108Z",
+      "scannable": true
+    },
+    {
+      "name": "a second archive of another chain is an archive too",
+      "directory": "system.backup-1782897312539",
+      "scannable": true
+    },
+    {
+      "name": "a parent traversal is not scannable",
+      "directory": "..",
+      "scannable": false
+    },
+    {
+      "name": "a nested path is not scannable",
+      "directory": "journal/000001",
+      "scannable": false
+    },
+    {
+      "name": "a backslash path is not scannable",
+      "directory": "journal\\000001",
+      "scannable": false
+    },
+    {
+      "name": "a dot that is not an archive suffix is not scannable",
+      "directory": "journal.partial",
+      "scannable": false
+    },
+    {
+      "name": "an archive without a stamp is not an archive",
+      "directory": "journal.backup-",
+      "scannable": false
+    },
+    {
+      "name": "an empty name is not scannable",
+      "directory": "",
+      "scannable": false
+    },
+    {
+      "name": "a plain name of sixty-four characters is scannable",
+      "directory": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "scannable": true
+    },
+    {
+      "name": "a plain name of sixty-five characters is not scannable",
+      "directory": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "scannable": false
+    },
+    {
+      "name": "an archive of a long chain name is still an archive",
+      "directory": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy.backup-123",
+      "scannable": true
+    },
+    {
+      "name": "an archive stamp that is not the dated form is not an archive",
+      "directory": "journal.backup-2026-07-07T15-07-23-10ZZ",
+      "scannable": false
+    },
+    {
+      "name": "an archive stamp of the right length in the wrong shape is not an archive",
+      "directory": "journal.backup-2026-07-07T15-07-23-1Z8",
+      "scannable": false
+    }
+  ]
+}

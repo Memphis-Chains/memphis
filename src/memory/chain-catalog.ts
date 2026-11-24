@@ -29,7 +29,26 @@
  * Without it, every audit of a fresh install reports a permanent red
  * (measured: the audit named `proactive, messages` as registry drift on
  * a host where both absences were correct).
+ *
+ * THE NAME RULE IS NOT WRITTEN HERE
+ * ---------------------------------
+ * This module owns the TAXONOMY — which chains Memphis knows. The rule that
+ * decides what a directory under `chains/` may be CALLED belongs to the Rust
+ * core (`crates/memphis-paths/src/chain_names.rs`), and the patterns below
+ * are read from its projection (`chain-names.generated.ts`), so the two arms
+ * cannot drift. The rules used to be written here and copied into the native
+ * arm twice; the copies had already drifted once, and the divergence was
+ * measurable: the runtime counted an archive of `cases` as 276 blocks of live
+ * memory, because the native rule asked "does the name end in
+ * `.backup-<digits>`?" and nothing else.
  */
+
+import {
+  ARCHIVE_CHAIN_PART_PATTERN,
+  ARCHIVE_SEPARATOR,
+  ARCHIVE_STAMP_PATTERNS,
+  PLAIN_CHAIN_NAME_PATTERN,
+} from './chain-names.generated.js';
 
 export type ConsentDefault = 'exportable' | 'local-only' | 'anonymized';
 
@@ -258,6 +277,41 @@ export function getExportableByDefaultChains(): ChainName[] {
   return getChainNames().filter((name) => CHAIN_CATALOG[name].consentDefault === 'exportable');
 }
 
+/**
+ * The chains a tool may write to when the operator names one explicitly.
+ *
+ * Issue #645: the operator asked to append an entry to the soul chain
+ * and there was no way to do it. `memphis_journal` wrote to the journal,
+ * `memphis_soul_write` wrote to the config file, and the only writer to
+ * the soul chain was an internal memory event. The operator had to
+ * hand-compute a SHA-256 chain hash and write the block file by hand.
+ *
+ * This is the allowlist for that path. It is deliberately narrow: the
+ * chains an operator-facing tool may append to on request, and nothing
+ * else. `system` and `security` are audit-guarded
+ * (`AUDIT_GUARDED_CHAINS`) and are not here.
+ *
+ * The Rust arm carries the same list in
+ * `crates/memphis-operator/src/chat_memory.rs` — `JOURNAL_TARGET_CHAINS`.
+ * Both are checked against the same fixture,
+ * `tests/fixtures/journal-target-chains-contract.json`, so the two arms
+ * cannot drift apart silently.
+ */
+export const JOURNAL_TARGET_CHAINS = [
+  'journal',
+  'soul',
+  'reflections',
+  'cases',
+  'patterns',
+] as const;
+
+export type JournalTargetChain = (typeof JOURNAL_TARGET_CHAINS)[number];
+
+/** Is this chain one a tool may write to on the operator's request? */
+export function isJournalTargetChain(name: string): name is JournalTargetChain {
+  return (JOURNAL_TARGET_CHAINS as readonly string[]).includes(name);
+}
+
 export function getChainDefinition(name: string): ChainDefinition | undefined {
   // Codex follow-up on this PR: use Object.hasOwn to avoid prototype-chain
   // lookups returning inherited members (toString, __proto__, etc.) for
@@ -291,15 +345,54 @@ export function isKnownChainName(value: string): value is ChainName {
  * verifier's copy had no dot in it, so the three archives the operator
  * had explicitly allowlisted could not be opened by it.
  *
- * One definition, imported by every consumer. It lives here, in the
- * registry, because this is the module that owns the answer to "what is
- * a chain".
+ * One definition, imported by every consumer — and the DEFINITION itself
+ * is now a projection of the Rust core's owner, so the TypeScript arm and
+ * the native arm cannot disagree about it.
  */
-export const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+export const SAFE_CHAIN_NAME = new RegExp(PLAIN_CHAIN_NAME_PATTERN);
+
+/**
+ * What a directory under `chains/` is.
+ *
+ * `chain` — a live chain; `archive` — a copy of one, holding the same
+ * blocks; `foreign` — neither (the rotation's `.archives` directory, a
+ * name with a dot, a name with a space).
+ *
+ * The distinction matters because an archive is a COPY: counting it as
+ * live memory is how the runtime's status came to answer 11 504 blocks
+ * where the live chains hold 11 228.
+ */
+export type ChainDirectoryKind = 'chain' | 'archive' | 'foreign';
+
+const ARCHIVE_CHAIN_PART = new RegExp(ARCHIVE_CHAIN_PART_PATTERN);
+const ARCHIVE_STAMPS = ARCHIVE_STAMP_PATTERNS.map((pattern) => new RegExp(pattern));
+
+/**
+ * The chain an archive directory holds.
+ *
+ * `journal.backup-1784913076785` → `journal`. `undefined` when the name
+ * is not an archive at all.
+ *
+ * The chain part carries the chain-name character set but NOT the
+ * sixty-four character limit — that limit is a rule about the name of a
+ * LIVE chain, and an archive carries a suffix besides. The house contract
+ * says so out loud: "an archive of a long chain name is still an archive".
+ */
+function archiveChainName(name: string): string | undefined {
+  // The chain part may not contain a dot, so the FIRST separator is the
+  // only one that can be the boundary.
+  const separatorIndex = name.indexOf(ARCHIVE_SEPARATOR);
+  if (separatorIndex < 0) return undefined;
+  const chain = name.slice(0, separatorIndex);
+  const stamp = name.slice(separatorIndex + ARCHIVE_SEPARATOR.length);
+  if (!ARCHIVE_CHAIN_PART.test(chain)) return undefined;
+  if (!ARCHIVE_STAMPS.some((pattern) => pattern.test(stamp))) return undefined;
+  return chain;
+}
 
 /** Recovery copies use either epoch milliseconds or the legacy ISO filename stamp. */
 export function isChainBackupDirectory(name: string): boolean {
-  return /^[a-zA-Z0-9_-]+\.backup-(?:\d+|\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)$/.test(name);
+  return archiveChainName(name) !== undefined;
 }
 
 /**
@@ -313,8 +406,18 @@ export function isChainBackupDirectory(name: string): boolean {
  * field and invalidate the archive's hashes.
  */
 export function logicalChainNameForDirectory(name: string): string {
-  const match = /^(.+?)\.backup-(?:\d+|\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)$/.exec(name);
-  return match?.[1] ?? name;
+  return archiveChainName(name) ?? name;
+}
+
+/**
+ * Classify a directory under `chains/`.
+ *
+ * The ONE question the runtime, the audit, the verifier and the cockpit
+ * used to answer with three rules.
+ */
+export function classifyChainDirectory(name: string): ChainDirectoryKind {
+  if (SAFE_CHAIN_NAME.test(name)) return 'chain';
+  return archiveChainName(name) !== undefined ? 'archive' : 'foreign';
 }
 
 /** Chains that are expected on a live host. */

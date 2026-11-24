@@ -22,12 +22,24 @@ run_cargo() {
 
 run_cargo "$@"
 
-# After a build, copy the NAPI shared library to the location Node expects.
+# After a release build, copy the NAPI shared library to the location Node expects.
+#
+# Only the RELEASE profile is copied. `crates/memphis-napi/index.node` is
+# the artifact that ships (see package.json "files") and the one every
+# CLI invocation outside systemd resolves to, so it must always be the
+# release build. A debug build overwriting it left two different Rust
+# binaries reachable on one host: the service ran the release one, and
+# the operator's shell ran the debug one — so `memphis vault list` and
+# the runtime could disagree about what the vault held.
 if [[ "${1:-}" == "build" ]]; then
   PROFILE="debug"
   for arg in "$@"; do
     if [[ "$arg" == "--release" ]]; then PROFILE="release"; fi
   done
+
+  if [[ "${PROFILE}" != "release" ]]; then
+    exit 0
+  fi
 
   NAPI_SO="${REPO_ROOT}/target/${PROFILE}/libmemphis_napi.so"
   NAPI_DYLIB="${REPO_ROOT}/target/${PROFILE}/libmemphis_napi.dylib"

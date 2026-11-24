@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { ToolMeta } from '../tool-metadata.js';
 
-export const SELF_MANAGEMENT_TOOLS: Record<string, ToolMeta> = {
+export const SELF_MANAGEMENT_TOOLS = {
   memphis_self_plan_create: {
     name: 'memphis_self_plan_create',
     tier: 0,
@@ -113,4 +113,4 @@ export const SELF_MANAGEMENT_TOOLS: Record<string, ToolMeta> = {
     helpText:
       'Verify a plan actually shipped. After operator merges the PR from `memphis_self_pr_open`, call this to confirm: (1) PR is merged via gh, (2) merge commit is an ancestor of origin/main (local fetch happens first), (3) build artifact mtime is newer than the merge timestamp (proves a rebuild happened). On all three green, sets plan status to `done`. If anything fails, plan stays in `pr-open` and the operator-facing report names which check failed.',
   },
-};
+} satisfies Record<string, ToolMeta>;

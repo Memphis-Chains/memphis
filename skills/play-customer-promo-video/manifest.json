@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "play-customer-promo-video",
+  "name": "Play Customer Promo Video",
+  "description": "Fetch and play a customer-hosted video, audio or image asset locally over X11. Identifies the media URLs on a page, downloads them with an HTTP status check, validates the file (size, magic bytes, ffprobe, player availability), then starts the player detached and confirms the process is alive.",
+  "tags": ["media", "playback", "video", "x11"],
+  "tools": ["memphis_exec", "memphis_journal"],
+  "workflow": [
+    "IDENTIFY: list the media URLs on the page with curl and a grep for src/href ending in mp4, webm, mov, jpg, png or mp3.",
+    "DOWNLOAD: fetch the asset with curl -sSL -o <asset> <url> and read the HTTP status, size and content type from the -w format string.",
+    "VALIDATE: run ./verify.sh <asset> — seven checks: size, magic bytes, ffprobe, X11 display, player availability, readability.",
+    "PLAY: run ./play.sh <asset>; it auto-detects the player, detaches with setsid and writes the log to /tmp/<player>-skill-<pid>.log.",
+    "CONFIRM: check for the player process with pgrep. No PID after 3s means read the log with cat."
+  ],
+  "promptHints": [
+    "Player hierarchy is mpv, then vlc, then ffplay, then parole.",
+    "cd $(dirname <asset>) before setsid — absolute paths through ~ do not always resolve in memphis_exec.",
+    "The exec shell is /bin/sh, not bash: judge success by ps/pgrep, not by the exit code of the backgrounded command.",
+    "Do NOT use nohup cmd & — the parent shell dies with the exec. setsid -f cmd with </dev/null is the correct detach."
+  ],
+  "examples": [
+    {
+      "prompt": "Odpal to wideo z https://klient.example/landing",
+      "outcome": "The skill identifies the asset, downloads it with a status check, validates it with verify.sh, starts the player detached and confirms the process is running."
+    }
+  ],
+  "notes": [
+    "Limits: no authenticated or CDN downloads, no HLS/DASH streams, no upload, no transcoding, and no touch of sudo, services or boot.",
+    "Runtime quirk recorded on this host: mpv is not installed; the fallback chain is what makes the skill work.",
+    "verify.sh v1.1 distinguishes the container kind before checking stream types — v1.0 reported a false-positive video stream for static JPEG files."
+  ]
+}

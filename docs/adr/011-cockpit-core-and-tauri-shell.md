@@ -1,23 +1,24 @@
 # ADR-011 — Cockpit Core: one brain, two shells (Ratatui TUI + Tauri GUI)
 
-Date: 2026-10-26
+Date: 2026-10-26 (numbers re-measured 2026-11-22)
 Status: Proposed
 Deciders: operator (Wodzu)
-Related: ADR-010 (Tauri build status), `MEMPHIS_ARCHITECTURE_LAYERS.md` (L5 surfaces),
-`src/infra/tui-host/` (stdio-JSON host protocol), `crates/memphis-tui/` (Ratatui cockpit)
+Related: ADR-010 (Tauri build status), ADR-012 (one tool contract across the bridge), `MEMPHIS_ARCHITECTURE_LAYERS.md` (L5 surfaces),
+`src/infra/tui-host/` (stdio-JSON host protocol), `crates/memphis-tui/` (Ratatui cockpit),
+`docs/roadmap/ROADMAP_2026_2030.md` (the public plan, and its successor at memphis-v5.pl/roadmap)
 
 ## Summary
 
 The Memphis operator cockpit is a Ratatui terminal application (`crates/memphis-tui`,
-11 198 LOC). A Tauri desktop shell existed once as a 107-line stub and was deleted on
-2026-10-06 because it had neither a build path nor a test. This ADR proposes rebuilding
-it — but **not as a second implementation**.
+14 624 LOC as of 2026-11-22). A Tauri desktop shell existed once as a 107-line stub and
+was deleted on 2026-10-06 because it had neither a build path nor a test. This ADR
+proposes rebuilding it — but **not as a second implementation**.
 
 The proposal is a three-layer move:
 
 1. **Extract the cockpit brain** into a Ratatui-free library crate, because the brain
-   (`app.rs` + `client.rs`, ~8 300 LOC) has **zero Ratatui imports** today. Only the
-   renderer (~1 630 LOC) does.
+   (`app.rs` + `client.rs`, 9 782 LOC) has **zero Ratatui imports** today. Only the
+   renderer (2 588 LOC in `ui.rs` + `widgets/`) does.
 2. **Fix the ergonomics defects that exist in the authoritative cockpit right now** —
    the input caret is never rendered, the prompt is a single row, and there is no
    scrollback search. These cost ~300 LOC and are worth more than any GUI.
@@ -31,15 +32,19 @@ deliver value on their own and make the GUI cheap.
 
 ## Part 1 — What is actually there
 
-### 1.1 The Ratatui cockpit (`crates/memphis-tui`, 11 198 LOC Rust)
+### 1.1 The Ratatui cockpit (`crates/memphis-tui`, 14 624 LOC Rust, measured 2026-11-22)
 
 | File            | LOC    | Role                                                    | Ratatui? |
 | --------------- | ------ | ------------------------------------------------------- | -------- |
-| `src/app.rs`    | 7 125  | brain: state, keys, command routing, workers, streaming | **no**   |
-| `src/client.rs` | 1 152  | runtime client + extension-host manager                 | **no**   |
-| `src/main.rs`   | 881    | event loop, terminal guard, background refresh          | partly   |
+| `src/app.rs`    | 8 600  | brain: state, keys, command routing, workers, streaming | **no**   |
+| `src/client.rs` | 1 182  | runtime client + extension-host manager                 | **no**   |
+| `src/main.rs`   | 961    | event loop, terminal guard, background refresh          | partly   |
 | `src/ui.rs`     | 448    | **renderer**: layout + widget composition               | yes      |
-| `src/widgets/*` | ~1 180 | **renderer**: body, prompt, status bar, help, toast     | yes      |
+| `src/widgets/*` | 2 588  | **renderer**: body, prompt, status bar, help, toast     | yes      |
+
+The 2026-10-26 measurement was 11 198 LOC with a 7 125-line `app.rs`. The growth is the
+ergonomics work (E1–E4 in Layer 2), which landed in this crate — the brain grew because
+the cockpit got better, not because a second implementation appeared.
 
 Layout (`src/ui.rs:104-140`): optional notification banner → scrollable body →
 **1-row** prompt → 1-row status bar; help overlay floats on top.
@@ -84,7 +89,7 @@ the comment remains true and must stay.
 
 `src/infra/tui-host/` is a **versioned NDJSON RPC protocol over stdio**:
 
-- `memphis tui host --stdio-json` — protocol version 1, 37 capabilities
+- `memphis tui host --stdio-json` — protocol version 1, 34 capabilities
 - handshake: `ready` event advertising the capability list
 - request: `{type:"execute", id, command, args}` → `started` → `line`\* → `result` | `error` | `cancelled`
 - cancel: `{type:"cancel", id}`
@@ -98,6 +103,30 @@ _"tui host is the stdio-json protocol mode used by GUI consumers"_.
 that was designed for it, has a contract test (`tests/unit/tui-host.test.ts`), and has
 never had a second client.**
 
+### 1.4 The second shell is already public (2026-11-20)
+
+The public roadmap (memphis-v5.pl/roadmap, published 2026-11-20, source
+`sites/memphis-v5/roadmap/index.html`) states the product direction in one sentence: the
+computer with Memphis should *"hatch"* an application for its owner's phone — the fork
+carries the app's sources, the chosen modules and the Memphis version used to build it.
+
+That makes the **phone the first second shell**, and it changes the framing of this ADR.
+The shell is not a hypothetical desktop GUI; it is a phone that talks to the operator's
+own computer, plus a desktop GUI that remains optional. Both have the same shape:
+
+| | Terminal cockpit (today) | Phone app (planned) | Desktop GUI (planned) |
+| --- | --- | --- | --- |
+| engine | Rust `memphis-operator` | the PC's Rust engine, reached over an authenticated SSH session | the embedded Rust core (Layer 1) |
+| what it draws | `Vec<StyledLine>` | its own mobile UI | `Vec<StyledLine>` |
+| what it must never do | define tools | define tools | define tools |
+
+The last row is the precondition, and it is why ADR-012 exists. Until 2026-11-22 the
+cockpit advertised 23 tools whose arguments were hand-written in Rust, and five of them
+disagreed with the registry — one of them (`memphis_self_modify`) meaning two different
+operations under one name. A second shell would have inherited that split, and every
+future tool would have widened it. The contract is now projected from one registry into
+both arms of the bridge, so a shell that shows tools shows the registry's tools.
+
 ---
 
 ## Part 2 — Seven findings that change the design
@@ -107,7 +136,7 @@ Each finding is stated with the evidence that would falsify it.
 ### F1 — The brain is already renderer-agnostic
 
 `grep -n "ratatui" crates/memphis-tui/src/app.rs` and the same for `client.rs` return
-**nothing**. The 8 277 LOC of state machine, command router, worker orchestration and
+**nothing**. The 9 782 LOC of state machine, command router, worker orchestration and
 stream handling have no terminal dependency at all. Only `ui.rs` + `widgets/` do.
 
 _Consequence:_ a second shell does not require a second brain. It requires a second
@@ -248,7 +277,7 @@ is valid and must stay).
 
 - **Backend (Rust):** depends on `memphis-cockpit` → same chat engine, same streaming.
   Spawns `memphis tui host --stdio-json` as a child process and bridges NDJSON ↔ Tauri
-  events, which gives it all 37 host capabilities (doctor, agents, config, surface policy,
+  events, which gives it all 34 host capabilities (doctor, agents, config, surface policy,
   `telegram.send`, tier elevation) **without writing a single line of business logic** —
   which is exactly what `MEMPHIS_ARCHITECTURE_LAYERS.md` requires of a surface.
 - **Frontend:** vanilla TypeScript + CSS, no framework, no build step beyond `tsc`.
@@ -303,7 +332,7 @@ mergeable and independently useful.
 | #   | Step                                                                 | Effort    | Value if stopped here                                               | Risk                                                             |
 | --- | -------------------------------------------------------------------- | --------- | ------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | 1   | **E1–E5 ergonomics** in the existing TUI (no refactor)               | ~2 days   | High — fixes the caret, multi-line prompts, scrollback search, copy | Low: additive, no architecture touched                           |
-| 2   | **Layer 1 extraction** into `memphis-cockpit`                        | ~1 day    | Medium — no user-visible change, but unblocks everything else       | Medium: 8 300 LOC moves; mitigated by an identical test baseline |
+| 2   | **Layer 1 extraction** into `memphis-cockpit`                        | ~1 day    | Medium — no user-visible change, but unblocks everything else       | Medium: 9 782 LOC moves; mitigated by an identical test baseline |
 | 3   | **Tauri shell** (`apps/memphis-gui`, vanilla TS frontend)            | ~3–5 days | High — the window, the tables, the rich rendering                   | Medium: new build path, must be pinned by CI                     |
 | 4   | **Protocol v2** (`chat.turn`, per-capability concurrency, streaming) | ~2 days   | Medium — unifies GUI/Telegram/CLI on one engine                     | Medium: touches the TS host and its consumers                    |
 
@@ -334,6 +363,12 @@ architecture. Steps 2–4 are the GUI path.
 1. **Is a graphical surface wanted at all?** Everything in Layer 3 is optional. Layers 1
    and 2 stand alone. If the answer is "no", stop after step 2 and keep the protocol
    work.
+   **Partly answered 2026-11-20.** The published roadmap (memphis-v5.pl/roadmap) commits
+   to a *phone* app generated from the owner's fork — Tauri on Android and iOS. So a
+   second shell is wanted, and it is wanted on the phone rather than on the desktop. The
+   desktop GUI in Layer 3 stays optional; the phone shell rides the operator's own
+   computer's engine, which makes Layer 1 (the extraction) the load-bearing step for
+   both, and makes "no second implementation" a rule the phone has to obey too.
 2. **Tauri vs a lighter shell.** Tauri needs a webview (≈300 MB resident). A Quickshell
    QML panel — the Omarchy-native option — would speak the _same_ NDJSON protocol at a
    fraction of the cost, and would integrate with the desktop the operator already runs.
@@ -343,6 +378,14 @@ architecture. Steps 2–4 are the GUI path.
 3. **Does the Rust/TS chat-stack split get unified?** This ADR explicitly does not
    decide it. It is the largest remaining source of behavioural difference between
    surfaces, and it deserves its own ADR if the operator wants it.
+   **Decided 2026-11-22 — ADR-012.** The split stays: the Rust operator is the cockpit's
+   engine (it streams; the TypeScript stack does not), and the TypeScript arm is the
+   service. What was unified is the tool CONTRACT, which is now owned by `TOOL_REGISTRY`
+   and projected onto both sides of the bridge. Measured before that ADR: five of the 23
+   native tools advertised different arguments than the registry, and `memphis_self_modify`
+   under one name meant "write one file" and under the other "apply changes to many
+   files" — so the Tauri GUI, which inherits the Rust engine, would have inherited a
+   second contract too.
 4. **Frontend framework.** Recommendation: none (F7). Reversible later — a framework
    only touches the ~400 LOC renderer.
 

@@ -105,6 +105,20 @@ describe('http health payload', () => {
     expect(payload.latestTurnTelemetry).toEqual([]);
   });
 
+  it('checks the configured Ollama server and reports a missing tags endpoint', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-health-provider-'));
+    const probe = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(null, { status: 404 }));
+    const payload = await buildHealthPayload(makeConfig(`file:${join(dir, 'test.db')}`), {
+      MEMPHIS_DATA_DIR: dir,
+      MEMPHIS_ENV_FILE: join(dir, '.env'),
+      RUST_CHAIN_ENABLED: 'false',
+      RUST_EMBED_MODE: 'ollama',
+      RUST_EMBED_PROVIDER_URL: 'http://embed.example.test:11434/api/embeddings/',
+    });
+    expect(probe).toHaveBeenCalledWith('http://embed.example.test:11434/api/tags', expect.objectContaining({ method: 'GET' }));
+    expect(payload.checks.embedding_provider).toMatchObject({ status: 'fail', message: 'provider returned 404' });
+  });
+
   it('returns unhealthy when sqlite file is missing', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'memphis-health-unit-missing-'));
     const missingDb = join(dir, 'missing.db');
@@ -239,11 +253,20 @@ describe('http health payload', () => {
   });
 
   // ─── embed_index_dimension ──────────────────────────────────────────
-  // The dim-mismatch failure mode is silent: `OllamaProvider` pads or
-  // truncates the provider vector to the configured dim without warning,
-  // and `cosine_similarity` returns 0.0 for unequal lengths. A stale
-  // RUST_EMBED_DIM therefore yields a structurally valid index that
-  // scores every query at zero, with nothing in the logs saying why.
+  // The dim-mismatch failure mode has TWO halves, and they are not the
+  // same. With a provider configured, the provider's own width is the
+  // truth and the provider path is STRICT (`parse_embedding_vector` in
+  // `crates/memphis-embed/src/pipeline.rs`): a 1024-wide answer to a
+  // 32-wide configuration is a loud error and every embed fails. With the
+  // LOCAL embedder the vector is always exactly `dim` wide, so nothing
+  // fails at all — a 32-wide query is compared against a 768-wide stored
+  // vector and `cosine_similarity` returns 0.0 for unequal lengths. That
+  // is the silent half: recall returns hits, and none of them mean
+  // anything.
+  //
+  // (This comment used to say the provider's vector was "truncated without
+  // warning". That was true on 2026-10-25 and stopped being true on
+  // 2026-11-06, when the provider path became strict.)
 
   describe('embed_index_dimension', () => {
     function writeIndex(indexPath: string, contents: string): void {
@@ -324,13 +347,16 @@ describe('http health payload', () => {
       expect(check.message).toContain('not readable');
     });
 
-    it('defaults the configured dim to 32 when unset or unusable', async () => {
+    it('follows the index when the configured dim is unset or unusable', async () => {
       const indexPath = join(
         mkdtempSync(join(tmpdir(), 'memphis-health-dim-default-')),
         'index-v1.json',
       );
       writeIndex(indexPath, JSON.stringify({ version: 1, dim: 32, docs: [] }));
 
+      // The old default was 32 — the width of the LOCAL DETERMINISTIC
+      // embedder. The owner follows the INDEX when the environment does
+      // not pin a dimension, so an unset dim is not a mismatch here.
       expect((await dimensionFor(indexPath, undefined)).status).toBe('ok');
       expect((await dimensionFor(indexPath, 'not-a-number')).status).toBe('ok');
     });

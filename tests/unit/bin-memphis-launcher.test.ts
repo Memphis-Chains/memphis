@@ -12,13 +12,23 @@ const repoRoot = path.resolve(thisDir, '..', '..');
 const launcherSource = readFileSync(path.join(repoRoot, 'bin', 'memphis.js'), 'utf8');
 const tempDirs: string[] = [];
 
-function createLauncherFixture(distEntrySource?: string): string {
+function createLauncherFixture(distEntrySource?: string, options?: { withRemedy?: boolean }): string {
   const fixtureDir = mkdtempSync(path.join(tmpdir(), 'memphis-launcher-fixture-'));
   tempDirs.push(fixtureDir);
 
   writeFileSync(path.join(fixtureDir, 'package.json'), JSON.stringify({ type: 'module' }, null, 2));
   mkdirSync(path.join(fixtureDir, 'bin'), { recursive: true });
   writeFileSync(path.join(fixtureDir, 'bin', 'memphis.js'), launcherSource);
+
+  // The launcher loads the remedy module lazily, from its own directory.
+  // It is carried into the fixture ONLY when a test asks for it: the
+  // default fixture runs WITHOUT it, which is the proof that a missing
+  // module cannot change the exit code systemd's RestartPreventExitStatus
+  // reads.
+  if (options?.withRemedy) {
+    const remedySource = path.join(repoRoot, 'bin', 'install-remedy.mjs');
+    writeFileSync(path.join(fixtureDir, 'bin', 'install-remedy.mjs'), readFileSync(remedySource, 'utf8'));
+  }
 
   if (distEntrySource) {
     mkdirSync(path.join(fixtureDir, 'dist', 'infra', 'cli'), { recursive: true });
@@ -56,6 +66,27 @@ describe('bin/memphis.js', () => {
     });
     expect(result.status).toBe(exitCode);
     expect(result.stderr).toContain('synthetic startup failure');
+  });
+
+  it('names the npm 12 remedy when the native binding is missing', () => {
+    // Measured 2026-11-24 on the operator's host against the PUBLISHED
+    // v1.14.1 tarball: the install exited 0 and every command died with
+    // "Could not locate the bindings file" and thirteen candidate paths.
+    // The remedy is the sentence that says what npm 12 did and what one
+    // line fixes.
+    const launcherPath = createLauncherFixture(
+      "throw new Error('Could not locate the bindings file. Tried:\\n → /x/better-sqlite3/build/Release/better_sqlite3.node');",
+      { withRemedy: true },
+    );
+
+    const result = spawnSync(process.execPath, [launcherPath, 'health'], {
+      encoding: 'utf8',
+      timeout: 10000,
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('allowScripts');
+    expect(result.stderr).toContain('better-sqlite3');
   });
 
   it('keeps unexpected import failures on the general error code', () => {

@@ -97,21 +97,12 @@ export function createDevelopmentRuntimeTools(): RuntimeToolDefinition[] {
       name: 'memphis_git',
       description:
         'Git operations — status, log, diff, add, commit, push (read ops: tier 1, write ops: tier 2)',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          subcommand: {
-            type: 'string',
-            description: 'Git subcommand (status, log, diff, add, commit, push, etc.)',
-          },
-          args: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Arguments for the subcommand',
-          },
+      inputSchema: buildRegistryInputJsonSchema('memphis_git', {
+        propertyDescriptions: {
+          subcommand: 'Git subcommand (status, log, diff, add, commit, push, etc.)',
+          args: 'Arguments for the subcommand',
         },
-        required: ['subcommand'],
-      },
+      }),
       isReadOnly: false,
       isDestructive: false,
       validateInput(args) {
@@ -127,16 +118,12 @@ export function createDevelopmentRuntimeTools(): RuntimeToolDefinition[] {
     buildTool({
       name: 'memphis_test',
       description: 'Run project tests (ts, rust, lint, typecheck, or all)',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          suite: {
-            type: 'string',
-            description: 'Test suite: "ts" | "rust" | "lint" | "typecheck" | "all" (default: ts)',
-          },
-          filter: { type: 'string', description: 'Filter pattern for test files (vitest only)' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_test', {
+        propertyDescriptions: {
+          suite: 'Test suite: "ts" | "rust" | "lint" | "typecheck" | "all" (default: ts)',
+          filter: 'Filter pattern for test files (vitest only)',
         },
-      },
+      }),
       isReadOnly: false,
       isDestructive: false,
       validateInput(args) {
@@ -152,32 +139,19 @@ export function createDevelopmentRuntimeTools(): RuntimeToolDefinition[] {
     buildTool({
       name: 'memphis_deploy',
       description: 'Run deploy, health, and rollback workflows with snapshots and health checks',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          action: { type: 'string', description: 'Action: run | health | rollback' },
-          profile: {
-            type: 'string',
-            description: 'Deploy profile: local-service | build-only | custom',
-          },
-          buildCommand: { type: 'string', description: 'Build command override' },
-          deployCommand: { type: 'string', description: 'Custom deploy command override' },
-          healthUrl: { type: 'string', description: 'HTTP health endpoint override' },
-          testSuite: {
-            type: 'string',
-            description: 'Test suite: ts | rust | lint | typecheck | all',
-          },
-          deep: { type: 'boolean', description: 'Run deeper doctor checks' },
-          dryRun: {
-            type: 'boolean',
-            description: 'Preview the deploy plan without mutating state',
-          },
-          rollbackIndex: {
-            type: 'number',
-            description: 'Snapshot index for rollback (1 = latest)',
-          },
+      inputSchema: buildRegistryInputJsonSchema('memphis_deploy', {
+        propertyDescriptions: {
+          action: 'Action: run | health | rollback',
+          profile: 'Deploy profile: local-service | build-only | custom',
+          buildCommand: 'Build command override',
+          deployCommand: 'Custom deploy command override',
+          healthUrl: 'HTTP health endpoint override',
+          testSuite: 'Test suite: ts | rust | lint | typecheck | all',
+          deep: 'Run deeper doctor checks',
+          dryRun: 'Preview the deploy plan without mutating state',
+          rollbackIndex: 'Snapshot index for rollback (1 = latest)',
         },
-      },
+      }),
       isReadOnly: false,
       isDestructive: true,
       validateInput(args) {

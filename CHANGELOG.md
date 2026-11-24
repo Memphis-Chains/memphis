@@ -1,3 +1,352 @@
+## Unreleased
+
+### The bridge's payload shapes have one owner
+
+The shape of what the bridge carries was guessed, in seven TypeScript files.
+The guess was not carelessness: the Rust owner speaks two conventions — a
+`#[napi(object)]` struct with an explicit `#[napi(js_name = "...")]` is
+exported in snake_case, one without it in camelCase. Measured 2026-11-24 on
+the built module: `vault_load_state` returns `error_code`,
+`vault_decode_entry` returns `errorCode`, `vault_parse_entries` returns
+`entriesJson`. One hand-written interface covered two payloads, so it hedged
+over both spellings.
+
+The shapes now have one owner (`crates/memphis-napi/src/bridge_payloads.rs`),
+the projection copies them into an artefact and a TypeScript mirror, and both
+arms check themselves against it. The vault family is migrated; the six
+surfaces that still own a payload type are counted in the gate, and the
+counter may only go down.
+
+The compatibility with older binaries stays and is now declared rather than
+guessed: the naming stabilization of 2026-03-21 changed `master_key` and
+`created_at` from `masterKey` and `createdAt`.
+
+## v1.14.2 - 2026-11-24
+
+One ledger entry closed: the package that ships. The published v1.14.1 tarball
+installed cleanly and then could not start — and every gate said it was fine.
+
+### The tarball that ships is now the thing the gate looks at
+
+Measured on the operator's host, 2026-11-24, against the **published** v1.14.1
+tarball (`memphis-chains-memphis-1.14.1.tgz`, 4 599 032 B, checksum verified
+against the workflow's own `SHA256SUMS`), installed into a clean prefix with
+npm 12.0.2:
+
+- the install **succeeded** (exit 0);
+- every command died with `Could not locate the bindings file` and thirteen
+  candidate paths;
+- `node_modules/better-sqlite3/build/` did not exist — the native binding was
+  never built.
+
+npm 12 blocks dependency install scripts by default and reads `allowScripts`
+from the **project root**, so a published package cannot approve its own
+dependencies: the installed `package.json` carried
+`{"better-sqlite3": true, "esbuild": true, "onnxruntime-node": true}` and the
+script was blocked anyway. `better-sqlite3` ships no prebuilt binding — its
+install script is the thing that fetches one.
+
+The gates missed it because `ops:validate-package-artifact` installed with
+`--ignore-scripts` — which guarantees that no binding is built — and probed
+only `memphis --help` and `memphis completion bash`, neither of which opens
+the journal database.
+
+What changed:
+
+- **The gate installs under a declared policy**, proves the native binding
+  exists, and probes `memphis vault list --json` — a command that opens the
+  database.
+- **The CLI names the cause and the remedy.** A missing binding now prints
+  what npm 12 did and the one line that fixes it, instead of thirteen paths.
+- **The README documents the npm 12 rule** for operators, including why
+  approving `onnxruntime-node` breaks the install (its script downloads a CUDA
+  build that answers 404; the CPU runtime ships inside the package).
+
+Falsifier, measured on this host: with the approval revoked in the install
+prefix, the gate fails with `the installed package has no better-sqlite3 native
+binding`. With it, the binding is there and `memphis vault list --json` answers
+`{"ok": true, "entries": []}`.
+
+## v1.14.1 - 2026-11-24
+
+One ledger entry closed: the embed profile. The dimension and the index
+path had defaults from two different eras, and four owners that disagreed.
+
+### The embed profile has one owner, and it answers with its source
+
+"Which embedding profile is in force?" had four owners on this host and four
+answers. The dimension default was a hard-coded `32` in four places plus the
+config schema — and `32` was never an embedding dimension: it is
+`DEFAULT_EMBEDDING_DIM`, the width of the LOCAL DETERMINISTIC embedder,
+the placeholder used when no provider is configured, applied unconditionally.
+The index-path default was written twice with two roots (HOME-based in
+TypeScript, data-dir-based in Rust), so the two sides read different files
+whenever `MEMPHIS_DATA_DIR` is not `~/.memphis`.
+
+Measured on the operator's host, 2026-11-23:
+
+| process | index it reads | dim | result |
+| --- | --- | --- | --- |
+| the service (systemd `EnvironmentFile`) | `embed/bge-m3-20261106/index-v1.json` | 1024 | `mode: semantic` |
+| a shell, the CLI, any spawned script | `embed/index-v1.json` | 768 on disk vs **32** configured | `index_dimension_mismatch: disk_dim=768 config_dim=32` |
+
+The mismatch was not the cause. The cause was that the shell has no
+provider configured at all.
+
+The rule now lives in ONE module, `crates/memphis-embed/src/profile.rs`:
+the index path, the dimension, the model, the source of each, and the
+verdict. The dimension is resolved `env` → the dimension recorded **in the
+index on disk** → the local deterministic width (reached only when there is
+no index to contradict it). The model is never guessed from a name. The
+TypeScript side asks through the bridge and keeps no copy of the rule; the
+vocabulary reaches it as a projection.
+
+Measured again, 2026-11-24, the owner asked for the two processes this host
+has:
+
+| process | dimension | verdict |
+| --- | --- | --- |
+| the service | **1024** (from `env`) | `ok` |
+| a bare shell | **768** (from the index) | `no-provider` |
+
+The false mismatch is gone, and the verdict names the cause that is there.
+
+A claim the code no longer supported: the comment in
+`src/infra/http/health.ts` said the provider's vector was "truncated to the
+configured dim without warning". That was true on 2026-10-25 and stopped
+being true on 2026-11-06, when the provider path became strict (PR #749).
+The comment survived 18 days and was quoted in the error ledger; it is now
+the measured behaviour — with a provider the wrong width is a **loud**
+error, with the local embedder it is the **silent** one
+(`cosine_similarity` returns 0.0 for vectors of unequal length).
+
+Shape: one owner, one artefact of cases (14, every one naming a committed
+fixture index), two runners (Rust 7 tests, TypeScript 9 tests), and a gate
+that fails when the mirror drifts (`ops:sync-embed-profile-contract
+-- --check`, in CI).
+
+## v1.14.0 - 2026-11-23
+
+316 commits since the `v1.13.5` tag. A new chain, one owner for the tool
+contract, one owner for the chain-name rule, and a measured error ledger that
+says what is still open — including what is not.
+
+The shape of the release is the shape of the house's rule: **one owner per
+rule, one artefact per cross-boundary rule, two runners, and a gate that can
+fail.** Every cross-arm rule that was decided in two places now has one owner
+and a gate; every claim in the notes below is a number measured on the
+operator's host.
+
+### The tarball ships every module the CLI loads
+
+The first attempt to publish v1.14.0 failed. The `release` workflow's first
+step packs the npm tarball, installs it into a temporary prefix and runs the
+real binary — and the binary died on startup:
+
+```
+[ERROR] Failed to load Memphis CLI: Cannot find module
+  '.../node_modules/@memphis-chains/memphis/scripts/backup-manifest.mjs'
+  imported from '.../node_modules/@memphis-chains/memphis/dist/infra/cli/commands/backup-manifest.js'
+```
+
+`src/infra/cli/commands/backup-manifest.ts` imports
+`../../../../scripts/backup-manifest.mjs` — a file OUTSIDE `src/` — and
+`package.json`'s `files` list did not mention it. The import is a
+module-load-time import, so the omission broke **every** command, not one;
+`memphis completion bash` was simply the first probe the validator ran.
+Introduced by `f4b9bc2875`; `git log -S"scripts/backup-manifest.mjs" --
+package.json` was empty, so the path had never been published.
+
+The list in `files` was a denylist of omissions, and a denylist nobody checks
+is a wish. The rule is now inverted: `scripts/check-package-runtime-closure.mts`
+discovers every file the shipped code imports from outside its own tree, and
+each one must be listed. Measured on this host: **2** such edges
+(`scripts/backup-db-snapshot.mjs`, `scripts/backup-manifest.mjs`), both
+covered. The artefact is `tests/fixtures/package-runtime-closure.json`; the
+runners are the script and `tests/ops/package-runtime-closure.test.ts`.
+
+The gap that let this reach CI was the gate list itself: the local preflight
+never checked the tarball, so it reported `ok: true` for a broken artefact.
+Both packaging gates now live in `ops:release-preflight` — the fast closure
+check (seconds) and `ops:validate-package-artifact` (minutes) — so the suite
+the operator runs before a release is the suite CI runs.
+
+### The gate that was green where it was measured, and red where it was not
+
+The public chat's `/ready` answers 200 only when the provider is configured
+**and** the basal layer is healthy — and the basal layer is an HTTP service on
+127.0.0.1:8000. The relay's test asked the **real** service, so its verdict
+depended on whether a basal service happened to be running.
+
+Measured 2026-11-23: this host answers `/health` with `{"ok":true,"ready":true}`,
+so the test passed locally; a CI runner has nothing on that port, so the test
+failed there with `expected 503 to be 200` — the required
+`cross-arch (ubuntu-24.04-arm)` check was red, and the failure was already
+present on `34cb179074`, before this release's fixes.
+
+A test that is green where it was measured and red where it was not is a test
+that hides itself. The readiness check is now injected next to the classifier
+that was already injectable, and the test pins the three real cases — provider
+configured and basal ready (200), provider unconfigured (503), basal not ready
+(503). The third could not be told apart from the second before. The test
+also points the ambient basal URL at a closed port for its duration, so it is
+its own falsifier: if the injection is ever dropped, it fails with the CI
+message instead of quietly depending on the room.
+
+### One dependency bump (RUSTSEC-2026-0592)
+
+`url` 2.5.8 → 2.5.9 (with `form_urlencoded` 1.2.2 → 1.2.3). The advisory was
+issued on 2026-11-22: `Url::origin()` recursed into `blob:` URLs without a
+depth limit, so a 50 KB URL with 10 000 nested `blob:` prefixes overflowed the
+stack and killed the process — `catch_unwind()` does not catch a stack
+overflow. `url` reaches Memphis transitively through `ureq` in
+`memphis-embed`. Fixed upstream in 2.5.9; `scripts/cargo-audit-check.sh`
+reports no vulnerabilities against the new lockfile.
+
+### The chain-name vocabulary has one owner (ledger E-03)
+
+"What is a chain called?" had four owners and three answers. The native
+runtime asked *"does the name end in `.backup-<digits>`?"* and nothing else —
+so an archive whose stamp was a DATE was a live chain, an archive whose stamp
+was a number was not, and `.archives` (the dot-directory the rotation writes
+its `.jsonl.gz` files into) was a chain.
+
+Measured on one disk state: the runtime's status counted **11 510 blocks in 14
+directories**, the live chains hold **11 234 in 12**, and the audit counted
+**11 981**. The 276-block gap was one archive of `cases`, counted as if it
+were the chain itself.
+
+Now: `crates/memphis-paths/src/chain_names.rs` owns the vocabulary, the
+bridge serves it (`bridge_chain_name_manifest`, `bridge_chain_name_facts`),
+the projection reads the owner's ANSWERS through the built bridge and writes
+`tests/fixtures/chain-name-contract.json` (36 cases) plus the TypeScript
+mirror, and both arms check themselves against that artefact. The native
+runtime counts **12 directories and 11 236 blocks**; the audit keeps counting
+archives on purpose — verifying an archive is its job — and now labels that
+number "scannable" instead of "live" (747 of those blocks are copies of a
+chain, not new memory).
+
+### The bridge's export vocabulary has one owner (ledger E-01)
+
+The vocabulary of the N-API bridge was declared in three places and compared by
+nobody. Measured by reading the built module: the binary exported **37**
+functions, the manifest named **34** — three real exports were unreachable from
+TypeScript and nine names were spellings the bridge never exports. One table
+(`crates/memphis-napi/src/bridge_exports.rs`) owns it now, the manifest serves
+it, the projection copies it into the artefact and the TypeScript mirror, and
+the gate checks the table against the crate's own `#[napi]` declarations.
+The bridge exports **39** functions in this release (the two chain-name
+vocabulary calls), and every one of them can be named from TypeScript.
+
+The gate found a hole in itself on its first run — flipping one export's
+`required` flag was caught by nothing — so the required FLOOR now lives in
+the Rust arm, and relaxing it is a deliberate change to the gate rather than
+a quiet edit in the table.
+
+### One tool contract across the bridge (ADR-012)
+
+The native surface advertised 23 tools whose schemas were a second copy of the
+TypeScript registry, and the copies had drifted: five tools advertised
+different arguments than the registry, and `memphis_self_modify` meant "write
+one file" on one side and "apply changes to many files" on the other.
+
+The native catalog is now a **projection** of the registry — every tool,
+`23 of them`, and the `DIVERGENCES` table is **empty**: all five were closed
+when the native arms started honouring the registry, and the table stays so
+that the NEXT divergence is declared there instead of discovered in
+production. The fixture `tests/fixtures/native-tool-contract.json` is read by
+both arms. The commit-
+culture stub, which described a tool that never shipped, is gone.
+
+### The public chat: a gate per block, and a bounded window
+
+Consent is read **per block**, not per chain: the journal's 1 071 blocks hold
+287 `consent=exportable` marks and exactly one carries the `public-chat` tag,
+so a chain-level default would publish far more than the operator agreed to.
+
+The public catalog also stopped reading three chains in full on every
+request. It asked for `Number.MAX_SAFE_INTEGER` blocks — 36 MB of JSON parsed
+into objects per request, to find one usable note — and that is where the
+runtime's 9.6 GB memory peak came from. The window is now 1 000 blocks for
+the non-journal chains, the journal is still read in full (it carries the
+consent annotations), and one block is in memory at a time.
+
+The relay distinguishes a wrong body from a wrong conversation: a non-JSON
+body is **415**, a JSON body that is not a conversation is **400**. Eleven
+tests, eight falsifiers.
+
+### The fatal guard and the CLI parser
+
+The daemon guard decided "am I the daemon?" by scanning the whole argv for
+the token `serve` — three of seven shapes were wrong, and `memphis ask serve`
+never finished the process: it hung the shell. The guard now asks the parser
+(`serve`, `mcp serve`) and resets cleanly.
+
+The parser had a second defect: a logical flag **ate the command**. `memphis
+--safe-mode health --json` printed the usage guide and exited 0 — the health
+check never ran and safe mode was never on. 40 boolean flags are now declared
+as such.
+
+### Chain rotation, archives, and one block format
+
+The chains grew without bound: the `system` chain held 15 748 blocks and
+62 MB, and 180 of the last 200 were scheduler noise; the `insights` chain
+held 33 MB because every generated insight embedded full copies of its
+sources. Rotation existed and could not be enabled, because a rotated chain
+produced a chain every validator rejected as "missing genesis block".
+
+Fixed: the rotation head marker proves the live chain continues an archive,
+the publish step runs under the same write lock the append path takes (so no
+reader observes a chain mid-rotation), the archive is readable by the reader
+that reads chains, and the archive GC keeps four archives per chain.
+
+A block file now has **one byte format**, written by both arms — the
+migration was the odd one out. The insights chain no longer copies its
+sources into itself.
+
+### The operator's to-do is structural, not prose (#773)
+
+An item addressed to the operator sat inside the free-text `activeWork`
+field, nothing said whose item it was, and the agent read the operator's
+to-do as its own assignment — sixteen tool calls and a generic "I stopped at
+the tool limit" reply to a one-word greeting. The distinction is now a
+field: `context.operatorTodo`.
+
+**The merge found the gap.** `main` added the field to the runtime's shape
+and to the native hand-written schema, but not to the registry — and a zod
+object strips the keys it does not declare, so the operator's to-do was
+dropped before it reached the write path. The registry is the single truth,
+so the field is declared there, and the projection carries it to the cockpit.
+
+### Measured, not assumed: the error ledger
+
+`docs/design/MEMPHIS-ERROR-LEDGER.md` lists ten open errors with a
+measurement each, six **rejected** hypotheses (measured false, so nobody
+spends a round on them again), the connections between the errors — one loop
+in three families — and "developed" written as seven checks that can be run
+rather than admired. Three of the seven open items are closed by this
+release (E-01, E-03, E-04).
+
+### What is still open
+
+- **E-02 — the embed profile.** The semantic half works only in a process
+  that has the service's environment. Measured at the recall surface: the
+  service answers `mode: semantic`; a shell or the CLI answers
+  `index_dimension_mismatch: disk_dim=768 config_dim=32`. The failure IS
+  reported (`degraded: true` plus the message), but the dim default `32` is
+  written in four places and the index-path default in two, so a fresh
+  install reproduces the broken profile by construction.
+- **E-05 — the wedge.** 15 recovery turns still wait for an operator who
+  cannot clear them from where he is: the acknowledgement path wants a local
+  TTY and the operator's passphrase, and the TUI has no recovery command.
+- **E-07 / E-08 / E-09** — the clean drain that exits 0 (so systemd does not
+  restart the runtime), the backup retention that stops when the restore
+  drill fails, and the bridge's payload types (which have no `index.d.ts`).
+- **The taxonomy.** The chain-NAME rule is shared now; the chain-LIST is
+  not. The native runtime lists `_quarantine` as a chain and the TypeScript
+  registry does not — twelve directories against eleven. It holds 0 blocks
+  today, and that is the point.
+
 ## v1.13.5 - 2026-10-02
 
 40 commits since the `v1.13.4` tag. Two release blockers closed, one test-isolation
@@ -163,7 +512,5 @@ oversight, and no repository-wide reformat was done here.
 - **ADR-003 versioning model accepted.** Source-code `package.json.version` is the single source of truth; git tags follow `vX.Y.Z`; codenames stay internal. The "v5" leak into the domain and `agents.json` is documented as a known inconsistency to be reconciled in a future release.
 - **AUTHORS.md corrected.** Cognitive subpersonas are now listed by their actual runtime identifiers (Model A — Conscious Capture, Model B — Inferred Decisions, Model C — Pattern Recognition, Model D — Collective Coordination, Model E — Meta-Cognitive Reflection). Drafted placeholders that had no implementation (`Iskra`, `Codex Snapshot`, `Cline`, `Claude Code`, `OpenClaw`, `Hermes`) are removed.
 - **LICENSE updated.** Copyright holder line now lists only Marcin Kukla; a third-party attribution footer points at `AUTHORS.md` and `NOTICE` for full contributor and dependency license info. Aligns with the corrected `AUTHORS.md`.
-
-## Unreleased
 
 ## v1.13.0 - 2026-09-05

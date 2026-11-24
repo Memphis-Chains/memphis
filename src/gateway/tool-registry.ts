@@ -23,7 +23,7 @@ import { registerKnownToolNames } from '../infra/observability/confabulation-det
 
 export type { ToolCapability, ToolCliFlag, ToolMeta, ToolTier } from './tool-metadata.js';
 
-export const TOOL_REGISTRY: Record<string, ToolMeta> = {
+export const TOOL_REGISTRY = {
   memphis_journal: JOURNAL_TOOL,
   memphis_classify: {
     name: 'memphis_classify',
@@ -206,21 +206,35 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     inputSchema: z
       .object({
         state: z.object({
-          steps: z.number().int(),
-          tool_calls: z.number().int(),
-          wait_ms: z.number().int(),
-          errors: z.number().int(),
+          steps: z.number().int().min(0),
+          tool_calls: z.number().int().min(0),
+          wait_ms: z.number().int().min(0),
+          errors: z.number().int().min(0),
           completed: z.boolean(),
           halt_reason: z.string().nullable(),
         }),
-        action: z.object({
-          type: z.enum(['tool_call', 'wait', 'complete', 'error']),
-          data: z.record(z.string(), z.unknown()),
-        }),
+        // The action is a discriminated union because the native engine
+        // requires one: `SoulLoopAction` in
+        // `src/infra/storage/rust-chain-adapter.ts` is the mirror of the
+        // Rust `LoopAction`. The registry used to accept a loose
+        // `{type, data}` object with a generic record for `data`, which
+        // both lost the per-action shape and let a caller through with an
+        // action the engine cannot execute.
+        action: z.discriminatedUnion('type', [
+          z.object({ type: z.literal('tool_call'), data: z.object({ tool: z.string() }) }),
+          z.object({ type: z.literal('wait'), data: z.object({ duration_ms: z.number() }) }),
+          z.object({ type: z.literal('complete'), data: z.object({ summary: z.string() }) }),
+          z.object({
+            type: z.literal('error'),
+            data: z.object({ recoverable: z.boolean(), message: z.string() }),
+          }),
+        ]),
         limits: z
           .object({
-            max_steps: z.number().int(),
-            max_tool_calls: z.number().int(),
+            max_steps: z.number().int().min(1),
+            max_tool_calls: z.number().int().min(1),
+            max_wait_ms: z.number().int().min(1),
+            max_errors: z.number().int().min(1),
           })
           .optional(),
         approval_request_id: z.string().optional(),
@@ -383,7 +397,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       'Pre-exec analysis: parse a command and predict its side-effects without running it',
     inputSchema: z
       .object({
-        command: z.string().min(1),
+        command: z.string().min(1).max(2048),
         surface_intent: z.string().optional(),
         approval_request_id: z.string().optional(),
       })
@@ -398,7 +412,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     description: 'Execute shell command',
     inputSchema: z
       .object({
-        command: z.string().min(1),
+        command: z.string().min(1).max(256),
         surface_intent: z.string().optional(),
         approval_request_id: z.string().optional(),
       })
@@ -438,7 +452,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
   },
   ...FOUNDATION_TOOLS,
   ...RUNTIME_CONTROL_TOOLS,
-};
+} satisfies Record<string, ToolMeta>;
 
 // Register tool names with the confabulation detector so its rule-E
 // branch (hallucinated `memphis_*` in code-fence) can emit a "did you
@@ -447,7 +461,10 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
 registerKnownToolNames(Object.keys(TOOL_REGISTRY));
 
 export function getToolMeta(name: string): ToolMeta | undefined {
-  return TOOL_REGISTRY[name];
+  // The registry keeps its literal type so a tool's input schema stays
+  // concrete; a lookup by a runtime name cannot use that type, so this is
+  // the one place the widening happens.
+  return (TOOL_REGISTRY as Record<string, ToolMeta>)[name];
 }
 
 /**
@@ -465,7 +482,7 @@ export function getToolMeta(name: string): ToolMeta | undefined {
  *      doesn't silently swallow help text.
  */
 export function getToolDescription(name: string): string {
-  const meta = TOOL_REGISTRY[name];
+  const meta = getToolMeta(name);
   if (!meta) return `tool "${name}" not registered`;
   return meta.helpText ?? meta.description;
 }

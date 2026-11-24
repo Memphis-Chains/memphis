@@ -37,30 +37,47 @@
  *   - a .service with no ExecStart= (systemd will refuse to run it)
  *   - an OnFailure= target that does not exist as a unit file
  *   - an OnFailure= target that is itself a stub (no ExecStart=)
+ *   - a long-running service with no MemoryMax= (the kernel OOM killer
+ *     becomes the supervisor, and the failure has no visible cause)
+ *
+ * SCOPE
+ * -----
+ * The first version of this gate read `scripts/systemd/` only. That left
+ * `ops/memphis.service` — a second, different unit for the same runtime —
+ * unchecked, which the runtime audit reported as an open finding.
+ *
+ * The roots this gate reads live in `src/infra/audit/systemd-unit-scope.ts`,
+ * because the audit that polices this gate has to know the same list. Two
+ * readers, one list — otherwise the audit compares a file name against a
+ * directory path and reports a hole that was closed months ago.
  *
  * Run: `npm run -s ops:check-systemd-units`
  * Hook: .githooks/pre-commit runs it on staged changes to unit files.
  */
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const UNIT_DIR = resolve('scripts/systemd');
+import { listUnitsUnderTest, type UnitUnderTest } from '../src/infra/audit/systemd-unit-scope.js';
+
+const REPO_ROOT = resolve('.');
+
+/**
+ * Units that stay up for a long time and therefore must be bounded.
+ *
+ * The runtime's own cgroup peaked at 3.4 GB and the app slice at 9.6 GB
+ * with 1.4 GB of swap, with no limit anywhere above it. A memory cap
+ * turns that into a restart the operator can see.
+ */
+const LONG_RUNNING_SERVICES = new Set(['memphis.service']);
 
 interface Finding {
   file: string;
   problem: string;
 }
 
-function listUnitFiles(): string[] {
-  if (!existsSync(UNIT_DIR)) {
-    throw new Error(`unit directory not found: ${UNIT_DIR}`);
-  }
-  return readdirSync(UNIT_DIR).filter((f) => f.endsWith('.service') || f.endsWith('.timer'));
-}
-
-function readUnit(file: string): string {
-  return readFileSync(resolve(UNIT_DIR, file), 'utf8');
+function readUnit(unit: UnitUnderTest): string {
+  return readFileSync(unit.path, 'utf8');
 }
 
 /**
@@ -80,12 +97,13 @@ function onFailureTargets(src: string): string[] {
   return targets;
 }
 
-const files = listUnitFiles();
+const units = listUnitsUnderTest(REPO_ROOT);
 const findings: Finding[] = [];
 
-for (const file of files) {
+for (const unit of units) {
+  const file = unit.file;
   if (!file.endsWith('.service')) continue;
-  const src = readUnit(file);
+  const src = readUnit(unit);
 
   if (!hasRunnableDirective(src)) {
     findings.push({
@@ -102,22 +120,36 @@ for (const file of files) {
     if (!target.endsWith('.service')) continue;
     if (target.includes('@')) continue;
 
-    const targetFile = target;
-    if (!files.includes(targetFile)) {
+    const targetUnit = units.find((candidate) => candidate.name === target);
+    if (!targetUnit) {
       findings.push({
         file,
-        problem: `OnFailure= points at ${targetFile}, which does not exist in scripts/systemd/`,
+        problem: `OnFailure= points at ${target}, which is not one of the shipped units`,
       });
       continue;
     }
 
-    const targetSrc = readUnit(targetFile);
+    const targetSrc = readUnit(targetUnit);
     if (!hasRunnableDirective(targetSrc)) {
       findings.push({
         file,
-        problem: `OnFailure= points at ${targetFile}, which has no ExecStart= — the failure would be reported into the void`,
+        problem: `OnFailure= points at ${target}, which has no ExecStart= — the failure would be reported into the void`,
       });
     }
+  }
+
+  // A long-running service with no memory ceiling lets the kernel OOM
+  // killer act instead of the supervisor. The operator then sees the
+  // runtime die with no visible cause — which is exactly what happened
+  // here: 9.6 GB across the app slice, 1.4 GB of swap, no limit above
+  // it.
+  if (LONG_RUNNING_SERVICES.has(unit.name) && !/^\s*MemoryMax\s*=\s*\S/m.test(src)) {
+    findings.push({
+      file,
+      problem:
+        'no MemoryMax= — a memory leak is stopped by the kernel OOM killer ' +
+        'instead of by the supervisor, and the failure has no visible cause',
+    });
   }
 }
 
@@ -130,4 +162,4 @@ if (findings.length > 0) {
   process.exit(1);
 }
 
-console.log(`systemd unit gate OK — ${files.length} unit files checked, every .service is runnable`);
+console.log(`systemd unit gate OK — ${units.length} unit files checked, every .service is runnable`);

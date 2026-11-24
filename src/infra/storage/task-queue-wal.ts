@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   closeSync,
   existsSync,
@@ -16,6 +17,7 @@ import {
 import { dirname, resolve } from 'node:path';
 
 import { MEMPHIS_FAULT_INJECT } from '../../config/env-registry.js';
+import { currentIdentity, identityIsAlive, type ProcessIdentity } from '../runtime/process-lock.js';
 
 type QueueMode = 'financial' | 'standard';
 
@@ -36,6 +38,10 @@ export interface WalRecord {
 
 const CRC32C_TABLE = buildCrc32cTable();
 const DEFAULT_MAX_WAL_BYTES = 10 * 1024 * 1024;
+
+interface WalLockRecord extends ProcessIdentity {
+  token: string;
+}
 
 function sleepMs(ms: number): void {
   const end = Date.now() + ms;
@@ -205,25 +211,109 @@ export class TaskQueueWal {
 
   private withLock<T>(fn: () => T): T {
     const started = Date.now();
+    const owner: WalLockRecord = { ...currentIdentity(), token: randomUUID() };
+    let lockFd = -1;
+
     while (true) {
-      let lockFd = -1;
       try {
         lockFd = openSync(this.lockPath, 'wx', 0o600);
-        try {
-          return fn();
-        } finally {
-          closeSync(lockFd);
-          unlinkSync(this.lockPath);
-        }
+        writeSync(lockFd, `${JSON.stringify(owner)}\n`, null, 'utf8');
+        fdatasyncSync(lockFd);
+        break;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+          if (lockFd >= 0) {
+            try {
+              closeSync(lockFd);
+            } finally {
+              // We exclusively created this path and have not entered the
+              // critical section, so no other writer can legitimately own it.
+              try {
+                unlinkSync(this.lockPath);
+              } catch (cleanupError) {
+                if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') {
+                  // Preserve the acquisition error; stale-lock recovery will
+                  // clean up this file on the next attempt.
+                }
+              }
+            }
+          }
           throw error;
         }
+        if (this.removeStaleLock(started)) continue;
         if (Date.now() - started > this.lockTimeoutMs) {
           throw new Error(`lock timeout for ${this.lockPath}`);
         }
         sleepMs(10);
       }
+    }
+
+    try {
+      return fn();
+    } finally {
+      closeSync(lockFd);
+      this.releaseOwnedLock(owner.token);
+    }
+  }
+
+  private removeStaleLock(waitStarted: number): boolean {
+    let before: ReturnType<typeof statSync>;
+    let raw: string;
+    try {
+      before = statSync(this.lockPath);
+      raw = readFileSync(this.lockPath, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true;
+      throw error;
+    }
+
+    let holder: WalLockRecord | undefined;
+    try {
+      const parsed = JSON.parse(raw) as Partial<WalLockRecord>;
+      if (
+        typeof parsed.pid === 'number' &&
+        typeof parsed.bootId === 'string' &&
+        typeof parsed.startTime === 'number' &&
+        typeof parsed.token === 'string'
+      ) {
+        holder = parsed as WalLockRecord;
+      }
+    } catch {
+      // A process can die after exclusive creation but before writing its
+      // identity. Give a fresh record one full timeout before taking it over.
+    }
+
+    const oldEnough = Date.now() - before.mtimeMs > this.lockTimeoutMs;
+    const stale = holder ? !identityIsAlive(holder) : oldEnough && Date.now() > waitStarted;
+    if (!stale) return false;
+
+    // Do not unlink a lock replaced between inspection and cleanup.
+    let after: ReturnType<typeof statSync>;
+    try {
+      after = statSync(this.lockPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true;
+      throw error;
+    }
+    if (before.dev !== after.dev || before.ino !== after.ino || before.mtimeMs !== after.mtimeMs) {
+      return false;
+    }
+    try {
+      if (readFileSync(this.lockPath, 'utf8') !== raw) return false;
+      unlinkSync(this.lockPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    return true;
+  }
+
+  private releaseOwnedLock(token: string): void {
+    try {
+      const parsed = JSON.parse(readFileSync(this.lockPath, 'utf8')) as Partial<WalLockRecord>;
+      if (parsed.token !== token) return;
+      unlinkSync(this.lockPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
   }
 }

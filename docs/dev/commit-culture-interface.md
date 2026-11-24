@@ -1,67 +1,51 @@
-# `memphis_commit_culture` — interface design
+# Commit culture — the rules, and where they are enforced
 
 > Authored by Mavis (MiniMax-M3), 2026-09-22.
-> Status: design draft. Code skeleton at `src/mcp/tools/commit-culture.ts`.
+> Revised 2026-11-22: the `memphis_commit_culture` TOOL was never built. The
+> RULES below are real and are still applied — by the pre-commit hook and by
+> the agent manifest. What did not exist was the tool.
 
-## Why
+## Status — read this first
 
-`memphis_git` (the existing tool) is a **thin wrapper** around git CLI. It enforces
-_tiering_ (read vs write) and blocks dangerous args, but it does NOT enforce
-project commit culture (conventional commits, postmortem cross-links, no
-secrets, author sign). Today the culture lives in `AGENTS.md` + agent memory
-only — meaning every commit is at the mercy of whoever runs it.
+There is **no** `memphis_commit_culture` tool, CLI subcommand or MCP surface.
+There never was one on this host: the 2026-09-22 hardening sprint wired a
+skeleton into `src/mcp/server.ts`, the tool-surface audit flagged the
+server-without-registry mismatch, and the wire-up was rolled back. The stub
+that survived the rollback computed a policy for a tool that was never
+registered and then discarded it (`void _commitCulturePolicy`). It was dead
+code in a file that is supposed to describe the live surface, and it was
+removed on 2026-11-22.
 
-`memphis_commit_culture` adds the culture layer. It can be used:
+This document therefore describes **the culture**, not an interface. Everything
+below was written as an interface design and never implemented as code; the
+rules themselves are what the host actually follows, so the rules are kept and
+the interface framing is dropped.
 
-1. **By memphis itself** (operator-tui, mcode agents) when committing in this repo
-2. **By humans** via CLI/MCP when they want a culture-checked commit in 1 step
+## Why the culture exists
 
-## Interface (TUI-style, minimal)
+`memphis_git` (the existing tool) is a **thin wrapper** around the git CLI. It
+enforces _tiering_ (read vs write) and blocks dangerous args, but it does NOT
+enforce project commit culture (conventional commits, postmortem cross-links,
+no secrets, author sign). Left to memory, the culture is at the mercy of
+whoever runs it — so the parts that CAN be mechanical, are.
 
-```text
-memphis commit_culture [subcommand] [flags]
+## The rules
 
-Subcommands
-  auto      lint staged files, auto-detect type/scope/subject/link, then prompt y/N
-  preview   show lint result + suggested message; do NOT commit
-  dry-run   alias for preview
-  amend     lint the last commit, offer to fix subject/body; --no-edit to keep
+### 1. Forbidden paths in the staging area
 
-Flags (apply to all subcommands unless noted)
-  --type <feat|fix|ci|docs|refactor|test|chore|perf|build>
-  --scope <name>             (default: auto-detect from staged paths)
-  --subject <text>           (max 80 chars; required for non-auto)
-  --body <text>              (multi-line OK via stdin or --body @file)
-  --link <postmortem-path>   (repeatable; auto-detected if absent)
-  --co-author "<Name> <email>"  (repeatable)
-  --no-verify                (skip pre-commit hook; rare)
-  --allow-staged-novel       (override forbidden-files list; rare)
+A commit must not carry any of:
 
-Examples
-  memphis commit_culture auto
-  memphis commit_culture --type fix --scope skills \
-      --subject "halt-aware SKILL.md docs match A1 audit format" \
-      --body "See: docs/postmortems/2026-09-22-..."
-  memphis commit_culture preview --type feat --scope tools
-  memphis commit_culture amend
+```
+.env, .env.*, vault-state.json, *.tier2-passphrase,
+.tier2-passphrase, .github-pat, dist/, node_modules/
 ```
 
-## Behavior
-
-### 1. Stage validation (always, even preview)
-
-- `git diff --cached --name-only` → list of staged files
-- Reject if **empty** (nothing staged)
-- Reject if any path matches the forbidden list:
-  ```
-  .env, .env.*, vault-state.json, *.tier2-passphrase,
-  .tier2-passphrase, .github-pat, dist/, node_modules/
-  ```
-  Use path basename + glob. Show the offending file and exit non-zero.
+Match on the path basename and on the path glob. Name the offending file and
+stop.
 
 ### 2. Scope auto-detection
 
-Walk staged paths; pick the **most common top-level dir** under the repo:
+Walk the staged paths; pick the **most common top-level dir** under the repo:
 
 - `skills/halt-aware-destructive-ops/...` → `skills`
 - `src/mcp/tools/...` → `tools`
@@ -80,21 +64,21 @@ Walk staged paths; pick the **most common top-level dir** under the repo:
 | `package.json` only                                   | `chore`        |
 | Bulk rename or only `*.lock` files                    | `chore`        |
 
-Always print the suggested type and allow `--type` to override.
+The suggested type is printed and can be overridden.
 
 ### 4. Subject rules
 
-- Length: 3-80 chars (after type+scope prefix)
+- Length: 3-80 chars (after the `type(scope):` prefix)
 - First letter lowercase
 - No trailing period
-- Imperative mood ("add", not "added") — best-effort check, not blocking
-- If subject is missing for `auto` mode: generate from the most common
+- Imperative mood ("add", not "added") — best-effort, not blocking
+- A missing subject for an automatic commit is generated from the most common
   file basename → "update <basename>"
 
 ### 5. Cross-link auto-detection
 
-Scan staged file contents for `docs/postmortems/YYYY-MM-DD-*.md` mentions.
-If any found and `--link` not given, prepend to body:
+Scan the staged file contents for `docs/postmortems/YYYY-MM-DD-*.md` mentions.
+If any are found and no link was given, put them in the body:
 
 ```
 See: docs/postmortems/2026-09-22-chains-halt-invalid-block-shape.md
@@ -102,11 +86,13 @@ See: docs/postmortems/2026-09-22-chains-halt-invalid-block-shape.md
 
 ### 6. Author / co-author
 
-- Set `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, `GIT_COMMITTER_EMAIL`
-  from the operator profile (`~/.memphis/config/agent-profile.json`):
+- `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`,
+  `GIT_COMMITTER_EMAIL` come from the operator profile
+  (`~/.memphis/config/agent-profile.json`):
   - name: `Wodzu (Marcin Kukla)`
   - email: `wodzu@memphis.local`
-- Each `--co-author` adds a `Co-authored-by: Name <email>` trailer.
+- Every agent adds the trailer
+  `Co-authored-by: Wodzu (Marcin Kukla) <wodzu@memphis.local>`
 
 ### 7. Commit invocation
 
@@ -115,45 +101,44 @@ git commit -m "<type>(<scope>): <subject>" \
            -m "<body with link trailers>"
 ```
 
-If body is empty and no links, single `-m`.
+One `-m` when the body is empty and there are no links.
 
 ### 8. Audit
 
-On success, append a `commit_culture.commit` event to `system` chain via
-`memphis_decide` (if available) or directly to `~/.memphis/chains/system/`.
-Schema:
+The decision belongs in the `decisions` chain (through `memphis_decide` /
+`runMemphisDecide`), not in a chain write performed by hand. The
+`governance_event` kind named in the original design is not writable from
+outside the tools: rule 4 of the operator manifest forbids direct writes to
+`chains/`, so a commit-culture audit event has nowhere legal to land.
 
-```json
-{
-  "kind": "commit_culture.commit",
-  "type": "governance_event",
-  "subject": "fix(skills): halt-aware SKILL.md docs match A1 audit format",
-  "files": ["skills/halt-aware-destructive-ops/SKILL.md", "..."],
-  "co_authors": [],
-  "hash": "<commit hash after git commit>"
-}
-```
+## Where each rule is enforced TODAY
 
-## Tier & safety
+| Rule | Enforced by | Automatic? |
+| --- | --- | --- |
+| 1 — forbidden paths | the agent, from the operator manifest | no |
+| 2/3/4 — type, scope, subject | the agent, from the operator manifest | no |
+| 5 — postmortem cross-link | the agent, from the operator manifest | no |
+| 6 — author and trailer | the agent, from the operator manifest | no |
+| lint | `.githooks/pre-commit` (`npm run lint`) | yes |
+| mutation gate | `.githooks/pre-commit`, when a guarded file is staged | yes |
+| systemd unit gate | `.githooks/pre-commit`, when a unit file is staged | yes |
 
-- Same tier as `memphis_git commit` (tier 2 write)
-- Restricted to `~/memphis/` (same path gate)
-- BLOCKED_ARGS inherited from `memphis_git` (`--exec`, `-c`, shell metachars)
-- Adds: forbidden-files check, type/scope/subject regex
-- Never reads `.env`, `vault-state.json`, `*.tier2-passphrase` even if asked
-  (file content never sent to the model)
+The hook is installed through `core.hooksPath` (`.githooks`) by
+`scripts/setup-githooks.mjs`.
 
-## Future expansion (not in v0.1)
+## What a future implementation would have to add
 
-- Branch-name lint (`fix/<slug>-NNN`, `feat/<phase>-...`)
-- Squash-detect for multi-commit branches
-- PR description generator (uses same body)
-- Co-author trailer for AI agents (e.g. `Co-authored-by: Mavis <mavis@mavis.local>`)
-- `commit_culture.config` to override defaults per-project
+Only the rules marked "no" above. A tool would need to run the staging-area
+checks, propose a message, and — for the audit — write through the chain
+tools, never to `chains/` directly. Until such a tool exists, the rules above
+are the specification and the agent manifest is the enforcement.
 
 ## Open questions
 
-1. Should `auto` mode actually call `git commit`, or always prompt? (default: prompt)
-2. Should we lint the **last commit** on `amend`, or only new diff? (default: new diff)
-3. Co-author detection from staged content? (e.g. grep for `Co-authored-by:` in body)
-4. Should this tool live in `mcp/tools/` or as a skill (`halt-aware-destructive-ops`-style)?
+1. Should an automatic mode actually call `git commit`, or always prompt?
+   (default: prompt)
+2. Should an amend lint the **last commit**, or only the new diff?
+   (default: new diff)
+3. Co-author detection from the staged content?
+4. Should the tool live in `mcp/tools/` or as a skill
+   (`halt-aware-destructive-ops`-style)?

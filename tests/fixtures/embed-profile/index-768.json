@@ -1,0 +1,1 @@
+{"version":1,"dim":768,"docs":[{"id":"embed-profile-fixture-768","text":"A fixture index for the embed-profile contract. Its only job is to carry a dimension on disk, so the owner can be asked what it would do with it.","vector":[0.1,0.2]}]}

@@ -2,17 +2,51 @@ use crate::block::Block;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
+/// The canonical hash of a block.
+///
+/// The block's `data` is reduced to the three-field canonical form, so
+/// the hash covers `type`, `content` and `tags` and nothing else — a
+/// payload's extra fields are persisted but not protected.
 pub fn compute_hash(block: &Block) -> String {
+    let data = serde_json::to_value(&block.data)
+        .expect("memphis-core: block data must be serializable");
+    compute_hash_of_payload(
+        block.index,
+        &block.timestamp,
+        &block.chain,
+        &data,
+        &block.prev_hash,
+    )
+}
+
+/// The canonical hash of a block whose `data` is a free-form payload.
+///
+/// This is the ONE place the hash is assembled. It used to be assembled
+/// twice: here, over the schema's `BlockData`, and again inline in the
+/// data plane (`crates/memphis-operator/src/chat_memory.rs`), over a
+/// free-form `Value`. The two copies had to agree byte for byte and
+/// nothing compared them.
+///
+/// The payload is reduced to the three-field canonical form before it is
+/// hashed, exactly like the TypeScript arm
+/// (`src/core/chain-hash.ts::canonicalHash`).
+pub fn compute_hash_of_payload(
+    index: u64,
+    timestamp: &str,
+    chain: &str,
+    data: &serde_json::Value,
+    prev_hash: &str,
+) -> String {
     // Canonical payload excludes `hash` itself to avoid self-referential hashing.
     // `data` is reduced to the 3-field canonical form (type/content/tags) so
     // hashes match TS-side chain-adapter writes and old `journal`/`cases`/
     // `decisions`/etc. blocks validate cleanly on read.
     let payload = json!({
-        "index": block.index,
-        "timestamp": block.timestamp,
-        "chain": block.chain,
-        "data": to_canonical_hash_data(&block.data),
-        "prev_hash": block.prev_hash,
+        "index": index,
+        "timestamp": timestamp,
+        "chain": chain,
+        "data": to_canonical_hash_data(data),
+        "prev_hash": prev_hash,
     });
 
     // Serializing this payload should be infallible for our Block schema.

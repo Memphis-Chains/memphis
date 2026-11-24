@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
@@ -7,10 +8,35 @@ use memphis_core::loop_engine::{LoopAction, LoopLimits, LoopState};
 use memphis_core::signature::{sign_block, verify_block_signature_with_allowlist};
 use memphis_core::soul::{validate_block, validate_block_strict};
 use memphis_embed::{
-    set_shutdown_barrier, EmbedConfig, EmbedMode, EmbedPersistenceConfig,
+    set_shutdown_barrier, EmbedConfig, EmbedPersistenceConfig,
     EmbedPersistenceLoadState, EmbedPipeline, ReplacementState,
 };
+// `EmbedMode` is only named by the test-time view of the process
+// environment (`current_embed_mode`); the production path reads the mode
+// off the map it already holds, so the import would be dead code there.
+#[cfg(test)]
+use memphis_embed::EmbedMode;
+// `napi-derive` does NOT generate the export registration when it expands
+// under `cfg(test)` — see `gen_fn_register` in napi-derive-backend, which
+// returns an empty token stream when `cfg!(test)` is true. The result is that
+// under `cargo test` nothing references these functions, and the dead-code
+// lint reports every one of them as unused.
+//
+// They are not unused. `src/infra/storage/rust-bridge-manifest.ts` and
+// `rust-vault-adapter.ts` map all six of them onto the JS surface, and the
+// production build -- where the registration IS generated -- exports them.
+// The lint is measuring the test build, not the code.
+//
+// The allow is scoped to `cfg(test)` on purpose: in a normal build the
+// registration exists and the lint has nothing to say.
+#[cfg_attr(test, allow(dead_code))]
 mod vault_bridge;
+
+// The bridge's export vocabulary — one owner. See `bridge_exports.rs`.
+pub mod bridge_exports;
+
+// The bridge's payload shapes — one owner. See `bridge_payloads.rs`.
+pub mod bridge_payloads;
 
 use memphis_vault::types::VaultInitRequest;
 use memphis_vault::vault::init_vault;
@@ -42,86 +68,42 @@ fn err(msg: impl Into<String>) -> String {
     .unwrap_or_else(|_| "{\"ok\":false,\"error\":\"unknown\"}".to_string())
 }
 
-#[napi(js_name = "bridge_manifest")]
+#[napi(catch_unwind, js_name = "bridge_manifest")]
 pub fn bridge_manifest() -> String {
+    // The vocabulary comes from ONE table — `bridge_exports::BRIDGE_EXPORTS`.
+    // It used to be a hand-written list right here, and it had drifted: it
+    // named 34 exports where the bridge has 37, and it named nine of them
+    // with a spelling the bridge never exports. The table is checked against
+    // this crate's own `#[napi]` declarations by
+    // `crates/memphis-napi/tests/bridge_export_contract.rs`.
     ok(serde_json::json!({
         "name": "memphis-napi",
         "schemaVersion": 1,
-        "exports": [
-            "bridge_manifest",
-            "chain_append",
-            "chain_validate",
-            "chain_query",
-            "vault_init_json",
-            "vault_init_full",
-            "vault_store",
-            "vault_retrieve",
-            "vault_load_state",
-            "vault_parse_entries",
-            "vault_decode_entry",
-            "embed_store",
-            "embed_store_many",
-            "embed_flush",
-            "embed_search",
-            "embed_search_tuned",
-            "embed_reset",
-            "embed_shutdown",
-            "soul_loop_step",
-            "soul_replay",
-            "case_append",
-            "case_query",
-            "case_rebuild",
-            "paths_resolve_data_dir",
-            "paths_resolve_vault_state",
-            "paths_resolve_vault_entries",
-            "paths_resolve_chains_dir",
-            "paths_resolve_chain_path",
-            "paths_resolve_embed_index",
-            "paths_resolve_case_index",
-            "paths_resolve_database_path",
-            "paths_normalize_chain_name",
-            "mv2_export",
-            "mv2_inspect"
-        ],
-        "requiredExports": [
-            "bridge_manifest",
-            "chain_append",
-            "chain_validate",
-            "chain_query",
-            "vault_init_json",
-            "vault_init_full",
-            "vault_store",
-            "vault_retrieve",
-            "vault_load_state",
-            "vault_parse_entries",
-            "vault_decode_entry",
-            "embed_store",
-            "embed_store_many",
-            "embed_flush",
-            "embed_search",
-            "embed_search_tuned",
-            "embed_reset",
-            "embed_shutdown",
-            "soul_loop_step",
-            "soul_replay",
-            "case_append",
-            "case_query",
-            "case_rebuild",
-            "paths_resolve_data_dir",
-            "paths_resolve_vault_state",
-            "paths_resolve_vault_entries",
-            "paths_resolve_chains_dir",
-            "paths_resolve_chain_path",
-            "paths_resolve_embed_index",
-            "paths_resolve_case_index",
-            "paths_resolve_database_path",
-            "paths_normalize_chain_name"
-        ],
+        "exports": bridge_exports::canonical_names(),
+        "requiredExports": bridge_exports::required_names(),
+        "exportBindings": bridge_exports::bindings(),
         "optionalExports": [
             "mv2_export",
             "mv2_inspect"
         ]
     }))
+}
+
+/// The bridge's payload shapes — the layer under the vocabulary.
+///
+/// E-01 gave the export NAMES one owner. This gives the SHAPE of what
+/// those exports carry one owner: `bridge_payloads::BRIDGE_PAYLOADS`,
+/// measured off the built module on 2026-11-24. Until then the shape was
+/// guessed in seven TypeScript files — `entries_json ?? entriesJson`,
+/// `error_code ?? errorCode`, a hand-written `RawEmbedStoreResult` whose
+/// `normalized` was the wrong type — and every guess was a second copy of
+/// a rule the owner already knew.
+///
+/// `required: false` in the export table: the runtime does not need this
+/// export to start, and an old binary without it keeps working.
+#[napi(catch_unwind, js_name = "bridge_payload_manifest")]
+pub fn bridge_payload_manifest() -> String {
+    ok(bridge_payloads::manifest())
 }
 
 #[derive(Serialize)]
@@ -262,34 +244,37 @@ fn trim_opt_env(name: &str) -> Option<String> {
     })
 }
 
-fn embed_mode_from_env() -> EmbedMode {
-    let raw = std::env::var("RUST_EMBED_MODE").unwrap_or_else(|_| "local".to_string());
-    let mode = raw.trim().to_ascii_lowercase();
-
-    let provider = match mode.as_str() {
-        "local" => None,
-        "provider" | "openai-compatible" => Some("openai-compatible"),
-        "ollama" => Some("ollama"),
-        "cohere" => Some("cohere"),
-        "voyage" => Some("voyage"),
-        "jina" => Some("jina"),
-        "mistral" => Some("mistral"),
-        "together" => Some("together"),
-        "nvidia" => Some("nvidia"),
-        "mixedbread" => Some("mixedbread"),
-        _ => None,
-    };
-
-    match provider {
-        Some(name) => EmbedMode::Provider(name.to_string()),
-        None => EmbedMode::LocalDeterministic,
-    }
+/// The embedding mode of THIS process, as the owner sees it.
+///
+/// A thin delegate: the vocabulary lives in the owner
+/// (`memphis_embed::profile::embed_mode_from_env`). This file used to carry
+/// its own copy of the same words in the same order, which is one copy too
+/// many - a name added to one side silently means "local deterministic" on
+/// the other, and the profile's verdict flips to `no-provider`.
+///
+/// Test-only on purpose: production reads the mode off the environment map
+/// it already has (`embed_config_from_env`), and a second reading of the
+/// process environment could only ever disagree with the first.
+#[cfg(test)]
+fn current_embed_mode() -> EmbedMode {
+    let env = std::env::vars().collect::<HashMap<String, String>>();
+    memphis_embed::embed_mode_from_env(&env)
 }
 
 fn embed_config_from_env() -> EmbedConfig {
+    // The embed profile has ONE owner (`memphis_embed::profile`). This used
+    // to carry its own copy of the mode vocabulary and a hard-coded dimension
+    // of 32 - `DEFAULT_EMBEDDING_DIM`, the width of the local deterministic
+    // embedder, applied even when a real provider was configured. Measured
+    // 2026-11-23: the service answers `mode: semantic` with dim 1024, while
+    // a process without the service's environment answered
+    // `index_dimension_mismatch: disk_dim=768 config_dim=32`.
+    let env = std::env::vars().collect::<HashMap<String, String>>();
+    let mode = memphis_embed::embed_mode_from_env(&env);
+    let dim = memphis_embed::resolve_embed_profile(&env, &napi_runtime_root(), &mode).dimension;
     EmbedConfig {
-        mode: embed_mode_from_env(),
-        dim: parse_usize_env("RUST_EMBED_DIM", 32),
+        mode,
+        dim,
         max_text_bytes: parse_usize_env("RUST_EMBED_MAX_TEXT_BYTES", 4096),
         provider_url: trim_opt_env("RUST_EMBED_PROVIDER_URL"),
         provider_api_key: trim_opt_env("RUST_EMBED_PROVIDER_API_KEY"),
@@ -297,10 +282,20 @@ fn embed_config_from_env() -> EmbedConfig {
         provider_timeout_ms: parse_u64_env("RUST_EMBED_PROVIDER_TIMEOUT_MS", 8000),
         // Same env var the TypeScript provider reads
         // (`src/providers/index.ts`). Without it the Rust side omits
-        // `keep_alive` from the Ollama request, so the server unloads the
-        // model after 5 idle minutes and every embed pays a cold load.
+        // `keep_alive` from the Ollama request, so the server unloads
+        // the model after 5 idle minutes and every embed pays a cold load.
         provider_keep_alive: trim_opt_env("OLLAMA_KEEP_ALIVE"),
     }
+}
+
+/// The directory relative paths are resolved against.
+///
+/// `MEMPHIS_RUNTIME_ROOT` when the operator sets it, the working directory
+/// otherwise - the same rule `embed_persistence_path_from_env` used.
+fn napi_runtime_root() -> PathBuf {
+    std::env::var("MEMPHIS_RUNTIME_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
 fn embed_persistence_enabled_from_env() -> bool {
@@ -358,14 +353,14 @@ fn get_embed_pipeline() -> Result<&'static Mutex<EmbedPipeline>, String> {
     Ok(EMBED_PIPELINE.get_or_init(|| Mutex::new(pipeline)))
 }
 
-#[napi(js_name = "embed_index_metadata")]
+#[napi(catch_unwind, js_name = "embed_index_metadata")]
 pub fn embed_index_metadata(path: String) -> String {
     ok(memphis_embed::metadata::inspect_index(
         std::path::Path::new(&path),
     ))
 }
 
-#[napi(js_name = "chain_validate")]
+#[napi(catch_unwind, js_name = "chain_validate")]
 pub fn chain_validate(block_json: String, prev_json: Option<String>) -> String {
     let block: Block = match serde_json::from_str(&block_json) {
         Ok(v) => v,
@@ -407,7 +402,7 @@ pub fn chain_validate(block_json: String, prev_json: Option<String>) -> String {
     }
 }
 
-#[napi(js_name = "chain_append")]
+#[napi(catch_unwind, js_name = "chain_append")]
 pub fn chain_append(chain_json: String, block_json: String) -> String {
     let mut blocks: Vec<Block> = match serde_json::from_str(&chain_json) {
         Ok(v) => v,
@@ -455,7 +450,7 @@ pub fn chain_append(chain_json: String, block_json: String) -> String {
     ok(serde_json::json!({ "appended": true, "length": blocks.len(), "chain": blocks }))
 }
 
-#[napi(js_name = "chain_query")]
+#[napi(catch_unwind, js_name = "chain_query")]
 pub fn chain_query(chain_json: String, contains: Option<String>, tag: Option<String>) -> String {
     let blocks: Vec<Block> = match serde_json::from_str(&chain_json) {
         Ok(v) => v,
@@ -485,7 +480,7 @@ pub fn chain_query(chain_json: String, contains: Option<String>, tag: Option<Str
     ok(serde_json::json!({ "count": result.len(), "blocks": result }))
 }
 
-#[napi(js_name = "vault_init_json")]
+#[napi(catch_unwind, js_name = "vault_init_json")]
 pub fn vault_init_json(request_json: String) -> String {
     let req: VaultInitRequest = match serde_json::from_str(&request_json) {
         Ok(v) => v,
@@ -498,7 +493,7 @@ pub fn vault_init_json(request_json: String) -> String {
     }
 }
 
-#[napi(js_name = "embed_store")]
+#[napi(catch_unwind, js_name = "embed_store")]
 pub fn embed_store(id: String, text: String, tags_json: Option<String>) -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
@@ -538,7 +533,7 @@ pub fn embed_store(id: String, text: String, tags_json: Option<String>) -> Strin
 /// index (atomic rename of the full serialized payload) on every call.
 /// For a 6326-block rebuild that's ~290 GB of cumulative writes — the
 /// bug operator hit on 2026-05-10.
-#[napi(js_name = "embed_store_many")]
+#[napi(catch_unwind, js_name = "embed_store_many")]
 pub fn embed_store_many(items_json: String) -> String {
     let items: Vec<EmbedStoreItem> = match serde_json::from_str(&items_json) {
         Ok(v) => v,
@@ -588,7 +583,7 @@ pub fn embed_store_many(items_json: String) -> String {
 /// error rather than swallowing it (`embed_store`'s best-effort path
 /// keeps the live-write loop quiet on flapping disks; bulk rebuilders
 /// need to hear about ENOSPC / EROFS / permission denied).
-#[napi(js_name = "embed_flush")]
+#[napi(catch_unwind, js_name = "embed_flush")]
 pub fn embed_flush() -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
@@ -610,7 +605,7 @@ pub fn embed_flush() -> String {
     }
 }
 
-#[napi(js_name = "embed_search")]
+#[napi(catch_unwind, js_name = "embed_search")]
 pub fn embed_search(query: String, top_k: Option<u32>, tags_json: Option<String>) -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
@@ -652,7 +647,7 @@ pub fn embed_search(query: String, top_k: Option<u32>, tags_json: Option<String>
     }
 }
 
-#[napi(js_name = "embed_search_tuned")]
+#[napi(catch_unwind, js_name = "embed_search_tuned")]
 pub fn embed_search_tuned(query: String, top_k: Option<u32>, tags_json: Option<String>) -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
@@ -694,7 +689,7 @@ pub fn embed_search_tuned(query: String, top_k: Option<u32>, tags_json: Option<S
     }
 }
 
-#[napi(js_name = "embed_reset")]
+#[napi(catch_unwind, js_name = "embed_reset")]
 pub fn embed_reset() -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
@@ -720,7 +715,7 @@ pub fn embed_reset() -> String {
 /// `embed_reset` (above) keeps its current "wipe and persist" semantics
 /// for the CLI subcommand and doctor diagnostics, where the operator
 /// explicitly wants the on-disk file emptied.
-#[napi(js_name = "embed_clear_in_memory")]
+#[napi(catch_unwind, js_name = "embed_clear_in_memory")]
 pub fn embed_clear_in_memory() -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
@@ -747,7 +742,7 @@ pub fn embed_clear_in_memory() -> String {
 /// count, persistence_enabled, persistence_load_state}`. When the pipeline
 /// was never initialized there is nothing to discard and the call
 /// reports `{discarded: false, was_initialized: false}`.
-#[napi(js_name = "embed_discard_replacement")]
+#[napi(catch_unwind, js_name = "embed_discard_replacement")]
 pub fn embed_discard_replacement() -> String {
     let Some(pipeline_mutex) = EMBED_PIPELINE.get() else {
         // Nothing was ever initialized: there is no replacement in
@@ -808,7 +803,7 @@ pub fn embed_discard_replacement() -> String {
 /// Idempotent: calling twice is safe; second call finds the pipeline
 /// empty and does nothing. Called from `performGracefulShutdown()`
 /// between PULSE flush and `exitFn()` per graceful-shutdown.ts step 4.5.
-#[napi(js_name = "embed_shutdown")]
+#[napi(catch_unwind, js_name = "embed_shutdown")]
 pub fn embed_shutdown() -> String {
     let result = match EMBED_PIPELINE.get() {
         Some(pipeline_mutex) => match pipeline_mutex.lock() {
@@ -856,7 +851,7 @@ pub fn embed_shutdown() -> String {
     result
 }
 
-#[napi(js_name = "soul_loop_step")]
+#[napi(catch_unwind, js_name = "soul_loop_step")]
 pub fn soul_loop_step(
     state_json: String,
     action_json: String,
@@ -893,7 +888,7 @@ pub fn soul_loop_step(
     }
 }
 
-#[napi(js_name = "soul_replay")]
+#[napi(catch_unwind, js_name = "soul_replay")]
 pub fn soul_replay(chain_name: String, blocks_json: String) -> String {
     let blocks: Vec<Block> = match serde_json::from_str(&blocks_json) {
         Ok(v) => v,
@@ -906,7 +901,7 @@ pub fn soul_replay(chain_name: String, blocks_json: String) -> String {
 
 // ── Case-based chain functions ────────────────────────────────────────
 
-#[napi(js_name = "case_append")]
+#[napi(catch_unwind, js_name = "case_append")]
 pub fn case_append(chain_json: String, entry_json: String, index_db_path: String) -> String {
     use memphis_case_index::CaseIndex;
     use memphis_core::block::{BlockData, BlockType};
@@ -989,7 +984,7 @@ pub fn case_append(chain_json: String, entry_json: String, index_db_path: String
     }))
 }
 
-#[napi(js_name = "case_query")]
+#[napi(catch_unwind, js_name = "case_query")]
 pub fn case_query(query_json: String, index_db_path: String) -> String {
     use memphis_case_index::CaseIndex;
     use memphis_core::case_entry::CaseQuery;
@@ -1013,7 +1008,7 @@ pub fn case_query(query_json: String, index_db_path: String) -> String {
     }
 }
 
-#[napi(js_name = "case_rebuild")]
+#[napi(catch_unwind, js_name = "case_rebuild")]
 pub fn case_rebuild(blocks_json: String, index_db_path: String) -> String {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         case_rebuild_inner(blocks_json, index_db_path)
@@ -1059,7 +1054,7 @@ fn pathbuf_to_string(p: std::path::PathBuf) -> Result<String, String> {
         .ok_or_else(|| "resolved path is not valid UTF-8".to_string())
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_resolve_data_dir(env_json: String, cwd: String) -> String {
     let env = match parse_env_json(&env_json) {
         Ok(env) => env,
@@ -1072,7 +1067,7 @@ pub fn paths_resolve_data_dir(env_json: String, cwd: String) -> String {
     }
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_resolve_vault_state(env_json: String, cwd: String) -> String {
     let env = match parse_env_json(&env_json) {
         Ok(env) => env,
@@ -1085,7 +1080,7 @@ pub fn paths_resolve_vault_state(env_json: String, cwd: String) -> String {
     }
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_resolve_vault_entries(env_json: String, cwd: String) -> String {
     let env = match parse_env_json(&env_json) {
         Ok(env) => env,
@@ -1098,7 +1093,7 @@ pub fn paths_resolve_vault_entries(env_json: String, cwd: String) -> String {
     }
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_resolve_chains_dir(env_json: String, cwd: String) -> String {
     let env = match parse_env_json(&env_json) {
         Ok(env) => env,
@@ -1111,7 +1106,7 @@ pub fn paths_resolve_chains_dir(env_json: String, cwd: String) -> String {
     }
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_resolve_chain_path(env_json: String, cwd: String, chain_name: String) -> String {
     let env = match parse_env_json(&env_json) {
         Ok(env) => env,
@@ -1124,7 +1119,7 @@ pub fn paths_resolve_chain_path(env_json: String, cwd: String, chain_name: Strin
     }
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_resolve_embed_index(env_json: String, cwd: String) -> String {
     let env = match parse_env_json(&env_json) {
         Ok(env) => env,
@@ -1137,7 +1132,7 @@ pub fn paths_resolve_embed_index(env_json: String, cwd: String) -> String {
     }
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_resolve_case_index(env_json: String, cwd: String) -> String {
     let env = match parse_env_json(&env_json) {
         Ok(env) => env,
@@ -1150,7 +1145,7 @@ pub fn paths_resolve_case_index(env_json: String, cwd: String) -> String {
     }
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_resolve_database_path(env_json: String, cwd: String) -> String {
     let env = match parse_env_json(&env_json) {
         Ok(env) => env,
@@ -1163,9 +1158,84 @@ pub fn paths_resolve_database_path(env_json: String, cwd: String) -> String {
     }
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn paths_normalize_chain_name(input: String) -> String {
     ok(memphis_paths::normalize_chain_name(&input).to_string())
+}
+
+/// The chain-name vocabulary, as its owner publishes it.
+///
+/// The projection (`scripts/sync-chain-name-contract.mts`) reads the
+/// vocabulary through THIS function, so the TypeScript mirror is a
+/// projection of the Rust owner (`memphis_paths::chain_names`) and not a
+/// second hand-written copy. The rule itself lives in the owner, because
+/// the rule is a cross-arm contract and the owner is the crate both arms
+/// can reach.
+// The embed PROFILE — the index path, the dimension, the model, and the
+// source of each — has one owner: `memphis_embed::profile`. The TypeScript
+// side reads the RULE through the manifest and the LIVE values through the
+// facts, so the two sides cannot answer "which embedding profile is in
+// force?" differently.
+//
+// Why the facts take an environment as an argument: the operator's runtime
+// and the bridge read the PROCESS environment, but a TypeScript surface may
+// be asked about a different environment (a test, a dry run, the setup
+// wizard). The owner takes a map, so the question can be asked about any
+// environment — and the answer is the owner's, not a second implementation's.
+
+#[napi(catch_unwind, js_name = "bridge_embed_profile_manifest")]
+pub fn bridge_embed_profile_manifest() -> String {
+    ok(memphis_embed::embed_profile_manifest())
+}
+
+#[napi(catch_unwind, js_name = "bridge_embed_profile_facts")]
+pub fn bridge_embed_profile_facts(env_json: String, root: String) -> String {
+    let env = match parse_env_json(&env_json) {
+        Ok(env) => env,
+        Err(e) => return err(e),
+    };
+    let mode = memphis_embed::embed_mode_from_env(&env);
+    let profile = memphis_embed::resolve_embed_profile(&env, std::path::Path::new(&root), &mode);
+    ok(profile)
+}
+
+#[napi(catch_unwind, js_name = "bridge_chain_name_manifest")]
+pub fn bridge_chain_name_manifest() -> String {
+    use memphis_paths::chain_names as names;
+    ok(serde_json::json!({
+        "plainChainNamePattern": names::PLAIN_CHAIN_NAME_PATTERN,
+        "maxChainNameLength": names::MAX_CHAIN_NAME_LEN,
+        "archiveChainPartPattern": names::ARCHIVE_CHAIN_PART_PATTERN,
+        "archiveSeparator": names::ARCHIVE_SEPARATOR,
+        "archiveStampPatterns": names::ARCHIVE_STAMP_PATTERNS,
+        "chainNameAliases": names::CHAIN_NAME_ALIASES
+            .iter()
+            .map(|(alias, canonical)| serde_json::json!({
+                "alias": alias,
+                "canonical": canonical,
+            }))
+            .collect::<Vec<_>>(),
+    }))
+}
+
+/// The facts about one chain directory name.
+///
+/// `kind` — `chain`, `archive` or `foreign`; `logical` — the chain the
+/// directory holds; `normalized` — the canonical name of a user-supplied
+/// reference (trimmed, then aliased).
+///
+/// The ONE question the runtime, the audit, the verifier and the cockpit
+/// used to answer with three rules. The projection reads the answers from
+/// here, so the artefact of cases carries the OWNER's answers and not the
+/// projection's own arithmetic.
+#[napi(catch_unwind, js_name = "bridge_chain_name_facts")]
+pub fn bridge_chain_name_facts(name: String) -> String {
+    use memphis_paths::chain_names as names;
+    ok(serde_json::json!({
+        "kind": names::classify_chain_directory(&name).as_str(),
+        "logical": names::logical_chain_name(&name),
+        "normalized": names::normalize_chain_name(name.trim()),
+    }))
 }
 
 // `.mv2` export bridge (Sprint G N12). The TS layer collects records via
@@ -1177,7 +1247,7 @@ pub fn paths_normalize_chain_name(input: String) -> String {
 // Buffer on the JS side automatically (napi v3). Don't switch to
 // hex-encoded strings — large exports (10MB+) pay 2x memory + 100ms
 // parse penalty for nothing.
-#[napi]
+#[napi(catch_unwind)]
 pub fn mv2_export(records_json: String, include_tracks_json: String) -> String {
     use memphis_export::{Mv2Record, Mv2Writer, Track};
 
@@ -1224,7 +1294,7 @@ pub fn mv2_export(records_json: String, include_tracks_json: String) -> String {
     })
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn mv2_inspect(bytes_hex: String) -> String {
     use memphis_export::Mv2Reader;
 
@@ -1258,7 +1328,7 @@ pub fn mv2_inspect(bytes_hex: String) -> String {
 mod tests {
     use super::{
         bridge_manifest, case_append, case_query, case_rebuild, chain_append, chain_validate,
-        embed_mode_from_env, embed_persistence_enabled_from_env, embed_reset, embed_search,
+        current_embed_mode, embed_persistence_enabled_from_env, embed_reset, embed_search,
         embed_search_tuned, embed_shutdown, embed_store, paths_normalize_chain_name,
         paths_resolve_chain_path, paths_resolve_chains_dir, paths_resolve_data_dir,
         paths_resolve_vault_entries, paths_resolve_vault_state, soul_loop_step, soul_replay,
@@ -1463,37 +1533,37 @@ mod tests {
         let _guard = env_lock();
         std::env::set_var("RUST_EMBED_MODE", "voyage");
         assert_eq!(
-            embed_mode_from_env(),
+            current_embed_mode(),
             EmbedMode::Provider("voyage".to_string())
         );
 
         std::env::set_var("RUST_EMBED_MODE", "jina");
         assert_eq!(
-            embed_mode_from_env(),
+            current_embed_mode(),
             EmbedMode::Provider("jina".to_string())
         );
 
         std::env::set_var("RUST_EMBED_MODE", "mistral");
         assert_eq!(
-            embed_mode_from_env(),
+            current_embed_mode(),
             EmbedMode::Provider("mistral".to_string())
         );
 
         std::env::set_var("RUST_EMBED_MODE", "together");
         assert_eq!(
-            embed_mode_from_env(),
+            current_embed_mode(),
             EmbedMode::Provider("together".to_string())
         );
 
         std::env::set_var("RUST_EMBED_MODE", "nvidia");
         assert_eq!(
-            embed_mode_from_env(),
+            current_embed_mode(),
             EmbedMode::Provider("nvidia".to_string())
         );
 
         std::env::set_var("RUST_EMBED_MODE", "mixedbread");
         assert_eq!(
-            embed_mode_from_env(),
+            current_embed_mode(),
             EmbedMode::Provider("mixedbread".to_string())
         );
 
