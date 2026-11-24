@@ -131,7 +131,8 @@ not set`.
 
 ## Operator-side verification
 
-Operators downloading a release verify in two steps:
+Operators downloading a release verify in three steps — the third one is the
+step that catches an artefact that installs and cannot start:
 
 ```bash
 # 1. Checksum
@@ -153,6 +154,38 @@ gpg --keyserver hkps://keys.openpgp.org --recv-keys <FINGERPRINT>
 # or
 curl -fsSL https://github.com/Memphis-Chains/memphis/raw/main/keys/memphis-release.pub.asc | gpg --import
 ```
+
+### 3. Install it clean, and start it
+
+A tarball can install cleanly and still be unable to run. npm 12 blocks
+dependency install scripts by default and reads `allowScripts` from the
+**project root**, so `better-sqlite3` — which ships no prebuilt binding — has
+none unless the consuming project approves it. Measured 2026-11-24 against
+the published v1.14.1 tarball: the install exited 0 and every command died
+with `Could not locate the bindings file`.
+
+```bash
+mkdir -p /tmp/memphis-clean && cd /tmp/memphis-clean
+cat > package.json <<'EOF'
+{
+  "name": "memphis-consumer-probe",
+  "version": "1.0.0",
+  "private": true,
+  "allowScripts": { "better-sqlite3": true }
+}
+EOF
+npm install --no-audit --no-fund <the tarball>
+./node_modules/.bin/memphis --help
+./node_modules/.bin/memphis vault list --json   # opens the database
+```
+
+Approve `better-sqlite3` and nothing else: `onnxruntime-node`'s install
+script downloads a CUDA build that answers 404 and aborts the whole install,
+while the CPU runtime Memphis uses ships inside the package.
+
+The repository runs the same proof before every release —
+`npm run -s ops:validate-package-artifact` — and it is part of
+`ops:release-preflight`.
 
 ## Key rotation
 
