@@ -419,7 +419,8 @@ contract owns what the bridge RETURNS), and the two napi naming
 conventions in one crate, which is a WIRE change and needs a
 compatibility window rather than a quiet edit.
 
-**PHASE 4 CLOSED 2026-11-24 — the manifest family.** The fourth family,
+**PHASE 4 CLOSED 2026-11-24 — the manifest family** (PR #782, squash
+`6b2b737ad75`). The fourth family,
 and the one the runtime reads FIRST: `bridge_manifest` is what the bridge
 serves about itself, and it is what the runtime asks before it decides
 whether the bridge is good enough to start.
