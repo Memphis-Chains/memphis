@@ -211,6 +211,13 @@ export function parseCommand(argv: string[]): CliArgs {
     recoveryAnswer: readFlagValue(flags, '--recovery-answer'),
     id: readFlagValue(flags, '--id'),
     query: readFlagValue(flags, '--query'),
+    // The case query's own filters. They were READ by the explain
+    // command and NEVER PARSED: with no slot for them the parser dropped
+    // both flags, so `memphis explain --case-type genitive` fell through
+    // to the journal chain. MEASURED 2026-11-24 on the operator's host:
+    // it printed twenty journal blocks.
+    caseType: readFlagValue(flags, '--case-type'),
+    entity: readFlagValue(flags, '--entity'),
     register: hasBooleanFlag(flags, '--register'),
     to: readFlagValue(flags, '--to'),
     latest: readNumberFlag(flags, '--latest'),

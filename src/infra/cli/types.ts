@@ -39,6 +39,19 @@ export type CliArgs = {
   recoveryAnswer?: string;
   id?: string;
   query?: string;
+  /**
+   * The case to look at — `memphis explain --case-type <typ>`.
+   *
+   * It used to be READ by the explain command and NEVER PARSED: the
+   * parser had no slot for it, so the flag was dropped on the floor and
+   * the command fell through to the journal chain. MEASURED 2026-11-24 on
+   * the operator's host: `memphis explain --case-type genitive` printed
+   * twenty JOURNAL blocks, and the case path — with its own rendering and
+   * its own filters — was unreachable.
+   */
+  caseType?: string;
+  /** The entity to look at — `memphis explain --entity <name>`. Same story. */
+  entity?: string;
   register?: boolean;
   to?: string;
   latest?: number;
