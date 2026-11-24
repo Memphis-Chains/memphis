@@ -492,7 +492,8 @@ sibling `JsVaultStateResult` reaches it as `error_code`. Unifying that is a
 WIRE change, so it needs a compatibility window (the alias map E-01 already
 built), not a quiet edit. It is queued with the next phase of E-09.
 
-**PHASE 5 CLOSED 2026-11-24 — the embed-profile family** (PR #783). The
+**PHASE 5 CLOSED 2026-11-24 — the embed-profile family** (PR #783, squash
+`70df8edacde`). The
 LAST family of E-09, and the last surface that owned a payload type by
 hand. The ratchet's counter is EMPTY.
 
@@ -718,6 +719,141 @@ install produces no binding and the gate **fails** (exit 1) with
 binding is there and `memphis vault list --json` answers
 `{"ok": true, "entries": []}`. The old gate passed on the same tarball —
 that is the measurement of the hole, not an argument about it.
+
+#### E-13 · The case index is a cache that lost a third of its entries, and the repair was dead code
+
+> Measured 2026-11-24 on this host, through the adapter's own public API:
+>
+> | | |
+> | --- | --- |
+> | the `cases` chain | **2 190** case blocks (accusative 2 058, genitive 129, instrumental 2, nominative 1) |
+> | `~/.memphis/case-index.sqlite` | **1 372** rows (accusative 1 313, genitive 59) |
+> | the index's `block_index` range | **818 … 2 189** — the chain's LAST block |
+> | the Rust path (the LIVE one, `RUST_CHAIN_ENABLED=true`) | **1 372** entries |
+> | the TypeScript path (the chain files) | **2 190** entries |
+>
+> So the index had lost the **first 818** entries — 37% of the corpus — and
+> the missing ones included the host's **only nominative entry** and **both**
+> instrumental ones. The two paths of the SAME adapter answered different
+> questions, and the one that answers at runtime answered with the subset.
+
+**THE FINDING, and it is two findings.** First: nothing noticed. The
+index's **highest** block index was the chain's last, so every signal that
+looks at the tail said "fine" — a gap at the HEAD is invisible to the
+highest index, and the gap was at the head. Second, and this is the one
+that matters: **the mechanism that was written to repair exactly this
+state had no caller in the tree.** `reconcileIfNeeded()` — whose own doc
+says *"Startup reconciliation: rebuild the Rust index from chain block
+files. Ensures the index matches the filesystem after a potential partial
+write"* — was never called, and neither was `rebuildIndex()` beside it.
+The repair existed. It was idle.
+
+**THE FIX — three pieces, in the house pattern.** The rule is: *the index
+is a cache of the chain, and the chain is the truth; so the cache is
+checked before it is read.*
+
+| piece | what it is |
+| --- | --- |
+| `crates/memphis-case-index/src/lib.rs` | `CaseIndex::status()` — the owner answers how many entries the index holds, and the highest block among them |
+| `crates/memphis-napi/src/lib.rs` | `case_index_status` — the bridge export that serves it (OPTIONAL: a binary from before 2026-11-24 does not have it, and a runtime that cannot ask keeps using the index as it finds it) |
+| `src/infra/storage/case-chain-adapter.ts` | the reconciliation: compare the index's COUNT with the chain's count of case blocks, and rebuild when they differ |
+
+The bridge exports **43** now, not 42 — the 43rd is `case_index_status`,
+and it is OPTIONAL, so a binary from before 2026-11-24 still loads.
+
+**The COUNT, and not the highest index** — that is the whole difference
+between a check that sees this defect and one that does not. The count is
+the chain's count of **case** blocks, not its count of files: a chain that
+held a block of another type would make the cheap comparison wrong, and a
+wrong comparison would rebuild on every query for ever. The exact count
+costs a scan of the chain — MEASURED: **233 ms** for 2 190 blocks, against
+3 ms for the file list alone. And it **cannot loop**: the rebuild makes
+the index hold exactly the chain's case blocks, so the next comparison is
+equal.
+
+**Falsifiers, measured on this host (three of them):** with the
+reconciliation removed from the query path, the TypeScript runner fails
+with *"expected 3 to be 4"*; with the check written against the **highest
+index** instead of the count, it fails with the same message — the count
+is the only signal that sees a gap at the head; and with the bridge unable
+to answer (`case_index_status` missing), it fails the same way again. The
+Rust arm's own test pins the blindness: index the tail of a chain, and
+`last_indexed_block` is the chain's last block while `indexed` is three
+short of the truth.
+
+**THE HOST IS REPAIRED, and it was repaired by the code's own path.** One
+query through the adapter after the fix: the index holds **2 190** rows,
+the two paths agree to the entry, and the types match the chain's exactly
+(accusative 2 058, genitive 129, instrumental 2, nominative 1). The
+rebuild costs **169 ms**. The second query rebuilds nothing — the counts
+are equal, and equal counts are the whole check.
+
+**The cost, stated plainly, because it is not free:** the Rust path now
+answers in **323 ms** and the TypeScript fallback in **283 ms** — the
+Rust path's speed advantage on this host is **gone**, because the check
+costs what the fallback costs (it scans the chain too). The old speed was
+bought with a wrong answer. The cheaper check — the chain's FILE count,
+3 ms — rests on "every block in the `cases` chain is a case block", which
+is true (MEASURED: 2 190 of 2 190) and is the writer's rule (only
+`case_append` writes that chain), but it would rebuild on every query on a
+chain that ever holds another block type. The exact check was chosen
+because it is right without an assumption, and because it lands only on
+the MCP tool and the CLI — human and LLM scale, not request scale.
+
+**What this does NOT close, said out loud:** the index's PRIMARY KEY is
+`block_index` ALONE, and this host has a second case chain —
+`chains/cases.backup-2026-07-07T15-07-23-108Z` — whose **276** blocks
+carry the **same** indices 0…275 as the live chain.
+
+**MEASURED AGAIN on 2026-11-24 — and two of the numbers in this entry were
+wrong, so they are corrected here rather than left standing.**
+
+The **first** wrong number is the size. The `cases` chain is **1 203 988
+bytes — 1.15 MiB**, not 8.8 MB. The 8.7 MB that `du` reports is the
+**allocated** size (2 190 files, each occupying a 4 KiB block), and the
+rotation reads `stat.size` — the **apparent** size. So the chain is at
+**11.5%** of the threshold, and "a rotation is close" was wrong in the
+direction that matters: at the measured **14.8 blocks/day** (2 190 blocks
+over 147.8 days) it needs **16 884 more blocks**, which is **~1 140 days
+— 3.1 years** — before it is touched. The threshold on this host is 10 MiB
+(`MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES=10485760`, read from the live
+systemd unit).
+
+The **second** wrong number is the severity of the collision. The
+collision is real in the KEY, but the DATA it would overwrite is the same
+data: all **276** overlapping indices carry the **same hash** in the
+archive and in the live chain — because a chain is append-only, so a copy
+of it shares its prefix for ever. `INSERT OR REPLACE` would rewrite a row
+with its own twin.
+
+**And the fix this entry recorded was wrong too — which the measurement is
+why.** The obvious repair, a composite key `(chain, block_index)`, would
+**not** have separated the two, and the house says so out loud:
+`src/memory/chain-catalog.ts` states that *"the archive suffix is a COPY
+marker, not part of the chain's identity: the blocks inside it carry
+`chain: "journal"`"*. MEASURED: all **276** archived blocks carry
+`chain: "cases"` — the same value as the live chain's. The one column
+that could have told them apart is the one column that does not. A key
+has to carry the **source** the blocks were read from, not the logical
+chain name.
+
+Two more measured facts that shape the fix: the rotation never touches an
+archive directory (`SAFE_CHAIN_NAME` has no dot in it, so
+`cases.backup-…` is not a chain the loop rotates), and **no code path
+indexes an archive today** — the adapter hardcodes `CHAIN_NAME = 'cases'`.
+So this is a **latent schema defect**, not a live one.
+
+**And the defect a composite key alone would NOT fix:** `rebuild()` opens
+with `DELETE FROM case_entries` — a **global** wipe. Rebuilding from one
+chain destroys every other chain's entries. A per-chain index needs a
+per-chain rebuild, and that is a second change, not a detail.
+
+None of this is urgent, and saying so is the point of measuring it: the
+rotation is 3.1 years away, the collision would rewrite a row with its own
+twin, and no code path can reach the archive. It still needs a **schema
+migration** rather than a quiet edit — and it needs to be measured again
+when it is done, because the numbers above are the numbers as of
+2026-11-24.
 
 ### Family B — the system degrades quietly instead of failing
 

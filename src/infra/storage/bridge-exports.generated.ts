@@ -30,6 +30,7 @@ export const BRIDGE_EXPORT_ALIASES = {
   case_append: ['case_append', 'caseAppend'],
   case_query: ['case_query', 'caseQuery'],
   case_rebuild: ['case_rebuild', 'caseRebuild'],
+  case_index_status: ['case_index_status', 'caseIndexStatus'],
   embed_clear_in_memory: ['embed_clear_in_memory', 'embedClearInMemory'],
   embed_discard_replacement: ['embed_discard_replacement', 'embedDiscardReplacement'],
   embed_flush: ['embed_flush', 'embedFlush'],

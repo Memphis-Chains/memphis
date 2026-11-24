@@ -5,6 +5,7 @@ import type {
   BlockPayload,
   CaseAppendPayload,
   CaseIndexRowPayload,
+  CaseIndexStatusPayload,
   CaseQueryPayload,
   CaseRebuildPayload,
 } from './bridge-payloads.generated.js';
@@ -48,7 +49,10 @@ const CASE_BRIDGE_ALIASES = {
   case_append: BRIDGE_EXPORT_ALIASES.case_append,
   case_query: BRIDGE_EXPORT_ALIASES.case_query,
   case_rebuild: BRIDGE_EXPORT_ALIASES.case_rebuild,
-} satisfies BridgeAliasMap<'case_append' | 'case_query' | 'case_rebuild'>;
+  case_index_status: BRIDGE_EXPORT_ALIASES.case_index_status,
+} satisfies BridgeAliasMap<
+  'case_append' | 'case_query' | 'case_rebuild' | 'case_index_status'
+>;
 
 type CaseBridgeKey = keyof typeof CASE_BRIDGE_ALIASES;
 
@@ -56,6 +60,7 @@ interface ResolvedCaseBridge {
   case_append?: (chainJson: string, entryJson: string, indexDbPath: string) => string;
   case_query?: (queryJson: string, indexDbPath: string) => string;
   case_rebuild?: (blocksJson: string, indexDbPath: string) => string;
+  case_index_status?: (indexDbPath: string) => string;
 }
 
 /**
@@ -222,6 +227,16 @@ export class CaseChainAdapter {
 
   async queryCases(query: CaseQuery): Promise<CaseQueryPayload> {
     if (this.rustAvailable) {
+      // THE INDEX IS A CACHE, AND THE CHAIN IS THE TRUTH. So the cache is
+      // checked BEFORE it is read — because a cache that is behind answers
+      // with a SUBSET, and the subset looks like an answer.
+      //
+      // MEASURED 2026-11-24 on the operator's host: the index held 1 372
+      // entries where the `cases` chain holds 2 190 case blocks, and the
+      // missing 818 included the host's ONLY nominative entry and BOTH
+      // instrumental ones. Nothing noticed: the index's HIGHEST block
+      // index was the chain's last, so every cheap signal said "fine".
+      await this.reconcileIfNeeded();
       return this.queryViaRust(query);
     }
     return this.queryViaTs(query);
@@ -239,18 +254,59 @@ export class CaseChainAdapter {
   }
 
   /**
-   * Startup reconciliation: rebuild the Rust index from chain block files.
-   * Ensures the index matches the filesystem after a potential partial write.
-   * Returns null if Rust bridge is unavailable or no case blocks exist.
+   * The index's health — how many entries it holds.
+   *
+   * `null` when the bridge cannot answer: a binary from before
+   * 2026-11-24 has no `case_index_status`, and a runtime that cannot ask
+   * must still work — it keeps using the index as it finds it. That is
+   * the compatibility window, and it is why the export is OPTIONAL.
+   */
+  private indexStatus(): { indexed: number; lastIndexedBlock: number | null } | null {
+    const bridge = this.bridge.resolved as ResolvedCaseBridge;
+    const statusFn = bridge.case_index_status;
+    if (typeof statusFn !== 'function') return null;
+
+    const raw = statusFn(getIndexDbPath(this.rawEnv));
+    const out = parseEnvelope<CaseIndexStatusPayload>(raw, 'case_index_status');
+    return { indexed: out.indexed, lastIndexedBlock: out.lastIndexedBlock };
+  }
+
+  /**
+   * Bring the index in step with the chain, when it is not.
+   *
+   * THIS FUNCTION EXISTED AND WAS NEVER CALLED. MEASURED 2026-11-24: it
+   * had no caller in the tree, and `rebuildIndex()` beside it had none
+   * either — so the mechanism that was written to repair exactly this
+   * state (its own doc says "Ensures the index matches the filesystem
+   * after a potential partial write") sat idle while the index lost 818
+   * entries.
+   *
+   * The check is a COUNT, and it has to be: the index's highest block
+   * index was the chain's last, so the highest index cannot see a gap at
+   * the HEAD — and the gap was at the head.
+   *
+   * The count is the chain's own count of CASE blocks, not its count of
+   * blocks. A chain that held a block of another type would make the
+   * cheap comparison (the number of files) wrong, and a wrong comparison
+   * would rebuild on every query for ever. The exact count costs a scan
+   * of the chain — MEASURED on the operator's host: 70 ms for 2 190
+   * blocks, against 20 ms for the query it protects.
+   *
+   * And it cannot loop: the rebuild makes the index hold exactly the
+   * chain's case blocks, so the next comparison is equal.
    */
   async reconcileIfNeeded(): Promise<CaseRebuildPayload | null> {
     if (!this.rustAvailable) return null;
 
     const chainBlocks = await readChainBlocks(CHAIN_NAME, this.rawEnv);
-    const hasCaseBlocks = chainBlocks.some((b) => b.data.type === 'case');
-    if (!hasCaseBlocks) return null;
+    const caseBlockCount = chainBlocks.filter((block) => block.data.type === 'case').length;
+    if (caseBlockCount === 0) return null;
 
-    return this.rebuildViaRust();
+    const status = this.indexStatus();
+    if (status === null) return null;
+    if (status.indexed === caseBlockCount) return null;
+
+    return this.rebuildViaRust(chainBlocks);
   }
 
   private async appendViaRust(
@@ -290,7 +346,7 @@ export class CaseChainAdapter {
       } catch (writeErr) {
         // writeBlock failed after Rust already updated the SQLite index — rebuild to re-sync
         try {
-          await this.rebuildViaRust(writeEnv);
+          await this.rebuildViaRust(undefined, writeEnv);
         } catch {
           // best-effort rebuild
         }
@@ -399,15 +455,19 @@ export class CaseChainAdapter {
   }
 
   private async rebuildViaRust(
+    chainBlocks?: NapiBlock[],
     rawEnv: NodeJS.ProcessEnv = this.rawEnv,
   ): Promise<CaseRebuildPayload> {
     const bridge = this.bridge.resolved as ResolvedCaseBridge;
     const rebuildFn = bridge.case_rebuild!;
 
-    const chainBlocks = await readChainBlocks(CHAIN_NAME, rawEnv);
+    // The chain may already be in hand — the reconciliation reads it to
+    // COUNT the case blocks, and reading it twice would double the cost
+    // of the check that protects every query.
+    const blocks = chainBlocks ?? (await readChainBlocks(CHAIN_NAME, rawEnv));
     const indexDbPath = getIndexDbPath(rawEnv);
 
-    const raw = rebuildFn(JSON.stringify(chainBlocks), indexDbPath);
+    const raw = rebuildFn(JSON.stringify(blocks), indexDbPath);
     return parseEnvelope<CaseRebuildPayload>(raw, 'case_rebuild');
   }
 }

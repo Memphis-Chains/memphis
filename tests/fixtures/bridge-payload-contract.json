@@ -124,6 +124,33 @@
       "fields": [
         {
           "legacyName": null,
+          "name": "indexed",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "lastIndexedBlock",
+          "nullable": true,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "CaseIndexStatusPayload",
+      "naming": "serde",
+      "rustType": "CaseIndexStatus"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
           "name": "schemaVersion",
           "nullable": false,
           "optional": false,
@@ -2451,6 +2478,11 @@
     {
       "export": "case_rebuild",
       "shape": "CaseRebuildPayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "case_index_status",
+      "shape": "CaseIndexStatusPayload",
       "transport": "envelopeJson"
     }
   ]

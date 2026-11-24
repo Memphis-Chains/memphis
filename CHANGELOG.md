@@ -1,5 +1,60 @@
 ## Unreleased
 
+### The case index is checked against the chain it caches
+
+The case index is a cache; the chain files are the truth. On this host the
+cache had lost a third of its entries, and nobody asked.
+
+Measured on the operator's host: the `cases` chain holds **2 190** case
+blocks; `~/.memphis/case-index.sqlite` held **1 372** rows — the missing
+**818** included the host's only nominative entry and both instrumental
+ones. The two query paths of the same adapter disagreed: the Rust path
+(the live one) answered 1 372, the TypeScript path answered 2 190.
+
+Two findings:
+
+- **Nothing noticed, because the wrong signal was available.** The index's
+  highest block index was the chain's last, so every check that looked at
+  the tail said "fine" — a gap at the *head* is invisible to it.
+- **The repair existed and was dead code.** `reconcileIfNeeded()` — whose
+  own doc says it ensures the index matches the filesystem — had no caller
+  in the tree, and neither did `rebuildIndex()` beside it.
+
+The index is now checked before it is read: the owner answers how many
+entries it holds (`case_index_status`, a new optional bridge export — 43
+exports now, not 42), the runtime compares that count with the chain's
+count of case blocks, and the index is rebuilt when they differ. The count
+is the chain's count of *case* blocks, so the check cannot loop, and it
+cannot miss a gap at the head.
+
+This host is repaired: one query through the adapter took the index from
+1 372 rows to **2 190**, and the two paths now agree to the entry.
+
+The cost, stated plainly: the check scans the chain (233 ms for 2 190
+blocks), so the Rust path now answers in 323 ms against the TypeScript
+fallback's 283 ms. The Rust path's speed advantage on this host is gone,
+because the check costs what the fallback costs — the old speed was bought
+with a wrong answer. The check lands only on the MCP tool and the CLI.
+
+The index's primary key is still `block_index` alone, and this host has a
+second case chain whose 276 blocks carry the same indices as the live
+chain. Nothing collides today — the rebuild covers one chain, and no code
+path indexes an archive — and the collision would rewrite a row with its
+own twin: all 276 overlapping indices carry the same hash, because a
+chain is append-only and a copy of it shares its prefix.
+
+Measured again on 2026-11-24, two numbers in this entry were wrong and are
+corrected here. The `cases` chain is **1.15 MiB**, not 8.8 MB — that was
+`du`'s allocated size, and the rotation reads `stat.size` — so it sits at
+11.5% of the 10 MiB threshold and a rotation is **3.1 years** away, not
+close. And the obvious fix, a composite key `(chain, block_index)`, would
+not have separated the two anyway: the archived blocks carry
+`chain: "cases"` too, because an archive's suffix is a copy marker, not
+part of the chain's identity. The key has to carry the source, not the
+logical chain name. That, plus the global `DELETE FROM case_entries` that
+a per-chain rebuild has to stop doing, is a schema migration — not a
+quiet edit.
+
 ### The embed-profile family has one owner — and the last hand-written type is gone
 
 The last family of bridge payloads, and the last surface that owned a
