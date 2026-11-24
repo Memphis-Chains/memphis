@@ -312,6 +312,53 @@ belong to two different eras.
 > the chain-name vocabulary now is, with the default derived from the index
 > on disk instead of hard-coded in four places.
 
+**CLOSED 2026-11-24.** The profile has ONE owner
+(`crates/memphis-embed/src/profile.rs`), ONE artefact of cases, and TWO
+runners — the same shape as E-03 and E-01.
+
+| piece | what it is |
+| --- | --- |
+| `crates/memphis-embed/src/profile.rs` | **the owner** — the index path, the dimension, the model, the source of each, and the verdict |
+| `tests/fixtures/embed-profile-contract.json` | the artefact of cases (14 cases, every one naming a committed fixture index) |
+| `scripts/sync-embed-profile-contract.mts` | the projection: the rule and every verdict, asked of the owner THROUGH THE BUILT BRIDGE |
+| `src/infra/storage/embed-profile.generated.ts` | the TypeScript mirror — the names, the sources, the verdicts, the local width |
+| `crates/memphis-operator/tests/embed_profile_contract.rs` | the native runner (7 tests) |
+| `tests/unit/embed-profile-contract.test.ts` | the TypeScript runner (9 tests) |
+
+The dimension follows the INDEX on disk — the vectors a query has to match
+— and only falls back to the local deterministic width when there is no
+index to contradict it. The model is never guessed from a name.
+
+> Measured 2026-11-24 on this host, the owner asked for the two processes
+> this machine actually has:
+>
+> | process | index | dimension | verdict |
+> | --- | --- | --- | --- |
+> | the service (systemd `EnvironmentFile`) | `embed/bge-m3-20261106/index-v1.json` | **1024** (from `env`) | `ok` |
+> | a bare shell (the CLI, a hand-started TUI, any spawned script) | `embed/index-v1.json` | **768** (from `index`) | `no-provider` |
+>
+> Before the fix the second row answered **32** against an index that holds
+> 768 — `index_dimension_mismatch: disk_dim=768 config_dim=32` — a
+> mismatch that was not the cause. Now the dimension follows the index, so
+> there is no mismatch to report, and the verdict names the cause that IS
+> there: the shell has no provider configured.
+>
+> The two ways a wrong width costs are not the same, and the code now says
+> which one is which. With a PROVIDER configured, the provider's own width
+> is the truth and the provider path is STRICT (`parse_embedding_vector`,
+> since PR #749): a 1024-wide answer to a 32-wide configuration is a loud
+> error. With the LOCAL embedder the vector is always exactly `dim` wide,
+> so nothing fails — a 32-wide query against a 768-wide stored vector
+> scores 0.0 and recall matches nothing, SILENTLY.
+>
+> **A claim the code no longer supported.** The comment in
+> `src/infra/http/health.ts` said the provider's vector was "truncated to
+> the configured dim without warning". That was true on 2026-10-25 and
+> stopped being true on 2026-11-06, when the provider path became strict
+> (PR #749). The comment survived 18 days and was quoted here; it is now
+> replaced by the measured behaviour.
+
+
 #### E-05 · Fifteen recovery turns wait for an operator who cannot clear them from where he is
 
 > Measured: `memphis recovery list` reports **46 turns, 15 of them
