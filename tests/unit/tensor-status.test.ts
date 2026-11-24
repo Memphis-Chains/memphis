@@ -46,7 +46,11 @@ describe('tensor status', () => {
   it('flags legacy persisted index dimensions without reading raw vectors', () => {
     const dir = mkdtempSync(join(tmpdir(), 'memphis-tensor-status-'));
     const indexPath = join(dir, 'index-v1.json');
-    writeFileSync(indexPath, JSON.stringify({ dim: 768, docs: [] }), 'utf8');
+    // The CANONICAL v1 header: `{"version":1,"dim":N,"docs":[…]}`. The
+    // owner's cheap reader is anchored on it (a document whose text
+    // mentions `"dim":` must not be able to fake the header), and the
+    // Rust inspector calls anything else corrupt.
+    writeFileSync(indexPath, JSON.stringify({ version: 1, dim: 768, docs: [] }), 'utf8');
 
     const out = getTensorStatus({
       RUST_CHAIN_ENABLED: 'false',
@@ -55,6 +59,27 @@ describe('tensor status', () => {
     } as NodeJS.ProcessEnv);
 
     expect(out.memoryEmbedding.configured.legacyDimMismatch).toBe(true);
+    expect(out.memoryEmbedding.configured.dimensionSource).toBe('env');
+    expect(out.memoryEmbedding.configured.indexDimension).toBe(768);
+  });
+
+  it('follows the index on disk when the environment does not pin a dimension', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-tensor-status-'));
+    const indexPath = join(dir, 'index-v1.json');
+    writeFileSync(indexPath, JSON.stringify({ version: 1, dim: 768, docs: [] }), 'utf8');
+
+    const out = getTensorStatus({
+      RUST_CHAIN_ENABLED: 'false',
+      RUST_EMBED_PERSIST_PATH: indexPath,
+    } as NodeJS.ProcessEnv);
+
+    // The old default was 32 — the width of the LOCAL DETERMINISTIC
+    // embedder, applied even when a real provider was configured. The
+    // owner follows the index instead.
+    expect(out.memoryEmbedding.configured.dim).toBe(768);
+    expect(out.memoryEmbedding.configured.dimensionSource).toBe('index');
+    expect(out.memoryEmbedding.configured.legacyDimMismatch).toBe(false);
+    expect(out.memoryEmbedding.configured.persistencePath).toBe(indexPath);
   });
 
   it('defaults configured embedding persistence to enabled', () => {

@@ -2,6 +2,7 @@ import { resolveAgentProfile } from './agent-profile.js';
 import { listEnabledFeatureFlags } from './features/flags.js';
 import { resolveSurfacePolicy } from '../gateway/surface-policy.js';
 import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
+import { tryResolveEmbedProfile } from './storage/embed-profile.js';
 import { listInstalledSkillSummaries } from '../modules/skills/runtime.js';
 
 export interface OperatorGuideSection {
@@ -38,6 +39,16 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
   const { agentName, ownerName } = resolvedProfile.profile;
   const rustEnabled = (rawEnv.RUST_CHAIN_ENABLED ?? '').toLowerCase() === 'true';
   const embedPersist = (rawEnv.RUST_EMBED_PERSIST_ENABLED ?? '').toLowerCase() === 'true';
+
+  // The embed profile has ONE owner (the Rust core). This used to print a
+  // path of its own making — `RUST_EMBED_PERSIST_PATH` or a HOME-based
+  // `~/.memphis/embed/index-v1.json` — which is NOT the file the runtime
+  // reads whenever `MEMPHIS_DATA_DIR` is not `~/.memphis`. The guide now
+  // prints what the owner says, with the dimension and its source.
+  const embedView = tryResolveEmbedProfile(rawEnv);
+  const embedProfileLabel = embedView.available && embedView.facts
+    ? `${embedView.facts.indexPath} (dim=${embedView.facts.dimension} from ${embedView.facts.dimensionSource}, ${embedView.facts.verdict})`
+    : `${rawEnv.RUST_EMBED_PERSIST_PATH?.trim() || 'unresolved'} (profile unavailable: ${embedView.reason ?? 'unknown reason'})`;
   const telegramBaselinePolicy = resolveSurfacePolicy('telegram', {} as NodeJS.ProcessEnv);
   const telegramPolicy = resolveSurfacePolicy('telegram', rawEnv);
   const telegramBaselineMode = `tier=${telegramBaselinePolicy.maxToolTier}, urlFetch=${telegramBaselinePolicy.allowUrlFetch ? 'enabled' : 'disabled'}, unknownTools=${telegramBaselinePolicy.allowUnknownTools ? 'allowed' : 'blocked'}, operatorOverride=${telegramBaselinePolicy.allowOperatorOverride ? 'allowed' : 'blocked'}`;
@@ -82,7 +93,7 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
         title: 'Memory',
         lines: [
           `Rust bridge: ${statusLabel(rustEnabled, 'enabled', 'disabled')}`,
-          `Embed persistence: ${statusLabel(embedPersist, 'enabled', 'disabled')} (${rawEnv.RUST_EMBED_PERSIST_PATH?.trim() || '~/.memphis/embed/index-v1.json'})`,
+          `Embed persistence: ${statusLabel(embedPersist, 'enabled', 'disabled')} (${embedProfileLabel})`,
           'HTTP memory routes: POST /api/journal, POST /api/recall, and POST /api/search',
           'TUI /embed store writes chain-backed operator memory and indexes it for recall.',
           'Exact search is FTS5-backed for "where is X mentioned?"; semantic recall stays embedding-backed for "what do I know about X?"',

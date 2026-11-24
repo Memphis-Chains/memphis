@@ -1,8 +1,8 @@
 import { existsSync, statSync } from 'node:fs';
-import { extname, join, resolve } from 'node:path';
+import { extname, resolve } from 'node:path';
 
-import { resolveInstallRoot, resolveRustBridgePath } from './install-root.js';
-import { getDataDir } from '../../config/paths.js';
+import { resolveRustBridgePath } from './install-root.js';
+import { tryResolveEmbedProfile } from '../storage/embed-profile.js';
 import { loadPlatformAwareBridge, resolveBridgeContract } from '../storage/napi-contract.js';
 
 export interface EmbeddingMetadata {
@@ -19,10 +19,27 @@ const cache = new Map<string, { stamp: string; value: EmbeddingMetadata }>();
 
 /** Canonical Rust metadata, cached by file identity. No provider or KDF calls. */
 export function readEmbeddingMetadata(rawEnv: NodeJS.ProcessEnv = process.env): EmbeddingMetadata {
-  const configured = rawEnv.RUST_EMBED_PERSIST_PATH?.trim();
-  const path = configured
-    ? resolve(resolveInstallRoot({ rawEnv }), configured)
-    : join(getDataDir(rawEnv), 'embed', 'index-v1.json');
+  // The index path is the OWNER's answer. This used to rebuild it here —
+  // `RUST_EMBED_PERSIST_PATH` resolved against the install root, else
+  // `<data_dir>/embed/index-v1.json` — which is a SECOND copy of the path
+  // rule: it did not expand `~`, and it resolved a relative path against
+  // the install root instead of the runtime root. The rule lives in
+  // `crates/memphis-embed/src/profile.rs`; this side asks.
+  const view = tryResolveEmbedProfile(rawEnv);
+  if (!view.available || !view.facts) {
+    return {
+      schemaVersion: 1,
+      path: '',
+      formatVersion: null,
+      state: 'unknown',
+      documents: null,
+      invalidRecords: 0,
+      dimension: null,
+      sizeBytes: 0,
+    };
+  }
+
+  const path = resolve(view.facts.indexPath);
   const extension = extname(path);
   const sibling = `${extension ? path.slice(0, -extension.length) : path}.ndjson`;
   const selected = existsSync(sibling) ? sibling : path;
