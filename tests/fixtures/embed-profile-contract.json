@@ -1,0 +1,319 @@
+{
+  "comment": "The embed-profile contract — the ONE rule that decides which embedding index is read, how wide its vectors are, and whether the process can use a provider at all. The owner is the Rust crate (`crates/memphis-embed/src/profile.rs`); the TypeScript arm is a projection of it (`src/infra/storage/embed-profile.generated.ts`). Both arms check themselves against THIS file: the Rust runner is `crates/memphis-operator/tests/embed_profile_contract.rs`, the TypeScript runner is `tests/unit/embed-profile-contract.test.ts`. WHY: the rule had four owners and four answers. Measured 2026-11-23 on the operator's host, the service answered `mode: semantic` with dim 1024 while a shell, the CLI and any spawned script answered dim 32 — `DEFAULT_EMBEDDING_DIM`, the width of the LOCAL DETERMINISTIC embedder, applied even with a provider configured — and the index on disk holds 768. WHAT: `dimensionSource` is `env`, `index` or `local-deterministic`; `verdict` is `ok`, `no-provider`, `no-index` or `dimension-mismatch`; `indexPath` is ROOT-RELATIVE so the artefact is the same on every machine. The corpus is fixed on purpose: every case names its own committed fixture index, because a case that read the operator's `~/.memphis/embed/index-v1.json` would answer differently on a fresh machine than on this one.",
+  "schemaVersion": 1,
+  "generatedBy": "scripts/sync-embed-profile-contract.mts",
+  "owner": "crates/memphis-embed/src/profile.rs",
+  "manifest": {
+    "schemaVersion": 1,
+    "env": {
+      "indexPath": "RUST_EMBED_PERSIST_PATH",
+      "dimension": "RUST_EMBED_DIM",
+      "model": "RUST_EMBED_PROVIDER_MODEL",
+      "mode": "RUST_EMBED_MODE"
+    },
+    "defaults": {
+      "indexPath": "<data_dir>/embed/index-v1.json",
+      "dimension": "the dimension recorded in the index on disk; DEFAULT_EMBEDDING_DIM when no index exists",
+      "model": "unknown — a model cannot be derived from an index, so it must be configured",
+      "localDimension": 32
+    },
+    "dimensionSources": [
+      "env",
+      "index",
+      "local-deterministic"
+    ],
+    "verdicts": [
+      "ok",
+      "no-provider",
+      "no-index",
+      "dimension-mismatch"
+    ],
+    "modes": {
+      "local": "local",
+      "alias": "provider",
+      "providers": [
+        "openai-compatible",
+        "ollama",
+        "cohere",
+        "voyage",
+        "jina",
+        "mistral",
+        "together",
+        "nvidia",
+        "mixedbread"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "name": "a provider with an explicit dimension that matches the index",
+      "env": {
+        "RUST_EMBED_MODE": "ollama",
+        "RUST_EMBED_DIM": "768",
+        "RUST_EMBED_PERSIST_PATH": "tests/fixtures/embed-profile/index-768.json"
+      },
+      "indexPath": "tests/fixtures/embed-profile/index-768.json",
+      "indexDimension": 768,
+      "configuredDimension": 768,
+      "dimension": 768,
+      "dimensionSource": "env",
+      "model": null,
+      "modelSource": "unknown",
+      "providerConfigured": true,
+      "dimensionMismatch": false,
+      "mode": "ollama",
+      "verdict": "ok",
+      "dimensionRemedy": null
+    },
+    {
+      "name": "a provider whose explicit dimension disagrees with the index",
+      "env": {
+        "RUST_EMBED_MODE": "ollama",
+        "RUST_EMBED_DIM": "32",
+        "RUST_EMBED_PERSIST_PATH": "tests/fixtures/embed-profile/index-768.json"
+      },
+      "indexPath": "tests/fixtures/embed-profile/index-768.json",
+      "indexDimension": 768,
+      "configuredDimension": 32,
+      "dimension": 32,
+      "dimensionSource": "env",
+      "model": null,
+      "modelSource": "unknown",
+      "providerConfigured": true,
+      "dimensionMismatch": true,
+      "mode": "ollama",
+      "verdict": "dimension-mismatch",
+      "dimensionRemedy": "RUST_EMBED_DIM=32 but tests/fixtures/embed-profile/index-768.json holds dim=768. The provider's vector is REJECTED because its width does not match the configured one (the provider path is strict), and the local embedder's vectors score 0 against the stored ones. Set RUST_EMBED_DIM=768 to match the existing index, or rebuild it with `memphis embed reindex`."
+    },
+    {
+      "name": "a provider with no explicit dimension follows the index on disk",
+      "env": {
+        "RUST_EMBED_MODE": "ollama",
+        "RUST_EMBED_PERSIST_PATH": "tests/fixtures/embed-profile/index-768.json"
+      },
+      "indexPath": "tests/fixtures/embed-profile/index-768.json",
+      "indexDimension": 768,
+      "configuredDimension": null,
+      "dimension": 768,
+      "dimensionSource": "index",
+      "model": null,
+      "modelSource": "unknown",
+      "providerConfigured": true,
+      "dimensionMismatch": false,
+      "mode": "ollama",
+      "verdict": "ok",
+      "dimensionRemedy": null
+    },
+    {
+      "name": "a provider with no index yet falls back to the local width",
+      "env": {
+        "RUST_EMBED_MODE": "ollama",
+        "RUST_EMBED_PERSIST_PATH": "tests/fixtures/embed-profile/absent/index-v1.json"
+      },
+      "indexPath": "tests/fixtures/embed-profile/absent/index-v1.json",
+      "indexDimension": null,
+      "configuredDimension": null,
+      "dimension": 32,
+      "dimensionSource": "local-deterministic",
+      "model": null,
+      "modelSource": "unknown",
+      "providerConfigured": true,
+      "dimensionMismatch": false,
+      "mode": "ollama",
+      "verdict": "no-index",
+      "dimensionRemedy": null
+    },
+    {
+      "name": "a process without a provider says so outright",
+      "env": {
+        "RUST_EMBED_PERSIST_PATH": "tests/fixtures/embed-profile/index-768.json"
+      },
+      "indexPath": "tests/fixtures/embed-profile/index-768.json",
+      "indexDimension": 768,
+      "configuredDimension": null,
+      "dimension": 768,
+      "dimensionSource": "index",
+      "model": null,
+      "modelSource": "unknown",
+      "providerConfigured": false,
+      "dimensionMismatch": false,
+      "mode": "local",
+      "verdict": "no-provider",
+      "dimensionRemedy": null
+    },
+    {
+      "name": "a process without a provider and without an index",
+      "env": {
+        "RUST_EMBED_PERSIST_PATH": "tests/fixtures/embed-profile/absent/index-v1.json"
+      },
+      "indexPath": "tests/fixtures/embed-profile/absent/index-v1.json",
+      "indexDimension": null,
+      "configuredDimension": null,
+      "dimension": 32,
+      "dimensionSource": "local-deterministic",
+      "model": null,
+      "modelSource": "unknown",
+      "providerConfigured": false,
+      "dimensionMismatch": false,
+      "mode": "local",
+      "verdict": "no-provider",
+      "dimensionRemedy": null
+    },
+    {
+      "name": "a mode word outside the vocabulary is not a provider",
+      "env": {
+        "RUST_EMBED_MODE": "not-a-provider",
+        "RUST_EMBED_PERSIST_PATH": "tests/fixtures/embed-profile/index-768.json"
+      },
+      "indexPath": "tests/fixtures/embed-profile/index-768.json",
+      "indexDimension": 768,
+      "configuredDimension": null,
+      "dimension": 768,
+      "dimensionSource": "index",
+      "model": null,
+      "modelSource": "unknown",
+      "providerConfigured": false,
+      "dimensionMismatch": false,
+      "mode": "local",
+      "verdict": "no-provider",
+      "dimensionRemedy": null
+    },
+    {
+      "name": "the provider alias resolves to the openai-compatible provider",
+      "env": {
+        "RUST_EMBED_MODE": "provider",
+        "RUST_EMBED_PERSIST_PATH": "tests/fixtures/embed-profile/index-1024.json"
+      },
+      "indexPath": "tests/fixtures/embed-profile/index-1024.json",
+      "indexDimension": 1024,
+      "configuredDimension": null,
+      "dimension": 1024,
+      "dimensionSource": "index",
+      "model": null,
+      "modelSource": "unknown",
+      "providerConfigured": true,
+      "dimensionMismatch": false,
+      "mode": "openai-compatible",
+      "verdict": "ok",
+      "dimensionRemedy": null
+    },
+    {
+      "name": "a configured model is reported with its source",
+      "env": {
+        "RUST_EMBED_MODE": "ollama",
+        "RUST_EMBED_PROVIDER_MODEL": "bge-m3",
+        "RUST_EMBED_PERSIST_PATH": "tests/fixtures/embed-profile/index-1024.json"
+      },
+      "indexPath": "tests/fixtures/embed-profile/index-1024.json",
+      "indexDimension": 1024,
+      "configuredDimension": null,
+      "dimension": 1024,
+      "dimensionSource": "index",
+      "model": "bge-m3",
+      "modelSource": "env",
+      "providerConfigured": true,
+      "dimensionMismatch": false,
+      "mode": "ollama",
+      "verdict": "ok",
+      "dimensionRemedy": null
+    },
+    {
+      "name": "a dimension of zero is not a dimension",
+      "env": {
+        "RUST_EMBED_MODE": "ollama",
+        "RUST_EMBED_DIM": "0",
+        "RUST_EMBED_PERSIST_PATH": "tests/fixtures/embed-profile/index-768.json"
+      },
+      "indexPath": "tests/fixtures/embed-profile/index-768.json",
+      "indexDimension": 768,
+      "configuredDimension": null,
+      "dimension": 768,
+      "dimensionSource": "index",
+      "model": null,
+      "modelSource": "unknown",
+      "providerConfigured": true,
+      "dimensionMismatch": false,
+      "mode": "ollama",
+      "verdict": "ok",
+      "dimensionRemedy": null
+    },
+    {
+      "name": "the local mode is the local mode",
+      "env": {
+        "RUST_EMBED_MODE": "local",
+        "RUST_EMBED_PERSIST_PATH": "tests/fixtures/embed-profile/index-768.json"
+      },
+      "indexPath": "tests/fixtures/embed-profile/index-768.json",
+      "indexDimension": 768,
+      "configuredDimension": null,
+      "dimension": 768,
+      "dimensionSource": "index",
+      "model": null,
+      "modelSource": "unknown",
+      "providerConfigured": false,
+      "dimensionMismatch": false,
+      "mode": "local",
+      "verdict": "no-provider",
+      "dimensionRemedy": null
+    },
+    {
+      "name": "the default index path is under the data dir",
+      "env": {
+        "MEMPHIS_DATA_DIR": "tests/fixtures/embed-profile/data",
+        "RUST_EMBED_MODE": "ollama"
+      },
+      "indexPath": "tests/fixtures/embed-profile/data/embed/index-v1.json",
+      "indexDimension": 512,
+      "configuredDimension": null,
+      "dimension": 512,
+      "dimensionSource": "index",
+      "model": null,
+      "modelSource": "unknown",
+      "providerConfigured": true,
+      "dimensionMismatch": false,
+      "mode": "ollama",
+      "verdict": "ok",
+      "dimensionRemedy": null
+    },
+    {
+      "name": "an explicit index path wins over the data dir",
+      "env": {
+        "MEMPHIS_DATA_DIR": "tests/fixtures/embed-profile/data",
+        "RUST_EMBED_MODE": "ollama",
+        "RUST_EMBED_PERSIST_PATH": "tests/fixtures/embed-profile/index-1024.json"
+      },
+      "indexPath": "tests/fixtures/embed-profile/index-1024.json",
+      "indexDimension": 1024,
+      "configuredDimension": null,
+      "dimension": 1024,
+      "dimensionSource": "index",
+      "model": null,
+      "modelSource": "unknown",
+      "providerConfigured": true,
+      "dimensionMismatch": false,
+      "mode": "ollama",
+      "verdict": "ok",
+      "dimensionRemedy": null
+    },
+    {
+      "name": "a provider with an explicit dimension and no index at all",
+      "env": {
+        "RUST_EMBED_MODE": "ollama",
+        "RUST_EMBED_DIM": "1024",
+        "RUST_EMBED_PERSIST_PATH": "tests/fixtures/embed-profile/absent/index-v1.json"
+      },
+      "indexPath": "tests/fixtures/embed-profile/absent/index-v1.json",
+      "indexDimension": null,
+      "configuredDimension": 1024,
+      "dimension": 1024,
+      "dimensionSource": "env",
+      "model": null,
+      "modelSource": "unknown",
+      "providerConfigured": true,
+      "dimensionMismatch": false,
+      "mode": "ollama",
+      "verdict": "no-index",
+      "dimensionRemedy": null
+    }
+  ]
+}

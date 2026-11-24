@@ -20,6 +20,8 @@ import type { BridgeAliasMap } from './napi-contract.js';
 export const BRIDGE_EXPORT_ALIASES = {
   bridge_chain_name_facts: ['bridge_chain_name_facts', 'bridgeChainNameFacts'],
   bridge_chain_name_manifest: ['bridge_chain_name_manifest', 'bridgeChainNameManifest'],
+  bridge_embed_profile_facts: ['bridge_embed_profile_facts', 'bridgeEmbedProfileFacts'],
+  bridge_embed_profile_manifest: ['bridge_embed_profile_manifest', 'bridgeEmbedProfileManifest'],
   bridge_manifest: ['bridge_manifest', 'bridgeManifest'],
   chain_append: ['chain_append', 'chainAppend'],
   chain_query: ['chain_query', 'chainQuery'],

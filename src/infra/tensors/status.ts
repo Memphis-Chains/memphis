@@ -1,8 +1,6 @@
-import { join } from 'node:path';
-
 import { DEFAULT_TENSOR_SURFACE_POLICY, memoryEmbeddingMeta } from './types.js';
 import { getKartografRuntimeSnapshot } from '../../kartograf/runtime.js';
-import { readEmbedIndexDimension } from '../storage/embed-index-metadata.js';
+import { resolveEmbedProfile } from '../storage/embed-profile.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 
 export interface TensorStatus {
@@ -19,7 +17,18 @@ export interface TensorStatus {
       persistenceEnabled: boolean;
       persistencePath: string;
       legacyDimMismatch: boolean;
-    };
+      /**
+       * Where the dimension came from: `env`, `index` or
+       * `local-deterministic`. The owner's answer — this side does not
+       * decide it.
+       */
+      dimensionSource: string;
+      /** The dimension recorded in the index on disk, if it is readable. */
+      indexDimension: number | null;
+      /** The owner's verdict: `ok`, `no-provider`, `no-index`, `dimension-mismatch`. */
+      verdict: string;
+      /** What to do about the verdict, in the owner's words. */
+      remedy: string | null;    };
     runtime: {
       persistenceEnabled: boolean | 'unknown';
       persistenceLoadState: string | 'unknown';
@@ -50,26 +59,21 @@ function parseBool(raw: string | undefined, fallback: boolean): boolean {
   return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase());
 }
 
-function defaultEmbedPath(rawEnv: NodeJS.ProcessEnv): string {
-  return join(rawEnv.HOME ?? '.', '.memphis', 'embed', 'index-v1.json');
-}
-
-function readLegacyDimMismatch(path: string, configuredDim: number): boolean {
-  try {
-    const dim = readEmbedIndexDimension(path);
-    return dim !== undefined && dim !== configuredDim;
-  } catch {
-    return false;
-  }
-}
-
 export function getTensorStatus(rawEnv: NodeJS.ProcessEnv = process.env): TensorStatus {
   const bridge = getRustEmbedAdapterStatus(rawEnv);
-  const dim = parseNumber(rawEnv.RUST_EMBED_DIM, 32);
-  const mode = rawEnv.RUST_EMBED_MODE?.trim() || 'local';
+  // The embed profile has ONE owner (the Rust crate
+  // `crates/memphis-embed/src/profile.rs`). This used to read
+  // `RUST_EMBED_DIM` with a hard-coded fallback of 32 — the width of the
+  // LOCAL DETERMINISTIC embedder, not an embedding dimension — and to
+  // build the index path from HOME, while the runtime reads the data dir.
+  // Measured 2026-11-23 on the operator's host: the service answered
+  // dim 1024 and a shell answered dim 32 against the same index.
+  const profile = resolveEmbedProfile(rawEnv);
+  const dim = profile.dimension;
+  const mode = profile.mode;
   const persistenceEnabled = parseBool(rawEnv.RUST_EMBED_PERSIST_ENABLED, true);
-  const persistencePath = rawEnv.RUST_EMBED_PERSIST_PATH?.trim() || defaultEmbedPath(rawEnv);
-  const provider = mode === 'local' ? 'local-deterministic' : mode;
+  const persistencePath = profile.indexPath;
+  const provider = profile.providerConfigured ? profile.mode : 'local-deterministic';
 
   const kartografEnabled = rawEnv.MEMPHIS_KARTOGRAF_ENABLE === '1';
   const kartografDim = parseNumber(rawEnv.MEMPHIS_KARTOGRAF_EMBED_DIM, 256);
@@ -86,10 +90,14 @@ export function getTensorStatus(rawEnv: NodeJS.ProcessEnv = process.env): Tensor
         dim,
         dtype: 'f32',
         mode,
-        providerModel: rawEnv.RUST_EMBED_PROVIDER_MODEL,
+        providerModel: profile.model ?? undefined,
         persistenceEnabled,
         persistencePath,
-        legacyDimMismatch: readLegacyDimMismatch(persistencePath, dim),
+        legacyDimMismatch: profile.dimensionMismatch,
+        dimensionSource: profile.dimensionSource,
+        indexDimension: profile.indexDimension,
+        verdict: profile.verdict,
+        remedy: profile.remedy,
       },
       runtime: {
         persistenceEnabled: 'unknown',

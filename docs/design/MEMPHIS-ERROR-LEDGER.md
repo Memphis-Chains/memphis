@@ -312,6 +312,80 @@ belong to two different eras.
 > the chain-name vocabulary now is, with the default derived from the index
 > on disk instead of hard-coded in four places.
 
+**CLOSED 2026-11-24.** The profile has ONE owner
+(`crates/memphis-embed/src/profile.rs`), ONE artefact of cases, and TWO
+runners — the same shape as E-03 and E-01.
+
+| piece | what it is |
+| --- | --- |
+| `crates/memphis-embed/src/profile.rs` | **the owner** — the index path, the dimension, the model, the source of each, and the verdict |
+| `tests/fixtures/embed-profile-contract.json` | the artefact of cases (14 cases, every one naming a committed fixture index) |
+| `scripts/sync-embed-profile-contract.mts` | the projection: the rule and every verdict, asked of the owner THROUGH THE BUILT BRIDGE |
+| `src/infra/storage/embed-profile.generated.ts` | the TypeScript mirror — the names, the sources, the verdicts, the local width |
+| `crates/memphis-operator/tests/embed_profile_contract.rs` | the native runner (7 tests) |
+| `tests/unit/embed-profile-contract.test.ts` | the TypeScript runner (10 tests) |
+
+The dimension follows the INDEX on disk — the vectors a query has to match
+— and only falls back to the local deterministic width when there is no
+index to contradict it. The model is never guessed from a name.
+
+The MODE vocabulary had one owner on the Rust side after this change and
+THREE on the TypeScript side (the config schema's enum, the doctor's
+`KNOWN_REMOTE_EMBED_MODES`, the wizard's validity check). All three now
+take it from the projection, and the TypeScript arm checks that they do —
+a provider the owner accepts and the wizard rejects is a setup that cannot
+be finished; a provider the doctor does not know is a backend mislabelled
+as local.
+
+> Measured 2026-11-24 on this host, the owner asked for the two processes
+> this machine actually has:
+>
+> | process | index | dimension | verdict |
+> | --- | --- | --- | --- |
+> | the service (systemd `EnvironmentFile`) | `embed/bge-m3-20261106/index-v1.json` | **1024** (from `env`) | `ok` |
+> | a bare shell (the CLI, a hand-started TUI, any spawned script) | `embed/index-v1.json` | **768** (from `index`) | `no-provider` |
+>
+> Before the fix the second row answered **32** against an index that holds
+> 768 — `index_dimension_mismatch: disk_dim=768 config_dim=32` — a
+> mismatch that was not the cause. Now the dimension follows the index, so
+> there is no mismatch to report, and the verdict names the cause that IS
+> there: the shell has no provider configured.
+>
+> The two ways a wrong width costs are not the same, and the code now says
+> which one is which. With a PROVIDER configured, the provider's own width
+> is the truth and the provider path is STRICT (`parse_embedding_vector`,
+> since PR #749): a 1024-wide answer to a 32-wide configuration is a loud
+> error. With the LOCAL embedder the vector is always exactly `dim` wide,
+> so nothing fails — a 32-wide query against a 768-wide stored vector
+> scores 0.0 and recall matches nothing, SILENTLY.
+>
+> **A claim the code no longer supported.** The comment in
+> `src/infra/http/health.ts` said the provider's vector was "truncated to
+> the configured dim without warning". That was true on 2026-10-25 and
+> stopped being true on 2026-11-06, when the provider path became strict
+> (PR #749). The comment survived 18 days and was quoted here; it is now
+> replaced by the measured behaviour.
+>
+> **The gate found a hole in its own artefact.** The first CI run of
+> `ops:sync-embed-profile-contract -- --check` failed with `fixture
+> tests/fixtures/embed-profile-contract.json is stale` — on the runner,
+> with a fixture that was fine here. The cause: the owner's remedy is
+> prose for a live host and names the index by its ABSOLUTE path, and the
+> artefact carried that string as it came out of the owner. The cases'
+> `indexPath` was already root-relative; the remedy was the same path
+> spelled a second way, and it carried this machine's directory layout
+> into every other checkout. The projection now normalises it the same way
+> it normalises the path — a PRESENTATION rule, not a second copy of the
+> profile rule — and both runners check that the remedy names the two
+> dimensions, says how to rebuild, and carries no absolute path.
+>
+> That is the third time a gate in this ledger found a hole in itself
+> (the bridge gate on its first run, the chain-name gate before its fix,
+> this one on its first CI run), and the reason the pattern insists that
+> a gate must be able to FAIL: a gate that has never failed is a gate
+> nobody has tested.
+
+
 #### E-05 · Fifteen recovery turns wait for an operator who cannot clear them from where he is
 
 > Measured: `memphis recovery list` reports **46 turns, 15 of them
@@ -503,21 +577,24 @@ be run rather than admired:
 7. **The measurement is on this host.** Every claim in this ledger is a number
    taken here, and the numbers have dates.
 
-State today, measured 2026-11-23: (1) **fails** — E-01, E-03 and E-04 are
-closed, E-09 remains; (2) **fails** — the bridge's vocabulary and the
-chain-name vocabulary have their artefacts and their two runners, E-09
-remains; (3) **holds** — every gate added in the last four rounds ships
+State today, measured 2026-11-24: (1) **fails** — E-01, E-02, E-03 and E-04 are
+closed, E-09 remains; (2) **fails** — the bridge's vocabulary, the chain-name
+vocabulary and the embed profile have their artefacts and their two runners,
+E-09 remains; (3) **holds** — every gate added in the last four rounds ships
 with proven falsifiers; the bridge gate found a hole in itself on its first
-run, and the chain-name gate was run BEFORE its fix and failed with
-`[".archives", "cases.backup-2026-07-07T15-07-23-108Z", "journal"]`; (4)
-**fails** — E-02, E-05, E-07, E-08; (5) **holds** — the two dead files are
-gone; (6) **holds** — the block-format, tool-contract, bridge-vocabulary and
-chain-name artefacts are generated; (7) **holds**.
+run, the chain-name gate was run BEFORE its fix and failed with
+`[".archives", "cases.backup-2026-07-07T15-07-23-108Z", "journal"]`, and the
+embed-profile gate was run before the fix and failed with
+`left: 32, right: 768` — and then failed AGAIN on its first CI run, on a
+hole in its own artefact; (4) **fails** — E-05, E-07, E-08; (5) **holds** — the
+two dead files are gone; (6) **holds** — the block-format, tool-contract,
+bridge-vocabulary, chain-name and embed-profile artefacts are generated;
+(7) **holds**.
 
 The first step closed (1) and (2) for the bridge's vocabulary, and (5) on the
 way through; the second closed (1) for the bridge path; the third closed (1),
-(2) and (3) for the chain-name vocabulary. **Next, in this order:** E-02 (the
-embed profile — two knobs that contradict each other, the cheapest of the
-quiet-degradation family), then E-09 (the payload types), which the projection
-just built can now carry, and only then Family B's wedge (E-05), which needs
-the operator's fifteen acknowledgements before any code can help.
+(2) and (3) for the chain-name vocabulary; the fourth closed (1), (2) and (3)
+for the embed profile. **Next, in this order:** E-09 (the payload types),
+which the projection just built can now carry, and only then Family B's wedge
+(E-05), which needs the operator's fifteen acknowledgements before any code
+can help.

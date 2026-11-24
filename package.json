@@ -55,6 +55,7 @@
     "ops:sync-native-tool-contract": "tsx scripts/sync-native-tool-contract.mts",
     "ops:sync-bridge-export-contract": "tsx scripts/sync-bridge-export-contract.mts",
     "ops:sync-chain-name-contract": "tsx scripts/sync-chain-name-contract.mts",
+    "ops:sync-embed-profile-contract": "tsx scripts/sync-embed-profile-contract.mts",
     "ops:sync-postmortem-index": "tsx scripts/sync-postmortem-index.mts",
     "ops:cargo-audit": "./scripts/cargo-audit-check.sh",
     "ops:sync-site-metrics": "tsx scripts/sync-site-metrics.mts",
