@@ -3,6 +3,7 @@ import {
   DEFAULT_REQUIRED_RUST_BRIDGE_EXPORTS,
   type RustBridgeManifestExport,
 } from './bridge-exports.generated.js';
+import type { BridgeManifestPayload } from './bridge-payloads.generated.js';
 import {
   loadPlatformAwareBridge,
   resolveBridgeContract,
@@ -28,19 +29,22 @@ import { resolveRustBridgePath } from '../runtime/install-root.js';
 export { BRIDGE_EXPORT_ALIASES, DEFAULT_REQUIRED_RUST_BRIDGE_EXPORTS };
 export type { RustBridgeManifestExport };
 
-export interface RustBridgeManifest {
-  name: string;
-  schemaVersion: number;
-  exports: string[];
-  requiredExports: string[];
-  optionalExports?: string[];
-  /**
-   * The canonical name of every export and the name the bridge exports it
-   * under. Added 2026-11-23: the manifest used to carry only names, and nine
-   * of them were spellings the bridge never exports.
-   */
-  exportBindings?: Array<{ canonical: string; jsName: string; required: boolean }>;
-}
+/**
+ * The manifest the bridge serves — the OWNER's shape.
+ *
+ * This used to be a hand-written interface with two fields the wire
+ * always sends marked OPTIONAL (`exportBindings` and `optionalExports`),
+ * and `optionalExports` — the one field the wire carried WRONG — was
+ * read by nobody at all. The shape now comes from
+ * `bridge-payloads.generated.ts` — projected from
+ * `crates/memphis-napi/src/bridge_payloads.rs`.
+ *
+ * `exportBindings` is optional in the owner's shape too, and for a
+ * measured reason: a binary older than the vocabulary table (before
+ * 2026-11-23) does not send it, and the export projection fails loudly
+ * when it is missing.
+ */
+export type RustBridgeManifest = BridgeManifestPayload;
 
 export interface RustBridgeManifestStatus {
   rustEnabled: boolean;

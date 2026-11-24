@@ -52,25 +52,34 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import { resolveRustBridgePath } from '../src/infra/runtime/install-root.js';
+import type {
+  BridgeExportBindingPayload,
+  BridgeManifestPayload,
+} from '../src/infra/storage/bridge-payloads.generated.js';
 
 const FIXTURE = 'tests/fixtures/bridge-export-contract.json';
 const MIRROR = 'src/infra/storage/bridge-exports.generated.ts';
 
-type Binding = {
-  canonical: string;
-  jsName: string;
-  required: boolean;
-};
+/**
+ * The manifest's shape is NOT written here.
+ *
+ * It used to be — a hand-written `Binding` and a hand-written
+ * `ManifestEnvelope` beside the reader, which is how the two sides of the
+ * manifest drifted: the TypeScript side marked `exportBindings` and
+ * `optionalExports` OPTIONAL while the wire always sends them, and it
+ * never read either. The shape now comes from the payload owner
+ * (`crates/memphis-napi/src/bridge_payloads.rs`), projected into
+ * `src/infra/storage/bridge-payloads.generated.ts`.
+ *
+ * `exportBindings` is optional THERE on purpose: a binary older than the
+ * vocabulary table does not send it, and this projection fails loudly
+ * when it is missing.
+ */
+type Binding = BridgeExportBindingPayload;
 
 type ManifestEnvelope = {
   ok?: boolean;
-  data?: {
-    name?: string;
-    schemaVersion?: number;
-    exports?: string[];
-    requiredExports?: string[];
-    exportBindings?: Binding[];
-  };
+  data?: BridgeManifestPayload;
   error?: string;
 };
 

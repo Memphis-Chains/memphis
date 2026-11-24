@@ -21,6 +21,23 @@
  * `'true' | 'provider-dependent'`, not `string`: a wire word that
  * nobody declared is a type error, not a silent string.
  */
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface BridgeManifestPayload {
+  exportBindings?: BridgeExportBindingPayload[];
+  exports: string[];
+  name: string;
+  optionalExports: string[];
+  requiredExports: string[];
+  schemaVersion: number;
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface BridgeExportBindingPayload {
+  canonical: string;
+  jsName: string;
+  required: boolean;
+}
+
 /** napiObject — an explicit `js_name` verbatim, a field without one in camelCase. */
 export interface VaultPayload {
   salt: Buffer;
@@ -273,6 +290,7 @@ export interface CaseRebuildPayload {
 
 /** The payload each bridge export carries. */
 export interface BridgePayloadMap {
+  bridge_manifest: BridgeManifestPayload;
   vault_init_full: VaultInitPayload;
   vault_load_state: VaultLoadStatePayload;
   vault_parse_entries: VaultEntriesPayload;
