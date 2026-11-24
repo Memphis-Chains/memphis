@@ -183,6 +183,66 @@ bridge, E-09 is the shape of what it carries. Closing E-01 properly is what
 makes E-09 closable (the projection that produces the vocabulary can produce
 the types from the same source).
 
+**MEASURED 2026-11-24, on the built module, not on the source.** The guess
+was not carelessness — the owner speaks TWO conventions:
+
+| export | the field on the wire | why |
+| --- | --- | --- |
+| `vault_load_state` | `error_code` | the struct sets `#[napi(js_name = "error_code")]` |
+| `vault_decode_entry` | `errorCode` | that struct sets NO `js_name`, so napi-rs camelCases it |
+| `vault_parse_entries` | `entriesJson` | the same |
+| `vault_store` | `created_at` | explicit `js_name` |
+| `vault_init_full` | `master_key`, `qa_question` | explicit `js_name` |
+
+One hand-written TypeScript interface (`EntryBridgeResult`) had to cover two
+different payloads, so it hedged over both spellings — and the hedge was
+written down twice. The Rust owner is the only place that has to know, and
+now it says so.
+
+Also measured: `Option` fields of a `#[napi(object)]` struct are **omitted**
+when they are `None` (the error path of `vault_parse_entries` returns exactly
+one key, `errorCode`), while a `serde` `Option` inside a JSON envelope is
+present and `null`. The vocabulary distinguishes the two.
+
+**PARTIALLY CLOSED 2026-11-24 — the mechanism is in, the vault family is
+migrated, six surfaces remain.** One owner, one artefact, two runners:
+
+| piece | what it is |
+| --- | --- |
+| `crates/memphis-napi/src/bridge_payloads.rs` | **the owner** — one table: the export, the transport, the shape, the field names napi-rs really exports |
+| `crates/memphis-napi/src/lib.rs` | `bridge_payload_manifest()` — the table, served through the built module (`required: false`, so an old binary still loads) |
+| `scripts/sync-bridge-payload-contract.mts` | the projection: reads the table from the BUILT module, writes the artefact and the TypeScript mirror |
+| `tests/fixtures/bridge-payload-contract.json` | the artefact (6 payloads, 5 shapes) |
+| `src/infra/storage/bridge-payloads.generated.ts` | the TypeScript mirror — a projection, not a second hand-written copy |
+| `crates/memphis-napi/tests/bridge_payload_contract.rs` | runner 1: the table against the crate's own `#[napi(object)]` structs, and the artefact |
+| `tests/unit/bridge-payload-contract.test.ts` | runner 2: the mirror, the REAL binary (the third witness), and the ratchet |
+
+The Rust runner applies napi-rs's own rule to every field of every shape —
+an explicit `js_name` verbatim, a field without one in camelCase — so the
+table cannot drift from the struct it claims to describe.
+
+**Falsifiers, measured on this host:** changing one field name in the table
+(`entriesJson` → `entries_json`) fails the Rust runner with *"the table says
+entries_json, but napi-rs will export entriesJson"*; putting the hedge back
+into the TypeScript adapter fails the ratchet; a stale artefact fails the
+projection's check mode, which runs in CI.
+
+**What remains (the ratchet, in the TS runner):** six surfaces still declare
+a bridge payload type by hand — `rust-embed-adapter.ts`,
+`rust-chain-adapter.ts`, `case-chain-adapter.ts`, `rust-bridge-manifest.ts`,
+`embedding-metadata.ts` and `rust-embed-profile-bridge.ts`. The counter may
+only go down, and the gate fails if a surface outside the list starts
+declaring a payload type of its own. The envelope families (embed, chain,
+case, soul, mv2, manifest) are the next phase; the vault family is closed.
+
+**One thing the owner still does wrong, and this entry does not hide it:**
+the same crate spells the same idea two ways. `JsEntriesResult` has no
+`js_name` on its fields and reaches JavaScript as `entriesJson`, while its
+sibling `JsVaultStateResult` reaches it as `error_code`. Unifying that is a
+WIRE change, so it needs a compatibility window (the alias map E-01 already
+built), not a quiet edit. It is queued with the next phase of E-09.
+
+
 #### E-10 · The published tarball is not the thing the gates look at
 
 `package.json`'s `files` list decides what npm publishes. It is a list of

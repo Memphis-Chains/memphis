@@ -1,0 +1,234 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "scripts/sync-bridge-payload-contract.mts",
+  "owner": "crates/memphis-napi/src/bridge_payloads.rs",
+  "shapes": [
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "salt",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "bytes"
+          }
+        },
+        {
+          "legacyName": "masterKey",
+          "name": "master_key",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "bytes"
+          }
+        }
+      ],
+      "name": "VaultPayload",
+      "rustType": "JsVault"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "id",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "key",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "ciphertext",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "bytes"
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "nonce",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "bytes"
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "tag",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "bytes"
+          }
+        },
+        {
+          "legacyName": "createdAt",
+          "name": "created_at",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "name": "VaultEntryPayload",
+      "rustType": "JsVaultEntry"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "vault",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "named",
+            "name": "VaultPayload"
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "did",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "qa_question",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "name": "VaultInitPayload",
+      "rustType": "JsVaultInitResult"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "vault",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "named",
+            "name": "VaultPayload"
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "version",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "integer"
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "error_code",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "error",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "name": "VaultLoadStatePayload",
+      "rustType": "JsVaultStateResult"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "entriesJson",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "entry",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "named",
+            "name": "VaultEntryPayload"
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "errorCode",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "name": "VaultEntriesPayload",
+      "rustType": "JsEntriesResult"
+    }
+  ],
+  "payloads": [
+    {
+      "export": "vault_init_full",
+      "shape": "VaultInitPayload",
+      "transport": "nativeObject"
+    },
+    {
+      "export": "vault_load_state",
+      "shape": "VaultLoadStatePayload",
+      "transport": "nativeObject"
+    },
+    {
+      "export": "vault_parse_entries",
+      "shape": "VaultEntriesPayload",
+      "transport": "nativeObject"
+    },
+    {
+      "export": "vault_decode_entry",
+      "shape": "VaultEntriesPayload",
+      "transport": "nativeObject"
+    },
+    {
+      "export": "vault_store",
+      "shape": "VaultEntryPayload",
+      "transport": "nativeObject"
+    },
+    {
+      "export": "vault_retrieve",
+      "shape": null,
+      "transport": "bytes"
+    }
+  ]
+}
