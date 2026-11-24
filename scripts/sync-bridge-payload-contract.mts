@@ -62,8 +62,18 @@ const FIXTURE = 'tests/fixtures/bridge-payload-contract.json';
 const MIRROR = 'src/infra/storage/bridge-payloads.generated.ts';
 
 type FieldType =
-  | { kind: 'string' | 'number' | 'integer' | 'boolean' | 'bytes' | 'json' }
-  | { kind: 'named'; name: string };
+  | { kind: 'string' | 'number' | 'integer' | 'boolean' | 'bytes' | 'json' | 'enum' }
+  | { kind: 'named'; name: string }
+  | { kind: 'array'; of: FieldType };
+
+/** The closed set of words an enumerated field can carry. */
+type Vocabulary = {
+  values: string[];
+  /** The functions whose string literals ARE those words. */
+  sourceFunctions: string[];
+  /** Literals in those functions that are NOT words of the field. */
+  extraLiterals: string[];
+};
 
 type PayloadField = {
   name: string;
@@ -72,10 +82,14 @@ type PayloadField = {
   nullable: boolean;
   /** The spelling this field had in older binaries — declared, not guessed. */
   legacyName?: string | null;
+  /** The closed vocabulary of an enumerated field. */
+  vocabulary?: Vocabulary | null;
 };
 
 type PayloadShape = {
   name: string;
+  /** How the shape's field names reach the wire: `napiObject` or `serde`. */
+  naming: 'napiObject' | 'serde';
   fields: PayloadField[];
 };
 
@@ -96,7 +110,6 @@ type ManifestEnvelope = {
   };
   error?: string;
 };
-
 type BridgeModule = Record<string, unknown>;
 
 function loadBridge(): { bridge: BridgeModule; path: string } {
@@ -114,6 +127,7 @@ function loadBridge(): { bridge: BridgeModule; path: string } {
 function readManifest(): {
   shapes: PayloadShape[];
   payloads: PayloadRow[];
+  schemaVersion: number;
   bridgePath: string;
   problems: string[];
 } {
@@ -152,6 +166,25 @@ function readManifest(): {
           `shape ${shape.name} names the unknown shape ${field.type.name} on field ${field.name}`,
         );
       }
+      if (field.type.kind === 'array' && field.type.of.kind === 'named') {
+        if (!shapeNames.has(field.type.of.name)) {
+          problems.push(
+            `shape ${shape.name} lists the unknown shape ${field.type.of.name} on field ${field.name}`,
+          );
+        }
+      }
+      // An enumerated field without a vocabulary would be rendered as a
+      // bare `string` — the guess this whole mechanism exists to remove.
+      if (field.type.kind === 'enum' && !field.vocabulary?.values.length) {
+        problems.push(
+          `shape ${shape.name} enumerates ${field.name} but declares no vocabulary`,
+        );
+      }
+      if (field.type.kind !== 'enum' && field.vocabulary) {
+        problems.push(
+          `shape ${shape.name} declares a vocabulary for ${field.name}, which is not enumerated`,
+        );
+      }
     }
   }
 
@@ -166,13 +199,23 @@ function readManifest(): {
     }
   }
 
-  return { shapes, payloads, bridgePath: path, problems };
+  return {
+    shapes,
+    payloads,
+    schemaVersion: envelope.data.schemaVersion ?? 1,
+    bridgePath: path,
+    problems,
+  };
 }
 
-function buildFixture(shapes: PayloadShape[], payloads: PayloadRow[]): string {
+function buildFixture(
+  shapes: PayloadShape[],
+  payloads: PayloadRow[],
+  schemaVersion: number,
+): string {
   return `${JSON.stringify(
     {
-      schemaVersion: 1,
+      schemaVersion,
       generatedBy: 'scripts/sync-bridge-payload-contract.mts',
       owner: 'crates/memphis-napi/src/bridge_payloads.rs',
       shapes,
@@ -183,6 +226,14 @@ function buildFixture(shapes: PayloadShape[], payloads: PayloadRow[]): string {
   )}\n`;
 }
 
+/**
+ * The TypeScript type of one field, as the owner declares it.
+ *
+ * An ENUM is a closed set of words, so the mirror renders the words —
+ * not `string`. That is the point of the vocabulary: a surface that
+ * knows the wire can say `'true' | 'provider-dependent'` instead of
+ * `string`, and a typo in the wire's words is a type error.
+ */
 function tsTypeFor(field: PayloadField): string {
   let base: string;
   switch (field.type.kind) {
@@ -205,6 +256,17 @@ function tsTypeFor(field: PayloadField): string {
     case 'named':
       base = field.type.name;
       break;
+    case 'array':
+      base = `${tsTypeFor({ ...field, type: field.type.of, nullable: false })}[]`;
+      break;
+    case 'enum': {
+      const vocabulary = field.vocabulary;
+      if (!vocabulary || vocabulary.values.length === 0) {
+        throw new Error(`the enumerated field ${field.name} declares no vocabulary`);
+      }
+      base = vocabulary.values.map((value) => `'${value}'`).join(' | ');
+      break;
+    }
     default:
       throw new Error(`unknown field kind on ${field.name}`);
   }
@@ -229,7 +291,11 @@ function buildMirror(shapes: PayloadShape[], payloads: PayloadRow[]): string {
           lines.push(`  ${field.legacyName}?: ${tsTypeFor(field)};`);
         }
       }
-      return `export interface ${shape.name} {\n${lines.join('\n')}\n}`;
+      const convention =
+        shape.naming === 'napiObject'
+          ? 'an explicit `js_name` verbatim, a field without one in camelCase'
+          : 'serde\'s rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name';
+      return `/** ${shape.naming} — ${convention}. */\nexport interface ${shape.name} {\n${lines.join('\n')}\n}`;
     })
     .join('\n\n');
 
@@ -256,6 +322,12 @@ function buildMirror(shapes: PayloadShape[], payloads: PayloadRow[]): string {
  * owner speaks two conventions (a \`#[napi(object)]\` struct with an
  * explicit \`js_name\` speaks snake_case, one without it speaks
  * camelCase), each export keeps its own shape and the mirror says so.
+ *
+ * An ENUM field carries the CLOSED set of words the wire can send — the
+ * owner declares them, and the Rust gate checks them against the source
+ * that writes them. So \`normalized\` here is
+ * \`'true' | 'provider-dependent'\`, not \`string\`: a wire word that
+ * nobody declared is a type error, not a silent string.
  */
 ${shapeBlocks}
 
@@ -272,7 +344,7 @@ export type BridgePayloadOf<K extends BridgePayloadExport> = BridgePayloadMap[K]
 
 function main(): number {
   const check = process.argv.includes('--check');
-  const { shapes, payloads, bridgePath, problems } = readManifest();
+  const { shapes, payloads, schemaVersion, bridgePath, problems } = readManifest();
 
   if (problems.length > 0) {
     console.error('bridge payload contract FAILED\n');
@@ -282,7 +354,7 @@ function main(): number {
     return 1;
   }
 
-  const fixture = buildFixture(shapes, payloads);
+  const fixture = buildFixture(shapes, payloads, schemaVersion);
   const mirror = buildMirror(shapes, payloads);
 
   if (check) {

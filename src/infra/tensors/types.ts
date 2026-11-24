@@ -27,6 +27,17 @@ export const DEFAULT_TENSOR_SURFACE_POLICY: TensorSurfacePolicy = {
 export function memoryEmbeddingMeta(input: {
   dim: number;
   provider: string;
+  /**
+   * The wire's own word, when this meta comes from a bridge payload.
+   *
+   * The rule "a local-deterministic provider normalizes" belongs to the
+   * Rust core (`embed_normalized_to_str`) — and the payload carries the
+   * answer as a word. When the word is here, it IS the answer; the
+   * provider-name rule below is only the fallback for the paths that
+   * describe an embedding without asking the bridge (the profile path in
+   * `tensors/status.ts`).
+   */
+  normalized?: boolean | 'provider-dependent';
   persistenceEnabled?: boolean;
   persistenceLoadState?: string;
 }): EmbeddingVectorMeta {
@@ -36,7 +47,8 @@ export function memoryEmbeddingMeta(input: {
     dtype: 'f32',
     provider: input.provider,
     normalized:
-      input.provider === 'local-deterministic' ? true : 'provider-dependent',
+      input.normalized ??
+      (input.provider === 'local-deterministic' ? true : 'provider-dependent'),
     exposeRawValues: false,
     persistenceEnabled: input.persistenceEnabled,
     persistenceLoadState: input.persistenceLoadState,
