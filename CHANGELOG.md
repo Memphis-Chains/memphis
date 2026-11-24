@@ -38,9 +38,22 @@ with a wrong answer. The check lands only on the MCP tool and the CLI.
 
 The index's primary key is still `block_index` alone, and this host has a
 second case chain whose 276 blocks carry the same indices as the live
-chain. Nothing collides today — the rebuild covers one chain — but a
-rotation is close (the threshold is 10 MB, the chain is 8.8 MB). That
-needs a schema migration, not a quiet edit.
+chain. Nothing collides today — the rebuild covers one chain, and no code
+path indexes an archive — and the collision would rewrite a row with its
+own twin: all 276 overlapping indices carry the same hash, because a
+chain is append-only and a copy of it shares its prefix.
+
+Measured again on 2026-11-24, two numbers in this entry were wrong and are
+corrected here. The `cases` chain is **1.15 MiB**, not 8.8 MB — that was
+`du`'s allocated size, and the rotation reads `stat.size` — so it sits at
+11.5% of the 10 MiB threshold and a rotation is **3.1 years** away, not
+close. And the obvious fix, a composite key `(chain, block_index)`, would
+not have separated the two anyway: the archived blocks carry
+`chain: "cases"` too, because an archive's suffix is a copy marker, not
+part of the chain's identity. The key has to carry the source, not the
+logical chain name. That, plus the global `DELETE FROM case_entries` that
+a per-chain rebuild has to stop doing, is a schema migration — not a
+quiet edit.
 
 ### The embed-profile family has one owner — and the last hand-written type is gone
 

@@ -803,13 +803,57 @@ the MCP tool and the CLI — human and LLM scale, not request scale.
 **What this does NOT close, said out loud:** the index's PRIMARY KEY is
 `block_index` ALONE, and this host has a second case chain —
 `chains/cases.backup-2026-07-07T15-07-23-108Z` — whose **276** blocks
-carry the **same** indices 0…275 as the live chain. Two chains in one
-index would collide, and `INSERT OR REPLACE` would make the older entry
-disappear without a word. Today the reconciliation rebuilds from ONE chain,
-so nothing collides — but the key is still wrong for a chain that rotates,
-and a rotation is close: `MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES` is
-10 MB and the `cases` chain is 8.8 MB. That is the next step, and it needs
-a schema migration rather than a quiet edit.
+carry the **same** indices 0…275 as the live chain.
+
+**MEASURED AGAIN on 2026-11-24 — and two of the numbers in this entry were
+wrong, so they are corrected here rather than left standing.**
+
+The **first** wrong number is the size. The `cases` chain is **1 203 988
+bytes — 1.15 MiB**, not 8.8 MB. The 8.7 MB that `du` reports is the
+**allocated** size (2 190 files, each occupying a 4 KiB block), and the
+rotation reads `stat.size` — the **apparent** size. So the chain is at
+**11.5%** of the threshold, and "a rotation is close" was wrong in the
+direction that matters: at the measured **14.8 blocks/day** (2 190 blocks
+over 147.8 days) it needs **16 884 more blocks**, which is **~1 140 days
+— 3.1 years** — before it is touched. The threshold on this host is 10 MiB
+(`MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES=10485760`, read from the live
+systemd unit).
+
+The **second** wrong number is the severity of the collision. The
+collision is real in the KEY, but the DATA it would overwrite is the same
+data: all **276** overlapping indices carry the **same hash** in the
+archive and in the live chain — because a chain is append-only, so a copy
+of it shares its prefix for ever. `INSERT OR REPLACE` would rewrite a row
+with its own twin.
+
+**And the fix this entry recorded was wrong too — which the measurement is
+why.** The obvious repair, a composite key `(chain, block_index)`, would
+**not** have separated the two, and the house says so out loud:
+`src/memory/chain-catalog.ts` states that *"the archive suffix is a COPY
+marker, not part of the chain's identity: the blocks inside it carry
+`chain: "journal"`"*. MEASURED: all **276** archived blocks carry
+`chain: "cases"` — the same value as the live chain's. The one column
+that could have told them apart is the one column that does not. A key
+has to carry the **source** the blocks were read from, not the logical
+chain name.
+
+Two more measured facts that shape the fix: the rotation never touches an
+archive directory (`SAFE_CHAIN_NAME` has no dot in it, so
+`cases.backup-…` is not a chain the loop rotates), and **no code path
+indexes an archive today** — the adapter hardcodes `CHAIN_NAME = 'cases'`.
+So this is a **latent schema defect**, not a live one.
+
+**And the defect a composite key alone would NOT fix:** `rebuild()` opens
+with `DELETE FROM case_entries` — a **global** wipe. Rebuilding from one
+chain destroys every other chain's entries. A per-chain index needs a
+per-chain rebuild, and that is a second change, not a detail.
+
+None of this is urgent, and saying so is the point of measuring it: the
+rotation is 3.1 years away, the collision would rewrite a row with its own
+twin, and no code path can reach the archive. It still needs a **schema
+migration** rather than a quiet edit — and it needs to be measured again
+when it is done, because the numbers above are the numbers as of
+2026-11-24.
 
 ### Family B — the system degrades quietly instead of failing
 
