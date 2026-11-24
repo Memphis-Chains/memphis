@@ -58,6 +58,10 @@ pub const BRIDGE_EXPORTS: &[BridgeExport] = &[
     // sides in step.
     BridgeExport { canonical: "bridge_embed_profile_facts", js_name: "bridge_embed_profile_facts", required: false },
     BridgeExport { canonical: "bridge_embed_profile_manifest", js_name: "bridge_embed_profile_manifest", required: false },
+    // The payload shapes — the layer under the vocabulary (E-09). Optional:
+    // the runtime does not need them to start, and a binary without this
+    // export keeps working.
+    BridgeExport { canonical: "bridge_payload_manifest", js_name: "bridge_payload_manifest", required: false },
     BridgeExport { canonical: "bridge_manifest", js_name: "bridge_manifest", required: true },
     BridgeExport { canonical: "chain_append", js_name: "chain_append", required: true },
     BridgeExport { canonical: "chain_query", js_name: "chain_query", required: true },

@@ -24,6 +24,11 @@
       "required": false
     },
     {
+      "canonical": "bridge_payload_manifest",
+      "jsName": "bridge_payload_manifest",
+      "required": false
+    },
+    {
       "canonical": "bridge_manifest",
       "jsName": "bridge_manifest",
       "required": true

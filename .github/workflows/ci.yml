@@ -93,6 +93,19 @@ jobs:
         # never hand-edit.
         run: npm run -s ops:sync-chain-name-contract -- --check
 
+      - name: The bridge payload shapes match the Rust core
+        # E-01 gave the bridge's export VOCABULARY one owner; the SHAPE of
+        # what those exports carry was still guessed, in seven TypeScript
+        # files. Measured 2026-11-24 on the built module: `vault_load_state`
+        # returns `error_code` and `vault_decode_entry` returns `errorCode`
+        # — the same crate, two conventions, because a `#[napi(object)]`
+        # struct with an explicit `js_name` speaks snake_case and one
+        # without it speaks camelCase. The TypeScript side hedged over both
+        # (`result.entries_json ?? result.entriesJson`), which is a guess
+        # about a contract the owner already knew. The shapes are now
+        # projected from the Rust core's table; regenerate, never hand-edit.
+        run: npm run -s ops:sync-bridge-payload-contract -- --check
+
       - name: The embed profile matches the Rust core
         # "Which embedding profile is in force?" had four owners and four
         # answers: the dimension default was written as a hard-coded `32` in

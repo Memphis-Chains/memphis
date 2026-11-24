@@ -35,6 +35,9 @@ mod vault_bridge;
 // The bridge's export vocabulary — one owner. See `bridge_exports.rs`.
 pub mod bridge_exports;
 
+// The bridge's payload shapes — one owner. See `bridge_payloads.rs`.
+pub mod bridge_payloads;
+
 use memphis_vault::types::VaultInitRequest;
 use memphis_vault::vault::init_vault;
 use napi_derive::napi;
@@ -84,6 +87,23 @@ pub fn bridge_manifest() -> String {
             "mv2_inspect"
         ]
     }))
+}
+
+/// The bridge's payload shapes — the layer under the vocabulary.
+///
+/// E-01 gave the export NAMES one owner. This gives the SHAPE of what
+/// those exports carry one owner: `bridge_payloads::BRIDGE_PAYLOADS`,
+/// measured off the built module on 2026-11-24. Until then the shape was
+/// guessed in seven TypeScript files — `entries_json ?? entriesJson`,
+/// `error_code ?? errorCode`, a hand-written `RawEmbedStoreResult` whose
+/// `normalized` was the wrong type — and every guess was a second copy of
+/// a rule the owner already knew.
+///
+/// `required: false` in the export table: the runtime does not need this
+/// export to start, and an old binary without it keeps working.
+#[napi(catch_unwind, js_name = "bridge_payload_manifest")]
+pub fn bridge_payload_manifest() -> String {
+    ok(bridge_payloads::manifest())
 }
 
 #[derive(Serialize)]
