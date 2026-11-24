@@ -357,6 +357,25 @@ index to contradict it. The model is never guessed from a name.
 > stopped being true on 2026-11-06, when the provider path became strict
 > (PR #749). The comment survived 18 days and was quoted here; it is now
 > replaced by the measured behaviour.
+>
+> **The gate found a hole in its own artefact.** The first CI run of
+> `ops:sync-embed-profile-contract -- --check` failed with `fixture
+> tests/fixtures/embed-profile-contract.json is stale` — on the runner,
+> with a fixture that was fine here. The cause: the owner's remedy is
+> prose for a live host and names the index by its ABSOLUTE path, and the
+> artefact carried that string as it came out of the owner. The cases'
+> `indexPath` was already root-relative; the remedy was the same path
+> spelled a second way, and it carried this machine's directory layout
+> into every other checkout. The projection now normalises it the same way
+> it normalises the path — a PRESENTATION rule, not a second copy of the
+> profile rule — and both runners check that the remedy names the two
+> dimensions, says how to rebuild, and carries no absolute path.
+>
+> That is the third time a gate in this ledger found a hole in itself
+> (the bridge gate on its first run, the chain-name gate before its fix,
+> this one on its first CI run), and the reason the pattern insists that
+> a gate must be able to FAIL: a gate that has never failed is a gate
+> nobody has tested.
 
 
 #### E-05 · Fifteen recovery turns wait for an operator who cannot clear them from where he is
@@ -558,7 +577,8 @@ with proven falsifiers; the bridge gate found a hole in itself on its first
 run, the chain-name gate was run BEFORE its fix and failed with
 `[".archives", "cases.backup-2026-07-07T15-07-23-108Z", "journal"]`, and the
 embed-profile gate was run before the fix and failed with
-`left: 32, right: 768`; (4) **fails** — E-05, E-07, E-08; (5) **holds** — the
+`left: 32, right: 768` — and then failed AGAIN on its first CI run, on a
+hole in its own artefact; (4) **fails** — E-05, E-07, E-08; (5) **holds** — the
 two dead files are gone; (6) **holds** — the block-format, tool-contract,
 bridge-vocabulary, chain-name and embed-profile artefacts are generated;
 (7) **holds**.
