@@ -330,9 +330,14 @@ that fails when the mirror drifts (`ops:sync-embed-profile-contract
 
 ## v1.14.0 - 2026-11-23
 
-316 commits since the `v1.13.5` tag. A new chain, one owner for the tool
-contract, one owner for the chain-name rule, and a measured error ledger that
-says what is still open — including what is not.
+316 commits since the `v1.13.5` tag — the count MEASURED on the release
+branch at `2e93c84fc1f`, two commits before the release commit that
+carries it. The published tag holds **251** commits in `main`'s graph:
+the repository's `--squash` policy collapsed the branch's **324** authored
+commits into one. The branch is kept at `keep/release-commits`. A new
+chain, one owner for the tool contract, one owner for the chain-name rule,
+and a measured error ledger that says what is still open — including what
+is not.
 
 The shape of the release is the shape of the house's rule: **one owner per
 rule, one artefact per cross-boundary rule, two runners, and a gate that can
