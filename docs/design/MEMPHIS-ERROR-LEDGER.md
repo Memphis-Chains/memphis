@@ -855,6 +855,51 @@ migration** rather than a quiet edit — and it needs to be measured again
 when it is done, because the numbers above are the numbers as of
 2026-11-24.
 
+**E-13 CLOSED 2026-11-24** (PR #784, squash `679ccdc7163`). The index is
+checked before it is read: the owner answers how many entries it holds
+(`CaseIndex::status()`), the bridge serves it (the new **optional** export
+`case_index_status` — 43 exports now, not 42), and the adapter compares
+that COUNT with the chain's count of case blocks before every query and
+rebuilds the index when they differ.
+
+The count, and not the highest index, is the whole difference between a
+check that sees this defect and one that does not. **Three falsifiers,
+measured on this host**: with the reconciliation removed from the query
+path the TypeScript runner fails with *"expected 3 to be 4"*; with the
+check written against the **highest index** instead of the count, it fails
+with the same message; and with the bridge unable to answer, it fails the
+same way again. The Rust arm pins the blindness itself — index the tail
+of a chain and `last_indexed_block` is the chain's last block while
+`indexed` is three short of the truth.
+
+**This host is repaired, by the code's own path**: one query through the
+adapter took the index from 1 372 rows to **2 190**, the two paths agree
+to the entry, and the second query rebuilds nothing.
+
+**The gates:** `cargo test -p memphis-case-index` 15/15,
+`cargo test -p memphis-napi --lib` 25/25, the payload contract 12/12, the
+export contract 5/5, `case-index-reconciliation` 4/4 (new file), the full
+TypeScript suite 5 324 passed / 4 skipped, `tsc --noEmit` exit 0,
+`npm run lint` 0 errors (5 pre-existing warnings), both contract syncs
+green (27 payloads / 36 shapes, 43 exports), `npm run build` exit 0, and
+the release preflight **11/11**. CI: four of four required checks green,
+plus the cargo-audit.
+
+**Zero changes on the wire** for the exports that already existed —
+measured before and after — so no version bump, the same road as the
+E-09 phases.
+
+**And the correction that went in with it** (decision #583): two numbers
+in this entry were wrong and the plan they justified was wrong too. The
+chain is 1.15 MiB, not 8.8 MB — `du` reports the allocated size and the
+rotation reads `stat.size` — so the rotation is 3.1 years away, not
+close. And the composite key `(chain, block_index)` would **not** have
+separated the live chain from its archive, because an archive's blocks
+carry the same `chain` value as the chain they copy. The key has to carry
+the SOURCE, and `rebuild()` has to stop wiping the whole table. That is
+the next step, and it is queued with the correction above, not with the
+plan this entry first recorded.
+
 ### Family B — the system degrades quietly instead of failing
 
 Every defect here answers with something plausible. The operator cannot tell
