@@ -1,5 +1,13 @@
 import { join } from 'node:path';
 
+import type {
+  ChainAppendPayload,
+  ChainQueryPayload,
+  ChainValidatePayload,
+  LoopStatePayload,
+  SoulLoopStepPayload,
+  SoulReplayPayload,
+} from './bridge-payloads.generated.js';
 import {
   listBlockFiles,
   parseEnvelope,
@@ -52,34 +60,40 @@ interface SoulReplayBlockData {
   tags: string[];
 }
 
+/**
+ * The bridge's payloads — the OWNER's shapes.
+ *
+ * These used to be hand-written interfaces in this file, four of them,
+ * and they were guesses: `SoulReplayResult` declared its own snapshot,
+ * `SoulLoopState` its own six fields, and `ValidateBlockResult` its own
+ * `errors?: string[]` without knowing that the key is ABSENT on the
+ * success path (the Rust struct skips it) rather than null.
+ *
+ * Now they come from `bridge-payloads.generated.ts` — projected from
+ * `crates/memphis-napi/src/bridge_payloads.rs` — so a field can only be
+ * read under the name the built bridge really puts on it.
+ */
+
+/** What a block validation answers. */
+export type ValidateBlockResult = ChainValidatePayload;
+
+/** What a chain query answers. */
+export type QueryBlocksResult = ChainQueryPayload;
+
+/** What a replay made of the blocks. */
+export type SoulReplayResult = SoulReplayPayload;
+
+/** The soul loop's state after a step. */
+export type SoulLoopState = LoopStatePayload;
+
+/** What one loop step answers. */
+export type SoulLoopStepResult = SoulLoopStepPayload;
+
 export interface AppendBlockResult {
   index: number;
   hash: string;
   chain: string;
   timestamp: string;
-}
-
-export interface ValidateBlockResult {
-  valid: boolean;
-  errors?: string[];
-}
-
-export interface QueryBlocksResult {
-  count: number;
-  blocks: NapiBlock[];
-}
-
-export interface SoulReplaySnapshot {
-  blocks: number;
-  last_hash: string | null;
-  state_hash: string;
-}
-
-export interface SoulReplayResult {
-  accepted: number;
-  rejected: number;
-  errors: string[];
-  snapshot: SoulReplaySnapshot;
 }
 
 export type SoulLoopAction =
@@ -93,21 +107,6 @@ export interface SoulLoopLimits {
   max_tool_calls: number;
   max_wait_ms: number;
   max_errors: number;
-}
-
-export interface SoulLoopState {
-  steps: number;
-  tool_calls: number;
-  wait_ms: number;
-  errors: number;
-  completed: boolean;
-  halt_reason: string | null;
-}
-
-export interface SoulLoopStepResult {
-  applied: boolean;
-  reason?: string;
-  state: SoulLoopState;
 }
 
 function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
@@ -311,12 +310,7 @@ export class NapiChainAdapter {
       const data = decision.data;
       const nextBlock = toNapiBlock(normalizedChain, nextIndex, data, prevHash);
 
-      type AppendData = {
-        appended: boolean;
-        length: number;
-        chain: NapiBlock[];
-        errors?: string[];
-      };
+      type AppendData = ChainAppendPayload;
       const out = parseEnvelope<AppendData>(
         appendFn(JSON.stringify(chainBlocks), JSON.stringify(nextBlock)),
         'chain_append',
@@ -328,25 +322,30 @@ export class NapiChainAdapter {
         );
       }
 
-      const appended = out.chain.at(-1);
+      const appended = out.chain?.at(-1);
       if (!appended) {
         throw new Error('chain_append returned empty chain');
       }
 
-      const persisted = {
-        ...appended,
+      // The bridge's block carries EXACTLY the three data fields the
+      // chain contract gives a meaning to — the Rust struct drops
+      // anything else — so the file keeps the extras the TypeScript side
+      // wrote and takes the three words from the bridge.
+      const persisted: NapiBlock = {
+        index: appended.index,
+        timestamp: appended.timestamp,
+        chain: normalizedChain,
+        prev_hash: appended.prev_hash,
+        hash: appended.hash,
+        ...(appended.signer !== undefined ? { signer: appended.signer } : {}),
+        ...(appended.signature !== undefined ? { signature: appended.signature } : {}),
         data: {
           ...nextBlock.data,
-          type: typeof appended.data?.type === 'string' ? appended.data.type : nextBlock.data.type,
-          content:
-            typeof appended.data?.content === 'string'
-              ? appended.data.content
-              : nextBlock.data.content,
-          tags: Array.isArray(appended.data?.tags)
-            ? appended.data.tags.filter((value): value is string => typeof value === 'string')
-            : nextBlock.data.tags,
+          type: appended.data.type,
+          content: appended.data.content,
+          tags: appended.data.tags,
         },
-      } satisfies NapiBlock;
+      };
 
       await writeBlock(normalizedChain, persisted, writeEnv);
 

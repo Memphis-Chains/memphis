@@ -1,9 +1,9 @@
+import type { CaseQueryPayload } from '../../infra/storage/bridge-payloads.generated.js';
 import { CaseChainAdapter } from '../../infra/storage/case-chain-adapter.js';
 import type {
   CaseAppendResult,
   CaseEntry,
   CaseQuery,
-  CaseQueryResult,
 } from '../../memory/case-types.js';
 
 export type MemphisCaseAppendInput = {
@@ -36,7 +36,7 @@ export async function runMemphisCaseAppend(
 export async function runMemphisCaseQuery(
   input: MemphisCaseQueryInput,
   deps: CaseQueryDeps = defaultQueryDeps,
-): Promise<CaseQueryResult> {
+): Promise<CaseQueryPayload> {
   return deps.adapter.queryCases(input.query);
 }
 

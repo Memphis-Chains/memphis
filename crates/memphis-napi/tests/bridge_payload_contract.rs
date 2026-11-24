@@ -74,7 +74,7 @@ enum StructKind {
 }
 
 /// One field of a struct, as the crate declares it.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct SourceField {
     name: String,
     /// The Rust type as written — `String`, `Option<u32>`, `Vec<String>`.
@@ -103,6 +103,354 @@ struct SourceFunction {
     name: String,
     /// The string literals in the body, minus the format strings.
     literals: Vec<String>,
+}
+
+/// One enum, as the crate declares it.
+#[derive(Debug)]
+struct SourceEnum {
+    name: String,
+    /// The enum-level `#[serde(rename_all = "...")]`.
+    rename_all: Option<String>,
+    /// The enum-level `#[serde(tag = "...")]` — the key the wire carries
+    /// the variant name in.
+    tag: Option<String>,
+    /// The variants, in declaration order.
+    variants: Vec<SourceVariant>,
+    /// The `#[serde(alias = "...")]` values on the variants — read-side
+    /// compatibility, never words the wire writes.
+    aliases: Vec<String>,
+}
+
+/// One variant of an enum.
+#[derive(Debug)]
+struct SourceVariant {
+    name: String,
+    /// The fields of a STRUCT variant, in declaration order. A unit
+    /// variant has none.
+    fields: Vec<SourceField>,
+}
+
+/// The string value of an attribute key — `rename_all = "snake_case"`
+/// yields `snake_case`.
+fn attr_string(text: &str, key: &str) -> Option<String> {
+    let rest = text.split(key).nth(1)?;
+    rest.split('"').nth(1).map(|value| value.to_string())
+}
+
+/// Split a piece of Rust source at the commas that are NOT inside a
+/// bracket, a brace or a parenthesis.
+///
+/// The enum body needs this: a variant's attribute list carries commas
+/// of its own (`#[serde(alias = "a", alias = "b")]`), and a struct
+/// variant's fields are separated by commas too.
+fn split_top_level_commas(text: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0i32;
+
+    for ch in text.chars() {
+        match ch {
+            '{' | '[' | '(' => {
+                depth += 1;
+                current.push(ch);
+            }
+            '}' | ']' | ')' => {
+                depth -= 1;
+                current.push(ch);
+            }
+            ',' if depth == 0 => {
+                parts.push(current.clone());
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    if !current.trim().is_empty() {
+        parts.push(current);
+    }
+
+    parts
+}
+
+/// The attribute blocks in a piece of source — `#[serde(...)]` and the
+/// rest — and the text with them removed.
+fn split_attributes(text: &str) -> (Vec<String>, String) {
+    let mut attributes = Vec::new();
+    let mut rest = String::new();
+    let mut chars = text.chars().peekable();
+
+    while let Some(ch) = chars.peek() {
+        if *ch == '#' {
+            let mut attribute = String::new();
+            // The attribute block: `#[` … `]`, with the brackets counted
+            // so a nested one does not end it early.
+            let mut depth = 0i32;
+            while let Some(inner) = chars.next() {
+                attribute.push(inner);
+                match inner {
+                    '[' => depth += 1,
+                    ']' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            attributes.push(attribute);
+            continue;
+        }
+        rest.push(*ch);
+        chars.next();
+    }
+
+    (attributes, rest)
+}
+
+/// Remove the comments from a piece of Rust source, leaving the string
+/// literals alone.
+///
+/// An enum body carries its history in comments — `BlockType` explains
+/// its fourteen read-side aliases in seven lines of prose — and a
+/// comment is not a variant.
+fn strip_comments(text: &str) -> String {
+    let mut out = String::new();
+    let mut chars = text.chars().peekable();
+    let mut in_string = false;
+    let mut escaped = false;
+
+    while let Some(ch) = chars.next() {
+        if in_string {
+            out.push(ch);
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match ch {
+                '\\' => escaped = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        if ch == '"' {
+            in_string = true;
+            out.push(ch);
+            continue;
+        }
+        if ch == '/' {
+            if chars.peek() == Some(&'/') {
+                // A line comment — to the end of the line.
+                for inner in chars.by_ref() {
+                    if inner == '\n' {
+                        out.push('\n');
+                        break;
+                    }
+                }
+                continue;
+            }
+            if chars.peek() == Some(&'*') {
+                chars.next();
+                let mut previous = '\0';
+                for inner in chars.by_ref() {
+                    if previous == '*' && inner == '/' {
+                        break;
+                    }
+                    previous = inner;
+                }
+                continue;
+            }
+        }
+        out.push(ch);
+    }
+
+    out
+}
+
+/// Parse the enums out of one source file.
+///
+/// The enum body is taken as TEXT — not line by line — because a variant
+/// can be written on one line (`Genitive { owner: String, possessed: String }`)
+/// or on five, and the fields of a variant are the same either way.
+fn parse_enums(source: &str) -> Vec<SourceEnum> {
+    let mut enums = Vec::new();
+    let lines: Vec<&str> = source.lines().collect();
+    let mut index = 0;
+
+    // The attributes that belong to the next item.
+    let mut pending_rename_all: Option<String> = None;
+    let mut pending_tag: Option<String> = None;
+
+    while index < lines.len() {
+        let trimmed = lines[index].trim();
+
+        if trimmed.starts_with("#[serde") {
+            if let Some(rule) = attr_string(trimmed, "rename_all") {
+                pending_rename_all = Some(rule);
+            }
+            if let Some(tag) = attr_string(trimmed, "tag") {
+                pending_tag = Some(tag);
+            }
+            index += 1;
+            continue;
+        }
+        if trimmed.starts_with("#[") {
+            index += 1;
+            continue;
+        }
+
+        let declaration = trimmed
+            .strip_prefix("pub enum ")
+            .or_else(|| trimmed.strip_prefix("enum "));
+        let Some(rest) = declaration else {
+            // Any other item ends the pending attributes — they belong to
+            // the item that follows, and that item is not this enum.
+            if trimmed.starts_with("pub ") || trimmed.starts_with("fn ") {
+                pending_rename_all = None;
+                pending_tag = None;
+            }
+            index += 1;
+            continue;
+        };
+
+        let name = rest
+            .split(['<', ' ', '{', '(', ','])
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+
+        // The body of the enum: from the opening brace to its match.
+        let mut body = String::new();
+        let mut depth = 0i32;
+        let mut started = false;
+        while index < lines.len() {
+            let line = lines[index];
+            for ch in line.chars() {
+                if ch == '{' {
+                    depth += 1;
+                    started = true;
+                } else if ch == '}' {
+                    depth -= 1;
+                }
+                if started {
+                    body.push(ch);
+                }
+            }
+            // The line break matters: without it a `//` comment would run
+            // to the end of the whole body and eat the variants behind it.
+            if started {
+                body.push('\n');
+            }
+            index += 1;
+            if started && depth <= 0 {
+                break;
+            }
+        }
+
+        let mut variants: Vec<SourceVariant> = Vec::new();
+        let mut aliases: Vec<String> = Vec::new();
+
+        // The body still carries the enum's own braces — they have to go,
+        // or every comma of the body would be "inside a brace".
+        let body = strip_comments(body.trim());
+        let body = body.trim();
+        let body = body.strip_prefix('{').unwrap_or(body);
+        let body = body.strip_suffix('}').unwrap_or(body);
+
+        for chunk in split_top_level_commas(body) {
+            let (attributes, text) = split_attributes(&chunk);
+            for attribute in &attributes {
+                if attribute.contains("alias") {
+                    if let Some(alias) = attr_string(attribute, "alias") {
+                        aliases.push(alias);
+                    }
+                }
+            }
+
+            let text = text.trim();
+            if text.is_empty() {
+                continue;
+            }
+
+            let variant_name = text
+                .split(['{', '(', ' '])
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+
+            let fields = match text.find('{') {
+                Some(brace) => {
+                    let inner = &text[brace + 1..];
+                    let inner = inner.rsplit_once('}').map(|(head, _)| head).unwrap_or(inner);
+                    parse_variant_fields(inner)
+                }
+                None => Vec::new(),
+            };
+
+            variants.push(SourceVariant {
+                name: variant_name,
+                fields,
+            });
+        }
+
+        enums.push(SourceEnum {
+            name,
+            rename_all: pending_rename_all.take(),
+            tag: pending_tag.take(),
+            variants,
+            aliases,
+        });
+    }
+
+    enums
+}
+
+/// The fields of one struct variant, from the text inside its braces.
+fn parse_variant_fields(inner: &str) -> Vec<SourceField> {
+    let mut fields: Vec<SourceField> = Vec::new();
+    let mut pending_rename: Option<String> = None;
+    let mut pending_skip = false;
+
+    for chunk in split_top_level_commas(inner) {
+        let (attributes, text) = split_attributes(&chunk);
+        for attribute in &attributes {
+            if attribute.contains("skip_serializing_if") {
+                pending_skip = true;
+            }
+            if !attribute.contains("rename_all") {
+                if let Some(rename) = attr_string(attribute, "rename") {
+                    pending_rename = Some(rename);
+                }
+            }
+        }
+
+        let text = text.trim();
+        if text.is_empty() {
+            continue;
+        }
+        let Some((name, type_text)) = text.split_once(':') else {
+            continue;
+        };
+        let name = name.trim().trim_start_matches("pub ").trim().to_string();
+        let type_text = type_text.trim().trim_end_matches(',').trim().to_string();
+        if name.is_empty() || name.contains(' ') || type_text.is_empty() {
+            continue;
+        }
+
+        fields.push(SourceField {
+            name,
+            type_text,
+            js_name: None,
+            serde_rename: pending_rename.take(),
+            skip_serializing_if: std::mem::take(&mut pending_skip),
+        });
+    }
+
+    fields
 }
 
 /// Parse the structs out of one source file.
@@ -411,6 +759,10 @@ enum Kind {
     Bytes,
     Named(String),
     Array(Box<Kind>),
+    /// A Rust ENUM used as a field type — the field carries ONE of the
+    /// enum's words, so the owner declares it as an enumerated field (or
+    /// as the shape of the whole enum).
+    Enum(String),
 }
 
 fn kind_of(ty: PayloadType) -> Kind {
@@ -431,19 +783,28 @@ fn kind_of(ty: PayloadType) -> Kind {
 }
 
 /// The kind a Rust type declares, and whether it is an `Option`.
-fn rust_kind(type_text: &str, shapes: &[&'static str]) -> Option<(Kind, bool)> {
+fn rust_kind(
+    type_text: &str,
+    shapes: &[&'static str],
+    enums: &[SourceEnum],
+) -> Option<(Kind, bool)> {
     let type_text = type_text.trim();
     if let Some(inner) = type_text
         .strip_prefix("Option<")
         .and_then(|rest| rest.strip_suffix('>'))
     {
-        return rust_kind(inner, shapes).map(|(kind, _)| (kind, true));
+        return rust_kind(inner, shapes, enums).map(|(kind, _)| (kind, true));
     }
     if let Some(inner) = type_text
         .strip_prefix("Vec<")
         .and_then(|rest| rest.strip_suffix('>'))
     {
-        return rust_kind(inner, shapes).map(|(kind, _)| (Kind::Array(Box::new(kind)), false));
+        return rust_kind(inner, shapes, enums).map(|(kind, _)| (Kind::Array(Box::new(kind)), false));
+    }
+    // An ENUM type is not a string and not a struct: it is a closed set
+    // of words, and the owner has to say so.
+    if let Some(enum_) = enums.iter().find(|candidate| candidate.name == type_text) {
+        return Some((Kind::Enum(enum_.name.clone()), false));
     }
     let kind = match type_text {
         "String" | "&str" => Kind::String,
@@ -472,20 +833,29 @@ fn rust_kind(type_text: &str, shapes: &[&'static str]) -> Option<(Kind, bool)> {
 // The sources.
 // ---------------------------------------------------------------------------
 
-fn crate_sources() -> (Vec<SourceStruct>, Vec<SourceFunction>) {
+fn crate_sources() -> (Vec<SourceStruct>, Vec<SourceFunction>, Vec<SourceEnum>) {
     let mut structs = Vec::new();
     let mut functions = Vec::new();
+    let mut enums = Vec::new();
 
     for source in [
         include_str!("../src/lib.rs"),
         include_str!("../src/vault_bridge.rs"),
         include_str!("../../memphis-embed/src/metadata.rs"),
+        // The chain, soul and case families live in the core crates, not
+        // in the bridge — so the gate reads them from THERE.
+        include_str!("../../memphis-core/src/block.rs"),
+        include_str!("../../memphis-core/src/loop_engine.rs"),
+        include_str!("../../memphis-core/src/harness.rs"),
+        include_str!("../../memphis-core/src/case_entry.rs"),
+        include_str!("../../memphis-case-index/src/lib.rs"),
     ] {
         structs.extend(parse_structs(source));
         functions.extend(parse_functions(source));
+        enums.extend(parse_enums(source));
     }
 
-    (structs, functions)
+    (structs, functions, enums)
 }
 
 // ---------------------------------------------------------------------------
@@ -494,13 +864,20 @@ fn crate_sources() -> (Vec<SourceStruct>, Vec<SourceFunction>) {
 
 #[test]
 fn every_shape_field_is_the_name_the_wire_really_carries() {
-    let (structs, _) = crate_sources();
+    let (structs, _, enums) = crate_sources();
     assert!(
         !structs.is_empty(),
         "no structs found — the parser is broken, not the crate"
     );
 
     for shape in PAYLOAD_SHAPES {
+        // A shape whose Rust type is an ENUM has no struct fields: it is
+        // a tag plus the union of the enum's variants, and it is checked
+        // by `every_enum_shape_is_the_tag_and_the_union_of_its_variants`.
+        if enums.iter().any(|candidate| candidate.name == shape.rust_type) {
+            continue;
+        }
+
         let structure = structs
             .iter()
             .find(|object| object.name == shape.rust_type)
@@ -554,22 +931,48 @@ fn every_shape_field_is_the_name_the_wire_really_carries() {
                 .iter()
                 .map(|shape| shape.rust_type)
                 .collect();
-            let (expected_type, is_option) = rust_kind(&parsed.type_text, &rust_types)
+            let (expected_type, is_option) = rust_kind(&parsed.type_text, &rust_types, &enums)
                 .unwrap_or_else(|| {
                     panic!(
                         "{}: the gate does not know the Rust type {} of {}.{}",
                         shape.name, parsed.type_text, shape.rust_type, parsed.name
                     )
                 });
-            assert_eq!(
-                kind_of(declared.ty),
-                expected_type,
-                "{}: the table says {:?} for {}, but the struct declares {}",
-                shape.name,
-                declared.ty,
-                declared.name,
-                parsed.type_text
-            );
+
+            // A field whose Rust type is an ENUM carries one of that
+            // enum's words, so the owner has two honest ways to declare
+            // it: as an enumerated field (the words), or as the shape of
+            // the whole enum (the object). Both are checked here — and
+            // nothing else is accepted.
+            if let Kind::Enum(enum_name) = &expected_type {
+                let declared_ok = match declared.ty {
+                    PayloadType::Enum => declared.vocabulary.is_some_and(|vocabulary| {
+                        vocabulary.sources.iter().any(|source| source == enum_name)
+                    }),
+                    PayloadType::Named(shape_name) => PAYLOAD_SHAPES
+                        .iter()
+                        .any(|candidate| candidate.rust_type == *enum_name && candidate.name == shape_name),
+                    _ => false,
+                };
+                assert!(
+                    declared_ok,
+                    "{}: the field {} is the Rust enum {}, but the table declares it as {:?}",
+                    shape.name,
+                    declared.name,
+                    enum_name,
+                    declared.ty
+                );
+            } else {
+                assert_eq!(
+                    kind_of(declared.ty),
+                    expected_type,
+                    "{}: the table says {:?} for {}, but the struct declares {}",
+                    shape.name,
+                    declared.ty,
+                    declared.name,
+                    parsed.type_text
+                );
+            }
 
             // The PRESENCE of the key on the wire.
             let (expected_optional, expected_nullable) = match shape.naming {
@@ -625,21 +1028,40 @@ fn every_shape_field_is_the_name_the_wire_really_carries() {
 
 #[test]
 fn every_enumerated_field_carries_exactly_the_words_the_crate_writes() {
-    let (_, functions) = crate_sources();
+    let (_, functions, enums) = crate_sources();
 
     for shape in PAYLOAD_SHAPES {
         for field in shape.fields {
             let Some(vocabulary) = field.vocabulary else {
                 continue;
             };
-            let collected = vocabulary_literals(&functions, &vocabulary);
+            let collected = vocabulary_words(&functions, &enums, &vocabulary);
             let mut declared: BTreeSet<String> =
                 vocabulary.values.iter().map(|word| word.to_string()).collect();
             declared.extend(vocabulary.extra_literals.iter().map(|word| word.to_string()));
 
+            // An ENUM accepts ALIASES on read — compatibility words that
+            // the wire never writes. A vocabulary that lists one of them
+            // would promise a word the bridge does not produce. This
+            // check comes FIRST on purpose: an alias is never a variant
+            // name, so the equality below would catch it too — but with
+            // a message that says only "the sets differ".
+            for source in vocabulary.sources {
+                let Some(enum_) = enums.iter().find(|candidate| candidate.name == *source) else {
+                    continue;
+                };
+                for alias in &enum_.aliases {
+                    assert!(
+                        !declared.contains(alias),
+                        "{}: the vocabulary of {} declares the read-side alias {alias}, which the wire never writes",
+                        shape.name,
+                        field.name
+                    );
+                }
+            }
+
             assert_eq!(
-                collected,
-                declared,
+                collected, declared,
                 "{}: the vocabulary of {} is {:?}, but the source writes {:?}",
                 shape.name,
                 field.name,
@@ -650,21 +1072,70 @@ fn every_enumerated_field_carries_exactly_the_words_the_crate_writes() {
     }
 }
 
-/// The string literals of the functions a vocabulary points at.
-fn vocabulary_literals(
+/// The words the sources of one vocabulary produce.
+///
+/// A source is a FUNCTION (its string literals are the words) or an
+/// ENUM (its variant names, renamed by the enum's own rule, are the
+/// words). The two are told apart by what the crate declares.
+fn vocabulary_words(
     functions: &[SourceFunction],
+    enums: &[SourceEnum],
     vocabulary: &Vocabulary,
 ) -> BTreeSet<String> {
     let mut collected = BTreeSet::new();
-    for name in vocabulary.source_functions {
+    for name in vocabulary.sources {
+        if let Some(enum_) = enums.iter().find(|candidate| candidate.name == *name) {
+            for variant in &enum_.variants {
+                collected.insert(serde_variant_name(enum_.rename_all.as_deref(), &variant.name));
+            }
+            continue;
+        }
         let function = functions.iter().find(|function| function.name == *name).unwrap_or_else(|| {
             panic!(
-                "the vocabulary points at the function {name}, and the crate does not declare it"
+                "the vocabulary points at the source {name}, and the crate declares neither a function nor an enum by that name"
             )
         });
         collected.extend(function.literals.iter().cloned());
     }
     collected
+}
+
+/// serde's `RenameRule::apply_to_variant`.
+///
+/// The VARIANT rule is not the FIELD rule: `SnakeCase` on a field keeps
+/// the field's own name, but on a variant it splits the PascalCase name
+/// — `WalletTxRequested` becomes `wallet_tx_requested`. Copied from
+/// `serde_derive`'s own `internals/case.rs`.
+fn serde_variant_name(rule: Option<&str>, variant: &str) -> String {
+    match rule {
+        None | Some("PascalCase") => variant.to_string(),
+        Some("lowercase") => variant.to_ascii_lowercase(),
+        Some("UPPERCASE") => variant.to_ascii_uppercase(),
+        Some("camelCase") => {
+            let mut chars = variant.chars();
+            match chars.next() {
+                Some(first) => first.to_ascii_lowercase().to_string() + chars.as_str(),
+                None => variant.to_string(),
+            }
+        }
+        Some("snake_case") => snake_case(variant),
+        Some("SCREAMING_SNAKE_CASE") => snake_case(variant).to_ascii_uppercase(),
+        Some("kebab-case") => snake_case(variant).replace('_', "-"),
+        Some("SCREAMING-KEBAB-CASE") => snake_case(variant).to_ascii_uppercase().replace('_', "-"),
+        Some(other) => panic!("serde rename_all = {other:?} is not a rule this gate knows"),
+    }
+}
+
+/// serde's snake_case of a variant name.
+fn snake_case(variant: &str) -> String {
+    let mut snake = String::new();
+    for (index, ch) in variant.char_indices() {
+        if index > 0 && ch.is_uppercase() {
+            snake.push('_');
+        }
+        snake.push(ch.to_ascii_lowercase());
+    }
+    snake
 }
 
 #[test]
@@ -863,6 +1334,159 @@ fn the_embed_family_is_in_the_table() {
             "{export} is missing from the table"
         );
     }
+}
+
+#[test]
+fn the_chain_soul_and_case_families_are_in_the_table() {
+    // These eight answers were built from `json!` literals — a payload
+    // with no owner — until 2026-11-24. The table is where they live
+    // now, and the gate checks the table against the structs that carry
+    // them.
+    for export in [
+        "chain_validate",
+        "chain_append",
+        "chain_query",
+        "soul_loop_step",
+        "soul_replay",
+        "case_append",
+        "case_query",
+        "case_rebuild",
+    ] {
+        assert!(
+            BRIDGE_PAYLOADS.iter().any(|payload| payload.export == export),
+            "{export} is missing from the table"
+        );
+    }
+}
+
+/// The union of an enum's variant fields, in order of first appearance.
+///
+/// A tagged enum puts ONE variant's fields on the wire, so the shape of
+/// the WHOLE enum is the tag plus the union of the variants — and the
+/// union is what the owner has to declare.
+fn union_fields(enum_: &SourceEnum) -> Vec<SourceField> {
+    let mut union: Vec<SourceField> = Vec::new();
+    for variant in &enum_.variants {
+        for field in &variant.fields {
+            match union.iter_mut().find(|existing| existing.name == field.name) {
+                Some(existing) => assert_eq!(
+                    existing.type_text, field.type_text,
+                    "the enum {} declares the field {} with two types, so the union has no single type for it",
+                    enum_.name, field.name
+                ),
+                None => union.push(field.clone()),
+            }
+        }
+    }
+    union
+}
+
+#[test]
+fn every_enum_shape_is_the_tag_and_the_union_of_its_variants() {
+    let (_, _, enums) = crate_sources();
+    let rust_types: Vec<&'static str> = PAYLOAD_SHAPES.iter().map(|shape| shape.rust_type).collect();
+
+    let mut checked = 0;
+    for shape in PAYLOAD_SHAPES {
+        let Some(enum_) = enums.iter().find(|candidate| candidate.name == shape.rust_type) else {
+            continue;
+        };
+        checked += 1;
+
+        let tag = enum_.tag.as_ref().unwrap_or_else(|| {
+            panic!(
+                "the shape {} describes the enum {}, and that enum carries no serde tag — an untagged enum has no single wire shape",
+                shape.name, enum_.name
+            )
+        });
+
+        // The tag is the first field, and it is enumerated: the wire
+        // carries one of the enum's variant names in it.
+        let tag_field = &shape.fields[0];
+        assert_eq!(
+            tag_field.name, tag,
+            "{}: the shape says the tag is {}, but the enum says {}",
+            shape.name, tag_field.name, tag
+        );
+        assert_eq!(
+            tag_field.ty,
+            PayloadType::Enum,
+            "{}: the tag {} must be enumerated — it carries the enum's variant names",
+            shape.name, tag
+        );
+
+        // Then the union of the variants' fields.
+        let union = union_fields(enum_);
+        assert_eq!(
+            shape.fields.len(),
+            union.len() + 1,
+            "{}: the shape has {} fields, but the union of the variants of {} has {}",
+            shape.name,
+            shape.fields.len(),
+            enum_.name,
+            union.len()
+        );
+
+        for (declared, field) in shape.fields[1..].iter().zip(union.iter()) {
+            assert_eq!(
+                declared.name, field.name,
+                "{}: the shape says {}, but the union of the variants of {} says {}",
+                shape.name,
+                declared.name,
+                enum_.name,
+                field.name
+            );
+
+            let (expected_type, is_option) = rust_kind(&field.type_text, &rust_types, &enums)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{}: the gate does not know the Rust type {} of the variant field {}",
+                        shape.name, field.type_text, field.name
+                    )
+                });
+            assert_eq!(
+                kind_of(declared.ty),
+                expected_type,
+                "{}: the table says {:?} for {}, but the variant declares {}",
+                shape.name,
+                declared.ty,
+                declared.name,
+                field.type_text
+            );
+
+            // The PRESENCE of a union field: a field that only SOME
+            // variants carry is ABSENT on the wire when another variant
+            // is the one on it — absent, not null.
+            let in_every_variant = enum_
+                .variants
+                .iter()
+                .all(|variant| variant.fields.iter().any(|other| other.name == field.name));
+            let (expected_optional, expected_nullable) = if in_every_variant {
+                if field.skip_serializing_if {
+                    (true, false)
+                } else {
+                    (false, is_option)
+                }
+            } else {
+                (true, false)
+            };
+            assert_eq!(
+                (declared.optional, declared.nullable),
+                (expected_optional, expected_nullable),
+                "{}: the table says optional={} nullable={} for {}, but the variants of {} say otherwise",
+                shape.name,
+                declared.optional,
+                declared.nullable,
+                declared.name,
+                enum_.name
+            );
+        }
+    }
+
+    assert!(
+        checked > 0,
+        "the gate found no enum shape at all — the parser is broken, not the crate"
+    );
 }
 
 fn artefact_path() -> String {
