@@ -115,7 +115,7 @@ export function buildUserServiceUnit(
 ): string {
   const execStart = resolveServiceExecStart(runtimeRoot);
   const pathEnv = buildPathEnv();
-  const nodeEnv = rawEnv.NODE_ENV?.trim() || 'development';
+  const nodeEnv = rawEnv.NODE_ENV?.trim() || 'production';
   const home = rawEnv.HOME ?? '';
 
   const envFile = rawEnv.MEMPHIS_ENV_FILE ?? join(runtimeRoot, '.env');

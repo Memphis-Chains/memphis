@@ -90,6 +90,7 @@ export const CLI_COMMAND_REGISTRY = [
       'workspace',
       'context',
       'service',
+      'status',
       'reset',
       'slo',
       'kill-zombies',
@@ -422,6 +423,7 @@ export const CLI_COMPLETION_COMMANDS = [
   // was written for (a routed command that the dispatcher reaches but
   // completion does not offer).
   'budget',
+  'status',
 ] as const;
 
 /**

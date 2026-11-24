@@ -32,7 +32,7 @@ TMP_OLLAMA="$TMP_DIR/ollama.json"
 TMP_OLLAMA_TAGS="$TMP_DIR/ollama-tags.json"
 # v1.6.0 new surface — exporter / kartograf envelope CLI / consent mark.
 TMP_EXPORT_TRAJ="$TMP_DIR/export-trajectories.json"
-TMP_KARTO_ENV="$TMP_DIR/kartograf-envelope.json"
+TMP_KARTO_ENV="$TMP_DIR/checkpoint.json"
 TMP_KARTO_VERIFY="$TMP_DIR/kartograf-verify.json"
 TMP_KARTO_INSTALL_DRY="$TMP_DIR/kartograf-install-dry.json"
 TMP_CONSENT_MARK_DRY="$TMP_DIR/consent-mark-dry.json"
@@ -165,22 +165,23 @@ if ! (cd "$ROOT_DIR" && bash ./scripts/bootstrap.sh >"$TMP_BOOTSTRAP_LOG" 2>&1);
   exit 1
 fi
 
-while IFS='=' read -r key value; do
-  [[ -z "${key// }" ]] && continue
-  [[ "$key" =~ ^# ]] && continue
+# Match Node's dotenv handling, including quoted values and single-space inline comments.
+exec {env_fd}< <(node --input-type=module -e '
+  import { readFileSync } from "node:fs";
+  import { parseEnv } from "node:util";
+  for (const [key, value] of Object.entries(parseEnv(readFileSync(process.argv[1], "utf8")))) {
+    process.stdout.write(key + "\0" + value + "\0");
+  }
+' "$TMP_ENV")
+env_reader_pid=$!
+while IFS= read -r -d '' key && IFS= read -r -d '' value; do
   if [[ "$key" == "MEMPHIS_VAULT_ENTRIES_PATH" || "$key" == "MEMPHIS_VAULT_STATE_PATH" || "$key" == "MEMPHIS_DATA_DIR" ]]; then
     continue
   fi
-  value="${value%$'\r'}"
-  # Strip inline comments (e.g. KEY=val  # comment)
-  value="${value%%  #*}"
-  value="${value%%	#*}"
-  value="${value%% }"
-  if [[ "$value" =~ ^\".*\"$ ]] || [[ "$value" =~ ^\'.*\'$ ]]; then
-    value="${value:1:${#value}-2}"
-  fi
   export "$key=$value"
-done < "$TMP_ENV"
+done <&"$env_fd"
+exec {env_fd}<&-
+wait "$env_reader_pid"
 
 export HOST="127.0.0.1"
 export PORT="$TMP_PORT"
@@ -218,30 +219,8 @@ echo "[rc-drill] export trajectories (dry-run)"
 (cd "$ROOT_DIR" && "${CLI[@]}" export trajectories --out "$TMP_DIR/trajectories" --dry-run --json >"$TMP_EXPORT_TRAJ")
 
 echo "[rc-drill] kartograf — seed + verify + install-dry-run"
-# Produce a valid signed envelope using the shipped checkpoint primitive
-# so the verify/install checks exercise a real cross-validated payload
-# rather than a hand-rolled fixture that could drift out of spec.
-(cd "$ROOT_DIR" && npx tsx -e "
-import { randomBytes } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
-import { signCheckpoint } from './src/kartograf/checkpoint.ts';
-const envelope = signCheckpoint({
-  version: 'kartograf-v1',
-  base_model: 'answerdotai/ModernBERT-base@rc-drill',
-  onnx_sha256: 'a'.repeat(64),
-  tokenizer_sha256: 'b'.repeat(64),
-  heads_config: { embedding_dim: 256, zone_classes: 12, multitask_alpha: 0.7 },
-  training_provenance: {
-    trained_at: '2026-04-23T00:00:00Z',
-    corpus_version: 'v1',
-    hardware: 'rc-drill',
-    eval_recall_at_10: 0,
-    steps: 0,
-  },
-  distribution_source: 'file',
-}, randomBytes(32));
-writeFileSync('$TMP_KARTO_ENV', JSON.stringify(envelope, null, 2));
-")
+# The install dry run checks both asset hashes in the signed bundle.
+(cd "$ROOT_DIR" && npx tsx -e "import { kartografBundleFixture } from './tests/helpers/kartograf-bundle.ts'; kartografBundleFixture(process.argv[1]);" "$TMP_DIR")
 (cd "$ROOT_DIR" && "${CLI[@]}" kartograf verify --file "$TMP_KARTO_ENV" --json >"$TMP_KARTO_VERIFY")
 (cd "$ROOT_DIR" && "${CLI[@]}" kartograf install --file "$TMP_KARTO_ENV" --source file --dry-run --json >"$TMP_KARTO_INSTALL_DRY")
 

@@ -1,8 +1,9 @@
 import { z } from 'zod';
 
+import { CASE_TYPES } from '../../memory/case-types.js';
 import type { ToolMeta } from '../tool-metadata.js';
 
-export const STORAGE_TOOLS: Record<string, ToolMeta> = {
+export const STORAGE_TOOLS = {
   memphis_case_append: {
     name: 'memphis_case_append',
     tier: 0,
@@ -12,16 +13,7 @@ export const STORAGE_TOOLS: Record<string, ToolMeta> = {
       .object({
         entry: z
           .object({
-            case_type: z.enum([
-              'nominative',
-              'genitive',
-              'dative',
-              'accusative',
-              'instrumental',
-              'locative',
-              'ablative',
-              'vocative',
-            ]),
+            case_type: z.enum(CASE_TYPES),
           })
           .passthrough()
           .optional(),
@@ -73,7 +65,7 @@ export const STORAGE_TOOLS: Record<string, ToolMeta> = {
     inputSchema: z
       .object({
         query: z.object({
-          case_type: z.string().optional(),
+          case_type: z.enum(CASE_TYPES).optional(),
           entity: z.string().optional(),
           actor: z.string().optional(),
           target: z.string().optional(),
@@ -119,7 +111,7 @@ export const STORAGE_TOOLS: Record<string, ToolMeta> = {
       .object({
         chain: z.string().optional(),
         limit: z.number().int().positive().max(100).optional(),
-        offset: z.number().int().min(0).optional(),
+        offset: z.number().int().min(0).max(1000).optional(),
         blockType: z.string().optional(),
         contains: z.string().optional(),
         tag: z.string().optional(),
@@ -206,4 +198,4 @@ export const STORAGE_TOOLS: Record<string, ToolMeta> = {
     helpText:
       'Read-only listing of vault entry keys and metadata. It never returns plaintext. Executed by the native Rust operator cockpit; the gateway does not advertise it.',
   },
-};
+} satisfies Record<string, ToolMeta>;

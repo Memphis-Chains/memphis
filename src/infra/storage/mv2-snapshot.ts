@@ -10,8 +10,9 @@ import {
 import { chmod, mkdir, open, readdir, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 
+import { parseEnvelope } from './bridge-envelope.js';
 import { exportChain, validateChainSnapshot, type ChainBlock } from './chain-adapter.js';
-import { writeBlockAtomic } from './chain-file-io.js';
+import { serializeBlockForDisk, writeBlockAtomic } from './chain-file-io.js';
 import { withChainWriteLock } from './chain-write-lock.js';
 import { loadPlatformAwareBridge } from './napi-contract.js';
 import { getChainPath, getDataDir } from '../../config/paths.js';
@@ -75,12 +76,12 @@ function bridge(rawEnv: NodeJS.ProcessEnv) {
   };
 }
 function envelope<T>(raw: string): T {
+  // The envelope itself is understood by one module; this wrapper only
+  // keeps the MV2-specific error message the callers expect.
   try {
-    const value = JSON.parse(raw);
-    if (!value.ok || value.data === undefined) throw new Error();
-    return value.data as T;
-  } catch {
-    throw new Error('MV2 native codec refused the container');
+    return parseEnvelope<T>(raw, 'mv2');
+  } catch (error) {
+    throw new Error('MV2 native codec refused the container', { cause: error });
   }
 }
 function checkJson(value: unknown, depth = 0): void {
@@ -392,7 +393,12 @@ async function restoreValidatedSnapshot(
       const directory = join(staging, 'chains', name);
       await mkdir(directory, { recursive: true, mode: 0o700 });
       for (const block of records) {
-        const path = await writeBlockAtomic(directory, block.index, JSON.stringify(block, null, 2));
+        // The snapshot's blocks are chain blocks: they go through the one
+        // serializer, like every other writer. This used to call
+        // `JSON.stringify(block, null, 2)` inline, which is the same
+        // whitespace but NOT the canonical key order — a restored chain
+        // was written in a different byte form than the one it came from.
+        const path = await writeBlockAtomic(directory, block.index, serializeBlockForDisk(block));
         await chmod(path, 0o600);
       }
       const written = (await exportChain(name, stagedEnv)).blocks;

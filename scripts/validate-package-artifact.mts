@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -13,7 +13,7 @@ type CliProbeSummary = {
 };
 
 type ValidationSummary = {
-  schemaVersion: 3;
+  schemaVersion: 4;
   ok: boolean;
   artifactPath: string | null;
   artifactName: string | null;
@@ -21,6 +21,26 @@ type ValidationSummary = {
   deferredRuntimeProofs: string[];
   requiredEntries: string[];
   cliProbes: CliProbeSummary[];
+  /**
+   * The install policy the gate used, and the native binding it proved.
+   *
+   * npm 12 blocks dependency install scripts by default, and it reads the
+   * `allowScripts` field from the PROJECT ROOT — not from the package being
+   * installed. Measured 2026-11-24 on this host against the published
+   * v1.14.1 tarball: `better-sqlite3` ships no prebuilt binding, so with the
+   * script blocked the CLI dies at startup with "Could not locate the
+   * bindings file" — and the old gate did not notice, because it installed
+   * with `--ignore-scripts` and probed only the two commands that never
+   * open the journal database.
+   *
+   * So the gate now states the policy it installs under, and proves the
+   * binding that policy is supposed to produce.
+   */
+  installPolicy: {
+    allowScripts: Record<string, boolean>;
+    onnxruntimeCuda: 'skip';
+    nativeBinding: string | null;
+  };
   error: string | null;
 };
 
@@ -84,11 +104,17 @@ function firstLine(value: string | null | undefined): string | null {
   return trimmed.split(/\r?\n/, 1)[0] ?? null;
 }
 
-function run(command: string, args: string[], cwd: string) {
+function run(
+  command: string,
+  args: string[],
+  cwd: string,
+  extraEnv: NodeJS.ProcessEnv = {},
+) {
   const result = spawnSync(command, args, {
     cwd,
     encoding: 'utf8',
     timeout: 300_000,
+    env: { ...process.env, ...extraEnv },
   });
 
   if (result.error) {
@@ -132,20 +158,56 @@ function validateEntries(extractDir: string): void {
   }
 }
 
+/**
+ * The install scripts a consumer has to approve, and nothing else.
+ *
+ * npm 12 (measured on this host: npm 12.0.2) blocks dependency install
+ * scripts by default and reads `allowScripts` from the PROJECT ROOT only —
+ * a published package's own `allowScripts` field does not travel with it
+ * (the installed `node_modules/@memphis-chains/memphis/package.json` carried
+ * `{"better-sqlite3": true, ...}` and the script was still blocked).
+ *
+ * `better-sqlite3` is the only dependency that MUST run its install script:
+ * it ships no prebuilt binding, it downloads one (`prebuild-install`) or
+ * compiles it. Everything else in the dependency tree either ships its
+ * binary inside the package (`onnxruntime-node` ships the CPU runtime) or
+ * is not needed at runtime.
+ */
+const CONSUMER_ALLOW_SCRIPTS: Record<string, boolean> = {
+  'better-sqlite3': true,
+};
+
 function installArtifactIntoPrefix(artifactPath: string, prefixDir: string): void {
+  // The prefix is its own npm PROJECT, because npm reads `allowScripts`
+  // from the project's package.json — `--prefix` only moves where the
+  // packages land, not which project rules apply.
+  writeFileSync(
+    path.join(prefixDir, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: 'memphis-package-artifact-probe',
+        version: '1.0.0',
+        private: true,
+        allowScripts: allowedScriptPolicy(),
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+
   const result = run(
     'npm',
-    [
-      'install',
-      '--prefix',
-      prefixDir,
-      '--ignore-scripts',
-      '--no-package-lock',
-      '--no-fund',
-      '--no-audit',
-      artifactPath,
-    ],
-    repoRoot,
+    ['install', '--no-package-lock', '--no-fund', '--no-audit', artifactPath],
+    prefixDir,
+    {
+      // `onnxruntime-node`'s install script downloads the CUDA build, and
+      // that asset answers 404 — which aborts the whole install. The CPU
+      // runtime ships inside the package, so the script is not needed for
+      // it. The repository's own `.npmrc` says the same thing; a
+      // dependency's `.npmrc` is not read by npm, so the gate says it.
+      npm_config_onnxruntime_node_install_cuda: 'skip',
+    },
   );
 
   if (result.status !== 0) {
@@ -155,6 +217,39 @@ function installArtifactIntoPrefix(artifactPath: string, prefixDir: string): voi
         'npm install of package artifact failed',
     );
   }
+}
+
+/**
+ * Prove that the install produced the native binding the CLI needs.
+ *
+ * This is the assertion the old gate was missing: it installed with
+ * `--ignore-scripts`, so `better-sqlite3` had no binding, and the two
+ * probes it ran (`--help`, `completion bash`) never open the journal
+ * database — so the gate passed on a package that could not start.
+ */
+function resolveNativeBinding(prefixDir: string): string {
+  const sqliteDir = path.join(prefixDir, 'node_modules', 'better-sqlite3');
+  const candidates = [
+    path.join(sqliteDir, 'build', 'Release', 'better_sqlite3.node'),
+    path.join(sqliteDir, 'prebuilds', 'better_sqlite3.node'),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+
+  throw new Error(
+    'the installed package has no better-sqlite3 native binding — the install ' +
+      'did not run the script that builds it. A consumer needs ' +
+      `"allowScripts": ${JSON.stringify(allowedScriptPolicy())} in their project.`,
+  );
+}
+
+/** The approvals a consumer actually needs — only the ones set to true. */
+function allowedScriptPolicy(): Record<string, boolean> {
+  return Object.fromEntries(
+    Object.entries(CONSUMER_ALLOW_SCRIPTS).filter(([, allowed]) => allowed),
+  );
 }
 
 function resolveInstalledBinary(prefixDir: string): string {
@@ -180,13 +275,15 @@ type CliProbeSpec = {
 
 function createProbeEnv(prefixDir: string, extractDir: string): NodeJS.ProcessEnv {
   return {
-    ...process.env,
     PATH: `${path.join(prefixDir, 'bin')}${path.delimiter}${process.env.PATH ?? ''}`,
+    SystemRoot: process.env.SystemRoot,
     NODE_NO_WARNINGS: '1',
     NODE_ENV: 'test',
     RUST_CHAIN_ENABLED: 'false',
     DEFAULT_PROVIDER: 'local-fallback',
     MEMPHIS_SKIP_FIRST_RUN_CHECKS: '1',
+    // A fresh installation must use its own config and transaction journals.
+    MEMPHIS_ENV_FILE: path.join(extractDir, '.env'),
     MEMPHIS_DATA_DIR: path.join(extractDir, 'data'),
   };
 }
@@ -252,6 +349,20 @@ function runCliProbes(prefixDir: string, extractDir: string): CliProbeSummary[] 
         }
       },
     },
+    {
+      // The probe that opens the journal DATABASE. `--help` and
+      // `completion bash` never touch it, which is why the old gate passed
+      // on a package whose native binding was never built.
+      command: 'memphis vault list --json',
+      args: ['vault', 'list', '--json'],
+      validate: (stdout, summary) => {
+        if (!stdout.includes('"ok": true')) {
+          throw new Error(
+            `unexpected packaged CLI probe output for ${summary.command}: ${summary.stdoutFirstLine ?? '<empty>'}`,
+          );
+        }
+      },
+    },
   ];
 
   return probes.map((probe) => runCliProbe(prefixDir, extractDir, binaryPath, probe));
@@ -293,7 +404,7 @@ function cleanupTempDirs(): void {
   }
 }
 let summary: ValidationSummary = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   ok: false,
   artifactPath: null,
   artifactName: null,
@@ -301,6 +412,11 @@ let summary: ValidationSummary = {
   deferredRuntimeProofs: ['rust-tui-source-checkout'],
   requiredEntries: [...requiredEntries],
   cliProbes: [],
+  installPolicy: {
+    allowScripts: allowedScriptPolicy(),
+    onnxruntimeCuda: 'skip',
+    nativeBinding: null,
+  },
   error: null,
 };
 let options: Options = { json: false, artifactPath: null };
@@ -321,6 +437,7 @@ try {
 
   validateEntries(extractDir);
   installArtifactIntoPrefix(artifactPath, installPrefix);
+  const nativeBinding = resolveNativeBinding(installPrefix);
   const cliProbes = runCliProbes(installPrefix, extractDir);
 
   summary = {
@@ -329,6 +446,11 @@ try {
     artifactPath,
     artifactName: path.basename(artifactPath),
     cliProbes,
+    installPolicy: {
+      allowScripts: allowedScriptPolicy(),
+      onnxruntimeCuda: 'skip',
+      nativeBinding,
+    },
   };
   print(summary, options.json);
   // process.exit() does not unwind `finally` — Node tears the process down

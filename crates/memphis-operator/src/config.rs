@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use memphis_embed::{EmbedConfig, EmbedMode, EmbedPersistenceConfig};
+use memphis_embed::{EmbedConfig, EmbedPersistenceConfig};
 
 const DEFAULT_MEMPHIS_DATA_DIR: &str = "~/.memphis";
 const DEFAULT_DATABASE_URL: &str = "file:./data/memphis.db";
@@ -96,10 +96,19 @@ impl OperatorConfig {
             .get("MEMPHIS_VAULT_ENTRIES_PATH")
             .map(|path| resolve_config_path(path, &runtime_root))
             .unwrap_or_else(|| data_dir.join("vault-entries.json"));
-        let embed_persist_path = env_map
-            .get("RUST_EMBED_PERSIST_PATH")
-            .map(|path| resolve_config_path(path, &runtime_root))
-            .unwrap_or_else(|| data_dir.join("embed").join("index-v1.json"));
+        // The embed profile has ONE owner (`memphis_embed::profile`): the
+        // index path, the dimension, the model, and the source of each. This
+        // used to be a second copy of the path rule (HOME-based in
+        // TypeScript, data-dir-based here) and a hard-coded dimension of 32 —
+        // which is `DEFAULT_EMBEDDING_DIM`, the width of the local
+        // deterministic embedder, applied even when a real provider was
+        // configured. Measured 2026-11-23: the service answers `mode:
+        // semantic` with dim 1024, a shell answers
+        // `index_dimension_mismatch: disk_dim=768 config_dim=32`.
+        let embed_mode = memphis_embed::embed_mode_from_env(&env_map);
+        let embed_profile =
+            memphis_embed::resolve_embed_profile(&env_map, &runtime_root, &embed_mode);
+        let embed_persist_path = PathBuf::from(&embed_profile.index_path);
         let embed_persist_enabled = parse_bool(
             env_map
                 .get("RUST_EMBED_PERSIST_ENABLED")
@@ -122,8 +131,8 @@ impl OperatorConfig {
             embed_persist_path: embed_persist_path.clone(),
             embed_persist_enabled,
             embed_config: EmbedConfig {
-                mode: embed_mode_from_env(&env_map),
-                dim: parse_usize(env_map.get("RUST_EMBED_DIM").map(String::as_str), 32),
+                mode: embed_mode,
+                dim: embed_profile.dimension,
                 max_text_bytes: parse_usize(
                     env_map.get("RUST_EMBED_MAX_TEXT_BYTES").map(String::as_str),
                     4096,
@@ -258,28 +267,6 @@ fn parse_u64(value: Option<&str>, default: u64) -> u64 {
     value
         .and_then(|inner| inner.trim().parse::<u64>().ok())
         .unwrap_or(default)
-}
-
-fn embed_mode_from_env(env_map: &HashMap<String, String>) -> EmbedMode {
-    let mode = env_map
-        .get("RUST_EMBED_MODE")
-        .map(String::as_str)
-        .unwrap_or("local")
-        .trim()
-        .to_ascii_lowercase();
-
-    match mode.as_str() {
-        "provider" | "openai-compatible" => EmbedMode::Provider("openai-compatible".to_string()),
-        "ollama" => EmbedMode::Provider("ollama".to_string()),
-        "cohere" => EmbedMode::Provider("cohere".to_string()),
-        "voyage" => EmbedMode::Provider("voyage".to_string()),
-        "jina" => EmbedMode::Provider("jina".to_string()),
-        "mistral" => EmbedMode::Provider("mistral".to_string()),
-        "together" => EmbedMode::Provider("together".to_string()),
-        "nvidia" => EmbedMode::Provider("nvidia".to_string()),
-        "mixedbread" => EmbedMode::Provider("mixedbread".to_string()),
-        _ => EmbedMode::LocalDeterministic,
-    }
 }
 
 pub fn format_path(path: &Path) -> String {

@@ -1,4 +1,5 @@
 import { runMemphisCron } from '../../../mcp/tools/cron.js';
+import { buildRegistryInputJsonSchema } from '../../tool-json-schema.js';
 import { buildTool, type RuntimeToolDefinition } from '../../tool-runtime.js';
 import { optionalString, requiredString } from '../input-normalization.js';
 
@@ -8,48 +9,21 @@ export function createSchedulerRuntimeTools(): RuntimeToolDefinition[] {
       name: 'memphis_cron',
       description:
         'Manage recurring Memphis-internal scheduled tasks — list, add, remove, enable, disable cron jobs. Not a one-off reminder/alarm system.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          action: { type: 'string', description: 'Action: list | add | remove | enable | disable' },
-          cron: {
-            type: 'string',
-            description: 'Recurring cron expression (for add, e.g. "0 * * * *" = hourly)',
-          },
-          name: { type: 'string', description: 'Task name (for add)' },
-          taskType: {
-            type: 'string',
-            enum: ['shell', 'reflection', 'git-pull-build', 'builtin', 'http'],
-            description: 'Task type: shell | reflection | git-pull-build | builtin | http',
-          },
-          timezone: {
-            type: 'string',
-            description:
-              'Timezone for the schedule (e.g. Europe/Warsaw); defaults to the host timezone',
-          },
-          period: {
-            type: 'string',
-            enum: ['daily', 'weekly'],
-            description: 'Run period for a reflection task',
-          },
-          job: {
-            type: 'string',
-            enum: [
-              'runtime-watch',
-              'scheduled-backup',
-              'doctor-diagnose',
-              'operator-briefing',
-              'attachment-retention',
-            ],
-            description: 'Built-in job to schedule (required for taskType builtin)',
-          },
-          script: { type: 'string', description: 'Shell script (for shell type)' },
-          url: { type: 'string', description: 'URL (for http type)' },
-          method: { type: 'string', description: 'HTTP method (for http type, default GET)' },
-          taskId: { type: 'string', description: 'Task ID (for remove/enable/disable)' },
+      inputSchema: buildRegistryInputJsonSchema('memphis_cron', {
+        propertyDescriptions: {
+          action: 'Action: list | add | remove | enable | disable',
+          cron: 'Recurring cron expression (for add, e.g. "0 * * * *" = hourly)',
+          name: 'Task name (for add)',
+          taskType: 'Task type: shell | reflection | git-pull-build | builtin | http',
+          timezone: 'Timezone for the schedule (e.g. Europe/Warsaw); defaults to the host timezone',
+          period: 'Run period for a reflection task',
+          job: 'Built-in job to schedule (required for taskType builtin)',
+          script: 'Shell script (for shell type)',
+          url: 'URL (for http type)',
+          method: 'HTTP method (for http type, default GET)',
+          taskId: 'Task ID (for remove/enable/disable)',
         },
-        required: ['action'],
-      },
+      }),
       isReadOnly: false,
       isDestructive: true,
       validateInput(args) {

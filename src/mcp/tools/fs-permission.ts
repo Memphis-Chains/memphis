@@ -17,7 +17,7 @@
  *     - .git/ directories (source of truth for state)
  *     - node_modules/ (reproducible from package-lock.json)
  */
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, readlinkSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -66,25 +66,53 @@ function memphisSandboxDir(): string {
  * realpath that, and re-append the non-existent suffix. Returns the input
  * when no existing ancestor is found (e.g. nonexistent root), which the
  * caller then evaluates against the sandbox prefix as-is.
+ *
+ * A symlink is resolved even when its TARGET does not exist. `realpathSync`
+ * fails on a dangling link, and a dangling link is exactly the shape that
+ * lets a write leave the repository: the link sits inside, the file it names
+ * does not. A resolver that gives up at the link and keeps the link's own
+ * name sees a path inside the sandbox and lets the write follow the link
+ * out. The native arm resolves links the same way
+ * (crates/memphis-operator/src/chat_self_modify.rs).
  */
 export function realpathOrNearest(resolvedPath: string): string {
+  return realpathOrNearestDepth(resolvedPath, 0);
+}
+
+/// How many symlinks may be followed before the resolver gives up.
+///
+/// A symlink loop would otherwise recurse forever; the limit matches the
+/// one the kernel applies (ELOOP after 40 links).
+const MAX_LINK_DEPTH = 32;
+
+function realpathOrNearestDepth(resolvedPath: string, depth: number): string {
   try {
     return realpathSync(resolvedPath);
   } catch {
-    // Path doesn't exist; walk up.
+    // Path doesn't fully exist; walk it component by component.
   }
+  if (depth >= MAX_LINK_DEPTH) return path.normalize(resolvedPath);
+
   const segments = path.normalize(resolvedPath).split(path.sep);
-  for (let depth = segments.length - 1; depth > 0; depth -= 1) {
-    const ancestor = segments.slice(0, depth).join(path.sep) || path.sep;
-    try {
-      const realAncestor = realpathSync(ancestor);
-      const suffix = segments.slice(depth).join(path.sep);
-      return suffix.length > 0 ? path.join(realAncestor, suffix) : realAncestor;
-    } catch {
-      // keep walking up
-    }
+  let current = path.isAbsolute(resolvedPath) ? path.sep : '';
+  for (const segment of segments) {
+    if (!segment) continue;
+    const candidate = path.join(current, segment);
+    current = resolveLinkOrKeep(candidate, current, depth);
   }
-  return path.normalize(resolvedPath);
+  return current;
+}
+
+/** Follow one symlink, or keep the component as it is. */
+function resolveLinkOrKeep(candidate: string, parent: string, depth: number): string {
+  let link: string;
+  try {
+    link = readlinkSync(candidate);
+  } catch {
+    return candidate;
+  }
+  const target = path.isAbsolute(link) ? link : path.resolve(parent, link);
+  return realpathOrNearestDepth(target, depth + 1);
 }
 
 export function isInsideMemphisSandbox(resolvedPath: string): boolean {

@@ -2,13 +2,10 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-  <title>Memphis Chat — suweronny AI runtime</title>
-  <meta name="description" content="Pogadaj z Memphis runtime. Powered by MiniMax-M3." />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rozmowa z Memphisem</title>
+  <meta name="description" content="Porozmawiaj po polsku z Memphisem. Wybierz MiniMax-M3 lub lokalnego Bielika." />
   <meta name="robots" content="index,follow" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" />
   <link rel="stylesheet" href="style.css" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 </head>
@@ -36,16 +33,16 @@
         <span class="title-accent">Memphis</span> Chat
       </h1>
       <p class="chat-sub">
-        Rozmowa z <strong>Memphis runtime</strong> z modelem
-        <strong>MiniMax-M3</strong> jako silnikiem. Wersja demo.
+        Zadaj pytanie po polsku. Wybierz, kto odpowie.
       </p>
       <div class="chat-meta">
-        <span class="pill pill-ok">tier 0</span>
-        <span class="pill">no vault</span>
-        <span class="pill">no tools</span>
-        <span class="pill">no fs</span>
-        <span class="pill" id="rate-pill">rate limit: 10 / IP / godz</span>
+        <label for="mode">Model</label>
+        <select id="mode" aria-describedby="model-note">
+          <option value="auto">MiniMax-M3 przez internet</option>
+          <option value="local">Bielik lokalnie</option>
+        </select>
       </div>
+      <p class="chat-sub" id="model-note">Basal sprawdza pytanie na komputerze Memphisa. MiniMax otrzymuje wiadomość, dwie ostatnie wymiany i pasujący jawny fragment pamięci. Gdy usługa jest niedostępna, odpowiada lokalny Bielik.</p>
     </section>
 
     <section class="chat-window" aria-live="polite" aria-label="Historia rozmowy">
@@ -58,10 +55,8 @@
           Zacznij rozmowę. Pytaj o cokolwiek — Memphis odpowiada krótko i bez owijania.
         </p>
         <div class="empty-suggestions">
-          <button class="suggestion" data-suggest="Co to jest Memphis runtime?">Co to jest Memphis runtime?</button>
-          <button class="suggestion" data-suggest="Jak działa tier 0?">Jak działa tier 0?</button>
-          <button class="suggestion" data-suggest="Napisz haiku o suwerenności danych.">Napisz haiku o suwerenności danych.</button>
-          <button class="suggestion" data-suggest="Wymyśl 3 pomysły na mikro-aplikację w Pythonie.">Wymyśl 3 pomysły na mikro-aplikację w Pythonie.</button>
+          <button class="suggestion" data-suggest="Dlaczego jesienią liście zmieniają kolor?">Dlaczego liście zmieniają kolor?</button>
+          <button class="suggestion" data-suggest="Pomóż mi napisać krótkie zaproszenie na urodziny.">Pomóż mi napisać zaproszenie</button>
         </div>
       </div>
     </section>
@@ -91,12 +86,8 @@
   <footer class="page-foot">
     <div class="foot-grid">
       <div class="foot-col">
-        <h3 class="foot-h">Stack</h3>
-        <p class="foot-p">Memphis runtime (localhost) · MiniMax-M3 · Cloudflare Tunnel · public-chat-gateway (tier 0)</p>
-      </div>
-      <div class="foot-col">
-        <h3 class="foot-h">Polityka publicznego chatu</h3>
-        <p class="foot-p">Brak vault · brak config · brak self-modify · brak filesystem · max tier 0 · rate limit 10/IP/godz</p>
+        <h3 class="foot-h">Twoja rozmowa</h3>
+        <p class="foot-p">Czat pamięta dwie ostatnie wymiany w tej karcie. Odśwież stronę, aby zacząć od nowa.</p>
       </div>
       <div class="foot-col">
         <h3 class="foot-h">Kontakt</h3>
@@ -105,10 +96,9 @@
     </div>
     <div class="foot-bottom">
       <span>© 2026 Marcin Kukla · Holiskool</span>
-      <span class="foot-meta">build: chat.memphis-v5.pl · runtime: 1.8.0 · model: MiniMax-M3</span>
     </div>
   </footer>
 
-  <script src="chat.js" defer></script>
+  <script src="chat.js?v=20261119-2" defer></script>
 </body>
 </html>

@@ -1,21 +1,58 @@
 name: backup-restore-drill
 
+# The drill is real, and it is hermetic.
+#
+# It used to be an echo. The notice said "run it locally with
+# `npm run drill:backup-restore`" — and nothing ran it, so a restore that
+# could not restore was indistinguishable from a restore that worked. The
+# runtime audit named it: "backup-restore-drill: the workflow prints a
+# notice instead of drilling".
+#
+# The earlier refusal to run it in CI was about the SHELL drill, which
+# touched the operator's live vault on their machine. The current drill is
+# an integration test: it builds its own chains, its own vault state and
+# its own install root inside a temporary directory
+# (`tests/integration/backup-restore-drill.test.ts`) and never reads the
+# operator's home. There is no secret in it, so there is nothing left to
+# protect by keeping it out of CI.
+#
+# What it exercises:
+#   - backup → wipe → restore round trip with chain + vault state
+#   - --pepper-restore for cross-host vault recovery
+#   - pre-restore safety backup creation
+#   - .env preservation when --pepper-restore is omitted
+
 on:
   workflow_dispatch:
+  schedule:
+    # Nightly. A restore drill that only runs when somebody remembers to
+    # press the button is a drill that rots: the restore path breaks
+    # between releases and nobody finds out until the day it is needed.
+    - cron: '41 5 * * *'
 
 jobs:
-  disabled-in-public-repo:
+  drill:
     runs-on: ubuntu-latest
     steps:
-      - name: Safety notice
-        run: |
-          echo "Backup/restore drill moved to local systemd/cron for security."
-          echo "Run locally with: npm run drill:backup-restore"
-          echo ""
-          echo "The drill exercises:"
-          echo "  - backup → wipe → restore round trip with chain + vault state"
-          echo "  - --pepper-restore for cross-host vault recovery"
-          echo "  - pre-restore safety backup creation"
-          echo "  - .env preservation when --pepper-restore is omitted"
-          echo ""
-          echo "Failures should page whoever's on the release rotation."
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # The restore path goes through the chain adapter, and the adapter
+      # asks the native core whether a block can be deserialized. Without
+      # the bridge the drill would fall back to the structural oracle and
+      # the vocabulary case would pass vacuously — the same hole
+      # chain-invariant.yml already documents.
+      - name: Build (Rust bridge for the restore path)
+        run: npm run build
+
+      - name: Backup → wipe → restore drill
+        run: npm run -s drill:backup-restore

@@ -30,6 +30,7 @@ import { resolveActorId } from '../gateway/conversation-identity.js';
 import { createInProcessMemoryClient } from '../gateway/memory-client.js';
 import { createOperatorChatSessionStore } from '../gateway/operator-chat-session-store.js';
 import { providerToLlmClient } from '../gateway/provider-adapter.js';
+import { renderContextSection } from '../gateway/startup-context.js';
 import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
 import { checkOllama, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
 import { resolveDotEnvPath } from '../infra/config/dotenv-file.js';
@@ -48,6 +49,7 @@ import { startChainRotationLoop } from '../infra/runtime/chain-rotation-loop.js'
 import { startCronsBridge } from '../infra/runtime/crons-bridge.js';
 import { inStrictMode } from '../infra/runtime/emergency-log.js';
 import { EXIT_CODES, MemphisExitError } from '../infra/runtime/exit-codes.js';
+import { DAEMON_FATAL_POLICY, setFatalPolicy } from '../infra/runtime/fatal-guard.js';
 import { installShutdownHandlers } from '../infra/runtime/graceful-shutdown.js';
 import { HeartbeatWatchdog, writeBootPulse } from '../infra/runtime/heartbeat-watchdog.js';
 import { resolveInstallRoot } from '../infra/runtime/install-root.js';
@@ -109,6 +111,12 @@ import { getCognitiveMode, ensureIskra, ensureSoulManifest } from '../soul/manif
 import { loadSoulMemory } from '../soul/memory.js';
 
 export async function bootstrap(): Promise<void> {
+  // The daemon must not die because one background task rejected. The
+  // fatal guard reads argv to close the import-time window; this states
+  // the mode explicitly so the behaviour does not depend on how the
+  // command was spelled.
+  setFatalPolicy(DAEMON_FATAL_POLICY);
+
   // Phase 2.3 production sprint: bump the boot-attempt counter BEFORE
   // any risky init. If we crash mid-init, the next process sees the
   // failure and may auto-revert a recent self-modify commit.
@@ -855,7 +863,16 @@ async function startChannelGateway(container?: {
           if (user.expertise.length > 0) parts.push(`Expertise: ${user.expertise.join(', ')}`);
           if (user.preferences.length > 0)
             parts.push(`Preferences: ${user.preferences.join('; ')}`);
-          if (ctx.activeWork) parts.push(`Active work: ${ctx.activeWork}`);
+          // The agent's own work and the operator's own to-do list are
+          // rendered separately and labelled, because a single
+          // free-text field cannot say whose item it is.
+          //
+          // Measured 2026-11-21 03:05 on this host: the operator sent
+          // "Yo" on Telegram and the agent burned sixteen tool calls
+          // searching for `telegram.inbound`, because a note that said
+          // "Do zrobienia dla operatora: ..." sat inside `activeWork`
+          // and nothing in the prompt said whose item it was.
+          parts.push(...renderContextSection(ctx));
           if (ctx.recentDecisions.length > 0) {
             parts.push(
               `Recent decisions:\n${ctx.recentDecisions

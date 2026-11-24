@@ -36,7 +36,9 @@ fn temp_home(index: usize) -> PathBuf {
 fn the_native_arm_agrees_with_the_typescript_arm() {
     let fixture: Value =
         serde_json::from_str(FIXTURE).expect("the contract fixture must be valid JSON");
-    let cases = fixture["cases"].as_array().expect("the fixture must carry cases");
+    let cases = fixture["cases"]
+        .as_array()
+        .expect("the fixture must carry cases");
     assert!(!cases.is_empty(), "the contract table must not be empty");
 
     let mut failures: Vec<String> = Vec::new();
@@ -76,7 +78,10 @@ fn the_native_arm_agrees_with_the_typescript_arm() {
             .err()
             .or_else(|| assert_within_read_roots(&resolved).err());
 
-        let content = refusal.is_none().then(|| fs::read_to_string(&resolved).ok()).flatten();
+        let content = refusal
+            .is_none()
+            .then(|| fs::read_to_string(&resolved).ok())
+            .flatten();
         let lines = content.as_deref().map(split_lines).unwrap_or_default();
         let total_lines = lines.len();
         let range = if refusal.is_none() {

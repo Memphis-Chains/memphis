@@ -1,10 +1,10 @@
 # Memphis Documentation Version Map
 
-**Last updated:** 2026-09-26 · **Memphis runtime version:** v1.13.3
+**Last updated:** 2026-11-24 · **Memphis runtime version:** v1.14.2
 
-This document answers: **"I'm reading Memphis docs — which docs are current for v1.13.3, which are obsolete, which are historical?"**
+This document answers: **"I'm reading Memphis docs — which docs are current for v1.14.2, which are obsolete, which are historical?"**
 
-## Canonical current version: v1.13.3
+## Canonical current version: v1.14.2
 
 When in doubt, treat any doc dated 2026-06-01 or later as **current** unless explicitly marked obsolete. Dated 2026-04-01 to 2026-05-31 = **review for staleness**. Earlier = **historical** (see archive/).
 
@@ -23,7 +23,7 @@ When in doubt, treat any doc dated 2026-06-01 or later as **current** unless exp
 | Partnerships (outreach material) | `docs/partnerships/` (current) | None — all created this session |
 | Pitch decks | `docs/pitch/` (current) | None — created 2026-09 |
 | Postmortems | `docs/postmortems/` (current) | None — all 2026-09 |
-| Releases | `docs/releases/` (5 files: v0.1.3, v0.2.0-rc.2, v0.2.0-rc.3, v1.13.3, v1.13.3-final) | All releases are historical reference |
+| Releases | `docs/releases/` (8 files: v0.1.3, v0.2.0-rc.2, v0.2.0-rc.3, v1.13-final, v1.14.0, v1.14.1, v1.14.2) | All releases are historical reference |
 | Roadmap | `docs/roadmap/` (current Y1 plan, public FAQ, post-v1.9 plan) | `docs/roadmap/archive/Y1-v1-2026-04-21.md` (superseded) |
 
 ---
@@ -35,7 +35,10 @@ Memphis runtime version is `MAJOR.MINOR.PATCH` (semver-ish):
 - **MINOR** changes when there's a new feature area (e.g., new chain type)
 - **PATCH** changes for bugfixes and non-breaking improvements
 
-Current release: **v1.13.3** (in `package.json` and `crates/memphis-napi/Cargo.toml`).
+Current release: **v1.14.2** (in `package.json`, `npm-shrinkwrap.json` and the README
+badges — the house keeps those in step with
+`scripts/set-release-version.mjs`). The Rust crate versions are internal
+(`crates/memphis-napi` is `0.1.0`) and do NOT track the release number.
 
 ---
 

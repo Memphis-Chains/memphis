@@ -22,6 +22,7 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { readNativeCatalog } from '../../scripts/lib/native-tool-catalog.mts';
 import { nativeToolPolicy, requireToolPolicy } from '../../src/gateway/native-tool-policy.js';
 import {
   NATIVE_TOOL_CONTRACTS,
@@ -31,14 +32,12 @@ import {
 } from '../../src/gateway/tool-contract.js';
 import { TOOL_REGISTRY } from '../../src/gateway/tool-registry.js';
 
-const RUST_CATALOG = resolve('crates/memphis-operator/src/chat_tool_catalog.rs');
 const RUST_EXECUTOR = resolve('crates/memphis-operator/src/chat_tool_executor.rs');
 
 function rustAdvertisedTools(): string[] {
-  const source = readFileSync(RUST_CATALOG, 'utf8');
-  const catalog = source.split('fn native_tool_definitions()')[1]?.split('fn tool_tier(')[0];
-  expect(catalog, 'Rust catalog boundary not found').toBeDefined();
-  return [...(catalog as string).matchAll(/name: "(memphis_[a-z0-9_]+)"/g)].map((m) => m[1]);
+  // Since ADR-012 the native catalog is the generated projection plus the
+  // declared divergences — read both, never one of them alone.
+  return readNativeCatalog().advertised;
 }
 
 function rustExecutableTools(): string[] {
@@ -51,6 +50,22 @@ function rustExecutableTools(): string[] {
 describe('shared tool contract', () => {
   it('describes exactly the tools the native catalog advertises', () => {
     expect([...nativeToolContractNames()].sort()).toEqual([...rustAdvertisedTools()].sort());
+  });
+
+  it('keeps every hand-written native schema on the declared divergence list', () => {
+    // A tool schema written by hand outside the divergence list is the old
+    // way of adding a tool: a second copy of the registry that nothing
+    // compares. The cockpit must project it instead.
+    const catalog = readNativeCatalog();
+    expect(
+      catalog.stray,
+      `hand-written native schemas outside the divergence list: ${catalog.stray.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('writes by hand exactly the tools the contract declares as divergent', () => {
+    const catalog = readNativeCatalog();
+    expect([...catalog.handWritten].sort()).toEqual([...catalog.declaredDivergent].sort());
   });
 
   it('describes exactly the tools the native dispatcher executes', () => {

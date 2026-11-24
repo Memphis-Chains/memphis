@@ -37,12 +37,15 @@ import {
   checkGateCoverage,
   checkHealthReporting,
   checkPostmortemStatus,
+  checkSkillCatalog,
   checkSloReporting,
   type UnreadableBlock,
 } from './checks.js';
 import { readPostmortemCorpus } from './postmortem-corpus.js';
+import { readSkillFact, type SkillFact } from './skill-facts.js';
+import { inventoryUnitFiles, listUnitsUnderTest } from './systemd-unit-scope.js';
 import { worstVerdict, type AuditCheckResult, type RuntimeAuditReport } from './types.js';
-import { getChainPath } from '../../config/paths.js';
+import { getChainPath, getSkillsPath } from '../../config/paths.js';
 import { runMemphisSloStatus } from '../../mcp/tools/slo-status.js';
 import {
   getChainNames,
@@ -500,24 +503,25 @@ export async function collectGateCoverage(repoRoot: string | null): Promise<{
     });
   }
 
-  // 2 · the systemd gate reads one directory; the runtime's own unit is not in it.
-  const unitGate = await readTextIfExists(
-    path.join(repoRoot, 'scripts', 'check-systemd-units.mts'),
-  );
-  const unitDirMatch = unitGate ? /UNIT_DIR\s*=\s*resolve\('([^']+)'\)/.exec(unitGate) : null;
-  if (unitDirMatch) {
-    const opsUnits = (await fs.readdir(path.join(repoRoot, 'ops')).catch(() => [])).filter(
-      (name) => name.endsWith('.service') || name.endsWith('.timer'),
-    );
-    const outside = opsUnits.filter((name) => name !== unitDirMatch[1]);
-    if (outside.length > 0) {
-      misScoped.push({
-        gate: 'check-systemd-units',
-        scope: `reads ${unitDirMatch[1]}/ only; never checks ${outside
-          .map((name) => `ops/${name}`)
-          .join(', ')}`,
-      });
-    }
+  // 2 · every unit the repository ships must be inside the systemd gate.
+  //
+  // The first version compared the NAME of a file in `ops/` against the
+  // PATH of the gate's unit directory (`scripts/systemd`). A file name
+  // and a directory path can never be equal, so the comparison reported
+  // the same hole forever — including after the gate had been extended
+  // to read `ops/` as well. A gate that cries wolf is a gate nobody
+  // reads, and this one was reporting a hole that had been closed.
+  //
+  // Both sides now come from `src/infra/audit/systemd-unit-scope.ts`:
+  // the inventory says what exists anywhere in the repository, the
+  // coverage says what the gate reads, and the difference is the hole.
+  const covered = new Set(listUnitsUnderTest(repoRoot).map((unit) => unit.file));
+  const uncovered = inventoryUnitFiles(repoRoot).filter((file) => !covered.has(file));
+  if (uncovered.length > 0) {
+    misScoped.push({
+      gate: 'check-systemd-units',
+      scope: `never checks ${uncovered.join(', ')}`,
+    });
   }
 
   // 3 · cargo audit exists in a script no workflow calls.
@@ -627,6 +631,50 @@ async function collectPostmortemStatus(repoRoot: string | null): Promise<{
 }
 
 /* ------------------------------------------------------------------ */
+/* the skills                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Read every skill directory under a root.
+ *
+ * A directory is a skill when it holds a `SKILL.md`. The manifest is
+ * NOT required for the directory to be a skill — a skill without a
+ * manifest is exactly the hole this measurement has to see, so it must
+ * still be listed.
+ */
+async function collectSkillFacts(root: string): Promise<SkillFact[]> {
+  const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
+  const dirs = entries.filter((entry) => entry.isDirectory() || entry.isSymbolicLink());
+  const facts: SkillFact[] = [];
+  for (const entry of dirs) {
+    const skillDir = path.join(root, entry.name);
+    const hasSkillMd = await fs
+      .stat(path.join(skillDir, 'SKILL.md'))
+      .then(() => true)
+      .catch(() => false);
+    if (!hasSkillMd) continue;
+    facts.push(await readSkillFact(skillDir, entry.name));
+  }
+  return facts.sort((left, right) => left.id.localeCompare(right.id));
+}
+
+async function collectSkillCatalog(
+  rawEnv: NodeJS.ProcessEnv,
+  repoRoot: string | null,
+): Promise<{
+  repoSkills: SkillFact[];
+  catalogSkills: SkillFact[];
+  installedSkills: SkillFact[];
+}> {
+  const skillsRoot = getSkillsPath(rawEnv);
+  return {
+    repoSkills: repoRoot ? await collectSkillFacts(path.join(repoRoot, 'skills')) : [],
+    catalogSkills: await collectSkillFacts(path.join(skillsRoot, 'catalog')),
+    installedSkills: await collectSkillFacts(path.join(skillsRoot, 'installed')),
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* the audit                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -658,6 +706,7 @@ export async function runRuntimeAudit(
   const branchFacts = await collectBranchBoundary(repoRoot);
   const gateFacts = await collectGateCoverage(repoRoot);
   const postmortemFacts = await collectPostmortemStatus(repoRoot);
+  const skillFacts = await collectSkillCatalog(rawEnv, repoRoot);
 
   const checks: AuditCheckResult[] = [
     checkChainRegistry(registryFacts),
@@ -676,6 +725,7 @@ export async function runRuntimeAudit(
     checkBranchBoundary(branchFacts),
     checkGateCoverage(gateFacts),
     checkPostmortemStatus(postmortemFacts),
+    checkSkillCatalog(skillFacts),
   ];
 
   const overall = worstVerdict(checks.map((check) => check.verdict));

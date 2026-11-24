@@ -485,8 +485,7 @@ pub fn classify_prompt_for_turn(
     }
     // Scope gate: skip the service when the hint could not change a decision.
     // Same rule as the TypeScript arm, so both surfaces behave identically.
-    if basal_prompt_scope_is_actionable(config)
-        && !basal_prompt_may_need_actionable_intent(trimmed)
+    if basal_prompt_scope_is_actionable(config) && !basal_prompt_may_need_actionable_intent(trimmed)
     {
         return Ok(None);
     }
@@ -1598,7 +1597,10 @@ mod tests {
         actual.sort_unstable();
         let mut expected = expected;
         expected.sort_unstable();
-        assert_eq!(actual, expected, "scope cue table drifted from the contract");
+        assert_eq!(
+            actual, expected,
+            "scope cue table drifted from the contract"
+        );
     }
 
     #[test]
@@ -1643,5 +1645,4 @@ mod tests {
             "the default scope must still classify every turn"
         );
     }
-
 }

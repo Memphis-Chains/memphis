@@ -20,7 +20,7 @@
  * an error. A probe of a deleted path is not a measurement.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -32,17 +32,31 @@ const PROBES = join(REPO, 'scripts', 'dashboard_probes.py');
 
 let workspace: string;
 let generated: string;
+const newestTitle = 'Decyzja testowa <100 PLN> & koszt';
 
 function runPython(args: string[]): string {
   return execFileSync('python3', args, {
     cwd: REPO,
     encoding: 'utf8',
+    env: {
+      ...process.env,
+      MEMPHIS_DATA_DIR: workspace,
+      MEMPHIS_DASHBOARD_PROJECT: join(workspace, 'config', 'dashboard-project.json'),
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 }
 
 beforeAll(() => {
   workspace = mkdtempSync(join(tmpdir(), 'memphis-dashboard-'));
+  const decisions = join(workspace, 'chains', 'decisions');
+  const journal = join(workspace, 'chains', 'journal');
+  mkdirSync(decisions, { recursive: true });
+  mkdirSync(journal, { recursive: true });
+  for (const [index, title] of ['Pierwsza decyzja testowa', newestTitle].entries()) {
+    writeFileSync(join(decisions, `${index}.json`), JSON.stringify({ index, data: { title } }));
+  }
+  writeFileSync(join(journal, '0.json'), JSON.stringify({ index: 0, data: { content: 'Test' } }));
   generated = join(workspace, 'index.html');
   runPython([REPORT, generated]);
   runPython([REPORT, join(workspace, 'client.html'), '--audience', 'client']);
@@ -99,8 +113,7 @@ describe('dashboard generation', () => {
 
   it('shows the decision count the chain actually holds', () => {
     const html = readFileSync(generated, 'utf8');
-    const decisionsDir = '/home/memphis/.memphis/chains/decisions';
-    if (!existsSync(decisionsDir)) return; // no chain on this box
+    const decisionsDir = join(workspace, 'chains', 'decisions');
 
     // Count the chain the same way the generator does, and compare. A
     // "is it greater than zero" assertion would happily accept a
@@ -116,8 +129,7 @@ describe('dashboard generation', () => {
 
   it('shows the journal count the chain actually holds', () => {
     const html = readFileSync(generated, 'utf8');
-    const journalDir = '/home/memphis/.memphis/chains/journal';
-    if (!existsSync(journalDir)) return;
+    const journalDir = join(workspace, 'chains', 'journal');
     const onDisk = readdirSync(journalDir).filter((name) => name.endsWith('.json')).length;
     const rendered = html.match(
       /<span class="v">(\d+)<\/span><span class="l">Wpisów w journalu/,
@@ -129,19 +141,7 @@ describe('dashboard generation', () => {
   it('renders the newest decisions from the chain, not from memory', () => {
     const html = readFileSync(generated, 'utf8');
     expect(html).toContain('Ostatnie decyzje');
-    // The chain's newest decision title must appear verbatim.
-    const newest = execFileSync(
-      'bash',
-      ['-lc', 'ls -1 /home/memphis/.memphis/chains/decisions/*.json | tail -1'],
-      {
-        encoding: 'utf8',
-      },
-    ).trim();
-    if (!newest) return;
-    const block = JSON.parse(readFileSync(newest, 'utf8')) as { data?: { title?: string } };
-    const title = (block.data?.title ?? '').trim();
-    if (!title) return;
-    const escaped = title
+    const escaped = newestTitle
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')

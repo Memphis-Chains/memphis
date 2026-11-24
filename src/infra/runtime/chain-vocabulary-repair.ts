@@ -189,7 +189,7 @@ export async function repairChainVocabulary(
 
   if (scan.unreadable.length === 0) {
     applied.push(
-      `chain vocabulary: every one of the ${scan.blocksScanned} live blocks is in the core's vocabulary`,
+      `chain vocabulary: every one of the ${scan.blocksScanned} scannable blocks is in the core's vocabulary`,
     );
     return { scan, blocksRewritten: 0, directoriesRewritten: [], applied, skipped, warnings };
   }

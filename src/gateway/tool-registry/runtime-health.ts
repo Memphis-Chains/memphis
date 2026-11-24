@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { ToolMeta } from '../tool-metadata.js';
 
-export const RUNTIME_HEALTH_TOOLS: Record<string, ToolMeta> = {
+export const RUNTIME_HEALTH_TOOLS = {
   memphis_health: {
     name: 'memphis_health',
     tier: 0,
@@ -36,7 +36,7 @@ export const RUNTIME_HEALTH_TOOLS: Record<string, ToolMeta> = {
       {
         name: '--surface',
         description:
-          'Override the surface name used for policy resolution (default: caller\'s surface).',
+          "Override the surface name used for policy resolution (default: caller's surface).",
         takesValue: true,
       },
       {
@@ -114,5 +114,5 @@ export const RUNTIME_HEALTH_TOOLS: Record<string, ToolMeta> = {
     helpText:
       'Idempotent repair sweep over runtime state: chain integrity (rebuild missing index entries, drop orphans), SQLite migrations (apply any pending), derived indexes (case-index, embed-index reseed when stale). Safe to call from a healthy runtime — it is a no-op when nothing needs repair. Use after a crash, partial restore, or before the operator runs an export to be sure on-disk state is consistent.',
     cliFlags: [],
-  }
-};
+  },
+} satisfies Record<string, ToolMeta>;

@@ -17,13 +17,14 @@ use crate::chat_operations::{
 };
 use crate::chat_prompt::build_runtime_system_prompt;
 use crate::chat_session::{
-    ensure_chat_tables, incomplete_turn_summary, load_chat_rows, normalize_session_id, open_sqlite_rw,
-    persist_chat_messages_and_complete, row_to_chat_message, save_partial_turn_text, save_turn_checkpoint,
-    transcript_from_row, MessageToPersist, RunningCheckpointGuard,
+    ensure_chat_tables, incomplete_turn_summary, load_chat_rows, normalize_session_id,
+    open_sqlite_rw, persist_chat_messages_and_complete, reclaim_abandoned_turns,
+    row_to_chat_message, save_partial_turn_text, save_turn_checkpoint, transcript_from_row,
+    MessageToPersist, RunningCheckpointGuard,
 };
 use crate::chat_streaming::{ensure_chat_not_cancelled, StreamingOutputGuard};
 use crate::chat_tool_catalog::{max_tool_tier_from_env, native_tool_definitions, tool_tier};
-use crate::chat_tool_executor::{cut_on_char_boundary, execute_native_tool, execute_native_tool_for_turn, native_tool_result_failed};
+use crate::chat_tool_executor::{execute_native_tool_for_turn, native_tool_result_failed};
 use crate::{
     provider::{
         configured_provider_statuses, resolve_provider, ChatMessage, ChatRequestOptions,
@@ -287,13 +288,21 @@ impl OperatorRuntime {
         let conn = open_sqlite_rw(&self.config.database_path)?;
         ensure_chat_tables(&conn)?;
         ensure_operation_tables(&conn)?;
+        // Reclaim checkpoints whose owning process is gone.
+        //
+        // A `running` row left behind by a killed process used to refuse
+        // every later turn in this session, forever — and the session id
+        // is fixed (`primary::operator:local`), so the operator's own
+        // remedy, killing the process, created the next one. The row is
+        // only evidence of a live turn while its owner is alive.
+        reclaim_abandoned_turns(&conn, &session_id)?;
         let running: bool = conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM operator_turn_checkpoints WHERE session_id=? AND status='running')",
             [&session_id], |row| row.get(0),
         ).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
         if running {
             return Err(OperatorError::Message(
-                "a turn is active or was interrupted unexpectedly; inspect `memphis recovery list` before continuing".into(),
+                "a turn is active in this session; inspect `memphis recovery list` before continuing".into(),
             ));
         }
         let mut pending = vec![MessageToPersist {
@@ -306,11 +315,19 @@ impl OperatorRuntime {
             provider: None,
             model: None,
         }];
-        let checkpoint_id: String = conn.query_row("SELECT lower(hex(randomblob(16)))", [], |row| row.get(0))
+        let checkpoint_id: String = conn
+            .query_row("SELECT lower(hex(randomblob(16)))", [], |row| row.get(0))
             .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
-        if let Err(error) = save_turn_checkpoint(&conn, &checkpoint_id, &session_id, "running", &pending) {
-            if error.to_string().contains("UNIQUE constraint failed: operator_turn_checkpoints.session_id") {
-                return Err(OperatorError::Message("another turn started in this session; inspect `memphis recovery list`".into()));
+        if let Err(error) =
+            save_turn_checkpoint(&conn, &checkpoint_id, &session_id, "running", &pending)
+        {
+            if error
+                .to_string()
+                .contains("UNIQUE constraint failed: operator_turn_checkpoints.session_id")
+            {
+                return Err(OperatorError::Message(
+                    "another turn started in this session; inspect `memphis recovery list`".into(),
+                ));
             }
             return Err(error);
         }
@@ -371,9 +388,7 @@ impl OperatorRuntime {
                 .config
                 .env("MINIMAX_MAX_COMPLETION_TOKENS")
                 .and_then(|value| value.parse::<u32>().ok())
-                .or_else(|| {
-                    chat_max_tokens_explicit().and_then(|value| u32::try_from(value).ok())
-                })
+                .or_else(|| chat_max_tokens_explicit().and_then(|value| u32::try_from(value).ok()))
                 // Keep the generic 2048 default out of MiniMax Flash.
                 .or(Some(32_768)),
         };
@@ -418,7 +433,9 @@ impl OperatorRuntime {
                 "[recovery] Earlier work is incomplete. Side-effecting tools are paused. Inspect it with `memphis recovery list` before operator acknowledgement.\n{incomplete}\n{unsettled}\n"
             )));
         }
-        let user_content = if !recovery_guard { wrapped_user } else {
+        let user_content = if !recovery_guard {
+            wrapped_user
+        } else {
             format!("{wrapped_user}\n\n<unsettled_operations>\n{unsettled}\n{incomplete}\n</unsettled_operations>")
         };
         pending[0].content = user_content.clone();
@@ -451,47 +468,61 @@ impl OperatorRuntime {
         let mut last_partial_save = std::time::Instant::now();
         let mut partial_save_failed = false;
         let turn_result = {
-          let mut tracked_chunk = |event: ChatStreamEvent| {
-            if let ChatStreamEvent::Text(text) = &event {
-                const MAX_PARTIAL_BYTES: usize = 128 * 1024;
-                let available = MAX_PARTIAL_BYTES.saturating_sub(partial_text.len());
-                let mut end = text.len().min(available);
-                while end > 0 && !text.is_char_boundary(end) { end -= 1; }
-                partial_text.push_str(&text[..end]);
-                partial_truncated |= end < text.len();
-                if !partial_save_failed && (partial_text.len().saturating_sub(last_saved_bytes) >= 4096
-                    || last_partial_save.elapsed() >= std::time::Duration::from_secs(1)) {
-                    if save_partial_turn_text(&conn, &checkpoint_id, &partial_text, partial_truncated).is_err() {
-                        partial_save_failed = true;
-                        on_chunk(ChatStreamEvent::Text("[recovery] Could not save partial output; progress may be lost.\n".into()));
-                    } else {
-                        last_saved_bytes = partial_text.len();
-                        last_partial_save = std::time::Instant::now();
+            let mut tracked_chunk = |event: ChatStreamEvent| {
+                if let ChatStreamEvent::Text(text) = &event {
+                    const MAX_PARTIAL_BYTES: usize = 128 * 1024;
+                    let available = MAX_PARTIAL_BYTES.saturating_sub(partial_text.len());
+                    let mut end = text.len().min(available);
+                    while end > 0 && !text.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    partial_text.push_str(&text[..end]);
+                    partial_truncated |= end < text.len();
+                    if !partial_save_failed
+                        && (partial_text.len().saturating_sub(last_saved_bytes) >= 4096
+                            || last_partial_save.elapsed() >= std::time::Duration::from_secs(1))
+                    {
+                        if save_partial_turn_text(
+                            &conn,
+                            &checkpoint_id,
+                            &partial_text,
+                            partial_truncated,
+                        )
+                        .is_err()
+                        {
+                            partial_save_failed = true;
+                            on_chunk(ChatStreamEvent::Text(
+                                "[recovery] Could not save partial output; progress may be lost.\n"
+                                    .into(),
+                            ));
+                        } else {
+                            last_saved_bytes = partial_text.len();
+                            last_partial_save = std::time::Instant::now();
+                        }
                     }
                 }
-            }
-            on_chunk(event);
-          };
-          run_turn(
-            self,
-            &conn,
-            session_id.as_str(),
-            &checkpoint_id,
-            cancel_flag,
-            &provider_runtime,
-            &options,
-            &tool_definitions,
-            max_tier,
-            &mut messages,
-            &mut pending,
-            &mut in_flight_operations,
-            &mut tool_calls_used,
-            &mut errors,
-            &mut error_trail,
-            recovery_guard,
-            &mut blocked_by_recovery,
-            &mut tracked_chunk,
-          )
+                on_chunk(event);
+            };
+            run_turn(
+                self,
+                &conn,
+                session_id.as_str(),
+                &checkpoint_id,
+                cancel_flag,
+                &provider_runtime,
+                &options,
+                &tool_definitions,
+                max_tier,
+                &mut messages,
+                &mut pending,
+                &mut in_flight_operations,
+                &mut tool_calls_used,
+                &mut errors,
+                &mut error_trail,
+                recovery_guard,
+                &mut blocked_by_recovery,
+                &mut tracked_chunk,
+            )
         };
         // The turn itself, measured. The TypeScript gateway records this
         // span; without it here, `p99_turn_duration_ms` and
@@ -537,7 +568,11 @@ impl OperatorRuntime {
 
         if turn_result.is_err() {
             save_partial_turn_text(&conn, &checkpoint_id, &partial_text, partial_truncated)?;
-            let status = if blocked_by_recovery { "blocked" } else { "interrupted" };
+            let status = if blocked_by_recovery {
+                "blocked"
+            } else {
+                "interrupted"
+            };
             save_turn_checkpoint(&conn, &checkpoint_id, &session_id, status, &pending)?;
         }
 
@@ -561,12 +596,19 @@ impl OperatorRuntime {
 /// A short nonsecret description of a tool action while it is running.
 /// Only known executable names are shown; arguments may contain secrets.
 fn safe_tool_action_detail(call: &crate::provider::ChatToolCall) -> String {
-    if call.name != "memphis_exec" { return String::new(); }
-    let executable = call.arguments.get("command").and_then(|v| v.as_str())
+    if call.name != "memphis_exec" {
+        return String::new();
+    }
+    let executable = call
+        .arguments
+        .get("command")
+        .and_then(|v| v.as_str())
         .and_then(|s| s.split_whitespace().next())
-        .and_then(|s| s.rsplit('/').next()).unwrap_or("");
+        .and_then(|s| s.rsplit('/').next())
+        .unwrap_or("");
     match executable {
-        "git" | "cargo" | "npm" | "node" | "python" | "python3" | "rg" | "ls" | "find" | "cat" | "pwd" | "curl" => executable.to_string(),
+        "git" | "cargo" | "npm" | "node" | "python" | "python3" | "rg" | "ls" | "find" | "cat"
+        | "pwd" | "curl" => executable.to_string(),
         _ => String::new(),
     }
 }
@@ -650,127 +692,174 @@ fn run_turn(
             }
             let request_context = crate::context::provider_context(&guard.messages);
             let mut attempt = 0_u8;
-            let (mut completion, mut stream_guard, mut think_stripper) = loop {
-            let mut stream_guard = StreamingOutputGuard::new();
-            let mut think_stripper = ThinkStripper::new();
-            let mut stream_stats = None;
-            let mut saw_text = false;
-            let mut stream_sink = |event: ChatStreamEvent| match event {
-                ChatStreamEvent::Text(chunk) => {
-                    saw_text = true;
-                    // Reasoning-model <think>…</think> blocks are the model's
-                    // internal deliberation and must not reach the TUI. Strip
-                    // them out of the live stream before StreamingOutputGuard
-                    // sees them so the operator only watches the final answer
-                    // render.
-                    let visible = think_stripper.push(chunk.as_str());
-                    if visible.is_empty() {
-                        return;
-                    }
-                    let mut emit_text = |text: &str| {
-                        on_chunk(ChatStreamEvent::Text(text.to_string()));
-                    };
-                    stream_guard.push(visible.as_str(), &mut emit_text);
-                }
-                ChatStreamEvent::Usage(usage) => on_chunk(ChatStreamEvent::Usage(usage)),
-                ChatStreamEvent::StreamStats(stats) => stream_stats = Some(stats),
-                // A provider never reports a tool call — the chat loop
-                // does, after the call has already run.
-                ChatStreamEvent::Tool { .. } => {}
-                // The provider's own tool-call bookkeeping is not the
-                // chat loop's: the loop emits the real `ToolStarted`
-                // when it actually runs a tool. Forwarding the
-                // provider's copy would show a pending call that no
-                // completion ever matches.
-                ChatStreamEvent::ToolStarted { .. } => {}
-                // A truncated answer is the operator's business: it
-                // must reach the surface, otherwise a cut-off answer
-                // renders like a finished one.
-                ChatStreamEvent::Truncated { reason } => {
-                    on_chunk(ChatStreamEvent::Truncated { reason })
-                }
-            };
-            // One provider completion, measured. The TypeScript gateway
-            // records this span; without it here, `provider_error_rate`
-            // reads the gateway's last measurement instead of the
-            // cockpit's, and the report says "no provider.completion
-            // spans in window" for the surface the operator actually
-            // uses.
-            let breaker_permit = crate::provider_breaker::admit(&runtime.config, provider_runtime.name())?;
-            let reservation = if crate::provider_budget::configured(&runtime.config, provider_runtime.name())? {
-                let bytes = serde_json::to_vec(&(options.system_prompt.as_ref(), &request_context, tool_definitions))
-                    .map_err(|error| OperatorError::Json(error.to_string()))?.len() as u64;
-                let output = if provider_runtime.name() == "minimax" && effective_model.to_ascii_lowercase().contains("m3") {
-                    options.minimax_max_completion_tokens.or(options.max_tokens).unwrap_or(32_768).clamp(1, 524_288)
-                } else { options.max_tokens.unwrap_or(2_048) };
-                crate::provider_budget::reserve(conn, &runtime.config, provider_runtime.name(),
-                    bytes.saturating_add(u64::from(output)).saturating_add(1_024))?
-            } else { None };
-            let provider_started = std::time::Instant::now();
-            let provider_result = provider_runtime.chat_stream_with_cancel(
-                &request_context,
-                &options,
-                &tool_definitions,
-                cancel_flag,
-                &mut stream_sink,
-            );
-            drop(stream_sink);
-            breaker_permit.record(&provider_result);
-            if let Some(reservation) = reservation {
-                let usage = provider_result.as_ref().ok().and_then(|completion| completion.token_usage.as_ref());
-                crate::provider_budget::settle(conn, &reservation,
-                    usage.map(|value| value.total_tokens), usage.map(|value| value.estimated).unwrap_or(true))?;
-            }
-            let provider_elapsed = provider_started.elapsed().as_millis() as u64;
-            match provider_result {
-                Ok(completion) => {
-                    crate::telemetry::record_provider_completion_for_turn(
-                        &runtime.config,
-                        provider_runtime.name(),
-                        completion.model.as_str(),
-                        tool_definitions.len(),
-                        request_context.len(),
-                        provider_elapsed,
-                        false,
-                        None,
-                        Some(checkpoint_id),
-                        stream_stats.as_ref(),
-                    );
-                    break (completion, stream_guard, think_stripper);
-                }
-                Err(error) => {
-                    crate::telemetry::record_provider_completion_for_turn(
-                        &runtime.config,
-                        provider_runtime.name(),
-                        options.model.as_deref().unwrap_or("unknown"),
-                        tool_definitions.len(),
-                        request_context.len(),
-                        provider_elapsed,
-                        true,
-                        Some(if matches!(&error, OperatorError::ProviderStreamTimeout) { "provider stream timeout" } else { "provider call failed" }),
-                        Some(checkpoint_id),
-                        stream_stats.as_ref(),
-                    );
-                    let transient = matches!(&error,
-                        OperatorError::ProviderStreamTimeout |
-                        OperatorError::ProviderTransport { transient: true, .. } |
-                        OperatorError::ProviderHttp { status: 500 | 502 | 503 | 504, .. }
-                    );
-                    // Retry a completion only before any response bytes or
-                    // text. The already-executed tool loop is never replayed.
-                    let no_stream_bytes = stream_stats.as_ref().is_none_or(|stats| stats.bytes == 0);
-                    if attempt == 0 && transient && !saw_text && no_stream_bytes {
-                        attempt += 1;
-                        on_chunk(ChatStreamEvent::Text("[recovery] Provider unavailable before output; retrying once.\n".into()));
-                        for _ in 0..10 {
-                            ensure_chat_not_cancelled(cancel_flag)?;
-                            std::thread::sleep(std::time::Duration::from_millis(25));
+            let (mut completion, mut stream_guard, think_stripper) = loop {
+                let mut stream_guard = StreamingOutputGuard::new();
+                let mut think_stripper = ThinkStripper::new();
+                let mut stream_stats = None;
+                let mut saw_text = false;
+                let mut stream_sink = |event: ChatStreamEvent| match event {
+                    ChatStreamEvent::Text(chunk) => {
+                        saw_text = true;
+                        // Reasoning-model <think>…</think> blocks are the model's
+                        // internal deliberation and must not reach the TUI. Strip
+                        // them out of the live stream before StreamingOutputGuard
+                        // sees them so the operator only watches the final answer
+                        // render.
+                        let visible = think_stripper.push(chunk.as_str());
+                        if visible.is_empty() {
+                            return;
                         }
-                        continue;
+                        let mut emit_text = |text: &str| {
+                            on_chunk(ChatStreamEvent::Text(text.to_string()));
+                        };
+                        stream_guard.push(visible.as_str(), &mut emit_text);
                     }
-                    return Err(error);
+                    ChatStreamEvent::Usage(usage) => on_chunk(ChatStreamEvent::Usage(usage)),
+                    ChatStreamEvent::StreamStats(stats) => stream_stats = Some(stats),
+                    // A provider never reports a tool call — the chat loop
+                    // does, after the call has already run.
+                    ChatStreamEvent::Tool { .. } => {}
+                    // The provider's own tool-call bookkeeping is not the
+                    // chat loop's: the loop emits the real `ToolStarted`
+                    // when it actually runs a tool. Forwarding the
+                    // provider's copy would show a pending call that no
+                    // completion ever matches.
+                    ChatStreamEvent::ToolStarted { .. } => {}
+                    // A truncated answer is the operator's business: it
+                    // must reach the surface, otherwise a cut-off answer
+                    // renders like a finished one.
+                    ChatStreamEvent::Truncated { reason } => {
+                        on_chunk(ChatStreamEvent::Truncated { reason })
+                    }
+                };
+                // One provider completion, measured. The TypeScript gateway
+                // records this span; without it here, `provider_error_rate`
+                // reads the gateway's last measurement instead of the
+                // cockpit's, and the report says "no provider.completion
+                // spans in window" for the surface the operator actually
+                // uses.
+                let breaker_permit =
+                    crate::provider_breaker::admit(&runtime.config, provider_runtime.name())?;
+                let reservation = if crate::provider_budget::configured(
+                    &runtime.config,
+                    provider_runtime.name(),
+                )? {
+                    let bytes = serde_json::to_vec(&(
+                        options.system_prompt.as_ref(),
+                        &request_context,
+                        tool_definitions,
+                    ))
+                    .map_err(|error| OperatorError::Json(error.to_string()))?
+                    .len() as u64;
+                    let output = if provider_runtime.name() == "minimax"
+                        && effective_model.to_ascii_lowercase().contains("m3")
+                    {
+                        options
+                            .minimax_max_completion_tokens
+                            .or(options.max_tokens)
+                            .unwrap_or(32_768)
+                            .clamp(1, 524_288)
+                    } else {
+                        options.max_tokens.unwrap_or(2_048)
+                    };
+                    crate::provider_budget::reserve(
+                        conn,
+                        &runtime.config,
+                        provider_runtime.name(),
+                        bytes
+                            .saturating_add(u64::from(output))
+                            .saturating_add(1_024),
+                    )?
+                } else {
+                    None
+                };
+                let provider_started = std::time::Instant::now();
+                let provider_result = provider_runtime.chat_stream_with_cancel(
+                    &request_context,
+                    &options,
+                    &tool_definitions,
+                    cancel_flag,
+                    &mut stream_sink,
+                );
+                drop(stream_sink);
+                breaker_permit.record(&provider_result);
+                if let Some(reservation) = reservation {
+                    let usage = provider_result
+                        .as_ref()
+                        .ok()
+                        .and_then(|completion| completion.token_usage.as_ref());
+                    crate::provider_budget::settle(
+                        conn,
+                        &reservation,
+                        usage.map(|value| value.total_tokens),
+                        usage.map(|value| value.estimated).unwrap_or(true),
+                    )?;
                 }
-            }
+                let provider_elapsed = provider_started.elapsed().as_millis() as u64;
+                match provider_result {
+                    Ok(completion) => {
+                        crate::telemetry::record_provider_completion_for_turn(
+                            &runtime.config,
+                            provider_runtime.name(),
+                            completion.model.as_str(),
+                            tool_definitions.len(),
+                            request_context.len(),
+                            provider_elapsed,
+                            false,
+                            None,
+                            Some(checkpoint_id),
+                            stream_stats.as_ref(),
+                        );
+                        break (completion, stream_guard, think_stripper);
+                    }
+                    Err(error) => {
+                        crate::telemetry::record_provider_completion_for_turn(
+                            &runtime.config,
+                            provider_runtime.name(),
+                            options.model.as_deref().unwrap_or("unknown"),
+                            tool_definitions.len(),
+                            request_context.len(),
+                            provider_elapsed,
+                            true,
+                            Some(if matches!(&error, OperatorError::ProviderStreamTimeout) {
+                                "provider stream timeout"
+                            } else {
+                                "provider call failed"
+                            }),
+                            Some(checkpoint_id),
+                            stream_stats.as_ref(),
+                        );
+                        let transient = matches!(
+                            &error,
+                            OperatorError::ProviderStreamTimeout
+                                | OperatorError::ProviderTransport {
+                                    transient: true,
+                                    ..
+                                }
+                                | OperatorError::ProviderHttp {
+                                    status: 500 | 502 | 503 | 504,
+                                    ..
+                                }
+                        );
+                        // Retry a completion only before any response bytes or
+                        // text. The already-executed tool loop is never replayed.
+                        let no_stream_bytes =
+                            stream_stats.as_ref().is_none_or(|stats| stats.bytes == 0);
+                        if attempt == 0 && transient && !saw_text && no_stream_bytes {
+                            attempt += 1;
+                            on_chunk(ChatStreamEvent::Text(
+                                "[recovery] Provider unavailable before output; retrying once.\n"
+                                    .into(),
+                            ));
+                            for _ in 0..10 {
+                                ensure_chat_not_cancelled(cancel_flag)?;
+                                std::thread::sleep(std::time::Duration::from_millis(25));
+                            }
+                            continue;
+                        }
+                        return Err(error);
+                    }
+                }
             };
             let mut emit_text = |text: &str| {
                 on_chunk(ChatStreamEvent::Text(text.to_string()));
@@ -863,11 +952,19 @@ fn run_turn(
                 // Model-generated call IDs cannot prove idempotence. Default
                 // unknown tools to side-effecting until the operator reviews
                 // the earlier incomplete turn.
-                let read_only = matches!(tool_call.name.as_str(),
-                    "memphis_recall" | "memphis_search" | "memphis_health" |
-                    "memphis_soul_read" | "memphis_case_query" | "memphis_vault_list" |
-                    "memphis_chain_query" | "memphis_chain_verify" | "memphis_code_read" |
-                    "memphis_grep" | "memphis_glob"
+                let read_only = matches!(
+                    tool_call.name.as_str(),
+                    "memphis_recall"
+                        | "memphis_search"
+                        | "memphis_health"
+                        | "memphis_soul_read"
+                        | "memphis_case_query"
+                        | "memphis_vault_list"
+                        | "memphis_chain_query"
+                        | "memphis_chain_verify"
+                        | "memphis_code_read"
+                        | "memphis_grep"
+                        | "memphis_glob"
                 );
                 if recovery_guard && !read_only {
                     *blocked_by_recovery = true;
@@ -912,7 +1009,11 @@ fn run_turn(
                     detail: safe_tool_action_detail(&tool_call),
                 });
                 let (tool_display, tool_payload) = match execute_native_tool_for_turn(
-                    runtime, &tool_call, max_tier, Some(checkpoint_id), cancel_flag,
+                    runtime,
+                    &tool_call,
+                    max_tier,
+                    Some(checkpoint_id),
+                    cancel_flag,
                 ) {
                     Ok(result) => {
                         tool_failed = native_tool_result_failed(&tool_call.name, &result.1);
@@ -921,7 +1022,11 @@ fn run_turn(
                         result
                     }
                     Err(error @ OperatorError::ToolOutcomeUnknown(_)) => {
-                        record_operation_unknown(&conn, &operation_id, "tool outcome unknown; operator review required")?;
+                        record_operation_unknown(
+                            &conn,
+                            &operation_id,
+                            "tool outcome unknown; operator review required",
+                        )?;
                         in_flight_operations.retain(|id| id != &operation_id);
                         return Err(error);
                     }
@@ -929,7 +1034,8 @@ fn run_turn(
                         record_operation_unknown(&conn, &operation_id, "tool returned an error after dispatch; side effects cannot be ruled out")?;
                         in_flight_operations.retain(|id| id != &operation_id);
                         return Err(OperatorError::ToolOutcomeUnknown(format!(
-                            "{} returned an error after dispatch; operator review required", tool_call.name
+                            "{} returned an error after dispatch; operator review required",
+                            tool_call.name
                         )));
                     }
                     Err(error) => {
@@ -1087,22 +1193,17 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use memphis_core::case_entry::{CaseEntry, CaseQuery};
+    use memphis_core::case_entry::CaseEntry;
     use serde_json::Value;
 
     use crate::chat_basal::{classify_reply_to_json, parse_basal_threshold};
-    use crate::chat_guards::{
-        load_json_file, scan_code_change_content, scan_memory_content, secret_exfiltration_patterns,
-    };
+    use crate::chat_guards::{load_json_file, scan_memory_content, sha256_hex};
     use crate::chat_memory::{
         append_generic_block, ensure_soul_manifest, read_chain_blocks, run_native_journal,
-        run_soul_read, run_soul_write, validate_soul_update_shape, SOUL_LIST_FIELDS,
-        SOUL_SCALAR_FIELDS, SOUL_SECTIONS,
+        run_soul_write, SOUL_LIST_FIELDS, SOUL_SCALAR_FIELDS, SOUL_SECTIONS,
     };
-    use crate::chat_session::{
-        drop_orphaned_tool_rows, load_chat_rows, persist_chat_messages, StoredChatMessage,
-        DEFAULT_CHAT_SESSION_ID,
-    };
+    use crate::chat_session::{drop_orphaned_tool_rows, StoredChatMessage};
+    use crate::chat_tool_executor::{cut_on_char_boundary, execute_native_tool};
     use crate::provider::ChatToolCall;
     use std::path::PathBuf;
     use std::sync::{
@@ -1113,7 +1214,11 @@ mod tests {
 
     #[test]
     fn safe_tool_detail_never_includes_command_arguments() {
-        let mut call = ChatToolCall { id: "x".into(), name: "memphis_exec".into(), arguments: json!({"command":"git status --example-sensitive-value"}) };
+        let mut call = ChatToolCall {
+            id: "x".into(),
+            name: "memphis_exec".into(),
+            arguments: json!({"command":"git status --example-sensitive-value"}),
+        };
         assert_eq!(safe_tool_action_detail(&call), "git");
         call.arguments = json!({"command":"unknown-tool secret"});
         assert!(safe_tool_action_detail(&call).is_empty());
@@ -1224,7 +1329,23 @@ mod tests {
         let prompt =
             build_runtime_system_prompt(&runtime, &tools).expect("build runtime system prompt");
 
-        assert!(prompt.contains("Available tools: memphis_journal"));
+        // The prompt must name the NATIVE tools. Which one comes first is
+        // not part of the contract: the list order changed when the
+        // schemas became a projection of the TypeScript registry (the
+        // registry's order), so the assertion names the whole set rather
+        // than one position in it.
+        let available = prompt
+            .split("Available tools: ")
+            .nth(1)
+            .and_then(|rest| rest.split('\n').next())
+            .unwrap_or_default();
+        for tool in &tools {
+            assert!(
+                available.contains(tool.name.as_str()),
+                "the prompt must list the native tool {} — it lists: {available}",
+                tool.name
+            );
+        }
         assert!(prompt.contains("\"toolSource\":\"native-rust-operator\""));
         assert!(prompt.contains("Before claiming that a chain is corrupt"));
         assert!(prompt.contains("call memphis_chain_verify in the same turn"));
@@ -1291,6 +1412,7 @@ mod tests {
             &runtime,
             "Memphis exact recall stores this sentence",
             vec!["memory".to_string()],
+            None,
         )
         .expect("journal write");
         assert!(result.success);
@@ -2030,17 +2152,25 @@ mod tests {
     }
 
     #[test]
-    fn case_append_schema_types_tags_as_a_bare_array() {
+    fn case_append_advertises_only_the_fields_the_case_entry_has() {
         let binding = tool_schema("memphis_case_append");
         let entry = schema_at(&binding, &["properties", "entry"]);
-        let tags = schema_at(entry, &["properties", "tags"]);
         assert_eq!(
-            tags["type"].as_str(),
-            Some("array"),
-            "entry.tags must be array — the live history shows 6 case_append calls \
-             that wrapped it as {{\"item\": [...}}"
+            entry["properties"]["case_type"]["type"].as_str(),
+            Some("string"),
+            "the case entry is anchored on its grammatical case"
         );
-        assert_eq!(tags["items"]["type"].as_str(), Some("string"));
+        // The case entry has NO `tags` field — the block's tags are
+        // DERIVED (`case:{case_type}`). The hand-written schema used to
+        // advertise `entry.tags` as a bare array, which taught the model
+        // to send a field the surface silently dropped: the live history
+        // shows 6 case_append calls that wrapped it as `{"item": [...]}`.
+        // The projected schema says what the entry actually IS, so the
+        // model stops sending a field that does nothing.
+        assert!(
+            entry["properties"].get("tags").is_none(),
+            "the case entry has no tags field — the block's tags are derived"
+        );
         assert!(
             entry["properties"].get("item").is_none(),
             "entry must not offer an `item` key"
@@ -2050,9 +2180,16 @@ mod tests {
     /// Every list-bearing tool must say so in the description the model reads
     /// first. The schema alone is not enough when the model has been burned
     /// by the wrapper before and is primed to reproduce it.
+    ///
+    /// `memphis_case_append` is NOT on the list: a case entry has no list
+    /// field at all — every role slot is a string, and the block's tags
+    /// are derived from the grammatical case. It used to be on the list
+    /// because the hand-written schema advertised a `tags` field the
+    /// implementation ignored; teaching a rule about a field that does
+    /// not exist is teaching the model to send something for nothing.
     #[test]
     fn list_bearing_tools_mention_the_bare_array_rule_in_their_description() {
-        for name in ["memphis_soul_write", "memphis_case_append"] {
+        for name in ["memphis_soul_write"] {
             let description = native_tool_definitions()
                 .into_iter()
                 .find(|tool| tool.name == name)
@@ -2133,6 +2270,55 @@ mod tests {
         assert!(verify_output.contains("\"blockCount\":1"));
     }
 
+    /// "Verify all chains" must actually verify chains.
+    ///
+    /// The tool description promises it: "Optional chain name; omit to
+    /// verify all chains". It used to abort on the first archive directory
+    /// it met, because a dot is not in `[A-Za-z0-9_-]`, and answered
+    /// "invalid chain name" after checking NOTHING. The TypeScript arm
+    /// skipped those directories and kept going.
+    #[test]
+    fn native_chain_verify_without_a_chain_checks_every_chain_including_archives() {
+        let root = temp_runtime_root("native-chain-verify-all");
+        let runtime = runtime_for(root.as_path());
+        append_generic_block(
+            &root,
+            "journal",
+            json!({
+                "type": "journal",
+                "content": "every chain must be verified",
+                "tags": ["competence"],
+                "source": "test"
+            }),
+        )
+        .expect("append journal");
+
+        // An archive of the journal, next to the chain itself.
+        let archive = root.join("chains").join("journal.backup-1784913076785");
+        fs::create_dir_all(&archive).expect("create the archive directory");
+        fs::copy(
+            root.join("chains").join("journal").join("000001.json"),
+            archive.join("000001.json"),
+        )
+        .expect("copy the block into the archive");
+
+        let verify = ChatToolCall {
+            id: "verify-all-call".to_string(),
+            name: "memphis_chain_verify".to_string(),
+            arguments: json!({}),
+        };
+        let (_, verify_output) =
+            execute_native_tool(&runtime, &verify, 2).expect("verify every chain");
+        assert!(
+            verify_output.contains("\"ok\":true"),
+            "verifying every chain must not fail: {verify_output}"
+        );
+        assert!(
+            verify_output.contains("\"chainsChecked\":2"),
+            "both the chain and its archive must be checked: {verify_output}"
+        );
+    }
+
     /// BASAL answers over HTTP, so the validation paths are the part worth
     /// testing: they must fail before a request is sent. The happy path is
     /// covered against the live service in the manual probe, not here, because
@@ -2165,13 +2351,45 @@ mod tests {
             .get("properties")
             .and_then(|properties| properties.get("criteria"))
             .expect("criteria must be described");
-        assert_eq!(criteria.get("type").and_then(Value::as_str), Some("object"));
+        // The registry declares `criteria` as a UNION: an object of
+        // labels, or an array of 2-10 labels. Both arms accept both
+        // (see `tests/fixtures/classify-criteria-contract.json`), so the
+        // advertised schema has to teach both — a schema that offers only
+        // the object form is how a model learned a form the cockpit
+        // refused.
+        let arms = criteria
+            .get("anyOf")
+            .and_then(Value::as_array)
+            .expect("criteria must declare both accepted forms");
+        assert_eq!(arms.len(), 2, "criteria must offer the object and the array form");
+        let object_form = arms
+            .iter()
+            .find(|arm| arm.get("type").and_then(Value::as_str) == Some("object"))
+            .expect("criteria must accept the object form");
         assert!(
-            criteria
+            object_form
                 .get("additionalProperties")
                 .and_then(Value::as_object)
                 .is_some(),
-            "criteria must declare the shape of its values"
+            "the object form must declare the shape of its values"
+        );
+        let array_form = arms
+            .iter()
+            .find(|arm| arm.get("type").and_then(Value::as_str) == Some("array"))
+            .expect("criteria must accept the array form");
+        assert!(
+            array_form.get("items").and_then(Value::as_object).is_some(),
+            "the array form must declare its item type"
+        );
+        assert_eq!(
+            array_form.get("minItems").and_then(Value::as_u64),
+            Some(2),
+            "the array form must declare its lower bound"
+        );
+        assert_eq!(
+            array_form.get("maxItems").and_then(Value::as_u64),
+            Some(10),
+            "the array form must declare its upper bound"
         );
         // Tier 2: it reaches the network, so it is not free to call.
         assert_eq!(tool_tier("memphis_classify"), 2);
@@ -2221,14 +2439,14 @@ mod tests {
                 "non-empty question",
             ),
             (
-                "one option carries no decision",
+                "requires at least two criteria options",
                 json!({ "state": "text", "question": "which one?", "criteria": {"a": "A"} }),
                 "at least two criteria options",
             ),
             (
-                "criteria as an array is not accepted here",
-                json!({ "state": "text", "question": "which one?", "criteria": ["A", "B"] }),
-                "criteria as a {key: description} object",
+                "criteria that are neither an object nor an array",
+                json!({ "state": "text", "question": "which one?", "criteria": "A" }),
+                "requires criteria as a {key: description} object or an array of labels",
             ),
             (
                 "unknown question type",
@@ -2958,19 +3176,25 @@ mod tests {
     ///
     /// Asserts the refusal AND the absence of the file -- a scanner that
     /// reported the block after writing would pass a status-only check.
+    ///
+    /// The call carries the REGISTRY's arguments (`intent`, `files`,
+    /// `changes`), because the native arm now speaks the same vocabulary as
+    /// the gateway: under one name there is one operation.
     #[test]
     fn native_self_modify_refuses_content_the_mcp_surface_refuses() {
         let root = temp_runtime_root("native-self-modify-scan");
-        let runtime = runtime_for(root.as_path());
-        let target = root.as_path().join("should-not-exist.sh");
+        let mut runtime = runtime_for(root.as_path());
+        runtime.config.runtime_root = root.clone();
+        let relative = "should-not-exist.sh";
+        let target = root.join(relative);
 
         let call = ChatToolCall {
             id: "modify-call".to_string(),
             name: "memphis_self_modify".to_string(),
             arguments: json!({
-                "path": target.to_string_lossy(),
-                "content": "cat /srv/app/.env\n",
-                "mode": "write",
+                "intent": "read the env",
+                "files": [relative],
+                "changes": { relative: "cat /srv/app/.env\n" },
             }),
         };
 
@@ -2978,7 +3202,7 @@ mod tests {
             .expect_err("exfiltration-shaped content must be refused");
         let message = error.to_string();
         assert!(
-            message.contains("Blocked self-modify content"),
+            message.contains("request contains blocked content"),
             "expected a scan refusal, got: {message}"
         );
         assert!(
@@ -2990,36 +3214,53 @@ mod tests {
 
     /// Ordinary native proposals are queued for the local operator; the tool
     /// must not write the requested file or require a password from the model.
+    ///
+    /// The queued payload is the CANONICAL one -- the same bytes the
+    /// gateway queues, digested the same way -- so the operator sees one
+    /// digest wherever the request was made.
     #[test]
     fn native_self_modify_queues_ordinary_content_without_writing() {
         let root = temp_runtime_root("native-self-modify-allow");
         let mut runtime = runtime_for(root.as_path());
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-        let workspace = std::path::Path::new(&home).join("memphis");
-        std::fs::create_dir_all(&workspace).expect("workspace");
-        runtime.config.runtime_root = workspace.clone();
-        let target = workspace.join("self-modify-scan-probe.md");
+        runtime.config.runtime_root = root.clone();
+        let relative = "self-modify-scan-probe.md";
+        let target = root.join(relative);
         let _ = std::fs::remove_file(&target);
 
         let call = ChatToolCall {
             id: "modify-call".to_string(),
             name: "memphis_self_modify".to_string(),
             arguments: json!({
-                "path": target.to_string_lossy(),
-                "content": "# Notatka\n\nZwykly wpis bez wzorcow.\n",
-                "mode": "write",
+                "intent": "write a note",
+                "files": [relative],
+                "changes": { relative: "# Notatka\n\nZwykly wpis bez wzorcow.\n" },
             }),
         };
 
         let result = execute_native_tool(&runtime, &call, 2).expect("proposal must be queued");
         assert!(result.1.contains("operator-review-required"));
-        assert!(!target.exists(), "native proposal must never write the file");
-        let db = rusqlite::Connection::open(&runtime.config.database_path).expect("request database");
-        let (payload, status): (String, String) = db.query_row(
-            "SELECT payload,status FROM evolve_requests", [], |row| Ok((row.get(0)?, row.get(1)?))
-        ).expect("queued request");
+        assert!(
+            !target.exists(),
+            "native proposal must never write the file"
+        );
+        let db =
+            rusqlite::Connection::open(&runtime.config.database_path).expect("request database");
+        let (payload, status, digest): (String, String, String) = db
+            .query_row("SELECT payload,status,digest FROM evolve_requests", [], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .expect("queued request");
         assert_eq!(status, "pending");
-        assert!(payload.contains("self-modify-scan-probe.md"));
+        assert!(payload.contains(relative));
+        assert_eq!(
+            digest,
+            sha256_hex(payload.as_bytes()),
+            "the digest must be the digest of the stored bytes"
+        );
+        assert!(
+            !payload.contains("passphrase"),
+            "a passphrase must never reach the payload"
+        );
     }
     /// The native code_read used to check only that the path sat under
     /// ~/memphis/ -- which is exactly where the operator's own `.env` and
@@ -3088,7 +3329,10 @@ mod tests {
         // check entirely.
         std::fs::write(
             &target,
-            (1..=5000).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n"),
+            (1..=5000)
+                .map(|n| format!("line {n}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
         )
         .expect("write probe file");
 
@@ -3227,8 +3471,8 @@ mod tests {
             }),
         };
 
-        let (_summary, payload) = execute_native_tool(&runtime, &call, 2)
-            .expect("the registry's shape must work");
+        let (_summary, payload) =
+            execute_native_tool(&runtime, &call, 2).expect("the registry's shape must work");
         let _ = std::fs::remove_dir_all(&probe_dir);
         assert!(
             payload.contains("\"count\":1"),
@@ -3257,8 +3501,8 @@ mod tests {
             arguments: json!({ "url": "http://169.254.169.254/latest/meta-data/" }),
         };
 
-        let error = execute_native_tool(&runtime, &call, 2)
-            .expect_err("a private target must be refused");
+        let error =
+            execute_native_tool(&runtime, &call, 2).expect_err("a private target must be refused");
         let message = error.to_string();
         assert!(
             message.contains("private/internal IP literal"),
@@ -3278,8 +3522,7 @@ mod tests {
             arguments: json!({ "url": "http://localhost:8080/health" }),
         };
 
-        let error = execute_native_tool(&runtime, &call, 2)
-            .expect_err("localhost must be refused");
+        let error = execute_native_tool(&runtime, &call, 2).expect_err("localhost must be refused");
         assert!(
             error.to_string().contains("URL blocked: localhost"),
             "the refusal must name the reason: {error}"
@@ -3300,36 +3543,42 @@ mod tests {
     #[test]
     fn native_self_modify_refuses_the_segments_the_read_path_refuses() {
         let root = temp_runtime_root("native-self-modify-blocked-segment");
-        let runtime = runtime_for(root.as_path());
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-        let workspace = std::path::Path::new(&home).join("memphis");
-        let probe = workspace.join("node_modules").join(".memphis-write-probe");
-        std::fs::create_dir_all(probe.parent().expect("probe parent")).expect("probe dir");
-        let _ = std::fs::remove_file(&probe);
+        let mut runtime = runtime_for(root.as_path());
+        runtime.config.runtime_root = root.clone();
 
-        let call = ChatToolCall {
-            id: "modify-call".to_string(),
-            name: "memphis_self_modify".to_string(),
-            arguments: json!({
-                "path": probe.to_string_lossy(),
-                "content": "probe\n",
-                "mode": "write",
-            }),
-        };
+        // The probe is `node_modules/`, not `.env`: a refusal happens
+        // before anything is written, but a REGRESSION would write the
+        // file, and the operator's own `.env` must not be what a test
+        // risks.
+        for relative in ["node_modules/.memphis-write-probe", "dist/.memphis-write-probe"] {
+            let probe = root.join(relative);
+            std::fs::create_dir_all(probe.parent().expect("probe parent")).expect("probe dir");
+            let _ = std::fs::remove_file(&probe);
 
-        let result = execute_native_tool(&runtime, &call, 2);
-        let _ = std::fs::remove_file(&probe);
+            let call = ChatToolCall {
+                id: "modify-call".to_string(),
+                name: "memphis_self_modify".to_string(),
+                arguments: json!({
+                    "intent": "write a probe",
+                    "files": [relative],
+                    "changes": { relative: "probe\n" },
+                }),
+            };
 
-        let error = result.expect_err("a blocked segment must be refused");
-        assert!(
-            error.to_string().contains("blocked because it matches"),
-            "the refusal must name the reason: {error}"
-        );
-        assert!(
-            !probe.exists(),
-            "the file was written despite the refusal: {}",
-            probe.display()
-        );
+            let result = execute_native_tool(&runtime, &call, 2);
+            let _ = std::fs::remove_file(&probe);
+
+            let error = result.expect_err("a blocked segment must be refused");
+            assert!(
+                error.to_string().contains("forbidden file path"),
+                "the refusal must name the reason: {error}"
+            );
+            assert!(
+                !probe.exists(),
+                "the file was written despite the refusal: {}",
+                probe.display()
+            );
+        }
     }
 
     /// A symlink inside the workspace must not become a door out of it.
@@ -3338,20 +3587,23 @@ mod tests {
     /// never resolved it, so a link inside the workspace could be
     /// written straight through to a file outside it -- the vault state
     /// in ~/.memphis/ is exactly such a target.
+    ///
+    /// The paths are repository-relative now, so the door is a link that
+    /// POINTS out of the repository rather than a path that NAMES a place
+    /// outside it.
     #[test]
     fn native_self_modify_refuses_to_write_through_a_symlink_out_of_the_workspace() {
         let root = temp_runtime_root("native-self-modify-symlink");
-        let runtime = runtime_for(root.as_path());
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-        let workspace = std::path::Path::new(&home).join("memphis");
+        let mut runtime = runtime_for(root.as_path());
+        runtime.config.runtime_root = root.clone();
 
         let outside =
             std::env::temp_dir().join(format!("memphis-write-escape-{}", std::process::id()));
-        let link = workspace.join(".memphis-write-escape-link");
-        // Same reason as the range probe above: ~/memphis does not exist
-        // in a fresh CI HOME, and a symlink cannot be created in a
-        // directory that is not there.
-        std::fs::create_dir_all(&workspace).expect("workspace dir");
+        // No leading dot: a dot-prefixed segment is refused by the shared
+        // path rule before the symlink is ever resolved, and this test is
+        // about the symlink.
+        let relative = "memphis-write-escape-link";
+        let link = root.join(relative);
         let _ = std::fs::remove_file(&outside);
         let _ = std::fs::remove_file(&link);
         std::os::unix::fs::symlink(&outside, &link).expect("create the symlink");
@@ -3360,26 +3612,21 @@ mod tests {
             id: "modify-call".to_string(),
             name: "memphis_self_modify".to_string(),
             arguments: json!({
-                "path": link.to_string_lossy(),
-                "content": "escaped\n",
-                "mode": "write",
+                "intent": "escape the workspace",
+                "files": [relative],
+                "changes": { relative: "escaped\n" },
             }),
         };
 
         let result = execute_native_tool(&runtime, &call, 2);
         let _ = std::fs::remove_file(&link);
-        // The write path stages the workspace before it writes, so the
-        // probe has to leave the index again.
-        let _ = std::process::Command::new("git")
-            .args(["reset", "-q", "--", ".memphis-write-escape-link"])
-            .current_dir(&workspace)
-            .output();
         let escaped = std::fs::read_to_string(&outside).unwrap_or_default();
         let _ = std::fs::remove_file(&outside);
 
+        let error = result.expect_err("writing through a symlink out must be refused");
         assert!(
-            result.is_err(),
-            "writing through a symlink out of the workspace must be refused"
+            error.to_string().contains("outside the runtime repository"),
+            "the refusal must name the reason: {error}"
         );
         assert!(
             escaped.is_empty(),
@@ -3518,7 +3765,7 @@ mod tests {
             "Background context. ".repeat(30)
         );
         let written =
-            crate::chat_memory::run_native_journal(&runtime, &content, vec!["fixture".into()])
+            crate::chat_memory::run_native_journal(&runtime, &content, vec!["fixture".into()], None)
                 .unwrap();
         assert!(written.success);
         let reopened = runtime_for(&root);
@@ -3545,7 +3792,7 @@ mod tests {
         let root = temp_runtime_root("recall-chunk-source");
         let runtime = runtime_for(&root);
         let written =
-            crate::chat_memory::run_native_journal(&runtime, "AtlasMem current code: TUE.", vec![])
+            crate::chat_memory::run_native_journal(&runtime, "AtlasMem current code: TUE.", vec![], None)
                 .unwrap();
         assert!(written.success);
         let result = crate::runtime::MemoryQueryResult {

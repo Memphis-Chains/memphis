@@ -6,6 +6,15 @@
 // for env-from-args. Sprint ι.3: file-level disable; downstream code
 // still reads via env-registry typed accessors.
 //
+// The `fatal-guard` import below MUST stay first. It installs the
+// process-level error handlers as a side effect of evaluating that
+// module, and ES module imports are evaluated in source order — so
+// this is the only way the handlers exist while the rest of the import
+// graph (Rust bridge, gateway, MCP server) is being evaluated. A throw
+// during that evaluation is then caught and logged instead of killing
+// the daemon with a bare stack trace. See src/infra/runtime/fatal-guard.ts.
+//
+import '../runtime/fatal-guard.js';
 import { existsSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { executeCommand } from './dispatcher.js';
 import { parseCommand } from './parser.js';
 import { checkDependencies } from './utils/dependencies.js';
-import { LOG_LEVEL, NODE_ENV } from '../../config/env-registry.js';
+import { NODE_ENV } from '../../config/env-registry.js';
 import { ensureDir, getDataDir } from '../../config/paths.js';
 import { formatCliError, toAppError } from '../../core/errors.js';
 import { loadDotEnvFromInstallRoot } from '../config/env.js';
@@ -145,24 +154,6 @@ export async function runCli(argv: string[] = process.argv ?? []): Promise<void>
 
 const entryPath = process.argv[1] ? resolve(process.argv[1]) : undefined;
 const modulePath = fileURLToPath(import.meta.url);
-
-// Global error handlers to prevent silent crashes
-process.on('uncaughtException', (error: Error) => {
-  console.error(`[memphis] uncaught exception: ${error.message}`);
-  if (LOG_LEVEL.read(process.env) === 'debug') {
-    console.error(error.stack);
-  }
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason: unknown) => {
-  const message = reason instanceof Error ? reason.message : String(reason);
-  console.error(`[memphis] unhandled rejection: ${message}`);
-  if (LOG_LEVEL.read(process.env) === 'debug' && reason instanceof Error) {
-    console.error(reason.stack);
-  }
-  process.exit(1);
-});
 
 if (entryPath === modulePath) {
   runCli().catch((error) => {
