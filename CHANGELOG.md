@@ -1,5 +1,26 @@
 ## Unreleased
 
+### The bridge's payload shapes have one owner
+
+The shape of what the bridge carries was guessed, in seven TypeScript files.
+The guess was not carelessness: the Rust owner speaks two conventions — a
+`#[napi(object)]` struct with an explicit `#[napi(js_name = "...")]` is
+exported in snake_case, one without it in camelCase. Measured 2026-11-24 on
+the built module: `vault_load_state` returns `error_code`,
+`vault_decode_entry` returns `errorCode`, `vault_parse_entries` returns
+`entriesJson`. One hand-written interface covered two payloads, so it hedged
+over both spellings.
+
+The shapes now have one owner (`crates/memphis-napi/src/bridge_payloads.rs`),
+the projection copies them into an artefact and a TypeScript mirror, and both
+arms check themselves against it. The vault family is migrated; the six
+surfaces that still own a payload type are counted in the gate, and the
+counter may only go down.
+
+The compatibility with older binaries stays and is now declared rather than
+guessed: the naming stabilization of 2026-03-21 changed `master_key` and
+`created_at` from `masterKey` and `createdAt`.
+
 ## v1.14.2 - 2026-11-24
 
 One ledger entry closed: the package that ships. The published v1.14.1 tarball

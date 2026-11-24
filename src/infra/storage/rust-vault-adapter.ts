@@ -11,6 +11,11 @@ import {
 import { dirname } from 'node:path';
 
 import { callBridge } from './bridge-envelope.js';
+import type {
+  BridgePayloadOf,
+  VaultEntryPayload,
+  VaultPayload,
+} from './bridge-payloads.generated.js';
 import {
   hasRequiredBridgeExports,
   loadPlatformAwareBridge,
@@ -55,21 +60,21 @@ export interface VaultEntry {
   createdAt?: string;
 }
 
-interface JsVault {
-  salt: Buffer;
-  master_key?: Buffer;
-  masterKey?: Buffer;
-}
+/**
+ * The vault object and the stored entry, as the BRIDGE carries them.
+ *
+ * These used to be hand-written here, with a hedge in each: `master_key?`
+ * AND `masterKey?`, `created_at?` AND `createdAt?`. The hedge was not
+ * caution — it was the truth about the wire, discovered the hard way:
+ * a `#[napi(object)]` struct with an explicit `#[napi(js_name = "...")]`
+ * speaks snake_case, one without it speaks camelCase. So the shapes now
+ * come from the owner's table (`bridge-payloads.generated.ts`, projected
+ * from `crates/memphis-napi/src/bridge_payloads.rs`), and there is exactly
+ * one spelling per field.
+ */
+type JsVault = VaultPayload;
 
-interface JsVaultEntry {
-  id: string;
-  key: string;
-  ciphertext: Buffer;
-  nonce: Buffer;
-  tag: Buffer;
-  created_at?: string;
-  createdAt?: string;
-}
+type JsVaultEntry = VaultEntryPayload;
 
 export const NEW_VAULT_BRIDGE_ALIASES = {
   vault_init_full: ['vault_init_full', 'vaultInitFull'],
@@ -96,40 +101,36 @@ export const LEGACY_VAULT_BRIDGE_ALIASES = {
 type NewVaultBridgeKey = keyof typeof NEW_VAULT_BRIDGE_ALIASES;
 type LegacyVaultBridgeKey = keyof typeof LEGACY_VAULT_BRIDGE_ALIASES;
 
-interface EntryBridgeResult {
-  entries_json?: string;
-  entriesJson?: string;
-  entry?: JsVaultEntry;
-  error_code?: string;
-  errorCode?: string;
-}
-
+/**
+ * The bridge's vault functions, with the payload types taken from the
+ * owner's table.
+ *
+ * The PARAMETERS are the call contract (strings and buffers, hand-written
+ * and unchanged). The RETURN types are the payloads — and they come from
+ * `bridge-payloads.generated.ts`, so a field can only be read under the
+ * name the built bridge really uses.
+ */
 interface ResolvedNewVaultBridge {
   vault_parse_entries?: (
     raw: string,
     key: string | undefined,
     latest: boolean,
-  ) => EntryBridgeResult;
-  vault_decode_entry?: (raw: string) => EntryBridgeResult;
+  ) => BridgePayloadOf<'vault_parse_entries'>;
+  vault_decode_entry?: (raw: string) => BridgePayloadOf<'vault_decode_entry'>;
   vault_init_full?: (
     passphrase: string,
     qa_question: string,
     qa_answer: string,
-  ) => {
-    vault: JsVault;
-    did: string;
-    qa_question: string;
-  };
+  ) => BridgePayloadOf<'vault_init_full'>;
   vault_load_state?: (
     path: string,
     pepper: string,
-  ) => {
-    vault?: JsVault;
-    version?: number;
-    error_code?: string;
-    errorCode?: string;
-  };
-  vault_store?: (vault: JsVault, key: string, plaintext: Buffer) => JsVaultEntry;
+  ) => BridgePayloadOf<'vault_load_state'>;
+  vault_store?: (
+    vault: JsVault,
+    key: string,
+    plaintext: Buffer,
+  ) => BridgePayloadOf<'vault_store'>;
   vault_retrieve?: (vault: JsVault, entry: JsVaultEntry) => Buffer;
 }
 
@@ -180,7 +181,9 @@ function readVaultState(rawEnv: NodeJS.ProcessEnv, pepper = getVaultPepper(rawEn
   const loader = (newContract.resolved as ResolvedNewVaultBridge).vault_load_state;
   if (!loader) throw new VaultStateError('VAULT_STATE_READER_UNAVAILABLE');
   const result = loader(resolveVaultPath('vault-state.json', rawEnv), pepper);
-  const code = result.error_code ?? result.errorCode;
+  // `vault_load_state` carries `error_code` — the struct sets an explicit
+  // `#[napi(js_name = "error_code")]`. Measured on the built bridge.
+  const code = result.error_code;
   if (code) throw new VaultStateError(code);
   if (!result.vault || (result.version !== 1 && result.version !== 2)) {
     throw new VaultStateError('VAULT_STATE_MALFORMED');
@@ -192,6 +195,10 @@ let activeVault: JsVault | null = null;
 let activeVaultIdentity: string | null = null;
 
 function getVaultMasterKey(vault: JsVault): Buffer {
+  // `master_key` is the spelling since the 2026-03-21 naming stabilization;
+  // `masterKey` is what napi-rs exported before it. Both are DECLARED by
+  // the owner's table, so this is a compatibility read — not a guess about
+  // which of two spellings the binary uses.
   const key = vault.master_key ?? vault.masterKey;
   if (!key) {
     throw new Error('vault state missing master key');
@@ -452,9 +459,12 @@ export function parseVaultEntries(
     .vault_parse_entries;
   if (!parser) throw new VaultEntryError('VAULT_ENTRY_READER_UNAVAILABLE');
   const result = parser(raw, key, latest);
-  const code = result.error_code ?? result.errorCode;
+  // `vault_parse_entries` carries `errorCode` — that struct does NOT set a
+  // `js_name`, so napi-rs exports it in camelCase. Measured on the built
+  // bridge; the owner's table is the only place that has to know.
+  const code = result.errorCode;
   if (code) throw new VaultEntryError(code);
-  const json = result.entries_json ?? result.entriesJson;
+  const json = result.entriesJson;
   if (typeof json !== 'string') throw new VaultEntryError('VAULT_ENTRIES_MALFORMED');
   return JSON.parse(json) as StoredVaultEntry[];
 }
@@ -464,7 +474,7 @@ function convertToJsVaultEntry(entry: VaultEntry, rawEnv: NodeJS.ProcessEnv): Js
     .vault_decode_entry;
   if (!decoder) throw new VaultEntryError('VAULT_ENTRY_READER_UNAVAILABLE');
   const result = decoder(JSON.stringify(entry));
-  const code = result.error_code ?? result.errorCode;
+  const code = result.errorCode;
   if (code) throw new VaultEntryError(code);
   if (!result.entry) throw new VaultEntryError('VAULT_ENTRIES_MALFORMED');
   return result.entry;
@@ -672,7 +682,7 @@ export function vaultEncrypt(
       iv: entry.nonce.toString('base64'),
       id: entry.id,
       tag: entry.tag.toString('base64'),
-      createdAt: entry.createdAt ?? entry.created_at,
+      createdAt: entry.created_at ?? entry.createdAt,
     };
   }
 
@@ -862,7 +872,7 @@ export function rotateVaultMasterKey(
         encrypted: out.ciphertext.toString('base64'),
         iv: out.nonce.toString('base64'),
         tag: out.tag.toString('base64'),
-        createdAt: record.createdAt ?? out.createdAt ?? out.created_at ?? new Date().toISOString(),
+        createdAt: record.createdAt ?? out.created_at ?? new Date().toISOString(),
       };
     });
 
