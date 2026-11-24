@@ -39,6 +39,12 @@ export interface BridgeExportBindingPayload {
 }
 
 /** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface CaseIndexStatusPayload {
+  indexed: number;
+  lastIndexedBlock: number | null;
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
 export interface EmbedProfileManifestPayload {
   schemaVersion: number;
   env: EmbedProfileEnvPayload;
@@ -367,6 +373,7 @@ export interface BridgePayloadMap {
   case_append: CaseAppendPayload;
   case_query: CaseQueryPayload;
   case_rebuild: CaseRebuildPayload;
+  case_index_status: CaseIndexStatusPayload;
 }
 
 export type BridgePayloadExport = keyof BridgePayloadMap;

@@ -1211,6 +1211,33 @@ fn case_rebuild_inner(blocks_json: String, index_db_path: String) -> String {
     }
 }
 
+/// What the case index holds — the health of the cache.
+///
+/// MEASURED 2026-11-24 on the operator's host: the index held 1 372
+/// entries where the `cases` chain holds 2 190 case blocks, and the
+/// missing 818 included the host's ONLY nominative entry and BOTH
+/// instrumental ones. The index is a cache of the chain — the chain files
+/// are the source of truth — and nothing asked it whether it was in step.
+///
+/// This export is the question. The caller compares the count with the
+/// chain's own count of case blocks and repairs the index when they
+/// differ; the repair (`case_rebuild`) already existed and was never
+/// called.
+#[napi(catch_unwind, js_name = "case_index_status")]
+pub fn case_index_status(index_db_path: String) -> String {
+    use memphis_case_index::CaseIndex;
+
+    let idx = match CaseIndex::open(std::path::Path::new(&index_db_path)) {
+        Ok(v) => v,
+        Err(e) => return err(format!("case_index_open_failed: {e}")),
+    };
+
+    match idx.status() {
+        Ok(status) => ok(status),
+        Err(e) => err(format!("case_index_status_failed: {e}")),
+    }
+}
+
 // ── memphis-paths bridge ────────────────────────────────────────────────────
 //
 // Pure path resolution shared with TS callers (src/config/paths.ts +
