@@ -64,6 +64,11 @@ if (!existsSync(distEntry)) {
   process.exit(1);
 }
 
+/**
+ * Name the cause when the CLI cannot load because a native binding is
+ * missing. The sentence itself lives in `bin/install-remedy.mjs` — a pure
+ * module a test can call, because this file runs the CLI on import.
+ */
 try {
   if (process.env.MEMPHIS_DEBUG) {
     console.error('[DEBUG] Loading dist entry');
@@ -81,6 +86,17 @@ try {
   const message = error instanceof Error ? error.message : String(error);
   const stack = error instanceof Error ? error.stack : undefined;
   console.error('[ERROR] Failed to load Memphis CLI:', message);
+  try {
+    const { nativeBindingRemedy } = await import('./install-remedy.mjs');
+    for (const line of nativeBindingRemedy(message) ?? []) {
+      console.error(line);
+    }
+  } catch {
+    // The remedy is a courtesy, never a dependency. A missing or broken
+    // module must not change the exit code — systemd's
+    // RestartPreventExitStatus reads it, and this launcher is also
+    // exercised from a bare fixture that carries the script alone.
+  }
   if (stack) {
     console.error('[ERROR] Stack:', stack);
   }

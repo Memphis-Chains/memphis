@@ -14,7 +14,7 @@ Memphis is a local-first cognitive runtime born from [Oswobodzeni](https://oswob
 
 Durable runtime actions are written to operator-owned chains. Secrets are encrypted at rest, and sensitive tools are guarded by explicit authorization tiers. Memphis is more than a chat interface: it is a sovereign cognitive runtime designed for operators who want to own their memory, configuration, and execution boundary.
 
-**Current version: `v1.14.1`** (matches `package.json`) | **Status: operator-supervised runtime** — native Rust cockpit, chain-backed memory, encrypted vault, local and cloud provider routing, MCP/HTTP/Telegram surfaces, Kartograf ONNX inference, and composable skills. See [`CHANGELOG.md`](./CHANGELOG.md) for release details and [`docs/dev/v1.10.0-deferred-work.md`](./docs/dev/v1.10.0-deferred-work.md) for the previous release's explicit deferrals.
+**Current version: `v1.14.2`** (matches `package.json`) | **Status: operator-supervised runtime** — native Rust cockpit, chain-backed memory, encrypted vault, local and cloud provider routing, MCP/HTTP/Telegram surfaces, Kartograf ONNX inference, and composable skills. See [`CHANGELOG.md`](./CHANGELOG.md) for release details and [`docs/dev/v1.10.0-deferred-work.md`](./docs/dev/v1.10.0-deferred-work.md) for the previous release's explicit deferrals.
 
 **Public surface:** [memphis-v5.pl](https://memphis-v5.pl) · [start](https://memphis-v5.pl/start/) · [docs](https://memphis-v5.pl/docs/) · [roadmap](https://memphis-v5.pl/roadmap/) · [llms.txt](https://memphis-v5.pl/llms.txt) · [agents.json](https://memphis-v5.pl/agents.json)
 
@@ -62,6 +62,27 @@ memphis schedule reconcile --dry-run
 > **If `memphis: command not found`** after install: the post-install `npm link` step is path-scoped. Run `hash -r` to refresh the shell hash, or `which memphis` to confirm the binary location, then either add that directory to `PATH` or re-run `npm link` from the repo root.
 
 That's it. You now have an operator-owned runtime with encrypted credentials, chain-backed memory, optional cloud providers, and local Ollama support. Build time depends heavily on the machine because the first install compiles the Rust workspace.
+
+### Installing on npm 12 and newer
+
+npm 12 changed the default: **dependency install scripts are blocked**, and the
+`allowScripts` field is read from the **project root** — a published package
+cannot approve its own dependencies. `better-sqlite3` ships no prebuilt
+binary (its install script fetches one), so a plain install leaves Memphis
+without a database binding and every command fails with
+`Could not locate the bindings file`.
+
+In the project that installs Memphis, add one line and reinstall:
+
+```json
+{
+  "allowScripts": { "better-sqlite3": true }
+}
+```
+
+or run `npm install-scripts approve better-sqlite3` in that project. Do **not**
+approve `onnxruntime-node`: its install script downloads a CUDA build that
+answers 404, and the CPU runtime Memphis uses ships inside the package anyway.
 
 **What you get:**
 
