@@ -1,4 +1,11 @@
 import { callBridge } from './bridge-envelope.js';
+import type {
+  BridgePayloadOf,
+  EmbedSearchHitPayload,
+  EmbedSearchPayload,
+  EmbedStoreManyPayload,
+  EmbedStorePayload,
+} from './bridge-payloads.generated.js';
 import {
   hasRequiredBridgeExports,
   loadPlatformAwareBridge,
@@ -49,23 +56,46 @@ interface NormalizedEmbedBridge {
   embed_flush?: () => string;
 }
 
-export interface EmbedSearchHit {
-  id: string;
-  score: number;
-  text_preview: string;
-  tags: string[];
+/**
+ * The public shapes of the embed family.
+ *
+ * These used to be hand-written here, and one of them was WRONG: the
+ * wire's `normalized` is a STRING — `'true'` or `'provider-dependent'` —
+ * and the side declared `boolean | string`, then wrote a helper to guess
+ * which of the two it had got. The helper also handled a `'false'` the
+ * wire cannot send and a missing value the wire cannot send either.
+ *
+ * Now the wire's shape comes from the OWNER
+ * (`bridge-payloads.generated.ts`, projected from
+ * `crates/memphis-napi/src/bridge_payloads.rs`), and the vocabulary of
+ * `normalized` is closed: `'true' | 'provider-dependent'`. The two fields
+ * this side re-declares — `normalized` and `dtype` — are re-declared on
+ * purpose: it TRANSLATES the wire's word into a boolean, and that
+ * translation is its own business.
+ */
+
+/** One search hit, as the bridge carries it. */
+export type EmbedSearchHit = EmbedSearchHitPayload;
+
+/** The answer of `embed_store`, with the tensor this side builds. */
+export interface EmbedStoreResult extends Omit<EmbedStorePayload, 'normalized' | 'dtype'> {
+  dtype: 'f32';
+  normalized: boolean | 'provider-dependent';
+  tensor: EmbeddingVectorMeta;
 }
 
-export interface EmbedStoreResult {
-  id: string;
-  count: number;
-  dim: number;
+/** The answer of `embed_store_many`. */
+export interface EmbedStoreManyResult
+  extends Omit<EmbedStoreManyPayload, 'normalized' | 'dtype'> {
   dtype: 'f32';
-  provider: string;
   normalized: boolean | 'provider-dependent';
-  persistence_enabled?: boolean;
-  persistence_load_state?: string;
-  tensor: EmbeddingVectorMeta;
+}
+
+/** The answer of `embed_search` and `embed_search_tuned`. */
+export interface EmbedSearchResult extends Omit<EmbedSearchPayload, 'normalized' | 'dtype'> {
+  dtype: 'f32';
+  normalized: boolean | 'provider-dependent';
+  tensor?: EmbeddingVectorMeta;
 }
 
 export interface RustEmbedAdapterStatus {
@@ -76,38 +106,6 @@ export interface RustEmbedAdapterStatus {
   tunedSearchAvailable: boolean;
 }
 
-type RawEmbedStoreResult = {
-  id: string;
-  count: number;
-  dim: number;
-  dtype?: 'f32';
-  provider: string;
-  normalized?: boolean | string;
-  persistence_enabled?: boolean;
-  persistence_load_state?: string;
-};
-
-type RawEmbedSearchResult = {
-  query: string;
-  count: number;
-  dim?: number;
-  dtype?: 'f32';
-  provider?: string;
-  normalized?: boolean | string;
-  hits: EmbedSearchHit[];
-};
-
-export type EmbedSearchResult = {
-  query: string;
-  count: number;
-  dim?: number;
-  dtype: 'f32';
-  provider?: string;
-  normalized?: boolean | 'provider-dependent';
-  hits: EmbedSearchHit[];
-  tensor?: EmbeddingVectorMeta;
-};
-
 type CacheEntry = { value: EmbedSearchResult; expiresAt: number };
 
 const EMBED_CACHE_MAX_ENTRIES = 128;
@@ -117,19 +115,23 @@ function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
   return resolveRustBridgePath(rawEnv);
 }
 
+/**
+ * The wire's `normalized` word, translated into this side's own answer.
+ *
+ * The vocabulary is CLOSED and owned: `'true'` or `'provider-dependent'`.
+ * The old helper also mapped a `'false'` — a word the wire cannot send —
+ * and fell back to the provider name for a value that could not be
+ * missing. Both were guesses about a contract the owner already knew, so
+ * both are gone.
+ */
 function normalizeNormalized(
-  value: boolean | string | undefined,
-  provider: string,
+  value: EmbedStorePayload['normalized'],
 ): boolean | 'provider-dependent' {
-  if (typeof value === 'boolean') return value;
-  if (value === 'true') return true;
-  if (value === 'false') return false;
-  if (value === 'provider-dependent') return 'provider-dependent';
-  return provider === 'local-deterministic' ? true : 'provider-dependent';
+  return value === 'true' ? true : 'provider-dependent';
 }
 
-function normalizeStoreResult(raw: RawEmbedStoreResult): EmbedStoreResult {
-  const normalized = normalizeNormalized(raw.normalized, raw.provider);
+function normalizeStoreResult(raw: EmbedStorePayload): EmbedStoreResult {
+  const normalized = normalizeNormalized(raw.normalized);
   return {
     ...raw,
     dtype: 'f32',
@@ -137,26 +139,34 @@ function normalizeStoreResult(raw: RawEmbedStoreResult): EmbedStoreResult {
     tensor: memoryEmbeddingMeta({
       dim: raw.dim,
       provider: raw.provider,
+      // The wire's word, not a second copy of the rule that produced it.
+      normalized,
       persistenceEnabled: raw.persistence_enabled,
       persistenceLoadState: raw.persistence_load_state,
     }),
   };
 }
 
-function normalizeSearchResult(raw: RawEmbedSearchResult): EmbedSearchResult {
-  const provider = raw.provider;
-  const normalized = provider ? normalizeNormalized(raw.normalized, provider) : undefined;
+function normalizeStoreManyResult(raw: EmbedStoreManyPayload): EmbedStoreManyResult {
+  return {
+    ...raw,
+    dtype: 'f32',
+    normalized: normalizeNormalized(raw.normalized),
+  };
+}
+
+function normalizeSearchResult(raw: EmbedSearchPayload): EmbedSearchResult {
+  const normalized = normalizeNormalized(raw.normalized);
   return {
     ...raw,
     dtype: 'f32',
     normalized,
-    tensor:
-      provider && raw.dim
-        ? memoryEmbeddingMeta({
-            dim: raw.dim,
-            provider,
-          })
-        : undefined,
+    tensor: memoryEmbeddingMeta({
+      dim: raw.dim,
+      provider: raw.provider,
+      // The wire's word, not a second copy of the rule that produced it.
+      normalized,
+    }),
   };
 }
 
@@ -312,7 +322,7 @@ export function embedStore(
   const bridge = getBridgeOrThrow(rawEnv);
   const tagsJson = tags && tags.length > 0 ? JSON.stringify(tags) : undefined;
   return normalizeStoreResult(
-    callBridge<RawEmbedStoreResult>('embed_store', () => bridge.embed_store(id, text, tagsJson)),
+    callBridge<EmbedStorePayload>('embed_store', () => bridge.embed_store(id, text, tagsJson)),
   );
 }
 
@@ -338,7 +348,7 @@ export function embedSearch(
 
   metrics.recordEmbedCacheMiss();
   const out = normalizeSearchResult(
-    callBridge<RawEmbedSearchResult>('embed_search', () =>
+    callBridge<EmbedSearchPayload>('embed_search', () =>
       bridge.embed_search(query, topK, tagsJson),
     ),
   );
@@ -371,12 +381,12 @@ export function embedSearchTuned(
   const out =
     typeof bridge.embed_search_tuned !== 'function'
       ? normalizeSearchResult(
-          callBridge<RawEmbedSearchResult>('embed_search', () =>
+          callBridge<EmbedSearchPayload>('embed_search', () =>
             bridge.embed_search(query, topK, tagsJson),
           ),
         )
       : normalizeSearchResult(
-          callBridge<RawEmbedSearchResult>('embed_search_tuned', () =>
+          callBridge<EmbedSearchPayload>('embed_search_tuned', () =>
             (bridge.embed_search_tuned as (q: string, k: number, t?: string) => string)(
               query,
               topK,
@@ -389,7 +399,9 @@ export function embedSearchTuned(
   return out;
 }
 
-export function embedReset(rawEnv: NodeJS.ProcessEnv = process.env): { cleared: boolean } {
+export function embedReset(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): BridgePayloadOf<'embed_reset'> {
   const bridge = getBridgeOrThrow(rawEnv);
   embedSearchCache.clear();
   return callBridge('embed_reset', () => bridge.embed_reset());
@@ -406,7 +418,9 @@ export function embedReset(rawEnv: NodeJS.ProcessEnv = process.env): { cleared: 
  * ADR-006 surface. The fallback is unsafe for the rebuilder but keeps
  * single-shot clears working on legacy builds.
  */
-export function embedClearInMemory(rawEnv: NodeJS.ProcessEnv = process.env): { cleared: boolean } {
+export function embedClearInMemory(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): BridgePayloadOf<'embed_clear_in_memory'> {
   const bridge = getBridgeOrThrow(rawEnv);
   embedSearchCache.clear();
   const clearInMemory = bridge.embed_clear_in_memory;
@@ -423,16 +437,6 @@ export interface EmbedStoreItem {
   id: string;
   text: string;
   tags?: string[];
-}
-
-export interface EmbedStoreManyResult {
-  inserted: number;
-  count: number;
-  dim: number;
-  dtype?: 'f32';
-  provider: string;
-  normalized?: boolean | 'provider-dependent';
-  persistence_enabled: boolean;
 }
 
 export function isEmbedBulkAvailable(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
@@ -461,10 +465,18 @@ export function isEmbedRebuildSafe(rawEnv: NodeJS.ProcessEnv = process.env): boo
   }
 }
 
-/** Drop a failed in-memory rebuild and reload the last persisted index. */
-export function embedDiscardReplacement(rawEnv: NodeJS.ProcessEnv = process.env): {
-  discarded: boolean;
-} {
+/**
+ * Drop a failed in-memory rebuild and reload the last persisted index.
+ *
+ * The payload has SEVEN keys in the initialized variant and THREE in the
+ * not-initialized one. This side used to declare `{ discarded: boolean }`
+ * and cast the other six away — it did not know they were there. Now it
+ * returns the owner's payload, and the optional keys are optional because
+ * the owner says so.
+ */
+export function embedDiscardReplacement(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): BridgePayloadOf<'embed_discard_replacement'> {
   const bridge = getBridgeOrThrow(rawEnv);
   const discardReplacement = bridge.embed_discard_replacement;
   if (typeof discardReplacement !== 'function') {
@@ -501,7 +513,11 @@ export function embedStoreMany(
   if (typeof storeMany !== 'function') {
     throw new Error('rust embed bridge does not support bulk store');
   }
-  return callBridge('embed_store_many', () => storeMany(JSON.stringify(items)));
+  // The wire's `normalized` is a word, not a boolean — the same
+  // translation the single store does.
+  return normalizeStoreManyResult(
+    callBridge('embed_store_many', () => storeMany(JSON.stringify(items))),
+  );
 }
 
 /**
@@ -510,11 +526,9 @@ export function embedStoreMany(
  * report them up — single-item `embedStore` keeps its best-effort
  * silent path for legacy callers.
  */
-export function embedFlush(rawEnv: NodeJS.ProcessEnv = process.env): {
-  flushed: boolean;
-  dim: number;
-  dtype?: 'f32';
-} {
+export function embedFlush(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): BridgePayloadOf<'embed_flush'> {
   const bridge = getBridgeOrThrow(rawEnv);
   if (typeof bridge.embed_flush !== 'function') {
     throw new Error(

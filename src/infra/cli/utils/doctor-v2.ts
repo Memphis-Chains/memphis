@@ -770,9 +770,13 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     fix: 'Run memphis init for controlled first-run state; use memphis soul seed only for explicit legacy/debug workflows',
   });
 
+  // The metadata is the OWNER's shape, and it exists only if the bridge
+  // could be asked. "No metadata" is not "an index that is missing" —
+  // so the doctor says which of the two it is, and the detail keeps the
+  // words it used to print.
   const embeddingMetadata = readEmbeddingMetadata(process.env);
-  const embeddingBytes = embeddingMetadata.sizeBytes;
-  const embeddingVectors = embeddingMetadata.documents ?? 0;
+  const embeddingBytes = embeddingMetadata?.sizeBytes ?? 0;
+  const embeddingVectors = embeddingMetadata?.documents ?? 0;
   checks.push({
     id: 't1-embeddings-indexed',
     tier: 1,
@@ -780,9 +784,9 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     level: embeddingVectors > 0 ? 'pass' : 'warn',
     ok: embeddingVectors > 0,
     required: false,
-    detail: `stored vectors=${embeddingMetadata.documents ?? 'unknown'}, state=${embeddingMetadata.state}, size=${Math.round(embeddingBytes / 1024)}KB`,
+    detail: `stored vectors=${embeddingMetadata?.documents ?? 'unknown'}, state=${embeddingMetadata?.state ?? 'unknown'}, size=${Math.round(embeddingBytes / 1024)}KB`,
     fix:
-      embeddingMetadata.state === 'unknown'
+      !embeddingMetadata
         ? 'Build the native bridge with embedding metadata support'
         : 'Generate embeddings via memphis embed store or memphis embed reindex',
   });
