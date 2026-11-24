@@ -55,14 +55,14 @@ module.exports = {
   embed_store: (id, text) => {
     rows = rows.filter((row) => row.id !== id);
     rows.push({ id, text });
-    return JSON.stringify({ ok: true, data: { id, count: rows.length, dim: 32, provider: 'test-bridge' } });
+    return JSON.stringify({ ok: true, data: { id, count: rows.length, dim: 32, dtype: 'f32', provider: 'test-bridge', normalized: 'provider-dependent' } });
   },
   embed_search: (query, topK = 5) => {
     const hits = rows
       .filter((row) => row.text.toLowerCase().includes(String(query).toLowerCase()))
       .slice(0, topK)
-      .map((row, index) => ({ id: row.id, score: 0.99 - index * 0.01, text_preview: row.text.slice(0, 80) }));
-    return JSON.stringify({ ok: true, data: { query, count: hits.length, hits } });
+      .map((row, index) => ({ id: row.id, score: 0.99 - index * 0.01, text_preview: row.text.slice(0, 80), tags: [] }));
+    return JSON.stringify({ ok: true, data: { query, count: hits.length, dim: 32, dtype: 'f32', provider: 'test-bridge', normalized: 'provider-dependent', hits } });
   },
   vaultLoadState: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_load_state,
   vaultParseEntries: require(${JSON.stringify(process.env.RUST_CHAIN_BRIDGE_PATH)}).vault_parse_entries,

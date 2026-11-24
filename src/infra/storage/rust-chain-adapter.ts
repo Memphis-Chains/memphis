@@ -30,18 +30,10 @@ const CHAIN_BRIDGE_ALIASES = {
   chain_append: ['chain_append', 'chainAppend'],
   chain_validate: ['chain_validate', 'chainValidate'],
   chain_query: ['chain_query', 'chainQuery'],
-  embed_store: ['embed_store', 'embedStore'],
-  embed_search: ['embed_search', 'embedSearch'],
   soul_replay: ['soul_replay', 'soulReplay'],
   soul_loop_step: ['soul_loop_step', 'soulLoopStep'],
 } satisfies BridgeAliasMap<
-  | 'chain_append'
-  | 'chain_validate'
-  | 'chain_query'
-  | 'embed_store'
-  | 'embed_search'
-  | 'soul_replay'
-  | 'soul_loop_step'
+  'chain_append' | 'chain_validate' | 'chain_query' | 'soul_replay' | 'soul_loop_step'
 >;
 
 type ChainBridgeKey = keyof typeof CHAIN_BRIDGE_ALIASES;
@@ -50,8 +42,6 @@ interface ResolvedChainBridge {
   chain_append?: (chainJson: string, blockJson: string) => string;
   chain_validate?: (blockJson: string, prevJson?: string) => string;
   chain_query?: (chainJson: string, contains?: string, tag?: string) => string;
-  embed_store?: (id: string, text: string) => string;
-  embed_search?: (query: string, topK?: number) => string;
   soul_replay?: (chainName: string, blocksJson: string) => string;
   soul_loop_step?: (stateJson: string, actionJson: string, limitsJson?: string) => string;
 }
@@ -77,25 +67,6 @@ export interface ValidateBlockResult {
 export interface QueryBlocksResult {
   count: number;
   blocks: NapiBlock[];
-}
-
-export interface EmbedStoreResult {
-  id: string;
-  count: number;
-  dim: number;
-  provider: string;
-}
-
-export interface EmbedSearchHit {
-  id: string;
-  score: number;
-  text_preview: string;
-}
-
-export interface EmbedSearchResult {
-  query: string;
-  count: number;
-  hits: EmbedSearchHit[];
 }
 
 export interface SoulReplaySnapshot {
@@ -416,26 +387,6 @@ export class NapiChainAdapter {
       queryFn(JSON.stringify(chainBlocks), options?.contains, options?.tag),
       'chain_query',
     );
-  }
-
-  embedStore(id: string, text: string): EmbedStoreResult {
-    const bridge = this.getBridgeOrThrow().resolved as ResolvedChainBridge;
-    const storeFn = bridge.embed_store;
-    if (typeof storeFn !== 'function') {
-      throw new Error('embed_store not available in rust bridge');
-    }
-
-    return parseEnvelope<EmbedStoreResult>(storeFn(id, text), 'embed_store');
-  }
-
-  embedSearch(query: string, topK = 5): EmbedSearchResult {
-    const bridge = this.getBridgeOrThrow().resolved as ResolvedChainBridge;
-    const searchFn = bridge.embed_search;
-    if (typeof searchFn !== 'function') {
-      throw new Error('embed_search not available in rust bridge');
-    }
-
-    return parseEnvelope<EmbedSearchResult>(searchFn(query, topK), 'embed_search');
   }
 
   soulReplay(
