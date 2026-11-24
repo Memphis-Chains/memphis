@@ -51,6 +51,13 @@ pub struct BridgeExport {
 pub const BRIDGE_EXPORTS: &[BridgeExport] = &[
     BridgeExport { canonical: "bridge_chain_name_facts", js_name: "bridge_chain_name_facts", required: false },
     BridgeExport { canonical: "bridge_chain_name_manifest", js_name: "bridge_chain_name_manifest", required: false },
+    // The embed profile's rule and its live values. `required: false` — the
+    // runtime does not need them (it resolves the profile in Rust), and the
+    // TypeScript surfaces that DO need them ask the bridge when it is
+    // loaded. The gate (`ops:sync-embed-profile-contract`) keeps the two
+    // sides in step.
+    BridgeExport { canonical: "bridge_embed_profile_facts", js_name: "bridge_embed_profile_facts", required: false },
+    BridgeExport { canonical: "bridge_embed_profile_manifest", js_name: "bridge_embed_profile_manifest", required: false },
     BridgeExport { canonical: "bridge_manifest", js_name: "bridge_manifest", required: true },
     BridgeExport { canonical: "chain_append", js_name: "chain_append", required: true },
     BridgeExport { canonical: "chain_query", js_name: "chain_query", required: true },
