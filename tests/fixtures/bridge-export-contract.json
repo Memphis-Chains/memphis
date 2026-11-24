@@ -14,6 +14,16 @@
       "required": false
     },
     {
+      "canonical": "bridge_embed_profile_facts",
+      "jsName": "bridge_embed_profile_facts",
+      "required": false
+    },
+    {
+      "canonical": "bridge_embed_profile_manifest",
+      "jsName": "bridge_embed_profile_manifest",
+      "required": false
+    },
+    {
       "canonical": "bridge_manifest",
       "jsName": "bridge_manifest",
       "required": true
