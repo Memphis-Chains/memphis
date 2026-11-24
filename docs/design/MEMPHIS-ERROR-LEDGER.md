@@ -256,6 +256,65 @@ at the thing that ships, and one gate looked at the world instead of the
 contract. **A gate measures what it says it measures, on every machine it
 runs on.**
 
+#### E-12 · The published package installs, and the CLI cannot start
+
+> Measured 2026-11-24 on this host, against the **published** v1.14.1 tarball
+> (`memphis-chains-memphis-1.14.1.tgz`, 4 599 032 B, checksum verified
+> against the workflow's own `SHA256SUMS`), installed into a clean prefix
+> with npm 12.0.2:
+>
+> - the install **succeeds** (exit 0);
+> - the CLI dies on every command with
+>   `[ERROR] Failed to load Memphis CLI: Could not locate the bindings file.
+>   Tried: → …/better-sqlite3/build/Release/better_sqlite3.node → …`
+>   — thirteen candidate paths, no sentence saying what to do;
+> - `node_modules/better-sqlite3/build/` does not exist: the native binding
+>   was never built.
+>
+> The package was not broken. npm 12 **blocks dependency install scripts by
+> default**, and it reads `allowScripts` from the **project root**: the
+> installed `node_modules/@memphis-chains/memphis/package.json` carries
+> `{"better-sqlite3": true, "esbuild": true, "onnxruntime-node": true}` and
+> the script was blocked anyway. `better-sqlite3` ships no prebuilt binding
+> — its install script is the thing that fetches one.
+>
+> With one line in the consumer's project —
+> `{ "allowScripts": { "better-sqlite3": true } }` — the install builds the
+> binding and the CLI starts (measured). Approving **more** breaks it:
+> `onnxruntime-node`'s install script downloads
+> `onnxruntime-linux-x64-gpu-1.21.0.tgz` and gets **404**, which aborts the
+> whole install. The CPU runtime Memphis uses ships inside the package, and
+> the repository's own `.npmrc` (`onnxruntime-node-install-cuda=skip`) is what
+> keeps the repo's install alive — a dependency's `.npmrc` is not read by npm.
+
+**And every gate said everything was fine.** `ops:release-preflight` passed
+11/11 on this host, and the release workflow's `test` job passed, on an
+artefact that cannot start:
+
+- `scripts/validate-package-artifact.mts` installed with **`--ignore-scripts`** —
+  which guarantees that no native binding is built;
+- its two probes were `memphis --help` and `memphis completion bash` — neither
+  opens the journal database, so neither can tell a working package from a dead
+  one.
+
+This is E-10's second half, still open: E-10 fixed the `files` list, not the
+fact that nothing proved the tarball **runs**.
+
+**CLOSED 2026-11-24 (v1.14.2).** Three pieces:
+
+| piece | what it is |
+| --- | --- |
+| `scripts/validate-package-artifact.mts` | **the owner** — installs under a declared policy (`allowScripts: {better-sqlite3: true}`, `onnxruntime-node-install-cuda=skip`), asserts the native binding exists, and probes `memphis vault list --json` — a command that opens the database |
+| `bin/install-remedy.mjs` | the sentence the CLI prints when the binding is missing: what npm 12 did, and the one line that fixes it |
+| `tests/ops/package-install-contract.test.ts` | the runner (6 assertions) |
+
+**Falsifier, measured:** with the approval revoked in the prefix project, the
+install produces no binding and the gate **fails** (exit 1) with
+`the installed package has no better-sqlite3 native binding`. With it, the
+binding is there and `memphis vault list --json` answers
+`{"ok": true, "entries": []}`. The old gate passed on the same tarball —
+that is the measurement of the hole, not an argument about it.
+
 ### Family B — the system degrades quietly instead of failing
 
 Every defect here answers with something plausible. The operator cannot tell
@@ -580,7 +639,10 @@ be run rather than admired:
 State today, measured 2026-11-24: (1) **fails** — E-01, E-02, E-03 and E-04 are
 closed, E-09 remains; (2) **fails** — the bridge's vocabulary, the chain-name
 vocabulary and the embed profile have their artefacts and their two runners,
-E-09 remains; (3) **holds** — every gate added in the last four rounds ships
+E-09 remains; the package artefact now has an owner and a runner as well
+(E-12: the gate installs under a declared policy, proves the native binding and
+probes a command that opens the database); (3) **holds** — every gate added in
+the last four rounds ships
 with proven falsifiers; the bridge gate found a hole in itself on its first
 run, the chain-name gate was run BEFORE its fix and failed with
 `[".archives", "cases.backup-2026-07-07T15-07-23-108Z", "journal"]`, and the
@@ -594,7 +656,10 @@ bridge-vocabulary, chain-name and embed-profile artefacts are generated;
 The first step closed (1) and (2) for the bridge's vocabulary, and (5) on the
 way through; the second closed (1) for the bridge path; the third closed (1),
 (2) and (3) for the chain-name vocabulary; the fourth closed (1), (2) and (3)
-for the embed profile. **Next, in this order:** E-09 (the payload types),
+for the embed profile; the fifth closed (2) for the artefact that ships — the
+package-artifact gate now installs under a declared policy, proves the native
+binding, and probes a command that opens the database (E-12).
+**Next, in this order:** E-09 (the payload types),
 which the projection just built can now carry, and only then Family B's wedge
 (E-05), which needs the operator's fifteen acknowledgements before any code
 can help.

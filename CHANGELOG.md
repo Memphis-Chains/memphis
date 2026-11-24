@@ -1,5 +1,51 @@
 ## Unreleased
 
+## v1.14.2 - 2026-11-24
+
+One ledger entry closed: the package that ships. The published v1.14.1 tarball
+installed cleanly and then could not start — and every gate said it was fine.
+
+### The tarball that ships is now the thing the gate looks at
+
+Measured on the operator's host, 2026-11-24, against the **published** v1.14.1
+tarball (`memphis-chains-memphis-1.14.1.tgz`, 4 599 032 B, checksum verified
+against the workflow's own `SHA256SUMS`), installed into a clean prefix with
+npm 12.0.2:
+
+- the install **succeeded** (exit 0);
+- every command died with `Could not locate the bindings file` and thirteen
+  candidate paths;
+- `node_modules/better-sqlite3/build/` did not exist — the native binding was
+  never built.
+
+npm 12 blocks dependency install scripts by default and reads `allowScripts`
+from the **project root**, so a published package cannot approve its own
+dependencies: the installed `package.json` carried
+`{"better-sqlite3": true, "esbuild": true, "onnxruntime-node": true}` and the
+script was blocked anyway. `better-sqlite3` ships no prebuilt binding — its
+install script is the thing that fetches one.
+
+The gates missed it because `ops:validate-package-artifact` installed with
+`--ignore-scripts` — which guarantees that no binding is built — and probed
+only `memphis --help` and `memphis completion bash`, neither of which opens
+the journal database.
+
+What changed:
+
+- **The gate installs under a declared policy**, proves the native binding
+  exists, and probes `memphis vault list --json` — a command that opens the
+  database.
+- **The CLI names the cause and the remedy.** A missing binding now prints
+  what npm 12 did and the one line that fixes it, instead of thirteen paths.
+- **The README documents the npm 12 rule** for operators, including why
+  approving `onnxruntime-node` breaks the install (its script downloads a CUDA
+  build that answers 404; the CPU runtime ships inside the package).
+
+Falsifier, measured on this host: with the approval revoked in the install
+prefix, the gate fails with `the installed package has no better-sqlite3 native
+binding`. With it, the binding is there and `memphis vault list --json` answers
+`{"ok": true, "entries": []}`.
+
 ## v1.14.1 - 2026-11-24
 
 One ledger entry closed: the embed profile. The dimension and the index
