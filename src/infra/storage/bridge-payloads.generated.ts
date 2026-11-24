@@ -38,6 +38,57 @@ export interface BridgeExportBindingPayload {
   required: boolean;
 }
 
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface EmbedProfileManifestPayload {
+  schemaVersion: number;
+  env: EmbedProfileEnvPayload;
+  defaults: EmbedProfileDefaultsPayload;
+  dimensionSources: ('env' | 'index' | 'local-deterministic')[];
+  verdicts: ('ok' | 'no-provider' | 'no-index' | 'dimension-mismatch')[];
+  modes: EmbedProfileModesPayload;
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface EmbedProfileEnvPayload {
+  indexPath: string;
+  dimension: string;
+  model: string;
+  mode: string;
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface EmbedProfileDefaultsPayload {
+  indexPath: string;
+  dimension: string;
+  model: string;
+  localDimension: number;
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface EmbedProfileModesPayload {
+  local: string;
+  alias: string;
+  providers: ('openai-compatible' | 'ollama' | 'cohere' | 'voyage' | 'jina' | 'mistral' | 'together' | 'nvidia' | 'mixedbread')[];
+}
+
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
+export interface EmbedProfileFactsPayload {
+  schemaVersion: number;
+  indexPath: string;
+  indexDimension: number | null;
+  configuredDimension: number | null;
+  dimension: number;
+  dimensionSource: 'env' | 'index' | 'local-deterministic';
+  model: string | null;
+  modelSource: 'env' | 'unknown';
+  providerConfigured: boolean;
+  dimensionMismatch: boolean;
+  mode: string;
+  verdict: 'ok' | 'no-provider' | 'no-index' | 'dimension-mismatch';
+  remedy: string | null;
+  dimensionRemedy: string | null;
+}
+
 /** napiObject — an explicit `js_name` verbatim, a field without one in camelCase. */
 export interface VaultPayload {
   salt: Buffer;
@@ -291,6 +342,8 @@ export interface CaseRebuildPayload {
 /** The payload each bridge export carries. */
 export interface BridgePayloadMap {
   bridge_manifest: BridgeManifestPayload;
+  bridge_embed_profile_manifest: EmbedProfileManifestPayload;
+  bridge_embed_profile_facts: EmbedProfileFactsPayload;
   vault_init_full: VaultInitPayload;
   vault_load_state: VaultLoadStatePayload;
   vault_parse_entries: VaultEntriesPayload;

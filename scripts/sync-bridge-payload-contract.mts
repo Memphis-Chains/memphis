@@ -181,12 +181,17 @@ function readManifest(): {
       }
       // An enumerated field without a vocabulary would be rendered as a
       // bare `string` — the guess this whole mechanism exists to remove.
-      if (field.type.kind === 'enum' && !field.vocabulary?.values.length) {
+      // A LIST of enumerated words is enumerated too: the embed
+      // profile's manifest publishes three such lists.
+      const enumerated =
+        field.type.kind === 'enum' ||
+        (field.type.kind === 'array' && field.type.of.kind === 'enum');
+      if (enumerated && !field.vocabulary?.values.length) {
         problems.push(
           `shape ${shape.name} enumerates ${field.name} but declares no vocabulary`,
         );
       }
-      if (field.type.kind !== 'enum' && field.vocabulary) {
+      if (!enumerated && field.vocabulary) {
         problems.push(
           `shape ${shape.name} declares a vocabulary for ${field.name}, which is not enumerated`,
         );
@@ -262,9 +267,14 @@ function tsTypeFor(field: PayloadField): string {
     case 'named':
       base = field.type.name;
       break;
-    case 'array':
-      base = `${tsTypeFor({ ...field, type: field.type.of, nullable: false })}[]`;
+    case 'array': {
+      const inner = tsTypeFor({ ...field, type: field.type.of, nullable: false });
+      // A union of words needs its brackets: `('a' | 'b')[]`, never
+      // `'a' | 'b'[]` — the second one is a union of a word and an
+      // array, which is a different type and a wrong one.
+      base = inner.includes(' | ') ? `(${inner})[]` : `${inner}[]`;
       break;
+    }
     case 'enum': {
       const vocabulary = field.vocabulary;
       if (!vocabulary || vocabulary.values.length === 0) {

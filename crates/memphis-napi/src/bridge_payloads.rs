@@ -147,18 +147,26 @@ pub struct Vocabulary {
     pub values: &'static [&'static str],
     /// WHERE the words come from — the source of truth for them.
     ///
-    /// A source is one of two things, told apart by its spelling:
+    /// A source is one of three things, told apart by what the crate
+    /// declares under that name:
     ///
     /// - a FUNCTION name — the string literals in its body are the words
     ///   (`embed_normalized_to_str` writes `"true"` and
     ///   `"provider-dependent"`);
     /// - an ENUM name — the names of its variants, renamed by the enum's
     ///   own `rename_all`, are the words (`BlockType` has fifteen,
-    ///   `CaseEntry` has eight).
+    ///   `CaseEntry` has eight);
+    /// - a CONSTANT name — the string value it holds is the word
+    ///   (`SOURCE_ENV` holds `"env"`), and a `&[&str]` constant holds a
+    ///   LIST of them (`PROVIDER_MODE_NAMES` holds the nine provider
+    ///   names).
     ///
     /// The gate parses the source out of the crate's source and compares:
     /// every word it produces must be a word of this field, or be declared
     /// in `extra_literals`.
+    ///
+    /// A name that is declared TWICE (a function and a constant, say) is
+    /// ambiguous, and the gate refuses it instead of picking one.
     ///
     /// An ENUM source also says which ALIASES the enum accepts on read:
     /// those are read-side compatibility, never words the wire carries, so
@@ -913,10 +921,178 @@ pub const BRIDGE_MANIFEST_SHAPE: PayloadShape = PayloadShape {
     ],
 };
 
+/// The words the dimension's SOURCE can carry.
+///
+/// MEASURED 2026-11-24 on the built module: `"env"`, `"index"` or
+/// `"local-deterministic"` — and, on the profile's own manifest, the same
+/// three in the order the owner consults them.
+///
+/// The words are the owner's CONSTANTS (`SOURCE_ENV`, `SOURCE_INDEX`,
+/// `SOURCE_LOCAL`), so the gate reads those constants out of the owner's
+/// source and compares. A CONSTANT is a source the gate learned to read
+/// for this family: the embed profile's words live in constants, not in a
+/// function and not in an enum.
+const DIMENSION_SOURCE_VOCABULARY: Vocabulary = Vocabulary {
+    values: &["env", "index", "local-deterministic"],
+    sources: &["SOURCE_ENV", "SOURCE_INDEX", "SOURCE_LOCAL"],
+    extra_literals: &[],
+};
+
+/// The words the model's SOURCE can carry.
+///
+/// MEASURED: `"env"` or `"unknown"` — a model cannot be derived from an
+/// index, so it is either configured or unknown. The same `SOURCE_ENV`
+/// constant as the dimension's source, plus `SOURCE_UNKNOWN`.
+const MODEL_SOURCE_VOCABULARY: Vocabulary = Vocabulary {
+    values: &["env", "unknown"],
+    sources: &["SOURCE_ENV", "SOURCE_UNKNOWN"],
+    extra_literals: &[],
+};
+
+/// The words the VERDICT can carry.
+///
+/// MEASURED 2026-11-24 on the built module: `"ok"`, `"no-provider"`,
+/// `"no-index"` or `"dimension-mismatch"` — the four the owner reports,
+/// and the same four the manifest publishes.
+const VERDICT_VOCABULARY: Vocabulary = Vocabulary {
+    values: &["ok", "no-provider", "no-index", "dimension-mismatch"],
+    sources: &[
+        "VERDICT_OK",
+        "VERDICT_NO_PROVIDER",
+        "VERDICT_NO_INDEX",
+        "VERDICT_DIMENSION_MISMATCH",
+    ],
+    extra_literals: &[],
+};
+
+/// The words a MODE name can carry — the nine providers the mode accepts.
+///
+/// MEASURED: nine names, in the owner's own order. The list is the
+/// owner's `PROVIDER_MODE_NAMES` constant, so the gate reads it out of
+/// the owner's source.
+const PROVIDER_MODE_VOCABULARY: Vocabulary = Vocabulary {
+    values: &[
+        "openai-compatible",
+        "ollama",
+        "cohere",
+        "voyage",
+        "jina",
+        "mistral",
+        "together",
+        "nvidia",
+        "mixedbread",
+    ],
+    sources: &["PROVIDER_MODE_NAMES"],
+    extra_literals: &[],
+};
+
+/// The environment variables the embed profile reads.
+pub const EMBED_PROFILE_ENV_SHAPE: PayloadShape = PayloadShape {
+    name: "EmbedProfileEnvPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "EmbedProfileEnv",
+    fields: &[
+        PayloadField { name: "indexPath", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "dimension", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "model", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "mode", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
+/// The embed profile's defaults, and where each one comes from.
+pub const EMBED_PROFILE_DEFAULTS_SHAPE: PayloadShape = PayloadShape {
+    name: "EmbedProfileDefaultsPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "EmbedProfileDefaults",
+    fields: &[
+        PayloadField { name: "indexPath", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "dimension", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "model", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "localDimension", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
+/// The mode vocabulary the embed profile publishes.
+pub const EMBED_PROFILE_MODES_SHAPE: PayloadShape = PayloadShape {
+    name: "EmbedProfileModesPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "EmbedProfileModes",
+    fields: &[
+        PayloadField { name: "local", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "alias", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "providers", ty: PayloadType::Array(&PayloadType::Enum), optional: false, nullable: false, legacy_name: None, vocabulary: Some(PROVIDER_MODE_VOCABULARY) },
+    ],
+};
+
+/// `bridge_embed_profile_manifest` — the rule, as the owner publishes it.
+///
+/// MEASURED 2026-11-24 on the built module: SIX keys — `schemaVersion`,
+/// `env`, `defaults`, `dimensionSources`, `verdicts` and `modes` — and
+/// the manifest's own words: three dimension sources, four verdicts, and
+/// nine provider names.
+///
+/// The TypeScript side declared `modes` with TWO keys (`local` and
+/// `providers`) and the wire has carried THREE since the manifest was
+/// written: `alias` — the word that means "the OpenAI-compatible
+/// provider" — was missing from the interface, so the type did not
+/// describe the wire.
+pub const EMBED_PROFILE_MANIFEST_SHAPE: PayloadShape = PayloadShape {
+    name: "EmbedProfileManifestPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "EmbedProfileManifest",
+    fields: &[
+        PayloadField { name: "schemaVersion", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "env", ty: PayloadType::Named("EmbedProfileEnvPayload"), optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "defaults", ty: PayloadType::Named("EmbedProfileDefaultsPayload"), optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "dimensionSources", ty: PayloadType::Array(&PayloadType::Enum), optional: false, nullable: false, legacy_name: None, vocabulary: Some(DIMENSION_SOURCE_VOCABULARY) },
+        PayloadField { name: "verdicts", ty: PayloadType::Array(&PayloadType::Enum), optional: false, nullable: false, legacy_name: None, vocabulary: Some(VERDICT_VOCABULARY) },
+        PayloadField { name: "modes", ty: PayloadType::Named("EmbedProfileModesPayload"), optional: false, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
+/// `bridge_embed_profile_facts` — the profile of one process.
+///
+/// MEASURED 2026-11-24 on the built module: FOURTEEN keys, in the
+/// struct's own order. The `Option` fields (`indexDimension`,
+/// `configuredDimension`, `model`, `remedy`, `dimensionRemedy`) are
+/// PRESENT and null when they have no value — MEASURED, not assumed:
+/// an environment without an index answers `indexDimension: null`.
+///
+/// The `mode` is a plain string, and it has to be: the owner answers
+/// `local`, one of the nine provider names, or `cascade[...]` with any
+/// combination in it — so the word set is open, and a closed vocabulary
+/// here would be a promise the owner does not keep.
+pub const EMBED_PROFILE_FACTS_SHAPE: PayloadShape = PayloadShape {
+    name: "EmbedProfileFactsPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "EmbedProfile",
+    fields: &[
+        PayloadField { name: "schemaVersion", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "indexPath", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "indexDimension", ty: PayloadType::Integer, optional: false, nullable: true, legacy_name: None, vocabulary: None },
+        PayloadField { name: "configuredDimension", ty: PayloadType::Integer, optional: false, nullable: true, legacy_name: None, vocabulary: None },
+        PayloadField { name: "dimension", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "dimensionSource", ty: PayloadType::Enum, optional: false, nullable: false, legacy_name: None, vocabulary: Some(DIMENSION_SOURCE_VOCABULARY) },
+        PayloadField { name: "model", ty: PayloadType::String, optional: false, nullable: true, legacy_name: None, vocabulary: None },
+        PayloadField { name: "modelSource", ty: PayloadType::Enum, optional: false, nullable: false, legacy_name: None, vocabulary: Some(MODEL_SOURCE_VOCABULARY) },
+        PayloadField { name: "providerConfigured", ty: PayloadType::Boolean, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "dimensionMismatch", ty: PayloadType::Boolean, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "mode", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "verdict", ty: PayloadType::Enum, optional: false, nullable: false, legacy_name: None, vocabulary: Some(VERDICT_VOCABULARY) },
+        PayloadField { name: "remedy", ty: PayloadType::String, optional: false, nullable: true, legacy_name: None, vocabulary: None },
+        PayloadField { name: "dimensionRemedy", ty: PayloadType::String, optional: false, nullable: true, legacy_name: None, vocabulary: None },
+    ],
+};
+
 /// Every payload shape, by name.
 pub const PAYLOAD_SHAPES: &[PayloadShape] = &[
     BRIDGE_MANIFEST_SHAPE,
     BRIDGE_EXPORT_BINDING_SHAPE,
+    EMBED_PROFILE_MANIFEST_SHAPE,
+    EMBED_PROFILE_ENV_SHAPE,
+    EMBED_PROFILE_DEFAULTS_SHAPE,
+    EMBED_PROFILE_MODES_SHAPE,
+    EMBED_PROFILE_FACTS_SHAPE,
     VAULT_SHAPE,
     VAULT_ENTRY_SHAPE,
     VAULT_INIT_SHAPE,
@@ -963,6 +1139,21 @@ pub const BRIDGE_PAYLOADS: &[BridgePayload] = &[
         export: "bridge_manifest",
         transport: PayloadTransport::EnvelopeJson,
         shape: Some("BridgeManifestPayload"),
+    },
+    // The embed-profile family — the bridge's answer about the embedding
+    // profile in force. It sits next to the manifest because it is the
+    // other answer the bridge gives about ITSELF: the manifest says what
+    // the bridge can do, the profile says what the embedding is doing
+    // here and now.
+    BridgePayload {
+        export: "bridge_embed_profile_manifest",
+        transport: PayloadTransport::EnvelopeJson,
+        shape: Some("EmbedProfileManifestPayload"),
+    },
+    BridgePayload {
+        export: "bridge_embed_profile_facts",
+        transport: PayloadTransport::EnvelopeJson,
+        shape: Some("EmbedProfileFactsPayload"),
     },
     BridgePayload {
         export: "vault_init_full",

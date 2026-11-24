@@ -204,16 +204,16 @@ when they are `None` (the error path of `vault_parse_entries` returns exactly
 one key, `errorCode`), while a `serde` `Option` inside a JSON envelope is
 present and `null`. The vocabulary distinguishes the two.
 
-**PARTIALLY CLOSED 2026-11-24 — the mechanism is in, the vault and the embed
-families are migrated, four surfaces remain.** One owner, one artefact, two
-runners:
+**PARTIALLY CLOSED 2026-11-24 — the mechanism is in, and by the end of
+phase 5 EVERY family is migrated: the counter of surfaces that own a
+payload type by hand is EMPTY.** One owner, one artefact, two runners:
 
 | piece | what it is |
 | --- | --- |
 | `crates/memphis-napi/src/bridge_payloads.rs` | **the owner** — one table: the export, the transport, the shape, the field names napi-rs really exports |
 | `crates/memphis-napi/src/lib.rs` | `bridge_payload_manifest()` — the table, served through the built module (`required: false`, so an old binary still loads) |
 | `scripts/sync-bridge-payload-contract.mts` | the projection: reads the table from the BUILT module, writes the artefact and the TypeScript mirror |
-| `tests/fixtures/bridge-payload-contract.json` | the artefact (15 payloads, 14 shapes) |
+| `tests/fixtures/bridge-payload-contract.json` | the artefact (26 payloads, 35 shapes — measured 2026-11-24, after phase 5) |
 | `src/infra/storage/bridge-payloads.generated.ts` | the TypeScript mirror — a projection, not a second hand-written copy |
 | `crates/memphis-napi/tests/bridge_payload_contract.rs` | runner 1: the table against the crate's own structs, and the artefact |
 | `tests/unit/bridge-payload-contract.test.ts` | runner 2: the mirror, the REAL binary (the third witness), and the ratchet |
@@ -491,6 +491,100 @@ the same crate spells the same idea two ways. `JsEntriesResult` has no
 sibling `JsVaultStateResult` reaches it as `error_code`. Unifying that is a
 WIRE change, so it needs a compatibility window (the alias map E-01 already
 built), not a quiet edit. It is queued with the next phase of E-09.
+
+**PHASE 5 CLOSED 2026-11-24 — the embed-profile family** (PR #783). The
+LAST family of E-09, and the last surface that owned a payload type by
+hand. The ratchet's counter is EMPTY.
+
+MEASURED 2026-11-24 on the built module, the family's two answers:
+
+* `bridge_embed_profile_manifest` — SIX keys, in the struct's own order:
+  `schemaVersion`, `env`, `defaults`, `dimensionSources`, `verdicts`,
+  `modes`; and inside `modes` THREE keys — `local`, `alias`,
+  `providers`.
+* `bridge_embed_profile_facts` — FOURTEEN keys, in the struct's own
+  order, from `schemaVersion` to `dimensionRemedy`. The `Option` fields
+  are PRESENT and null when they have no value — MEASURED, not assumed:
+  an environment without an index answers `indexDimension: null`, and a
+  process without a mismatch answers `dimensionRemedy: null`.
+
+**THE FINDING: THE TYPE DID NOT DESCRIBE THE WIRE.** The hand-written
+`EmbedProfileManifest` declared `modes` with TWO keys — `local` and
+`providers` — while the wire has carried THREE since the manifest was
+written. The third one is `alias`: the word that means "the
+OpenAI-compatible provider" (`RUST_EMBED_MODE=provider`). The interface
+had no room for it, so the type claimed to describe a payload that has
+one key more than it declares. The shape comes from the owner now, and
+the TypeScript side reads the owner's shape.
+
+**THE GATE LEARNED A THIRD KIND OF SOURCE.** The embed profile's words
+live in CONSTANTS — `SOURCE_ENV`, `SOURCE_INDEX`, `SOURCE_LOCAL`,
+`SOURCE_UNKNOWN`, the four `VERDICT_*` and `PROVIDER_MODE_NAMES` — and
+not in a function and not in an enum. So the gate reads a constant as the
+source of a closed vocabulary: a `&str` constant speaks ONE word, a
+`&[&str]` constant speaks a LIST of them. A name that resolves to more
+than one thing (a function AND a constant, say) is ambiguous, and the
+gate refuses it instead of picking one — a vocabulary that means two
+things is a vocabulary nobody can check.
+
+**A LIST OF WORDS IS AS CLOSED AS ONE WORD.** The type model learned
+`Array(&Enum)`: the manifest's `dimensionSources`, `verdicts` and
+`modes.providers` are lists of closed words, and the mirror renders them
+as `('env' | 'index' | 'local-deterministic')[]` — WITH the brackets,
+because `'a' | 'b'[]` is a union of a word and an array, which is a
+different type and a wrong one.
+
+**Falsifiers, measured on this host (phase 5), six of them:** a
+misspelled word in a constant-sourced vocabulary fails the Rust runner
+with *"the vocabulary of dimensionSources is {…localdeterministic…}, but
+the source writes {…local-deterministic…}"*; a vocabulary pointing at a
+constant the crate does not declare fails it with *"the vocabulary points
+at the source SOURCE_MISSING, and the crate declares it 0 times — the
+source must be exactly one of a function, an enum or a constant"*; the
+owner losing `modes.alias` fails the Rust runner twice — *"EmbedProfileModesPayload:
+the struct has 3 fields, the table has 2"* and *"left: [local, providers]
+right: [local, alias, providers]"* — and the TypeScript runner with
+*"expected [ 'alias', 'local', 'providers' ] to deeply equal [ 'local',
+'providers' ]"*; putting the hand-written `EmbedProfileManifest` back
+fails the TypeScript ratchet with *"src/infra/storage/rust-embed-profile-bridge.ts:
+interface EmbedProfileManifest {"*; a surface that owns a payload type
+again fails the counter with *"expected 1 to be +0"*; and a hand edit in
+the generated mirror fails the projection's check mode with exit 1 and
+*"mirror … is stale"*.
+
+**The ratchet: ONE surface → ZERO.** No TypeScript surface declares a
+bridge payload type by hand any more. Every shape the bridge carries is
+the owner's, projected into one mirror, checked by two runners.
+
+**What phase 5 does NOT close, said out loud:** the per-variant shapes of
+`CaseEntry` (the owner declares the loose union; the eight per-case
+shapes are the explicit residue) and the two napi naming conventions in
+one crate (a WIRE change, so it needs a compatibility window — the alias
+map E-01 already built — and not a quiet edit).
+
+**WHERE E-09 STANDS after phase 5.** The payload types have ONE owner, and
+the counter of surfaces that own a type by hand is EMPTY. What is left is
+NOT a missing type: it is the residue that needs a decision of its own —
+the eight per-case shapes of `CaseEntry` (the owner declares the loose
+union, and the eight variants are the explicit remainder) and the two napi
+naming conventions in one crate (a WIRE change, so it needs a
+compatibility window, not a quiet edit). Both are queued as the next steps
+of E-09, in that order.
+
+**ONE THING THIS PHASE MEASURED AND DID NOT CUT, said out loud:**
+`readEmbedProfileManifest()` — the runtime's door to the owner's rule —
+has NO caller in the tree (MEASURED: the only readers of the manifest are
+the export alias map and the projection script, which asks the owner at
+BUILD time). It stays, for two reasons that are facts and not taste: it
+is the only reader of the shape this phase just gave an owner, and the
+package publishes `dist/`, so cutting an exported function is a BREAKING
+change for whoever imports it — a decision of its own, not a side effect
+of a shape migration. The words of the manifest (`provider` for the
+OpenAI-compatible provider, the nine provider names, the four verdicts)
+are consumed at runtime from the OTHER projection,
+`src/infra/storage/embed-profile.generated.ts` — which is also generated,
+from the same owner. So no value is written down twice by hand; the
+redundancy is of PROJECTIONS, not of authorship.
 
 
 #### E-10 · The published tarball is not the thing the gates look at
