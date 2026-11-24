@@ -69,9 +69,15 @@ type FieldType =
 /** The closed set of words an enumerated field can carry. */
 type Vocabulary = {
   values: string[];
-  /** The functions whose string literals ARE those words. */
-  sourceFunctions: string[];
-  /** Literals in those functions that are NOT words of the field. */
+  /**
+   * Where the words come from — the source of truth for them.
+   *
+   * A source is a FUNCTION (its string literals are the words) or an
+   * ENUM (its variant names are the words). The Rust gate parses the
+   * same sources out of the crate and compares them with this list.
+   */
+  sources: string[];
+  /** Literals in those sources that are NOT words of the field. */
   extraLiterals: string[];
 };
 

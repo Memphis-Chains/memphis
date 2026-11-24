@@ -108,7 +108,8 @@ describe('case-chain rebuild regression', () => {
 
     const dativeResult = await adapter2.queryCases({ case_type: 'dative' });
     expect(dativeResult.count).toBe(1);
-    expect(dativeResult.entries[0]!.recipient).toBe('agent');
+    // The case itself lives under `entry` — the OWNER's row shape.
+    expect(dativeResult.entries[0]!.entry.recipient).toBe('agent');
   });
 
   it('chain files are the source of truth after restart', async () => {
@@ -130,7 +131,7 @@ describe('case-chain rebuild regression', () => {
     expect(result.count).toBe(5);
 
     // Verify all entities are present
-    const entities = result.entries.map((e) => e.entity).sort();
+    const entities = result.entries.map((e) => e.entry.entity).sort();
     expect(entities).toEqual(['entity-0', 'entity-1', 'entity-2', 'entity-3', 'entity-4']);
   });
 

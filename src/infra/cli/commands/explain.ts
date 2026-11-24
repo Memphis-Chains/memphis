@@ -88,9 +88,15 @@ async function explainCases(
 
     output.write(`\n  Case entries: ${result.entries.length} results\n\n`);
 
-    for (const entry of result.entries) {
-      const ts = entry.entry_timestamp ?? '?';
-      const caseType = entry.case_type ?? 'unknown';
+    for (const row of result.entries) {
+      // The row carries the case itself under `entry` — MEASURED 2026-11-24
+      // on the built bridge: the wire sends six keys, and the entry is one
+      // of them. This command used to read `entry.entity` and
+      // `entry_timestamp` off the ROW, which the Rust path never sent, so
+      // it printed an empty entity and a `?` for every row.
+      const entry = row.entry;
+      const ts = entry.timestamp ?? '?';
+      const caseType = entry.case_type;
       const entityVal = entry.entity ?? '';
       output.write(`  [${ts}] ${caseType}: ${entityVal}\n`);
       if (entry.actor) output.write(`    actor: ${entry.actor}\n`);

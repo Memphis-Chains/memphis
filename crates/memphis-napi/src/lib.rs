@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
+use memphis_case_index::CaseIndexRow;
 use memphis_core::block::Block;
 use memphis_core::harness;
 use memphis_core::loop_engine::{LoopAction, LoopLimits, LoopState};
@@ -104,6 +105,78 @@ pub fn bridge_manifest() -> String {
 #[napi(catch_unwind, js_name = "bridge_payload_manifest")]
 pub fn bridge_payload_manifest() -> String {
     ok(bridge_payloads::manifest())
+}
+
+/// The answer of `chain_validate`.
+///
+/// It used to be a `serde_json::json!` literal — a payload with no owner,
+/// which is how the TypeScript side ended up hand-writing its shape. The
+/// struct makes the shape checkable, and `skip_serializing_if` keeps the
+/// keys exactly as they were: `errors` is ABSENT on the success path, not
+/// null.
+#[derive(Serialize)]
+struct ChainValidateOut {
+    valid: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    errors: Option<Vec<String>>,
+}
+
+/// The answer of `chain_append`.
+///
+/// Two variants, one struct: the accepted path carries `length` and
+/// `chain`, the rejected path carries `errors`. The three keys that are
+/// not there are absent, not null.
+#[derive(Serialize)]
+struct ChainAppendOut {
+    appended: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    errors: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    length: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chain: Option<Vec<Block>>,
+}
+
+/// The answer of `chain_query` — the chain and how many blocks it holds.
+#[derive(Serialize)]
+struct ChainQueryOut {
+    count: usize,
+    blocks: Vec<Block>,
+}
+
+/// The answer of `soul_loop_step`.
+///
+/// `reason` is ABSENT when the step applied, and present when it did not.
+#[derive(Serialize)]
+struct SoulLoopStepOut {
+    applied: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+    state: LoopState,
+}
+
+/// The answer of `case_append`.
+///
+/// Same two-variant shape as `chain_append`, plus `indexed` — whether the
+/// SQLite case index took the block.
+#[derive(Serialize)]
+struct CaseAppendOut {
+    appended: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    errors: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    indexed: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    length: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chain: Option<Vec<Block>>,
+}
+
+/// The answer of `case_query` — the rows the case index holds.
+#[derive(Serialize)]
+struct CaseQueryOut {
+    count: usize,
+    entries: Vec<CaseIndexRow>,
 }
 
 #[derive(Serialize)]
@@ -433,19 +506,21 @@ pub fn chain_validate(block_json: String, prev_json: Option<String>) -> String {
             let allowlist = signer_allowlist_from_env();
             if !allowlist.is_empty() {
                 match verify_block_signature_with_allowlist(&block, &allowlist) {
-                    Ok(true) => ok(serde_json::json!({ "valid": true })),
-                    Ok(false) => ok(
-                        serde_json::json!({ "valid": false, "errors": ["block unsigned but signer allowlist is configured"] }),
-                    ),
-                    Err(e) => ok(
-                        serde_json::json!({ "valid": false, "errors": [format!("signer allowlist check failed: {e}")] }),
-                    ),
+                    Ok(true) => ok(ChainValidateOut { valid: true, errors: None }),
+                    Ok(false) => ok(ChainValidateOut {
+                        valid: false,
+                        errors: Some(vec!["block unsigned but signer allowlist is configured".to_string()]),
+                    }),
+                    Err(e) => ok(ChainValidateOut {
+                        valid: false,
+                        errors: Some(vec![format!("signer allowlist check failed: {e}")]),
+                    }),
                 }
             } else {
-                ok(serde_json::json!({ "valid": true }))
+                ok(ChainValidateOut { valid: true, errors: None })
             }
         }
-        Err(errors) => ok(serde_json::json!({ "valid": false, "errors": errors })),
+        Err(errors) => ok(ChainValidateOut { valid: false, errors: Some(errors) }),
     }
 }
 
@@ -473,7 +548,7 @@ pub fn chain_append(chain_json: String, block_json: String) -> String {
     };
 
     if let Err(errors) = validation {
-        return ok(serde_json::json!({ "appended": false, "errors": errors }));
+        return ok(ChainAppendOut { appended: false, errors: Some(errors), length: None, chain: None });
     }
 
     let allowlist = signer_allowlist_from_env();
@@ -481,20 +556,31 @@ pub fn chain_append(chain_json: String, block_json: String) -> String {
         match verify_block_signature_with_allowlist(&block, &allowlist) {
             Ok(true) => {}
             Ok(false) => {
-                return ok(
-                    serde_json::json!({ "appended": false, "errors": ["block unsigned but signer allowlist is configured"] }),
-                );
+                return ok(ChainAppendOut {
+                    appended: false,
+                    errors: Some(vec!["block unsigned but signer allowlist is configured".to_string()]),
+                    length: None,
+                    chain: None,
+                });
             }
             Err(e) => {
-                return ok(
-                    serde_json::json!({ "appended": false, "errors": [format!("signer allowlist check failed: {e}")] }),
-                );
+                return ok(ChainAppendOut {
+                    appended: false,
+                    errors: Some(vec![format!("signer allowlist check failed: {e}")]),
+                    length: None,
+                    chain: None,
+                });
             }
         }
     }
 
     blocks.push(block);
-    ok(serde_json::json!({ "appended": true, "length": blocks.len(), "chain": blocks }))
+    ok(ChainAppendOut {
+        appended: true,
+        errors: None,
+        length: Some(blocks.len()),
+        chain: Some(blocks),
+    })
 }
 
 #[napi(catch_unwind, js_name = "chain_query")]
@@ -524,7 +610,13 @@ pub fn chain_query(chain_json: String, contains: Option<String>, tag: Option<Str
         })
         .collect();
 
-    ok(serde_json::json!({ "count": result.len(), "blocks": result }))
+    // The payload owns its blocks: the struct carries `Vec<Block>`, so the
+    // matches are cloned. Only the MATCHING blocks are cloned — the chain
+    // itself is not copied.
+    ok(ChainQueryOut {
+        count: result.len(),
+        blocks: result.into_iter().cloned().collect(),
+    })
 }
 
 #[napi(catch_unwind, js_name = "vault_init_json")]
@@ -929,15 +1021,8 @@ pub fn soul_loop_step(
     };
 
     match state.apply(&action, &limits) {
-        Ok(()) => ok(serde_json::json!({
-            "applied": true,
-            "state": state,
-        })),
-        Err(reason) => ok(serde_json::json!({
-            "applied": false,
-            "reason": reason,
-            "state": state,
-        })),
+        Ok(()) => ok(SoulLoopStepOut { applied: true, reason: None, state }),
+        Err(reason) => ok(SoulLoopStepOut { applied: false, reason: Some(reason), state }),
     }
 }
 
@@ -1017,7 +1102,13 @@ pub fn case_append(chain_json: String, entry_json: String, index_db_path: String
         validate_block(&block, blocks.last())
     };
     if let Err(errors) = validation {
-        return ok(serde_json::json!({ "appended": false, "errors": errors }));
+        return ok(CaseAppendOut {
+            appended: false,
+            errors: Some(errors),
+            indexed: None,
+            length: None,
+            chain: None,
+        });
     }
 
     // Index into SQLite
@@ -1029,12 +1120,13 @@ pub fn case_append(chain_json: String, entry_json: String, index_db_path: String
     }
 
     blocks.push(block);
-    ok(serde_json::json!({
-        "appended": true,
-        "indexed": indexed,
-        "length": blocks.len(),
-        "chain": blocks,
-    }))
+    ok(CaseAppendOut {
+        appended: true,
+        errors: None,
+        indexed: Some(indexed),
+        length: Some(blocks.len()),
+        chain: Some(blocks),
+    })
 }
 
 #[napi(catch_unwind, js_name = "case_query")]
@@ -1053,10 +1145,7 @@ pub fn case_query(query_json: String, index_db_path: String) -> String {
     };
 
     match idx.query(&query) {
-        Ok(rows) => ok(serde_json::json!({
-            "count": rows.len(),
-            "entries": rows,
-        })),
+        Ok(rows) => ok(CaseQueryOut { count: rows.len(), entries: rows }),
         Err(e) => err(format!("case_query_failed: {e}")),
     }
 }

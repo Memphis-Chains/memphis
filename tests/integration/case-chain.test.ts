@@ -182,7 +182,17 @@ describe('case-chain integration', () => {
 
     const result = await adapter.queryCases({ actor: 'agent-1' });
     expect(result.count).toBe(1);
-    expect(result.entries[0]!.actor).toBe('agent-1');
+    // The case itself lives under `entry` — the row is the OWNER's shape
+    // (six keys), not the flat row this file used to read.
+    expect(result.entries[0]!.entry.actor).toBe('agent-1');
+    expect(Object.keys(result.entries[0]!).sort()).toEqual([
+      'block_hash',
+      'block_index',
+      'case_type',
+      'chain',
+      'entry',
+      'full_json',
+    ]);
   });
 
   it('respects query limit', async () => {
@@ -218,8 +228,8 @@ describe('case-chain integration', () => {
     });
 
     const result = await adapter.queryCases({ case_type: 'nominative' });
-    expect(result.entries[0]!.entity).toBe('second');
-    expect(result.entries[1]!.entity).toBe('first');
+    expect(result.entries[0]!.entry.entity).toBe('second');
+    expect(result.entries[1]!.entry.entity).toBe('first');
   });
 
   it('handles all 8 case types', async () => {
