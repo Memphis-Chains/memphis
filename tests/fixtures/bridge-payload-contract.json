@@ -7,6 +7,123 @@
       "fields": [
         {
           "legacyName": null,
+          "name": "exportBindings",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "named",
+              "name": "BridgeExportBindingPayload"
+            }
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "exports",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "string"
+            }
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "name",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "optionalExports",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "string"
+            }
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "requiredExports",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "string"
+            }
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "schemaVersion",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "BridgeManifestPayload",
+      "naming": "serde",
+      "rustType": "BridgeManifestOut"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "canonical",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "jsName",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "required",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "BridgeExportBindingPayload",
+      "naming": "serde",
+      "rustType": "BridgeExportBinding"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
           "name": "salt",
           "nullable": false,
           "optional": false,
@@ -1771,6 +1888,11 @@
     }
   ],
   "payloads": [
+    {
+      "export": "bridge_manifest",
+      "shape": "BridgeManifestPayload",
+      "transport": "envelopeJson"
+    },
     {
       "export": "vault_init_full",
       "shape": "VaultInitPayload",

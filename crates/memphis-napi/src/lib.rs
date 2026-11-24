@@ -7,8 +7,7 @@ use memphis_core::block::Block;
 use memphis_core::harness;
 use memphis_core::loop_engine::{LoopAction, LoopLimits, LoopState};
 use memphis_core::signature::{sign_block, verify_block_signature_with_allowlist};
-use memphis_core::soul::{validate_block, validate_block_strict};
-use memphis_embed::{
+use memphis_core::soul::{validate_block, validate_block_strict};use memphis_embed::{
     set_shutdown_barrier, EmbedConfig, EmbedPersistenceConfig,
     EmbedPersistenceLoadState, EmbedPipeline, ReplacementState,
 };
@@ -35,6 +34,7 @@ mod vault_bridge;
 
 // The bridge's export vocabulary — one owner. See `bridge_exports.rs`.
 pub mod bridge_exports;
+use bridge_exports::BridgeExportBinding;
 
 // The bridge's payload shapes — one owner. See `bridge_payloads.rs`.
 pub mod bridge_payloads;
@@ -69,25 +69,59 @@ fn err(msg: impl Into<String>) -> String {
     .unwrap_or_else(|_| "{\"ok\":false,\"error\":\"unknown\"}".to_string())
 }
 
+/// The manifest of the bridge — its export vocabulary, served.
+///
+/// It used to be a `serde_json::json!` literal — a payload with no owner,
+/// which is how the TypeScript side ended up hand-writing the shape (and
+/// writing it with two fields the wire always sends marked OPTIONAL).
+///
+/// The fields are declared in the order the literal produced them —
+/// alphabetically, because a literal is a `serde_json::Value` with a
+/// sorted map — so the wire this struct writes is byte for byte the wire
+/// the literal wrote.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BridgeManifestOut {
+    /// The bindings. OPTIONAL in the CONTRACT: a binary older than the
+    /// vocabulary table (before 2026-11-23) does not send it, and the
+    /// export projection fails loudly when it is missing. THIS binary
+    /// always sends it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    export_bindings: Option<Vec<BridgeExportBinding>>,
+    /// Every export, by its canonical name.
+    exports: Vec<&'static str>,
+    /// The name of the bridge.
+    name: &'static str,
+    /// The exports the runtime does NOT require.
+    ///
+    /// It used to be a hand-written list of two names — a leftover from
+    /// June 2026, from before the vocabulary table existed. It named
+    /// `mv2_export` and `mv2_inspect` while the table already knew TEN
+    /// optional exports. It is derived from the table now, so the answer
+    /// cannot drift from the rule it reports.
+    optional_exports: Vec<&'static str>,
+    /// The exports the runtime requires.
+    required_exports: Vec<&'static str>,
+    /// The version of the manifest's own shape.
+    schema_version: u32,
+}
+
 #[napi(catch_unwind, js_name = "bridge_manifest")]
 pub fn bridge_manifest() -> String {
     // The vocabulary comes from ONE table — `bridge_exports::BRIDGE_EXPORTS`.
     // It used to be a hand-written list right here, and it had drifted: it
-    // named 34 exports where the bridge has 37, and it named nine of them
+    // named 34 exports where the bridge has 42, and it named nine of them
     // with a spelling the bridge never exports. The table is checked against
     // this crate's own `#[napi]` declarations by
     // `crates/memphis-napi/tests/bridge_export_contract.rs`.
-    ok(serde_json::json!({
-        "name": "memphis-napi",
-        "schemaVersion": 1,
-        "exports": bridge_exports::canonical_names(),
-        "requiredExports": bridge_exports::required_names(),
-        "exportBindings": bridge_exports::bindings(),
-        "optionalExports": [
-            "mv2_export",
-            "mv2_inspect"
-        ]
-    }))
+    ok(BridgeManifestOut {
+        export_bindings: Some(bridge_exports::bindings()),
+        exports: bridge_exports::canonical_names(),
+        name: "memphis-napi",
+        optional_exports: bridge_exports::optional_names(),
+        required_exports: bridge_exports::required_names(),
+        schema_version: 1,
+    })
 }
 
 /// The bridge's payload shapes — the layer under the vocabulary.
@@ -1469,11 +1503,12 @@ pub fn mv2_inspect(bytes_hex: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        bridge_manifest, case_append, case_query, case_rebuild, chain_append, chain_validate,
-        current_embed_mode, embed_persistence_enabled_from_env, embed_reset, embed_search,
-        embed_search_tuned, embed_shutdown, embed_store, paths_normalize_chain_name,
-        paths_resolve_chain_path, paths_resolve_chains_dir, paths_resolve_data_dir,
-        paths_resolve_vault_entries, paths_resolve_vault_state, soul_loop_step, soul_replay,
+        bridge_exports, bridge_manifest, case_append, case_query, case_rebuild, chain_append,
+        chain_validate, current_embed_mode, embed_persistence_enabled_from_env, embed_reset,
+        embed_search, embed_search_tuned, embed_shutdown, embed_store,
+        paths_normalize_chain_name, paths_resolve_chain_path, paths_resolve_chains_dir,
+        paths_resolve_data_dir, paths_resolve_vault_entries, paths_resolve_vault_state,
+        soul_loop_step, soul_replay,
     };
     use memphis_core::block::{Block, BlockData, BlockType};
     use memphis_core::hash::compute_hash;
@@ -1608,6 +1643,28 @@ mod tests {
         assert!(names.contains(&"case_rebuild"));
         assert!(names.contains(&"embed_shutdown"));
         assert!(names.contains(&"paths_resolve_database_path"));
+    }
+
+    #[test]
+    fn the_manifest_lists_the_optional_exports_of_the_table() {
+        // The manifest used to carry a hand-written list of TWO names
+        // (`mv2_export`, `mv2_inspect`) — a leftover from June 2026, from
+        // before the export table existed — while the table already knew
+        // TEN optional exports, and nothing read the field. It is derived
+        // from the table now, and this test is what keeps it derived.
+        let out = bridge_manifest();
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let optional: Vec<&str> = parsed["data"]["optionalExports"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|value| value.as_str())
+            .collect();
+        assert_eq!(
+            optional,
+            bridge_exports::optional_names(),
+            "the manifest's optional exports are not the optional exports of the table"
+        );
     }
 
     #[test]

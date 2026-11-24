@@ -319,8 +319,9 @@ gate fails if a surface outside the list starts declaring a payload type
 of its own. The envelope families (chain, case, soul, mv2, manifest) are
 the next phase; the vault and embed families are closed.
 
-**PHASE 3 CLOSED 2026-11-24 — the chain, soul and case families.** The
-third family, and the one that had NO shape at all: the `chain_*`,
+**PHASE 3 CLOSED 2026-11-24 — the chain, soul and case families** (PR #781,
+squash `fe1d7c8e92`). The third family, and the one that had NO shape at
+all: the `chain_*`,
 `soul_*` and `case_*` answers were built from `serde_json::json!`
 literals — a payload with no owner, which is exactly how the TypeScript
 side ended up hand-writing its shape.
@@ -417,6 +418,71 @@ SENDS, they match the Rust structs field for field, and the payload
 contract owns what the bridge RETURNS), and the two napi naming
 conventions in one crate, which is a WIRE change and needs a
 compatibility window rather than a quiet edit.
+
+**PHASE 4 CLOSED 2026-11-24 — the manifest family.** The fourth family,
+and the one the runtime reads FIRST: `bridge_manifest` is what the bridge
+serves about itself, and it is what the runtime asks before it decides
+whether the bridge is good enough to start.
+
+MEASURED 2026-11-24 on the built module: SIX keys, in this order —
+`exportBindings`, `exports`, `name`, `optionalExports`,
+`requiredExports`, `schemaVersion`. The order is alphabetical because the
+answer used to be a `serde_json::json!` literal, and a literal is a
+`serde_json::Value` with a sorted map; the struct that replaced it
+declares its fields in the same order, so the wire did not move.
+
+Three findings:
+
+1. **The shape was written down TWICE** — once in the runtime's
+   `RustBridgeManifest` and once in the export projection's reader — and
+   both copies were wrong in the same way: they marked `exportBindings`
+   and `optionalExports` OPTIONAL, while the wire always sends both.
+   The two copies now come from the owner, and the projection's reader
+   reads the owner's shape instead of its own.
+2. **`optionalExports` carried the WRONG ANSWER and nobody read it.**
+   MEASURED: the wire carried a hand-written list of TWO names —
+   `mv2_export`, `mv2_inspect` — a leftover from June 2026, from before
+   the export table existed. The table already knew TEN optional exports
+   (42 exports, 32 required), so the field under its own name was wrong
+   about eight of them, and MEASURED: nothing in the tree read it at all.
+   It is derived from the table now, so the answer cannot drift from the
+   rule it reports.
+3. **The answer had no owner**: it was a `json!` literal, like the chain
+   and soul families in phase 3. It is a struct now (`BridgeManifestOut`),
+   and the binding it carries is a typed struct too
+   (`BridgeExportBinding`, three keys: `canonical`, `jsName`, `required`).
+
+**THE WIRE MOVED, in exactly one value, and here it is.** The key set,
+the types, the key ORDER and every other value are identical — MEASURED
+before and after. `optionalExports` now carries the table's TEN optional
+exports instead of the hand-written two. Nothing in the tree read that
+field (measured), so nothing could break; and the new TypeScript gate
+asserts that the list equals the table's optional set, so the hand-written
+pair cannot come back.
+
+**A compat fact the owner now carries, and it is measured, not guessed:**
+`exportBindings` is ABSENT on a binary older than the vocabulary table
+(before 2026-11-23) — the export projection already failed loudly on it
+with *"the manifest carries no exportBindings — the Rust core predates the
+vocabulary table"*. So the contract says the key MAY be absent, the Rust
+struct carries it as an `Option` (so the gate's presence rule can check
+it), and this binary always fills it.
+
+**Falsifiers, measured on this host (phase 4):** a misspelled field in
+the manifest shape fails the Rust runner with *"the table says … but the
+wire will carry …"*; dropping the `#[serde(skip_serializing_if)]` from
+`BridgeManifestOut.export_bindings` fails it with *"the table says
+optional=true nullable=false for exportBindings"*; putting the hand-written
+`RustBridgeManifest` interface back fails the TypeScript ratchet with
+*"src/infra/storage/rust-bridge-manifest.ts: interface RustBridgeManifest
+{"*; putting the hand-written binding type back into the export
+projection fails the same ratchet with *"scripts/sync-bridge-export-contract.mts:
+jsName: string;"*; and putting the hand-written two-name list back into
+the Rust manifest fails the crate's own test with *"the manifest's
+optional exports are not the optional exports of the table"*.
+
+**The ratchet: TWO surfaces → ONE.** What remains is the embed-profile
+family (`rust-embed-profile-bridge.ts`), which is the last one.
 
 **One thing the owner still does wrong, and this entry does not hide it:**
 the same crate spells the same idea two ways. `JsEntriesResult` has no
@@ -902,7 +968,10 @@ way through; the second closed (1) for the bridge path; the third closed (1),
 for the embed profile; the fifth closed (2) for the artefact that ships — the
 package-artifact gate now installs under a declared policy, proves the native
 binding, and probes a command that opens the database (E-12).
-**Next, in this order:** E-09 (the payload types),
-which the projection just built can now carry, and only then Family B's wedge
-(E-05), which needs the operator's fifteen acknowledgements before any code
-can help.
+**Next, in this order:** the REST of E-09 — the manifest family and the
+embed-profile family (the ratchet is at TWO surfaces, and it may only go
+down), then the per-variant shapes of `CaseEntry`, then the two napi
+naming conventions in one crate, which is a WIRE change and needs a
+compatibility window rather than a quiet edit. And only then Family B's
+wedge (E-05), which needs the operator's fifteen acknowledgements before
+any code can help.

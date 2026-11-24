@@ -867,8 +867,56 @@ pub const CASE_REBUILD_SHAPE: PayloadShape = PayloadShape {
     ],
 };
 
+/// One export binding, as the manifest carries it.
+///
+/// MEASURED 2026-11-24 on the built module: three keys — `canonical`,
+/// `jsName` and `required`. The Rust field is `js_name` and the wire key
+/// is `jsName` (the struct sets `#[serde(rename = "jsName")]`).
+pub const BRIDGE_EXPORT_BINDING_SHAPE: PayloadShape = PayloadShape {
+    name: "BridgeExportBindingPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "BridgeExportBinding",
+    fields: &[
+        PayloadField { name: "canonical", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "jsName", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "required", ty: PayloadType::Boolean, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
+/// `bridge_manifest` — the bridge's export vocabulary, served.
+///
+/// MEASURED 2026-11-24 on the built module: SIX keys, in this order —
+/// `exportBindings`, `exports`, `name`, `optionalExports`,
+/// `requiredExports`, `schemaVersion`. The order is alphabetical because
+/// the answer used to be a `serde_json::json!` literal, and a literal is a
+/// `serde_json::Value` with a sorted map. The struct that replaced it
+/// declares its fields in the same order, so the wire did not move.
+///
+/// `exportBindings` is the one OPTIONAL key: a binary older than the
+/// vocabulary table (before 2026-11-23) does not send it, and the export
+/// projection (`scripts/sync-bridge-export-contract.mts`) fails loudly
+/// when it is missing. This binary always sends it.
+///
+/// The TypeScript side declared `exportBindings?` and `optionalExports?`
+/// as OPTIONAL — both are always on the wire — and it never read either.
+pub const BRIDGE_MANIFEST_SHAPE: PayloadShape = PayloadShape {
+    name: "BridgeManifestPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "BridgeManifestOut",
+    fields: &[
+        PayloadField { name: "exportBindings", ty: PayloadType::Array(&PayloadType::Named("BridgeExportBindingPayload")), optional: true, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "exports", ty: PayloadType::Array(&PayloadType::String), optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "name", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "optionalExports", ty: PayloadType::Array(&PayloadType::String), optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "requiredExports", ty: PayloadType::Array(&PayloadType::String), optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "schemaVersion", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+    ],
+};
+
 /// Every payload shape, by name.
 pub const PAYLOAD_SHAPES: &[PayloadShape] = &[
+    BRIDGE_MANIFEST_SHAPE,
+    BRIDGE_EXPORT_BINDING_SHAPE,
     VAULT_SHAPE,
     VAULT_ENTRY_SHAPE,
     VAULT_INIT_SHAPE,
@@ -908,6 +956,14 @@ pub const PAYLOAD_SHAPES: &[PayloadShape] = &[
 /// — the answers were built from `json!` literals. The ratchet in the
 /// gate counts what is left.
 pub const BRIDGE_PAYLOADS: &[BridgePayload] = &[
+    // The manifest — the bridge's own export vocabulary, served. It is
+    // the first payload the bridge carries, and the one the runtime reads
+    // to decide whether the bridge is good enough to start.
+    BridgePayload {
+        export: "bridge_manifest",
+        transport: PayloadTransport::EnvelopeJson,
+        shape: Some("BridgeManifestPayload"),
+    },
     BridgePayload {
         export: "vault_init_full",
         transport: PayloadTransport::NativeObject,
