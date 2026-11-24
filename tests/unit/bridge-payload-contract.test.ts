@@ -513,11 +513,17 @@ describe('the bridge payload contract', () => {
     );
   });
 
-  it('the mirror renders the closed vocabularies, not a bare string', () => {    const mirror = readFileSync(MIRROR, 'utf8');
+  it('the mirror renders the closed vocabularies, not a bare string', () => {
+    const mirror = readFileSync(MIRROR, 'utf8');
     for (const shape of artefact.shapes) {
       for (const field of shape.fields) {
         if (!field.vocabulary) continue;
-        const rendered = field.vocabulary.values.map((value) => `'${value}'`).join(' | ');
+        const union = field.vocabulary.values.map((value) => `'${value}'`).join(' | ');
+        // A LIST of words is `('a' | 'b')[]`. The brackets are not
+        // cosmetics: `'a' | 'b'[]` is a union of a word and an array,
+        // which is a different type — and a wrong one.
+        const isList = field.type.kind === 'array' && field.type.of.kind === 'enum';
+        const rendered = isList ? `(${union})[]` : union;
         // An OPTIONAL key is rendered with a `?` — the mirror's spelling
         // of "this key may be absent".
         const optional = field.optional || Boolean(field.legacyName);
@@ -595,13 +601,14 @@ describe('the bridge payload contract', () => {
     // that proves it. It may only go DOWN — when a surface is migrated, it
     // leaves this list and the count drops.
     //
-    // The vault, embed, chain, soul and case families are already
-    // migrated: their shapes come from `bridge-payloads.generated.ts`.
-    const stillToMigrate: Record<string, string> = {
-      'src/infra/storage/rust-embed-profile-bridge.ts': 'interface EmbedProfileManifest',
-    };
+    // The vault, embed, chain, soul, case, manifest AND embed-profile
+    // families are migrated: their shapes come from
+    // `bridge-payloads.generated.ts`. The counter is EMPTY, and it is
+    // empty on purpose — a count of one would be a surface the owner does
+    // not cover.
+    const stillToMigrate: Record<string, string> = {};
 
-    expect(Object.keys(stillToMigrate).length).toBe(1);
+    expect(Object.keys(stillToMigrate).length).toBe(0);
 
     for (const [surface, marker] of Object.entries(stillToMigrate)) {
       expect(readFileSync(surface, 'utf8')).toContain(marker);
@@ -616,12 +623,115 @@ describe('the bridge payload contract', () => {
       'src/infra/storage/rust-chain-adapter.ts',
       'src/infra/storage/case-chain-adapter.ts',
       'src/infra/storage/rust-bridge-manifest.ts',
+      'src/infra/storage/rust-embed-profile-bridge.ts',
     ];
     for (const surface of migrated) {
       expect(Object.keys(stillToMigrate)).not.toContain(surface);
       // The migrated surface must read the shape through the OWNER.
       expect(readFileSync(surface, 'utf8')).toContain('bridge-payloads.generated.js');
     }
+  });
+
+  it('the embed-profile family has no hand-written payload type left', () => {
+    // The last family of E-09. Its hand-written interface declared
+    // `modes` with TWO keys — `local` and `providers` — while the wire
+    // has carried THREE since the manifest was written: `alias`, the word
+    // that means "the OpenAI-compatible provider", was missing from the
+    // type. A type that does not describe the wire is a guess, and this
+    // is where the guess lived.
+    const offenders: string[] = [];
+    const surfaces = ['src/infra/storage/rust-embed-profile-bridge.ts'];
+    const handWritten = [
+      'interface EmbedProfileManifest {',
+      'interface EmbedProfileFacts {',
+      'dimensionSources: string[];',
+      'verdicts: string[];',
+      'dimensionSource: string;',
+      'modelSource: string;',
+      'verdict: string;',
+    ];
+
+    for (const surface of surfaces) {
+      const source = codeOf(surface);
+      for (const marker of handWritten) {
+        if (source.includes(marker)) offenders.push(`${surface}: ${marker}`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('the embed-profile family answers with the projected keys', () => {
+    if (!bridge) return;
+
+    const manifest = envelopeData('bridge_embed_profile_manifest');
+    expect(manifest, 'bridge_embed_profile_manifest answered nothing').not.toBeNull();
+
+    const declared = shapeOf('EmbedProfileManifestPayload').fields.map((field) => field.name);
+    expect(Object.keys(manifest!).sort()).toEqual([...declared].sort());
+
+    // The key the hand-written interface did not know. The wire has
+    // carried it since the manifest was written — and the owner's shape
+    // declares it, so the two are compared, not two hand-written lists.
+    const modes = manifest!.modes as Record<string, unknown>;
+    const declaredModes = shapeOf('EmbedProfileModesPayload').fields.map((field) => field.name);
+    expect(Object.keys(modes).sort()).toEqual([...declaredModes].sort());
+    expect(Object.keys(modes)).toContain('alias');
+    expect(modes.alias).toBe('provider');
+
+    // The facts: one environment, asked through the same bridge the
+    // surfaces use. The index is the scratch one, so the operator's own
+    // index is never touched.
+    const env = {
+      RUST_EMBED_MODE: 'ollama',
+      RUST_EMBED_DIM: '32',
+      RUST_EMBED_PERSIST_PATH: path.join(scratch, 'profile-index-v1.json'),
+    };
+    const facts = envelopeData('bridge_embed_profile_facts', JSON.stringify(env), scratch);
+    expect(facts, 'bridge_embed_profile_facts answered nothing').not.toBeNull();
+
+    const declaredFacts = shapeOf('EmbedProfileFactsPayload').fields.map((field) => field.name);
+    expect(Object.keys(facts!).sort()).toEqual([...declaredFacts].sort());
+
+    // The closed words the facts carry are the owner's.
+    const factsShape = shapeOf('EmbedProfileFactsPayload');
+    for (const field of factsShape.fields) {
+      if (!field.vocabulary) continue;
+      const value = facts![field.name];
+      expect(typeof value).toBe('string');
+      expect(
+        field.vocabulary.values,
+        `${field.name} answered "${value}", which the owner does not declare`,
+      ).toContain(value as string);
+    }
+  });
+
+  it('the embed-profile manifest publishes the closed word lists', () => {
+    if (!bridge) return;
+
+    const manifest = envelopeData('bridge_embed_profile_manifest');
+    expect(manifest).not.toBeNull();
+
+    // The lists the manifest publishes are the owner's own lists — and
+    // the owner's are read out of its CONSTANTS by the Rust gate, so a
+    // word nobody declares cannot get in here.
+    const sources = manifest!.dimensionSources as string[];
+    const verdicts = manifest!.verdicts as string[];
+    const providers = (manifest!.modes as Record<string, unknown>).providers as string[];
+
+    const dimensionSource = shapeOf('EmbedProfileManifestPayload').fields.find(
+      (field) => field.name === 'dimensionSources',
+    );
+    const verdictField = shapeOf('EmbedProfileManifestPayload').fields.find(
+      (field) => field.name === 'verdicts',
+    );
+    const providerField = shapeOf('EmbedProfileModesPayload').fields.find(
+      (field) => field.name === 'providers',
+    );
+
+    expect(dimensionSource?.vocabulary?.values).toEqual(sources);
+    expect(verdictField?.vocabulary?.values).toEqual(verdicts);
+    expect(providerField?.vocabulary?.values).toEqual(providers);
   });
 
   it('the chain, soul and case families have no hand-written payload type left', () => {

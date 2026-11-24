@@ -105,6 +105,20 @@ struct SourceFunction {
     literals: Vec<String>,
 }
 
+/// One constant, as the crate declares it — with its string values.
+///
+/// The embed profile's words live in CONSTANTS (`SOURCE_ENV`,
+/// `VERDICT_OK`, `PROVIDER_MODE_NAMES`), not in a function and not in an
+/// enum, so the gate learned to read a constant as a source of a closed
+/// vocabulary.
+#[derive(Debug)]
+struct SourceConstant {
+    name: String,
+    /// The string values the constant holds — ONE for a `&str`, MANY for
+    /// a `&[&str]`.
+    values: Vec<String>,
+}
+
 /// One enum, as the crate declares it.
 #[derive(Debug)]
 struct SourceEnum {
@@ -638,6 +652,94 @@ fn parse_functions(source: &str) -> Vec<SourceFunction> {
     functions
 }
 
+/// Parse the CONSTANTS out of one source file, with their string values.
+///
+/// A constant is the third kind of source a closed vocabulary can have.
+/// The first two — a function and an enum — are found by their
+/// declaration; a constant is found by its own name, and its value IS the
+/// word it speaks.
+///
+/// Two shapes are read, because those are the two the crate uses:
+///
+/// * `pub const NAME: &str = "value";` — ONE word;
+/// * `pub const NAME: &[&str] = &[ "a", "b" ];` — a LIST of words, and
+///   the list may span several lines.
+fn parse_constants(source: &str) -> Vec<SourceConstant> {
+    let mut constants: Vec<SourceConstant> = Vec::new();
+    let lines: Vec<&str> = source.lines().collect();
+    let mut index = 0;
+
+    while index < lines.len() {
+        let trimmed = lines[index].trim();
+        let declaration = trimmed
+            .strip_prefix("pub const ")
+            .or_else(|| trimmed.strip_prefix("const "));
+        let Some(rest) = declaration else {
+            index += 1;
+            continue;
+        };
+
+        let name = rest.split(':').next().unwrap_or_default().trim().to_string();
+
+        // The value may span several lines, so the declaration is read up
+        // to its `;`.
+        let mut text = rest.to_string();
+        while !text.contains(';') && index + 1 < lines.len() {
+            index += 1;
+            text.push(' ');
+            text.push_str(lines[index].trim());
+        }
+        index += 1;
+
+        // Everything after the assignment is the value; the string
+        // literals in it are the words.
+        let value = text.splitn(2, '=').nth(1).unwrap_or_default();
+        constants.push(SourceConstant {
+            name,
+            values: quoted_literals(value),
+        });
+    }
+
+    constants
+}
+
+/// The string literals of a piece of source — one string, or a list.
+///
+/// The counterpart of [`string_literals`] for a whole declaration
+/// instead of a single line.
+fn quoted_literals(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for ch in text.chars() {
+        if in_string {
+            if escaped {
+                escaped = false;
+                current.push(ch);
+                continue;
+            }
+            match ch {
+                '\\' => escaped = true,
+                '"' => {
+                    in_string = false;
+                    out.push(current.clone());
+                    current.clear();
+                }
+                _ => current.push(ch),
+            }
+            continue;
+        }
+        if ch == '"' {
+            in_string = true;
+            current.clear();
+        }
+    }
+
+    out
+}
+
 /// The string literals of one line — the format strings excluded.
 ///
 /// A format string (`"embed_store_failed: {e}"`) is not a word the wire
@@ -836,16 +938,25 @@ fn rust_kind(
 // The sources.
 // ---------------------------------------------------------------------------
 
-fn crate_sources() -> (Vec<SourceStruct>, Vec<SourceFunction>, Vec<SourceEnum>) {
+fn crate_sources() -> (
+    Vec<SourceStruct>,
+    Vec<SourceFunction>,
+    Vec<SourceEnum>,
+    Vec<SourceConstant>,
+) {
     let mut structs = Vec::new();
     let mut functions = Vec::new();
     let mut enums = Vec::new();
+    let mut constants = Vec::new();
 
     for source in [
         include_str!("../src/lib.rs"),
         include_str!("../src/vault_bridge.rs"),
         include_str!("../src/bridge_exports.rs"),
         include_str!("../../memphis-embed/src/metadata.rs"),
+        // The embed PROFILE lives in the embed crate, not in the bridge —
+        // so the gate reads its structs and its constants from THERE.
+        include_str!("../../memphis-embed/src/profile.rs"),
         // The chain, soul and case families live in the core crates, not
         // in the bridge — so the gate reads them from THERE.
         include_str!("../../memphis-core/src/block.rs"),
@@ -857,9 +968,10 @@ fn crate_sources() -> (Vec<SourceStruct>, Vec<SourceFunction>, Vec<SourceEnum>) 
         structs.extend(parse_structs(source));
         functions.extend(parse_functions(source));
         enums.extend(parse_enums(source));
+        constants.extend(parse_constants(source));
     }
 
-    (structs, functions, enums)
+    (structs, functions, enums, constants)
 }
 
 // ---------------------------------------------------------------------------
@@ -868,7 +980,7 @@ fn crate_sources() -> (Vec<SourceStruct>, Vec<SourceFunction>, Vec<SourceEnum>) 
 
 #[test]
 fn every_shape_field_is_the_name_the_wire_really_carries() {
-    let (structs, _, enums) = crate_sources();
+    let (structs, _, enums, _) = crate_sources();
     assert!(
         !structs.is_empty(),
         "no structs found — the parser is broken, not the crate"
@@ -1032,14 +1144,14 @@ fn every_shape_field_is_the_name_the_wire_really_carries() {
 
 #[test]
 fn every_enumerated_field_carries_exactly_the_words_the_crate_writes() {
-    let (_, functions, enums) = crate_sources();
+    let (_, functions, enums, constants) = crate_sources();
 
     for shape in PAYLOAD_SHAPES {
         for field in shape.fields {
             let Some(vocabulary) = field.vocabulary else {
                 continue;
             };
-            let collected = vocabulary_words(&functions, &enums, &vocabulary);
+            let collected = vocabulary_words(&functions, &enums, &constants, &vocabulary);
             let mut declared: BTreeSet<String> =
                 vocabulary.values.iter().map(|word| word.to_string()).collect();
             declared.extend(vocabulary.extra_literals.iter().map(|word| word.to_string()));
@@ -1078,28 +1190,60 @@ fn every_enumerated_field_carries_exactly_the_words_the_crate_writes() {
 
 /// The words the sources of one vocabulary produce.
 ///
-/// A source is a FUNCTION (its string literals are the words) or an
-/// ENUM (its variant names, renamed by the enum's own rule, are the
-/// words). The two are told apart by what the crate declares.
+/// A source is a FUNCTION (its string literals are the words), an ENUM
+/// (its variant names, renamed by the enum's own rule, are the words) or
+/// a CONSTANT (its value is the word — one, or a list of them).
+///
+/// The three are told apart by what the crate declares under that name.
+/// A name that resolves to MORE THAN ONE of them is ambiguous, and the
+/// gate refuses it rather than picking one: a vocabulary that means two
+/// things is a vocabulary nobody can check.
 fn vocabulary_words(
     functions: &[SourceFunction],
     enums: &[SourceEnum],
+    constants: &[SourceConstant],
     vocabulary: &Vocabulary,
 ) -> BTreeSet<String> {
     let mut collected = BTreeSet::new();
     for name in vocabulary.sources {
-        if let Some(enum_) = enums.iter().find(|candidate| candidate.name == *name) {
+        let enum_match = enums.iter().find(|candidate| candidate.name == *name);
+        let function_match = functions.iter().find(|candidate| candidate.name == *name);
+        let constant_matches: Vec<&SourceConstant> = constants
+            .iter()
+            .filter(|candidate| candidate.name == *name)
+            .collect();
+
+        let kinds = usize::from(enum_match.is_some())
+            + usize::from(function_match.is_some())
+            + usize::from(!constant_matches.is_empty());
+        assert_eq!(
+            kinds,
+            1,
+            "the vocabulary points at the source {name}, and the crate declares it {} times — the source must be exactly one of a function, an enum or a constant",
+            kinds
+        );
+
+        if let Some(enum_) = enum_match {
             for variant in &enum_.variants {
                 collected.insert(serde_variant_name(enum_.rename_all.as_deref(), &variant.name));
             }
             continue;
         }
-        let function = functions.iter().find(|function| function.name == *name).unwrap_or_else(|| {
-            panic!(
-                "the vocabulary points at the source {name}, and the crate declares neither a function nor an enum by that name"
-            )
-        });
-        collected.extend(function.literals.iter().cloned());
+        if let Some(function) = function_match {
+            collected.extend(function.literals.iter().cloned());
+            continue;
+        }
+
+        // A constant. The owner may declare the same name in two crates —
+        // then the source is ambiguous, and the gate says so instead of
+        // taking the first one it finds.
+        assert_eq!(
+            constant_matches.len(),
+            1,
+            "the vocabulary points at the constant {name}, and the crate declares it {} times",
+            constant_matches.len()
+        );
+        collected.extend(constant_matches[0].values.iter().cloned());
     }
     collected
 }
@@ -1188,11 +1332,25 @@ fn every_named_field_type_resolves() {
     }
 }
 
+/// Whether a field's type carries a CLOSED vocabulary of words.
+///
+/// Two shapes qualify: the word itself (`Enum`) and a LIST of words
+/// (`Array(&Enum)`) — the embed profile's manifest publishes three such
+/// lists (the dimension sources, the verdicts and the provider names),
+/// and a list of words is as closed as one word.
+fn is_enumerated(ty: &PayloadType) -> bool {
+    match ty {
+        PayloadType::Enum => true,
+        PayloadType::Array(inner) => matches!(**inner, PayloadType::Enum),
+        _ => false,
+    }
+}
+
 #[test]
 fn every_enumerated_field_declares_its_vocabulary() {
     for shape in PAYLOAD_SHAPES {
         for field in shape.fields {
-            if field.ty == PayloadType::Enum {
+            if is_enumerated(&field.ty) {
                 assert!(
                     field.vocabulary.is_some(),
                     "{}: the field {} is enumerated but declares no vocabulary",
@@ -1363,6 +1521,124 @@ fn the_chain_soul_and_case_families_are_in_the_table() {
     }
 }
 
+/// The embed-profile family is in the table, with the keys MEASURED on
+/// the built module.
+///
+/// MEASURED 2026-11-24 on the built module: the manifest answers SIX
+/// keys and the facts FOURTEEN, in the order the structs declare them.
+/// The list here is that measurement, written down once — so a shape that
+/// grows a key or loses one has to say so out loud.
+#[test]
+fn the_embed_profile_family_is_in_the_table() {
+    for export in [
+        "bridge_embed_profile_manifest",
+        "bridge_embed_profile_facts",
+    ] {
+        assert!(
+            BRIDGE_PAYLOADS.iter().any(|payload| payload.export == export),
+            "{export} is missing from the table"
+        );
+    }
+
+    let manifest = PAYLOAD_SHAPES
+        .iter()
+        .find(|shape| shape.name == "EmbedProfileManifestPayload")
+        .expect("the embed-profile manifest shape is missing");
+    assert_eq!(manifest.rust_type, "EmbedProfileManifest");
+    assert_eq!(manifest.naming, PayloadNaming::Serde);
+    let names: Vec<&str> = manifest.fields.iter().map(|field| field.name).collect();
+    assert_eq!(
+        names,
+        vec![
+            "schemaVersion",
+            "env",
+            "defaults",
+            "dimensionSources",
+            "verdicts",
+            "modes",
+        ],
+        "the manifest's keys are the ones MEASURED on the built module"
+    );
+
+    let facts = PAYLOAD_SHAPES
+        .iter()
+        .find(|shape| shape.name == "EmbedProfileFactsPayload")
+        .expect("the embed-profile facts shape is missing");
+    assert_eq!(facts.rust_type, "EmbedProfile");
+    let names: Vec<&str> = facts.fields.iter().map(|field| field.name).collect();
+    assert_eq!(
+        names,
+        vec![
+            "schemaVersion",
+            "indexPath",
+            "indexDimension",
+            "configuredDimension",
+            "dimension",
+            "dimensionSource",
+            "model",
+            "modelSource",
+            "providerConfigured",
+            "dimensionMismatch",
+            "mode",
+            "verdict",
+            "remedy",
+            "dimensionRemedy",
+        ],
+        "the facts' keys are the ones MEASURED on the built module"
+    );
+
+    // The `modes` of the manifest carry THREE keys — the third one,
+    // `alias`, is the key the hand-written TypeScript interface did not
+    // know about.
+    let modes = PAYLOAD_SHAPES
+        .iter()
+        .find(|shape| shape.name == "EmbedProfileModesPayload")
+        .expect("the embed-profile modes shape is missing");
+    let names: Vec<&str> = modes.fields.iter().map(|field| field.name).collect();
+    assert_eq!(names, vec!["local", "alias", "providers"]);
+}
+
+/// A CONSTANT can be the source of a closed vocabulary.
+///
+/// The embed profile's words live in constants (`SOURCE_ENV`,
+/// `VERDICT_OK`, `PROVIDER_MODE_NAMES`), not in a function and not in an
+/// enum — so the gate reads them as sources too. Without this, the owner
+/// would have had to declare the words twice: once in the constant and
+/// once in the table.
+#[test]
+fn a_constant_can_be_the_source_of_a_closed_vocabulary() {
+    let (_, functions, enums, constants) = crate_sources();
+
+    let one = Vocabulary {
+        values: &["env"],
+        sources: &["SOURCE_ENV"],
+        extra_literals: &[],
+    };
+    let words = vocabulary_words(&functions, &enums, &constants, &one);
+    assert_eq!(words, BTreeSet::from(["env".to_string()]));
+
+    // A `&[&str]` constant speaks a LIST of words.
+    let many = Vocabulary {
+        values: &[
+            "openai-compatible",
+            "ollama",
+            "cohere",
+            "voyage",
+            "jina",
+            "mistral",
+            "together",
+            "nvidia",
+            "mixedbread",
+        ],
+        sources: &["PROVIDER_MODE_NAMES"],
+        extra_literals: &[],
+    };
+    let words = vocabulary_words(&functions, &enums, &constants, &many);
+    assert_eq!(words.len(), 9);
+    assert!(words.contains("openai-compatible"));
+    assert!(words.contains("mixedbread"));
+}
+
 /// The union of an enum's variant fields, in order of first appearance.
 ///
 /// A tagged enum puts ONE variant's fields on the wire, so the shape of
@@ -1387,7 +1663,7 @@ fn union_fields(enum_: &SourceEnum) -> Vec<SourceField> {
 
 #[test]
 fn every_enum_shape_is_the_tag_and_the_union_of_its_variants() {
-    let (_, _, enums) = crate_sources();
+    let (_, _, enums, _) = crate_sources();
     let rust_types: Vec<&'static str> = PAYLOAD_SHAPES.iter().map(|shape| shape.rust_type).collect();
 
     let mut checked = 0;
