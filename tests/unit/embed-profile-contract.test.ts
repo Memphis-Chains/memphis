@@ -223,11 +223,23 @@ describe('the embed-profile contract — the TypeScript side keeps no copy of th
   });
 
   it('takes the mode vocabulary from the mirror, not from a hand-written list', () => {
-    const code = codeOnly('src/infra/config/schema.ts');
-    expect(code).toContain('EMBED_PROFILE_PROVIDER_MODES');
-    expect(code).toContain('EMBED_PROFILE_PROVIDER_ALIAS');
-    expect(code).toContain('EMBED_PROFILE_LOCAL_MODE');
+    const schema = codeOnly('src/infra/config/schema.ts');
+    expect(schema).toContain('EMBED_PROFILE_PROVIDER_MODES');
+    expect(schema).toContain('EMBED_PROFILE_PROVIDER_ALIAS');
+    expect(schema).toContain('EMBED_PROFILE_LOCAL_MODE');
     // The old hand-written enum named the same eleven words.
-    expect(code).not.toMatch(/'openai-compatible'/);
+    expect(schema).not.toMatch(/'openai-compatible'/);
+
+    // The doctor kept a second copy of the same ten words, and the
+    // onboarding wizard a third. A provider added to the owner would
+    // have been mislabelled by the doctor and rejected by the wizard.
+    for (const file of [
+      'src/infra/cli/utils/doctor-v2.ts',
+      'src/infra/cli/onboarding-wizard.ts',
+    ]) {
+      const code = codeOnly(file);
+      expect(code, file).toContain('EMBED_PROFILE_PROVIDER_MODES');
+      expect(code, file).not.toMatch(/'openai-compatible'/);
+    }
   });
 });
