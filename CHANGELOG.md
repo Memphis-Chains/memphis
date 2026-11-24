@@ -388,4 +388,57 @@ oversight, and no repository-wide reformat was done here.
 
 ## Unreleased
 
+### The embed profile has one owner, and it answers with its source
+
+"Which embedding profile is in force?" had four owners on this host and four
+answers. The dimension default was a hard-coded `32` in four places plus the
+config schema — and `32` was never an embedding dimension: it is
+`DEFAULT_EMBEDDING_DIM`, the width of the LOCAL DETERMINISTIC embedder,
+the placeholder used when no provider is configured, applied unconditionally.
+The index-path default was written twice with two roots (HOME-based in
+TypeScript, data-dir-based in Rust), so the two sides read different files
+whenever `MEMPHIS_DATA_DIR` is not `~/.memphis`.
+
+Measured on the operator's host, 2026-11-23:
+
+| process | index it reads | dim | result |
+| --- | --- | --- | --- |
+| the service (systemd `EnvironmentFile`) | `embed/bge-m3-20261106/index-v1.json` | 1024 | `mode: semantic` |
+| a shell, the CLI, any spawned script | `embed/index-v1.json` | 768 on disk vs **32** configured | `index_dimension_mismatch: disk_dim=768 config_dim=32` |
+
+The mismatch was not the cause. The cause was that the shell has no
+provider configured at all.
+
+The rule now lives in ONE module, `crates/memphis-embed/src/profile.rs`:
+the index path, the dimension, the model, the source of each, and the
+verdict. The dimension is resolved `env` → the dimension recorded **in the
+index on disk** → the local deterministic width (reached only when there is
+no index to contradict it). The model is never guessed from a name. The
+TypeScript side asks through the bridge and keeps no copy of the rule; the
+vocabulary reaches it as a projection.
+
+Measured again, 2026-11-24, the owner asked for the two processes this host
+has:
+
+| process | dimension | verdict |
+| --- | --- | --- |
+| the service | **1024** (from `env`) | `ok` |
+| a bare shell | **768** (from the index) | `no-provider` |
+
+The false mismatch is gone, and the verdict names the cause that is there.
+
+A claim the code no longer supported: the comment in
+`src/infra/http/health.ts` said the provider's vector was "truncated to the
+configured dim without warning". That was true on 2026-10-25 and stopped
+being true on 2026-11-06, when the provider path became strict (PR #749).
+The comment survived 18 days and was quoted in the error ledger; it is now
+the measured behaviour — with a provider the wrong width is a **loud**
+error, with the local embedder it is the **silent** one
+(`cosine_similarity` returns 0.0 for vectors of unequal length).
+
+Shape: one owner, one artefact of cases (14, every one naming a committed
+fixture index), two runners (Rust 7 tests, TypeScript 9 tests), and a gate
+that fails when the mirror drifts (`ops:sync-embed-profile-contract
+-- --check`, in CI).
+
 ## v1.13.0 - 2026-09-05

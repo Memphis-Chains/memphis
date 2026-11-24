@@ -13,6 +13,7 @@ import {
   type FirstRunState,
 } from '../../onboarding/first-run.js';
 import type { AppConfig } from '../config/schema.js';
+import { EMBED_PROFILE_LOCAL_MODE } from '../storage/embed-profile.generated.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 
 // Sprint 0.5 G2: these lists used to be three separate hard-coded arrays
@@ -388,11 +389,13 @@ function resolveOfflineMode(
 
 function collectEmbeddingSnapshot(rawEnv: NodeJS.ProcessEnv): RuntimeHealthSnapshot['embeddings'] {
   const adapter = getRustEmbedAdapterStatus(rawEnv);
-  const mode = rawEnv.RUST_EMBED_MODE ?? 'local';
+  const mode = rawEnv.RUST_EMBED_MODE ?? EMBED_PROFILE_LOCAL_MODE;
 
   let status: EmbeddingRuntimeStatus;
   if (!adapter.rustEnabled) status = 'disabled';
-  else if (mode === 'local' && adapter.bridgeLoaded && adapter.embedApiAvailable) status = 'local';
+  else if (mode === EMBED_PROFILE_LOCAL_MODE && adapter.bridgeLoaded && adapter.embedApiAvailable) {
+    status = 'local';
+  }
   else if (adapter.bridgeLoaded && adapter.embedApiAvailable) status = 'active';
   else status = 'degraded';
 

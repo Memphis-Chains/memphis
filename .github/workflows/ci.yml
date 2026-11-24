@@ -93,6 +93,20 @@ jobs:
         # never hand-edit.
         run: npm run -s ops:sync-chain-name-contract -- --check
 
+      - name: The embed profile matches the Rust core
+        # "Which embedding profile is in force?" had four owners and four
+        # answers: the dimension default was written as a hard-coded `32` in
+        # four places (it is `DEFAULT_EMBEDDING_DIM` — the width of the LOCAL
+        # DETERMINISTIC embedder, not an embedding dimension), and the
+        # index-path default was written twice with two different roots.
+        # Measured 2026-11-23 on the operator's host: the service answered
+        # `mode: semantic` with dim 1024 while a shell answered dim 32
+        # against an index that holds 768. The rule now has one owner
+        # (`crates/memphis-embed/src/profile.rs`); the TypeScript side is its
+        # projection, and both arms check themselves against the artefact.
+        # Regenerate, never hand-edit.
+        run: npm run -s ops:sync-embed-profile-contract -- --check
+
       - name: The published runtime's file closure covers every module it loads
         # v1.14.0 did not publish. The tarball shipped
         # `dist/infra/cli/commands/backup-manifest.js` without the

@@ -71,6 +71,10 @@ import { buildRuntimeHealthSnapshot } from '../../runtime/runtime-health.js';
 import { repairRuntimeState } from '../../runtime/runtime-repair.js';
 import { isSchedulerTaskStatus, type SchedulerTaskStatus } from '../../runtime/scheduler-status.js';
 import { diagnoseChainHashes, rebuildChainHashes } from '../../storage/chain-adapter.js';
+import {
+  EMBED_PROFILE_PROVIDER_ALIAS,
+  EMBED_PROFILE_PROVIDER_MODES,
+} from '../../storage/embed-profile.generated.js';
 import { assessRustBridgeManifestStatus } from '../../storage/rust-bridge-manifest.js';
 import { embedReset, embedSearch } from '../../storage/rust-embed-adapter.js';
 
@@ -1073,23 +1077,20 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   // reports; raw inclusion is a fresh secret-exposure path. Codex P2
   // round 5 flagged this.
   const embedProviderUrl = sanitizeProviderUrlForLog(process.env.RUST_EMBED_PROVIDER_URL?.trim());
-  // Mirror Rust adapter's mode whitelist (crates/memphis-operator/src/config.rs:
-  // embed_mode_from_env). Anything not in this set silently falls back
-  // to LocalDeterministic in Rust — TS used to label the typo as a
-  // remote backend, which produced a misleading fix string ("Remote
-  // ollame embed inference dominates the latency budget…") when the
-  // runtime is actually local. Codex P2 round 6 caught the mismatch.
-  const KNOWN_REMOTE_EMBED_MODES = new Set([
-    'provider',
-    'openai-compatible',
-    'ollama',
-    'cohere',
-    'voyage',
-    'jina',
-    'mistral',
-    'together',
-    'nvidia',
-    'mixedbread',
+  // The mode whitelist is the OWNER's, projected
+  // (`src/infra/storage/embed-profile.generated.ts` ← the manifest of
+  // `crates/memphis-embed/src/profile.rs`). Anything not in this set
+  // silently falls back to LocalDeterministic in Rust — TS used to label
+  // the typo as a remote backend, which produced a misleading fix string
+  // ("Remote ollame embed inference dominates the latency budget…") when
+  // the runtime is actually local. Codex P2 round 6 caught the mismatch.
+  //
+  // This used to be a hand-written list of the same ten words, with a
+  // comment pointing at the Rust adapter's own copy. Both copies could
+  // only be as fresh as the last time somebody remembered to update them.
+  const KNOWN_REMOTE_EMBED_MODES = new Set<string>([
+    ...EMBED_PROFILE_PROVIDER_MODES,
+    EMBED_PROFILE_PROVIDER_ALIAS,
   ]);
   const isLocalMode = embedMode === 'local' || !KNOWN_REMOTE_EMBED_MODES.has(embedMode);
   const embedBackendLabel = isLocalMode

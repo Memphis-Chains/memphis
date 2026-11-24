@@ -2,6 +2,11 @@ import { z } from 'zod';
 
 import { PROVIDER_NAMES } from '../../core/types.js';
 import { MINIMAX_REASONING_EFFORTS } from '../../providers/minimax/config.js';
+import {
+  EMBED_PROFILE_LOCAL_MODE,
+  EMBED_PROFILE_PROVIDER_ALIAS,
+  EMBED_PROFILE_PROVIDER_MODES,
+} from '../storage/embed-profile.generated.js';
 
 const boolFromString = z.preprocess((v) => {
   if (typeof v === 'boolean') return v;
@@ -191,22 +196,26 @@ export const envSchema = z.object({
   MEMPHIS_SAFE_MODE: boolFromString.default(false),
   MEMPHIS_STRICT_MODE: boolFromString.default(false),
   MEMPHIS_FAULT_INJECT: z.string().optional(),
+  // The mode vocabulary is the OWNER's, projected from
+  // `crates/memphis-embed/src/profile.rs` into
+  // `src/infra/storage/embed-profile.generated.ts`. This used to be a
+  // hand-written list of the same eleven words — a sixth copy of the
+  // vocabulary — and a copy that could only ever be as fresh as the last
+  // time somebody remembered to update it here.
   RUST_EMBED_MODE: z
     .enum([
-      'local',
-      'openai-compatible',
-      'provider',
-      'ollama',
-      'cohere',
-      'voyage',
-      'jina',
-      'mistral',
-      'together',
-      'nvidia',
-      'mixedbread',
+      ...EMBED_PROFILE_PROVIDER_MODES,
+      EMBED_PROFILE_PROVIDER_ALIAS,
+      EMBED_PROFILE_LOCAL_MODE,
     ])
-    .default('local'),
-  RUST_EMBED_DIM: z.coerce.number().int().min(1).max(4096).default(32),
+    .default(EMBED_PROFILE_LOCAL_MODE),
+  // The embedding dimension has NO default here. It used to be
+  // `.default(32)` — the width of the LOCAL DETERMINISTIC embedder, not an
+  // embedding dimension — and a config object that says "32" is a config
+  // object that lies: the real rule is the owner's
+  // (`crates/memphis-embed/src/profile.rs`), which reads the environment,
+  // then the index on disk, then the local width.
+  RUST_EMBED_DIM: z.coerce.number().int().min(1).max(4096).optional(),
   RUST_EMBED_MAX_TEXT_BYTES: z.coerce.number().int().min(64).max(1000000).default(4096),
   RUST_EMBED_PROVIDER_URL: z.string().optional(),
   RUST_EMBED_PROVIDER_API_KEY: z.string().optional(),

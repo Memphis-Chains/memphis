@@ -26,7 +26,7 @@ import {
   type SelfGovernanceSnapshot,
 } from '../runtime/self-governance.js';
 import { snapshotTurnTelemetry, type TurnTelemetrySnapshot } from '../runtime/turn-telemetry.js';
-import { readEmbedIndexDimension } from '../storage/embed-index-metadata.js';
+import { tryResolveEmbedProfile } from '../storage/embed-profile.js';
 import { assessRustBridgeManifestStatus } from '../storage/rust-bridge-manifest.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 import type { WorkPollingSnapshot } from '../work/work-polling-service.js';
@@ -335,14 +335,21 @@ function checkRustBridge(rawEnv: NodeJS.ProcessEnv, runtime: RuntimeHealthSnapsh
 }
 
 async function checkEmbeddingProvider(rawEnv: NodeJS.ProcessEnv): Promise<CheckResult> {
-  const mode = rawEnv.RUST_EMBED_MODE ?? 'local';
+  // The MODE is the owner's answer, not this side's reading of the
+  // environment. This used to read `RUST_EMBED_MODE` itself and know
+  // three of the eleven mode words ('ollama', 'provider',
+  // 'openai-compatible') — a copy of the vocabulary that answered
+  // "no ping required" for every other provider, and that would have
+  // answered "local" for a mode the owner resolves to something else.
+  const view = tryResolveEmbedProfile(rawEnv);
+  const mode = view.available && view.facts ? view.facts.mode : 'local';
   let endpoint: string | undefined;
 
   if (mode === 'ollama') {
     const base = rawEnv.RUST_EMBED_PROVIDER_URL?.trim() || 'http://127.0.0.1:11434';
     endpoint = `${base.replace(/\/+$/, '').replace(/\/api\/embeddings$/, '')}/api/tags`;
   }
-  if (mode === 'provider' || mode === 'openai-compatible') {
+  if (mode === 'openai-compatible') {
     endpoint = rawEnv.RUST_EMBED_PROVIDER_URL;
   }
 
@@ -382,62 +389,81 @@ async function checkEmbeddingProvider(rawEnv: NodeJS.ProcessEnv): Promise<CheckR
 }
 
 /**
- * Compare the configured embedding dimension against the dimension of the
- * persisted index on disk.
+ * Report the embedding profile against the index on disk.
  *
- * A mismatch is the silent failure mode this exists for: `OllamaProvider`
- * truncates or pads the provider's vector to the configured `dim` without
- * warning (`crates/memphis-embed/src/pipeline.rs`, `vector.truncate(dim)`),
- * and `cosine_similarity` returns 0.0 for vectors of unequal length. So a
- * stale `RUST_EMBED_DIM` produces a structurally valid index that scores
- * every query at zero — recall returns hits, but none of them mean
- * anything. Neither `/health` nor any log line said so.
+ * The profile has ONE owner — the Rust crate
+ * `crates/memphis-embed/src/profile.rs` — and this check ASKS it. It used
+ * to compare the two dimensions itself, with its own path rule
+ * (`~/.memphis/embed/index-v1.json`, HOME-based, while the runtime reads
+ * `<data_dir>/embed/index-v1.json`) and its own default width (32 — the
+ * width of the LOCAL DETERMINISTIC embedder, not an embedding dimension).
+ * Two different files, two different answers, and neither of them was the
+ * runtime's.
  *
- * `getTensorStatus` already computes this as `legacyDimMismatch`; it just
- * was not surfaced on the surface operators actually watch.
+ * WHAT A MISMATCH COSTS — and the two ways it costs it:
+ *
+ * * With a PROVIDER configured, the provider's own width is the truth and
+ *   the provider path is STRICT (`parse_embedding_vector` in
+ *   `crates/memphis-embed/src/pipeline.rs`): a 1024-wide answer to a
+ *   32-wide configuration is a loud error, "ollama returned embedding
+ *   dimension 1024, expected 32", and every embed fails.
+ * * With the LOCAL embedder, the vector is always exactly `dim` wide, so
+ *   nothing fails at all: a 32-wide query is compared against a 768-wide
+ *   stored vector, and `cosine_similarity` returns 0.0 for vectors of
+ *   unequal length. That is the SILENT half — recall returns hits, and
+ *   none of them mean anything.
+ *
+ * (The first bullet used to say the vector was "truncated without
+ * warning". That was true on 2026-10-25 and stopped being true on
+ * 2026-11-06, when the provider path became strict. The old comment was
+ * still here on 2026-11-24.)
  */
 async function checkEmbedIndexDimension(rawEnv: NodeJS.ProcessEnv): Promise<CheckResult> {
-  const persistPath =
-    rawEnv.RUST_EMBED_PERSIST_PATH?.trim() ||
-    resolve(rawEnv.HOME ?? '.', '.memphis', 'embed', 'index-v1.json');
-
-  const rawDim = Number(rawEnv.RUST_EMBED_DIM);
-  const configuredDim = Number.isFinite(rawDim) && rawDim > 0 ? Math.trunc(rawDim) : 32;
-
-  if (!existsSync(persistPath)) {
-    return { status: 'ok', message: 'no persisted index yet (clean state)' };
+  const view = tryResolveEmbedProfile(rawEnv);
+  if (!view.available || !view.facts) {
+    return {
+      status: 'fail',
+      message: 'the embedding profile could not be resolved',
+      fixAction:
+        `${view.reason ?? 'the embed-profile bridge did not answer'} — ` +
+        'the profile has one owner (the Rust core), so there is nothing to fall back to. ' +
+        'Run `npm run build:rust:release`, or install the platform sub-package.',
+    };
   }
 
-  let onDiskDim: unknown;
-  try {
-    onDiskDim = readEmbedIndexDimension(persistPath);
-  } catch {
+  const facts = view.facts;
+
+  if (facts.dimensionMismatch) {
+    return {
+      status: 'fail',
+      message:
+        `dim mismatch: config=${facts.configuredDimension} index=${facts.indexDimension}`,
+      fixAction:
+        facts.dimensionRemedy ??
+        facts.remedy ??
+        `RUST_EMBED_DIM=${facts.configuredDimension} but ${facts.indexPath} holds ` +
+          `dim=${facts.indexDimension}. Set RUST_EMBED_DIM=${facts.indexDimension} to match ` +
+          'the existing index, or rebuild it: `memphis embed reindex` (warm the provider ' +
+          'first, and run it in a process that has actually loaded the new .env).',
+    };
+  }
+
+  if (!existsSync(facts.indexPath)) {
+    return {
+      status: 'ok',
+      message: `no persisted index yet (clean state), dim=${facts.dimension} from ${facts.dimensionSource}`,
+    };
+  }
+
+  if (facts.indexDimension === null) {
     // A corrupt index is not a dimension mismatch. Leave it to the
     // dedicated corruption paths rather than mislabel the cause here.
     return { status: 'ok', message: 'index present but not readable as JSON' };
   }
 
-  if (typeof onDiskDim !== 'number') {
-    return { status: 'ok', message: 'index present without a dim field' };
-  }
-
-  if (onDiskDim === configuredDim) {
-    return {
-      status: 'ok',
-      message: `dim=${configuredDim} matches index`,
-    };
-  }
-
   return {
-    status: 'fail',
-    message: `dim mismatch: config=${configuredDim} index=${onDiskDim}`,
-    fixAction:
-      `RUST_EMBED_DIM=${configuredDim} but ${persistPath} holds dim=${onDiskDim}. ` +
-      'Queries embed to a different width than the stored vectors, so cosine ' +
-      'similarity scores 0 and recall matches nothing meaningful. ' +
-      `Set RUST_EMBED_DIM=${onDiskDim} to match the existing index, or rebuild it: ` +
-      '`memphis embed reindex` (warm the provider first, and run it in a process ' +
-      'that has actually loaded the new .env).',
+    status: 'ok',
+    message: `dim=${facts.dimension} matches index`,
   };
 }
 

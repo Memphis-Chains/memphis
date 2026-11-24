@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
@@ -7,9 +8,14 @@ use memphis_core::loop_engine::{LoopAction, LoopLimits, LoopState};
 use memphis_core::signature::{sign_block, verify_block_signature_with_allowlist};
 use memphis_core::soul::{validate_block, validate_block_strict};
 use memphis_embed::{
-    set_shutdown_barrier, EmbedConfig, EmbedMode, EmbedPersistenceConfig,
+    set_shutdown_barrier, EmbedConfig, EmbedPersistenceConfig,
     EmbedPersistenceLoadState, EmbedPipeline, ReplacementState,
 };
+// `EmbedMode` is only named by the test-time view of the process
+// environment (`current_embed_mode`); the production path reads the mode
+// off the map it already holds, so the import would be dead code there.
+#[cfg(test)]
+use memphis_embed::EmbedMode;
 // `napi-derive` does NOT generate the export registration when it expands
 // under `cfg(test)` — see `gen_fn_register` in napi-derive-backend, which
 // returns an empty token stream when `cfg!(test)` is true. The result is that
@@ -218,34 +224,37 @@ fn trim_opt_env(name: &str) -> Option<String> {
     })
 }
 
-fn embed_mode_from_env() -> EmbedMode {
-    let raw = std::env::var("RUST_EMBED_MODE").unwrap_or_else(|_| "local".to_string());
-    let mode = raw.trim().to_ascii_lowercase();
-
-    let provider = match mode.as_str() {
-        "local" => None,
-        "provider" | "openai-compatible" => Some("openai-compatible"),
-        "ollama" => Some("ollama"),
-        "cohere" => Some("cohere"),
-        "voyage" => Some("voyage"),
-        "jina" => Some("jina"),
-        "mistral" => Some("mistral"),
-        "together" => Some("together"),
-        "nvidia" => Some("nvidia"),
-        "mixedbread" => Some("mixedbread"),
-        _ => None,
-    };
-
-    match provider {
-        Some(name) => EmbedMode::Provider(name.to_string()),
-        None => EmbedMode::LocalDeterministic,
-    }
+/// The embedding mode of THIS process, as the owner sees it.
+///
+/// A thin delegate: the vocabulary lives in the owner
+/// (`memphis_embed::profile::embed_mode_from_env`). This file used to carry
+/// its own copy of the same words in the same order, which is one copy too
+/// many - a name added to one side silently means "local deterministic" on
+/// the other, and the profile's verdict flips to `no-provider`.
+///
+/// Test-only on purpose: production reads the mode off the environment map
+/// it already has (`embed_config_from_env`), and a second reading of the
+/// process environment could only ever disagree with the first.
+#[cfg(test)]
+fn current_embed_mode() -> EmbedMode {
+    let env = std::env::vars().collect::<HashMap<String, String>>();
+    memphis_embed::embed_mode_from_env(&env)
 }
 
 fn embed_config_from_env() -> EmbedConfig {
+    // The embed profile has ONE owner (`memphis_embed::profile`). This used
+    // to carry its own copy of the mode vocabulary and a hard-coded dimension
+    // of 32 - `DEFAULT_EMBEDDING_DIM`, the width of the local deterministic
+    // embedder, applied even when a real provider was configured. Measured
+    // 2026-11-23: the service answers `mode: semantic` with dim 1024, while
+    // a process without the service's environment answered
+    // `index_dimension_mismatch: disk_dim=768 config_dim=32`.
+    let env = std::env::vars().collect::<HashMap<String, String>>();
+    let mode = memphis_embed::embed_mode_from_env(&env);
+    let dim = memphis_embed::resolve_embed_profile(&env, &napi_runtime_root(), &mode).dimension;
     EmbedConfig {
-        mode: embed_mode_from_env(),
-        dim: parse_usize_env("RUST_EMBED_DIM", 32),
+        mode,
+        dim,
         max_text_bytes: parse_usize_env("RUST_EMBED_MAX_TEXT_BYTES", 4096),
         provider_url: trim_opt_env("RUST_EMBED_PROVIDER_URL"),
         provider_api_key: trim_opt_env("RUST_EMBED_PROVIDER_API_KEY"),
@@ -253,10 +262,20 @@ fn embed_config_from_env() -> EmbedConfig {
         provider_timeout_ms: parse_u64_env("RUST_EMBED_PROVIDER_TIMEOUT_MS", 8000),
         // Same env var the TypeScript provider reads
         // (`src/providers/index.ts`). Without it the Rust side omits
-        // `keep_alive` from the Ollama request, so the server unloads the
-        // model after 5 idle minutes and every embed pays a cold load.
+        // `keep_alive` from the Ollama request, so the server unloads
+        // the model after 5 idle minutes and every embed pays a cold load.
         provider_keep_alive: trim_opt_env("OLLAMA_KEEP_ALIVE"),
     }
+}
+
+/// The directory relative paths are resolved against.
+///
+/// `MEMPHIS_RUNTIME_ROOT` when the operator sets it, the working directory
+/// otherwise - the same rule `embed_persistence_path_from_env` used.
+fn napi_runtime_root() -> PathBuf {
+    std::env::var("MEMPHIS_RUNTIME_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
 fn embed_persistence_enabled_from_env() -> bool {
@@ -1132,6 +1151,34 @@ pub fn paths_normalize_chain_name(input: String) -> String {
 /// second hand-written copy. The rule itself lives in the owner, because
 /// the rule is a cross-arm contract and the owner is the crate both arms
 /// can reach.
+// The embed PROFILE — the index path, the dimension, the model, and the
+// source of each — has one owner: `memphis_embed::profile`. The TypeScript
+// side reads the RULE through the manifest and the LIVE values through the
+// facts, so the two sides cannot answer "which embedding profile is in
+// force?" differently.
+//
+// Why the facts take an environment as an argument: the operator's runtime
+// and the bridge read the PROCESS environment, but a TypeScript surface may
+// be asked about a different environment (a test, a dry run, the setup
+// wizard). The owner takes a map, so the question can be asked about any
+// environment — and the answer is the owner's, not a second implementation's.
+
+#[napi(catch_unwind, js_name = "bridge_embed_profile_manifest")]
+pub fn bridge_embed_profile_manifest() -> String {
+    ok(memphis_embed::embed_profile_manifest())
+}
+
+#[napi(catch_unwind, js_name = "bridge_embed_profile_facts")]
+pub fn bridge_embed_profile_facts(env_json: String, root: String) -> String {
+    let env = match parse_env_json(&env_json) {
+        Ok(env) => env,
+        Err(e) => return err(e),
+    };
+    let mode = memphis_embed::embed_mode_from_env(&env);
+    let profile = memphis_embed::resolve_embed_profile(&env, std::path::Path::new(&root), &mode);
+    ok(profile)
+}
+
 #[napi(catch_unwind, js_name = "bridge_chain_name_manifest")]
 pub fn bridge_chain_name_manifest() -> String {
     use memphis_paths::chain_names as names;
@@ -1261,7 +1308,7 @@ pub fn mv2_inspect(bytes_hex: String) -> String {
 mod tests {
     use super::{
         bridge_manifest, case_append, case_query, case_rebuild, chain_append, chain_validate,
-        embed_mode_from_env, embed_persistence_enabled_from_env, embed_reset, embed_search,
+        current_embed_mode, embed_persistence_enabled_from_env, embed_reset, embed_search,
         embed_search_tuned, embed_shutdown, embed_store, paths_normalize_chain_name,
         paths_resolve_chain_path, paths_resolve_chains_dir, paths_resolve_data_dir,
         paths_resolve_vault_entries, paths_resolve_vault_state, soul_loop_step, soul_replay,
@@ -1466,37 +1513,37 @@ mod tests {
         let _guard = env_lock();
         std::env::set_var("RUST_EMBED_MODE", "voyage");
         assert_eq!(
-            embed_mode_from_env(),
+            current_embed_mode(),
             EmbedMode::Provider("voyage".to_string())
         );
 
         std::env::set_var("RUST_EMBED_MODE", "jina");
         assert_eq!(
-            embed_mode_from_env(),
+            current_embed_mode(),
             EmbedMode::Provider("jina".to_string())
         );
 
         std::env::set_var("RUST_EMBED_MODE", "mistral");
         assert_eq!(
-            embed_mode_from_env(),
+            current_embed_mode(),
             EmbedMode::Provider("mistral".to_string())
         );
 
         std::env::set_var("RUST_EMBED_MODE", "together");
         assert_eq!(
-            embed_mode_from_env(),
+            current_embed_mode(),
             EmbedMode::Provider("together".to_string())
         );
 
         std::env::set_var("RUST_EMBED_MODE", "nvidia");
         assert_eq!(
-            embed_mode_from_env(),
+            current_embed_mode(),
             EmbedMode::Provider("nvidia".to_string())
         );
 
         std::env::set_var("RUST_EMBED_MODE", "mixedbread");
         assert_eq!(
-            embed_mode_from_env(),
+            current_embed_mode(),
             EmbedMode::Provider("mixedbread".to_string())
         );
 
