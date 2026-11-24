@@ -64,6 +64,11 @@
       "required": true
     },
     {
+      "canonical": "case_index_status",
+      "jsName": "case_index_status",
+      "required": false
+    },
+    {
       "canonical": "embed_clear_in_memory",
       "jsName": "embed_clear_in_memory",
       "required": false

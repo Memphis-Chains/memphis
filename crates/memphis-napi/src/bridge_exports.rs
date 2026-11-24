@@ -3,7 +3,7 @@
 //! ## Why this table exists
 //!
 //! The N-API bridge exported 37 functions when this table was written (it
-//! exports **42** today — MEASURED 2026-11-24 on the built module, and
+//! exports **43** today — MEASURED 2026-11-24 on the built module, and
 //! the table grew with it). Until 2026-11-23 that vocabulary was declared
 //! in THREE places and compared by nobody:
 //!
@@ -36,7 +36,7 @@
 //!
 //! The naming rule is napi-rs's: an explicit `js_name` is used verbatim, and
 //! a function without one is exported in camelCase. MEASURED 2026-11-24 on
-//! the built module: of the 42 exports, 25 carry an explicit `js_name` and
+//! the built module: of the 43 exports, 26 carry an explicit `js_name` and
 //! 17 do not — and ELEVEN of those reach JavaScript under a different
 //! spelling (the `paths_*` and `mv2_*` families), while the other six are
 //! single-word names whose camelCase form is the name itself. That is why
@@ -94,6 +94,11 @@ pub const BRIDGE_EXPORTS: &[BridgeExport] = &[
     BridgeExport { canonical: "case_append", js_name: "case_append", required: true },
     BridgeExport { canonical: "case_query", js_name: "case_query", required: true },
     BridgeExport { canonical: "case_rebuild", js_name: "case_rebuild", required: true },
+    // The health of the case index — the question that lets the runtime
+    // tell whether the cache is in step with the chain. OPTIONAL: a binary
+    // from before 2026-11-24 does not have it, and a runtime that cannot
+    // ask must still work — it just keeps using the index as it finds it.
+    BridgeExport { canonical: "case_index_status", js_name: "case_index_status", required: false },
     BridgeExport { canonical: "embed_clear_in_memory", js_name: "embed_clear_in_memory", required: false },
     BridgeExport { canonical: "embed_discard_replacement", js_name: "embed_discard_replacement", required: false },
     BridgeExport { canonical: "embed_flush", js_name: "embed_flush", required: true },

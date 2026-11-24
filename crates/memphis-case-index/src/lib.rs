@@ -302,6 +302,50 @@ impl CaseIndex {
             .optional()?;
         Ok(stored.as_deref() == Some(expected_hash))
     }
+
+    /// What the index holds — the health of the CACHE.
+    ///
+    /// MEASURED 2026-11-24 on the operator's host: the index held 1 372
+    /// entries while the `cases` chain held 2 190 case blocks, and the
+    /// index's `last_indexed_block` was 2 189 — the chain's LAST block.
+    /// So the tail looked perfect while the first 818 entries were gone,
+    /// and nothing could tell: the highest index says nothing about the
+    /// lowest.
+    ///
+    /// The COUNT is the answer, and the count is what the caller compares
+    /// with the chain's own count of case blocks. That is the only
+    /// comparison that catches a gap at the HEAD.
+    pub fn status(&self) -> Result<CaseIndexStatus, CaseIndexError> {
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM case_entries", [], |row| row.get(0))?;
+        let last: Option<i64> = self
+            .conn
+            .query_row("SELECT MAX(block_index) FROM case_entries", [], |row| {
+                row.get(0)
+            })
+            .optional()?
+            .flatten();
+        Ok(CaseIndexStatus {
+            indexed: count as usize,
+            last_indexed_block: last.map(|v| v as u64),
+        })
+    }
+}
+
+/// What the case index holds.
+///
+/// The count and the highest block index among the entries. A caller that
+/// knows how many case blocks its chain holds can tell, with the count
+/// alone, whether the index is in step with the chain — the highest index
+/// cannot: a gap at the head leaves it untouched.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaseIndexStatus {
+    /// How many entries the index holds.
+    pub indexed: usize,
+    /// The highest block index the index holds, or None when it holds none.
+    pub last_indexed_block: Option<u64>,
 }
 
 fn extract_common_fields(
@@ -824,6 +868,96 @@ mod tests {
         assert!(idx.verify_count(0).unwrap());
 
         // Cleanup
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// THE COUNT SEES A GAP AT THE HEAD; THE HIGHEST INDEX DOES NOT.
+    ///
+    /// MEASURED 2026-11-24 on the operator's host: the index held 1 372
+    /// entries where the chain holds 2 190 case blocks, and its highest
+    /// block index was the chain's LAST one. So every signal that looks
+    /// at the tail said "fine" while the first 818 entries were gone —
+    /// including the host's only nominative entry and both instrumental
+    /// ones.
+    ///
+    /// This is the falsifier for that blindness: index the TAIL of a
+    /// chain, and the highest index will not tell the caller that the
+    /// head is missing. The count will.
+    #[test]
+    fn the_status_tells_a_gap_at_the_head_that_the_last_index_cannot() {
+        let dir =
+            std::env::temp_dir().join(format!("memphis-case-index-head-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let db_path = dir.join("case-index.sqlite");
+
+        let idx = CaseIndex::open(&db_path).unwrap();
+
+        // The chain holds EIGHT case blocks; the index is given the last
+        // three of them — the state an index born mid-chain is in.
+        let mut blocks = Vec::new();
+        for index in 0..8u64 {
+            blocks.push(make_case_block(
+                index,
+                &CaseEntry::Nominative {
+                    entity: format!("entity-{index}"),
+                    action: "acted".into(),
+                    timestamp: "2026-03-22T10:00:00Z".into(),
+                },
+            ));
+        }
+        for block in blocks.iter().skip(5) {
+            assert!(idx.index_block(block).unwrap());
+        }
+
+        let status = idx.status().unwrap();
+        assert_eq!(status.indexed, 3, "the index holds three entries");
+        assert_eq!(
+            status.last_indexed_block,
+            Some(7),
+            "the highest index is the chain's LAST block — it cannot see the gap"
+        );
+
+        // The chain holds eight case blocks and the index holds three:
+        // THE COUNT IS THE SIGNAL. A caller that compares the two sees
+        // the drift; a caller that compares the highest index sees none.
+        let chain_case_blocks = blocks.len();
+        assert_ne!(
+            status.indexed, chain_case_blocks,
+            "the count must differ from the chain's, or the drift is invisible"
+        );
+
+        // And the repair makes them equal — so the check cannot loop.
+        let report = idx.rebuild(&blocks).unwrap();
+        assert_eq!(report.indexed, 8);
+        let status = idx.status().unwrap();
+        assert_eq!(status.indexed, chain_case_blocks);
+        assert_eq!(status.last_indexed_block, Some(7));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An empty index answers zero and no highest block — and says so
+    /// with a NULL, not with an absent key.
+    #[test]
+    fn an_empty_index_answers_zero_and_no_block() {
+        let dir =
+            std::env::temp_dir().join(format!("memphis-case-index-empty-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let db_path = dir.join("case-index.sqlite");
+
+        let idx = CaseIndex::open(&db_path).unwrap();
+        let status = idx.status().unwrap();
+        assert_eq!(status.indexed, 0);
+        assert_eq!(status.last_indexed_block, None);
+
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!(json["indexed"], 0);
+        assert!(
+            json["lastIndexedBlock"].is_null(),
+            "the highest block is PRESENT and null, not absent: {:?}",
+            json
+        );
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

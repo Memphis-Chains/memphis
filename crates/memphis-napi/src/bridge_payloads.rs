@@ -1084,10 +1084,27 @@ pub const EMBED_PROFILE_FACTS_SHAPE: PayloadShape = PayloadShape {
     ],
 };
 
+/// `case_index_status` — what the case index holds.
+///
+/// MEASURED 2026-11-24 on the built module: TWO keys — `indexed` and
+/// `lastIndexedBlock`. The second one is NULL when the index holds
+/// nothing: a serde `Option` without `skip_serializing_if` is present and
+/// null, not absent.
+pub const CASE_INDEX_STATUS_SHAPE: PayloadShape = PayloadShape {
+    name: "CaseIndexStatusPayload",
+    naming: PayloadNaming::Serde,
+    rust_type: "CaseIndexStatus",
+    fields: &[
+        PayloadField { name: "indexed", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "lastIndexedBlock", ty: PayloadType::Integer, optional: false, nullable: true, legacy_name: None, vocabulary: None },
+    ],
+};
+
 /// Every payload shape, by name.
 pub const PAYLOAD_SHAPES: &[PayloadShape] = &[
     BRIDGE_MANIFEST_SHAPE,
     BRIDGE_EXPORT_BINDING_SHAPE,
+    CASE_INDEX_STATUS_SHAPE,
     EMBED_PROFILE_MANIFEST_SHAPE,
     EMBED_PROFILE_ENV_SHAPE,
     EMBED_PROFILE_DEFAULTS_SHAPE,
@@ -1274,6 +1291,13 @@ pub const BRIDGE_PAYLOADS: &[BridgePayload] = &[
         export: "case_rebuild",
         transport: PayloadTransport::EnvelopeJson,
         shape: Some("CaseRebuildPayload"),
+    },
+    // The health of the case index — the question that lets the runtime
+    // tell whether the cache is in step with the chain it caches.
+    BridgePayload {
+        export: "case_index_status",
+        transport: PayloadTransport::EnvelopeJson,
+        shape: Some("CaseIndexStatusPayload"),
     },
 ];
 
