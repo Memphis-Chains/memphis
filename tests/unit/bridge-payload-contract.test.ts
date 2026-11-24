@@ -452,6 +452,67 @@ describe('the bridge payload contract', () => {
     expect(Object.keys(rebuilt!).sort()).toEqual(['errors', 'indexed', 'skipped']);
   });
 
+  it('the manifest family has no hand-written payload type left', () => {
+    // The manifest's shape was written down TWICE — once in the runtime's
+    // `RustBridgeManifest` and once in the export projection's reader —
+    // and the two copies disagreed with the wire: the runtime marked
+    // `exportBindings` and `optionalExports` OPTIONAL while the wire
+    // always sends them, and `optionalExports` — the field the wire
+    // carried wrong — was read by nobody at all.
+    const offenders: string[] = [];
+    const surfaces = [
+      'src/infra/storage/rust-bridge-manifest.ts',
+      'scripts/sync-bridge-export-contract.mts',
+    ];
+    const handWritten = [
+      'interface RustBridgeManifest {',
+      'jsName: string;',
+      'optionalExports?: string[];',
+      'exportBindings?: Binding[];',
+    ];
+
+    for (const surface of surfaces) {
+      const source = codeOf(surface);
+      for (const marker of handWritten) {
+        if (source.includes(marker)) offenders.push(`${surface}: ${marker}`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('the manifest answers with the projected keys', () => {
+    if (!bridge) return;
+
+    const manifestFn = bridge.bridge_manifest as (() => string) | undefined;
+    if (typeof manifestFn !== 'function') return;
+
+    const envelope = JSON.parse(manifestFn()) as {
+      ok: boolean;
+      data?: Record<string, unknown>;
+    };
+    expect(envelope.ok).toBe(true);
+
+    const declared = shapeOf('BridgeManifestPayload').fields.map((field) => field.name);
+    expect(Object.keys(envelope.data!).sort()).toEqual([...declared].sort());
+
+    // The optional list is DERIVED from the export table — it used to be a
+    // hand-written pair (`mv2_export`, `mv2_inspect`) from June 2026, while
+    // the table already knew ten optional exports. This is the check that
+    // keeps it derived.
+    const optional = envelope.data!.optionalExports as string[];
+    const bindings = envelope.data!.exportBindings as Array<{
+      canonical: string;
+      required: boolean;
+    }>;
+    expect(optional.sort()).toEqual(
+      bindings
+        .filter((binding) => !binding.required)
+        .map((binding) => binding.canonical)
+        .sort(),
+    );
+  });
+
   it('the mirror renders the closed vocabularies, not a bare string', () => {    const mirror = readFileSync(MIRROR, 'utf8');
     for (const shape of artefact.shapes) {
       for (const field of shape.fields) {
@@ -537,11 +598,10 @@ describe('the bridge payload contract', () => {
     // The vault, embed, chain, soul and case families are already
     // migrated: their shapes come from `bridge-payloads.generated.ts`.
     const stillToMigrate: Record<string, string> = {
-      'src/infra/storage/rust-bridge-manifest.ts': 'interface RustBridgeManifest',
       'src/infra/storage/rust-embed-profile-bridge.ts': 'interface EmbedProfileManifest',
     };
 
-    expect(Object.keys(stillToMigrate).length).toBe(2);
+    expect(Object.keys(stillToMigrate).length).toBe(1);
 
     for (const [surface, marker] of Object.entries(stillToMigrate)) {
       expect(readFileSync(surface, 'utf8')).toContain(marker);
@@ -555,6 +615,7 @@ describe('the bridge payload contract', () => {
       'src/infra/runtime/embedding-metadata.ts',
       'src/infra/storage/rust-chain-adapter.ts',
       'src/infra/storage/case-chain-adapter.ts',
+      'src/infra/storage/rust-bridge-manifest.ts',
     ];
     for (const surface of migrated) {
       expect(Object.keys(stillToMigrate)).not.toContain(surface);

@@ -806,8 +806,11 @@ fn rust_kind(
     if let Some(enum_) = enums.iter().find(|candidate| candidate.name == type_text) {
         return Some((Kind::Enum(enum_.name.clone()), false));
     }
+    // A path-qualified type (`bridge_exports::BridgeExportBinding`) names
+    // the same type as the bare one — the path is not part of the shape.
+    let type_text = type_text.rsplit("::").next().unwrap_or(type_text).trim();
     let kind = match type_text {
-        "String" | "&str" => Kind::String,
+        "String" | "&str" | "&'static str" => Kind::String,
         "bool" => Kind::Boolean,
         "u8" | "u16" | "u32" | "u64" | "usize" | "i8" | "i16" | "i32" | "i64" | "isize" => {
             Kind::Integer
@@ -841,6 +844,7 @@ fn crate_sources() -> (Vec<SourceStruct>, Vec<SourceFunction>, Vec<SourceEnum>) 
     for source in [
         include_str!("../src/lib.rs"),
         include_str!("../src/vault_bridge.rs"),
+        include_str!("../src/bridge_exports.rs"),
         include_str!("../../memphis-embed/src/metadata.rs"),
         // The chain, soul and case families live in the core crates, not
         // in the bridge — so the gate reads them from THERE.

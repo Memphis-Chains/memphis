@@ -2,8 +2,10 @@
 //!
 //! ## Why this table exists
 //!
-//! The N-API bridge exports 37 functions. Until 2026-11-23 that vocabulary
-//! was declared in THREE places and compared by nobody:
+//! The N-API bridge exported 37 functions when this table was written (it
+//! exports **42** today — MEASURED 2026-11-24 on the built module, and
+//! the table grew with it). Until 2026-11-23 that vocabulary was declared
+//! in THREE places and compared by nobody:
 //!
 //! - the hand-written list inside `bridge_manifest()` in this crate — which
 //!   named **34** exports, **omitted three** the bridge really exports
@@ -33,8 +35,14 @@
 //! drift from the code it describes.
 //!
 //! The naming rule is napi-rs's: an explicit `js_name` is used verbatim, and
-//! a function without one is exported in camelCase. Twenty exports set
-//! `js_name` and eleven do not, which is why the vocabulary is mixed.
+//! a function without one is exported in camelCase. MEASURED 2026-11-24 on
+//! the built module: of the 42 exports, 25 carry an explicit `js_name` and
+//! 17 do not — and ELEVEN of those reach JavaScript under a different
+//! spelling (the `paths_*` and `mv2_*` families), while the other six are
+//! single-word names whose camelCase form is the name itself. That is why
+//! the vocabulary is mixed.
+
+use serde::Serialize;
 
 /// One export of the N-API bridge.
 #[derive(Clone, Copy, Debug)]
@@ -42,6 +50,23 @@ pub struct BridgeExport {
     /// The canonical name — the Rust function's name.
     pub canonical: &'static str,
     /// The name the bridge exports to JavaScript.
+    pub js_name: &'static str,
+    /// Whether the runtime refuses to start without this export.
+    pub required: bool,
+}
+
+/// One export binding, as the manifest carries it.
+///
+/// This used to be a `serde_json::json!` literal per export — the shape
+/// was written down twice (once in the literal, once in the TypeScript
+/// reader) and nobody compared them. The struct is the shape, and the
+/// payload owner (`bridge_payloads.rs`) points at it.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct BridgeExportBinding {
+    /// The canonical name — the Rust function's name.
+    pub canonical: &'static str,
+    /// The name the bridge exports it under.
+    #[serde(rename = "jsName")]
     pub js_name: &'static str,
     /// Whether the runtime refuses to start without this export.
     pub required: bool,
@@ -115,16 +140,30 @@ pub fn required_names() -> Vec<&'static str> {
         .collect()
 }
 
-/// The `canonical -> js_name` bindings, as the manifest carries them.
-pub fn bindings() -> Vec<serde_json::Value> {
+/// The canonical names the runtime does NOT require.
+///
+/// This used to be a hand-written list of TWO names inside
+/// `bridge_manifest()` — a leftover from June 2026, from before this table
+/// existed. It named `mv2_export` and `mv2_inspect` while the table
+/// already knew TEN optional exports, so the manifest answered a question
+/// about optionality with a stale second copy of the rule. Nothing read
+/// it, which is why it stayed wrong for five months.
+pub fn optional_names() -> Vec<&'static str> {
     BRIDGE_EXPORTS
         .iter()
-        .map(|export| {
-            serde_json::json!({
-                "canonical": export.canonical,
-                "jsName": export.js_name,
-                "required": export.required,
-            })
+        .filter(|export| !export.required)
+        .map(|export| export.canonical)
+        .collect()
+}
+
+/// The `canonical -> js_name` bindings, as the manifest carries them.
+pub fn bindings() -> Vec<BridgeExportBinding> {
+    BRIDGE_EXPORTS
+        .iter()
+        .map(|export| BridgeExportBinding {
+            canonical: export.canonical,
+            js_name: export.js_name,
+            required: export.required,
         })
         .collect()
 }

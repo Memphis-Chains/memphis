@@ -1,5 +1,42 @@
 ## Unreleased
 
+### The manifest family has one owner too
+
+The fourth family of bridge payloads, and the one the runtime reads first:
+`bridge_manifest` is what the bridge serves about itself, and what the
+runtime asks before it decides the bridge is good enough to start.
+
+Measured on the built module: six keys, in this order — `exportBindings`,
+`exports`, `name`, `optionalExports`, `requiredExports`, `schemaVersion`.
+
+Three findings:
+
+- **The shape was written down twice** — once in the runtime's
+  `RustBridgeManifest` and once in the export projection's reader — and
+  both copies were wrong the same way: they marked `exportBindings` and
+  `optionalExports` optional, while the wire always sends both. Both
+  copies now come from the owner.
+- **`optionalExports` carried the wrong answer and nobody read it.** The
+  wire carried a hand-written list of two names (`mv2_export`,
+  `mv2_inspect`) — a leftover from June 2026, from before the export
+  table existed — while the table already knew ten optional exports. It
+  is derived from the table now, so the answer cannot drift from the rule
+  it reports, and a gate holds it there.
+- **The answer had no owner**: it was a `json!` literal, like the chain
+  and soul families. It is a struct now, and the binding it carries is a
+  typed struct too.
+
+One measured wire change, and only one: `optionalExports` now carries the
+table's ten optional exports instead of the hand-written two. The key set,
+the types, the key order and every other value are identical.
+
+`exportBindings` is optional in the contract for a measured reason: a
+binary older than the vocabulary table (before 2026-11-23) does not send
+it, and the export projection already failed loudly when it was missing.
+
+The ratchet counts the surfaces that still own a payload type — two down
+to one, and the one that remains is the embed-profile family.
+
 ### The embed family has one owner too
 
 The embed family's payloads were measured on the built module — against an
