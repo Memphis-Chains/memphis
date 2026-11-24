@@ -492,7 +492,8 @@ sibling `JsVaultStateResult` reaches it as `error_code`. Unifying that is a
 WIRE change, so it needs a compatibility window (the alias map E-01 already
 built), not a quiet edit. It is queued with the next phase of E-09.
 
-**PHASE 5 CLOSED 2026-11-24 — the embed-profile family** (PR #783). The
+**PHASE 5 CLOSED 2026-11-24 — the embed-profile family** (PR #783, squash
+`70df8edacde`). The
 LAST family of E-09, and the last surface that owned a payload type by
 hand. The ratchet's counter is EMPTY.
 
