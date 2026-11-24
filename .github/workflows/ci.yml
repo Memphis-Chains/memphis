@@ -106,6 +106,19 @@ jobs:
         # projected from the Rust core's table; regenerate, never hand-edit.
         run: npm run -s ops:sync-bridge-payload-contract -- --check
 
+      - name: The bridge payload shapes match the Rust structs
+        # The Rust arm of the same contract. The projection above proves the
+        # mirror is the owner's table; this proves the owner's table is the
+        # crate's own structs — the field NAME by napi-rs's rule or serde's
+        # rule, the TYPE, the PRESENCE (a napi `Option` is omitted, a serde
+        # `Option` is `null`, a `skip_serializing_if` field is absent), and
+        # the closed vocabularies against the source that writes them.
+        #
+        # It ran only in the local preflight until now, so a Rust-side
+        # rename or a new vocabulary word could have reached `main` with the
+        # owner silent — the owner is the whole point of E-09.
+        run: cargo test -p memphis-napi --test bridge_payload_contract
+
       - name: The embed profile matches the Rust core
         # "Which embedding profile is in force?" had four owners and four
         # answers: the dimension default was written as a hard-coded `32` in

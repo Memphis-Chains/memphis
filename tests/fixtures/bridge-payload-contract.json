@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generatedBy": "scripts/sync-bridge-payload-contract.mts",
   "owner": "crates/memphis-napi/src/bridge_payloads.rs",
   "shapes": [
@@ -12,7 +12,8 @@
           "optional": false,
           "type": {
             "kind": "bytes"
-          }
+          },
+          "vocabulary": null
         },
         {
           "legacyName": "masterKey",
@@ -21,10 +22,12 @@
           "optional": false,
           "type": {
             "kind": "bytes"
-          }
+          },
+          "vocabulary": null
         }
       ],
       "name": "VaultPayload",
+      "naming": "napiObject",
       "rustType": "JsVault"
     },
     {
@@ -36,7 +39,8 @@
           "optional": false,
           "type": {
             "kind": "string"
-          }
+          },
+          "vocabulary": null
         },
         {
           "legacyName": null,
@@ -45,7 +49,8 @@
           "optional": false,
           "type": {
             "kind": "string"
-          }
+          },
+          "vocabulary": null
         },
         {
           "legacyName": null,
@@ -54,7 +59,8 @@
           "optional": false,
           "type": {
             "kind": "bytes"
-          }
+          },
+          "vocabulary": null
         },
         {
           "legacyName": null,
@@ -63,7 +69,8 @@
           "optional": false,
           "type": {
             "kind": "bytes"
-          }
+          },
+          "vocabulary": null
         },
         {
           "legacyName": null,
@@ -72,7 +79,8 @@
           "optional": false,
           "type": {
             "kind": "bytes"
-          }
+          },
+          "vocabulary": null
         },
         {
           "legacyName": "createdAt",
@@ -81,10 +89,12 @@
           "optional": false,
           "type": {
             "kind": "string"
-          }
+          },
+          "vocabulary": null
         }
       ],
       "name": "VaultEntryPayload",
+      "naming": "napiObject",
       "rustType": "JsVaultEntry"
     },
     {
@@ -97,7 +107,8 @@
           "type": {
             "kind": "named",
             "name": "VaultPayload"
-          }
+          },
+          "vocabulary": null
         },
         {
           "legacyName": null,
@@ -106,7 +117,8 @@
           "optional": false,
           "type": {
             "kind": "string"
-          }
+          },
+          "vocabulary": null
         },
         {
           "legacyName": null,
@@ -115,10 +127,12 @@
           "optional": false,
           "type": {
             "kind": "string"
-          }
+          },
+          "vocabulary": null
         }
       ],
       "name": "VaultInitPayload",
+      "naming": "napiObject",
       "rustType": "JsVaultInitResult"
     },
     {
@@ -131,7 +145,8 @@
           "type": {
             "kind": "named",
             "name": "VaultPayload"
-          }
+          },
+          "vocabulary": null
         },
         {
           "legacyName": null,
@@ -140,7 +155,8 @@
           "optional": true,
           "type": {
             "kind": "integer"
-          }
+          },
+          "vocabulary": null
         },
         {
           "legacyName": null,
@@ -149,7 +165,8 @@
           "optional": true,
           "type": {
             "kind": "string"
-          }
+          },
+          "vocabulary": null
         },
         {
           "legacyName": null,
@@ -158,10 +175,12 @@
           "optional": true,
           "type": {
             "kind": "string"
-          }
+          },
+          "vocabulary": null
         }
       ],
       "name": "VaultLoadStatePayload",
+      "naming": "napiObject",
       "rustType": "JsVaultStateResult"
     },
     {
@@ -173,7 +192,8 @@
           "optional": true,
           "type": {
             "kind": "string"
-          }
+          },
+          "vocabulary": null
         },
         {
           "legacyName": null,
@@ -183,7 +203,8 @@
           "type": {
             "kind": "named",
             "name": "VaultEntryPayload"
-          }
+          },
+          "vocabulary": null
         },
         {
           "legacyName": null,
@@ -192,11 +213,691 @@
           "optional": true,
           "type": {
             "kind": "string"
-          }
+          },
+          "vocabulary": null
         }
       ],
       "name": "VaultEntriesPayload",
+      "naming": "napiObject",
       "rustType": "JsEntriesResult"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "id",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "count",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "dim",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "dtype",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "enum"
+          },
+          "vocabulary": {
+            "extraLiterals": [
+              "embed_pipeline_lock_failed"
+            ],
+            "sourceFunctions": [
+              "embed_store",
+              "embed_store_many",
+              "embed_flush",
+              "embed_search",
+              "embed_search_tuned"
+            ],
+            "values": [
+              "f32"
+            ]
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "provider",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "normalized",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "enum"
+          },
+          "vocabulary": {
+            "extraLiterals": [
+              "local-deterministic"
+            ],
+            "sourceFunctions": [
+              "embed_normalized_to_str"
+            ],
+            "values": [
+              "true",
+              "provider-dependent"
+            ]
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "persistence_enabled",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "persistence_load_state",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "enum"
+          },
+          "vocabulary": {
+            "extraLiterals": [],
+            "sourceFunctions": [
+              "load_state_to_str"
+            ],
+            "values": [
+              "disabled",
+              "missing",
+              "empty",
+              "loaded",
+              "corrupt"
+            ]
+          }
+        }
+      ],
+      "name": "EmbedStorePayload",
+      "naming": "serde",
+      "rustType": "EmbedStoreOut"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "inserted",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "count",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "dim",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "dtype",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "enum"
+          },
+          "vocabulary": {
+            "extraLiterals": [
+              "embed_pipeline_lock_failed"
+            ],
+            "sourceFunctions": [
+              "embed_store",
+              "embed_store_many",
+              "embed_flush",
+              "embed_search",
+              "embed_search_tuned"
+            ],
+            "values": [
+              "f32"
+            ]
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "provider",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "normalized",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "enum"
+          },
+          "vocabulary": {
+            "extraLiterals": [
+              "local-deterministic"
+            ],
+            "sourceFunctions": [
+              "embed_normalized_to_str"
+            ],
+            "values": [
+              "true",
+              "provider-dependent"
+            ]
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "persistence_enabled",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "EmbedStoreManyPayload",
+      "naming": "serde",
+      "rustType": "EmbedStoreManyOut"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "flushed",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "dim",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "dtype",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "enum"
+          },
+          "vocabulary": {
+            "extraLiterals": [
+              "embed_pipeline_lock_failed"
+            ],
+            "sourceFunctions": [
+              "embed_store",
+              "embed_store_many",
+              "embed_flush",
+              "embed_search",
+              "embed_search_tuned"
+            ],
+            "values": [
+              "f32"
+            ]
+          }
+        }
+      ],
+      "name": "EmbedFlushPayload",
+      "naming": "serde",
+      "rustType": "EmbedFlushOut"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "id",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "score",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "number"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "text_preview",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "tags",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "string"
+            }
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "EmbedSearchHitPayload",
+      "naming": "serde",
+      "rustType": "EmbedSearchHitOut"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "query",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "count",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "dim",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "dtype",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "enum"
+          },
+          "vocabulary": {
+            "extraLiterals": [
+              "embed_pipeline_lock_failed"
+            ],
+            "sourceFunctions": [
+              "embed_store",
+              "embed_store_many",
+              "embed_flush",
+              "embed_search",
+              "embed_search_tuned"
+            ],
+            "values": [
+              "f32"
+            ]
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "provider",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "normalized",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "enum"
+          },
+          "vocabulary": {
+            "extraLiterals": [
+              "local-deterministic"
+            ],
+            "sourceFunctions": [
+              "embed_normalized_to_str"
+            ],
+            "values": [
+              "true",
+              "provider-dependent"
+            ]
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "hits",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "array",
+            "of": {
+              "kind": "named",
+              "name": "EmbedSearchHitPayload"
+            }
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "EmbedSearchPayload",
+      "naming": "serde",
+      "rustType": "EmbedSearchOut"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "cleared",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "EmbedClearPayload",
+      "naming": "serde",
+      "rustType": "EmbedClearOut"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "cleared",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "EmbedResetPayload",
+      "naming": "serde",
+      "rustType": "EmbedResetOut"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "discarded",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "was_initialized",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "previous_replacement_state",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "enum"
+          },
+          "vocabulary": {
+            "extraLiterals": [],
+            "sourceFunctions": [
+              "replacement_state_to_str"
+            ],
+            "values": [
+              "idle",
+              "armed",
+              "failed"
+            ]
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "replacement_state",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "enum"
+          },
+          "vocabulary": {
+            "extraLiterals": [],
+            "sourceFunctions": [
+              "replacement_state_to_str"
+            ],
+            "values": [
+              "idle",
+              "armed",
+              "failed"
+            ]
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "count",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "persistence_enabled",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "persistence_load_state",
+          "nullable": false,
+          "optional": true,
+          "type": {
+            "kind": "enum"
+          },
+          "vocabulary": {
+            "extraLiterals": [],
+            "sourceFunctions": [
+              "load_state_to_str"
+            ],
+            "values": [
+              "disabled",
+              "missing",
+              "empty",
+              "loaded",
+              "corrupt"
+            ]
+          }
+        }
+      ],
+      "name": "EmbedDiscardPayload",
+      "naming": "serde",
+      "rustType": "EmbedDiscardOut"
+    },
+    {
+      "fields": [
+        {
+          "legacyName": null,
+          "name": "schemaVersion",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "path",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "formatVersion",
+          "nullable": true,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "state",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "enum"
+          },
+          "vocabulary": {
+            "extraLiterals": [
+              "ndjson"
+            ],
+            "sourceFunctions": [
+              "inspect_index"
+            ],
+            "values": [
+              "missing",
+              "unreadable",
+              "empty",
+              "corrupt",
+              "degraded",
+              "loaded"
+            ]
+          }
+        },
+        {
+          "legacyName": null,
+          "name": "documents",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "invalidRecords",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "dimension",
+          "nullable": true,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "sizeBytes",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "integer"
+          },
+          "vocabulary": null
+        }
+      ],
+      "name": "EmbedIndexMetadataPayload",
+      "naming": "serde",
+      "rustType": "IndexMetadata"
     }
   ],
   "payloads": [
@@ -229,6 +930,51 @@
       "export": "vault_retrieve",
       "shape": null,
       "transport": "bytes"
+    },
+    {
+      "export": "embed_store",
+      "shape": "EmbedStorePayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "embed_store_many",
+      "shape": "EmbedStoreManyPayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "embed_flush",
+      "shape": "EmbedFlushPayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "embed_search",
+      "shape": "EmbedSearchPayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "embed_search_tuned",
+      "shape": "EmbedSearchPayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "embed_clear_in_memory",
+      "shape": "EmbedClearPayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "embed_reset",
+      "shape": "EmbedResetPayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "embed_discard_replacement",
+      "shape": "EmbedDiscardPayload",
+      "transport": "envelopeJson"
+    },
+    {
+      "export": "embed_index_metadata",
+      "shape": "EmbedIndexMetadataPayload",
+      "transport": "envelopeJson"
     }
   ]
 }

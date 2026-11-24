@@ -204,17 +204,18 @@ when they are `None` (the error path of `vault_parse_entries` returns exactly
 one key, `errorCode`), while a `serde` `Option` inside a JSON envelope is
 present and `null`. The vocabulary distinguishes the two.
 
-**PARTIALLY CLOSED 2026-11-24 — the mechanism is in, the vault family is
-migrated, six surfaces remain.** One owner, one artefact, two runners:
+**PARTIALLY CLOSED 2026-11-24 — the mechanism is in, the vault and the embed
+families are migrated, four surfaces remain.** One owner, one artefact, two
+runners:
 
 | piece | what it is |
 | --- | --- |
 | `crates/memphis-napi/src/bridge_payloads.rs` | **the owner** — one table: the export, the transport, the shape, the field names napi-rs really exports |
 | `crates/memphis-napi/src/lib.rs` | `bridge_payload_manifest()` — the table, served through the built module (`required: false`, so an old binary still loads) |
 | `scripts/sync-bridge-payload-contract.mts` | the projection: reads the table from the BUILT module, writes the artefact and the TypeScript mirror |
-| `tests/fixtures/bridge-payload-contract.json` | the artefact (6 payloads, 5 shapes) |
+| `tests/fixtures/bridge-payload-contract.json` | the artefact (15 payloads, 14 shapes) |
 | `src/infra/storage/bridge-payloads.generated.ts` | the TypeScript mirror — a projection, not a second hand-written copy |
-| `crates/memphis-napi/tests/bridge_payload_contract.rs` | runner 1: the table against the crate's own `#[napi(object)]` structs, and the artefact |
+| `crates/memphis-napi/tests/bridge_payload_contract.rs` | runner 1: the table against the crate's own structs, and the artefact |
 | `tests/unit/bridge-payload-contract.test.ts` | runner 2: the mirror, the REAL binary (the third witness), and the ratchet |
 
 The Rust runner applies napi-rs's own rule to every field of every shape —
@@ -227,13 +228,78 @@ entries_json, but napi-rs will export entriesJson"*; putting the hedge back
 into the TypeScript adapter fails the ratchet; a stale artefact fails the
 projection's check mode, which runs in CI.
 
-**What remains (the ratchet, in the TS runner):** six surfaces still declare
-a bridge payload type by hand — `rust-embed-adapter.ts`,
-`rust-chain-adapter.ts`, `case-chain-adapter.ts`, `rust-bridge-manifest.ts`,
-`embedding-metadata.ts` and `rust-embed-profile-bridge.ts`. The counter may
-only go down, and the gate fails if a surface outside the list starts
-declaring a payload type of its own. The envelope families (embed, chain,
-case, soul, mv2, manifest) are the next phase; the vault family is closed.
+**PHASE 2 CLOSED 2026-11-24 — the embed family.** The same mechanism, the
+second family. Measured on the built module against an ISOLATED index
+(`RUST_EMBED_PERSIST_PATH` pointed at a scratch directory, so the
+operator's own index was not touched):
+
+| export | the payload on the wire |
+| --- | --- |
+| `embed_store` | id, count, dim, dtype, provider, normalized, persistence_enabled, persistence_load_state |
+| `embed_store_many` | inserted, count, dim, dtype, provider, normalized, persistence_enabled |
+| `embed_flush` | flushed, dim, dtype |
+| `embed_search` / `embed_search_tuned` | query, count, dim, dtype, provider, normalized, hits |
+| `embed_clear_in_memory` / `embed_reset` | cleared |
+| `embed_discard_replacement` | **TWO shapes**: 3 keys without an initialized pipeline, 7 with it |
+| `embed_index_metadata` | schemaVersion, path, formatVersion, state, documents, invalidRecords, dimension, sizeBytes |
+
+Three findings the source does not say out loud:
+
+1. **`embed_discard_replacement` carries TWO shapes.** Without an
+   initialized pipeline it answers `{ discarded, was_initialized,
+   replacement_state }`; with one it answers SEVEN keys. The TypeScript
+   side declared `{ discarded: boolean }` and cast the other six away —
+   it did not know they were there. The payload is now a struct
+   (`EmbedDiscardOut`) whose `#[serde(skip_serializing_if)]` keeps the
+   wire EXACTLY as measured: absent, not null, same keys, same order.
+2. **The wire's `normalized` is a WORD, not a boolean** — `"true"` or
+   `"provider-dependent"`, never `"false"`, never missing (the Rust side
+   has answered exactly those two since the field appeared in
+   `0263334de0`). The TypeScript side declared `boolean | string` and
+   wrote a helper to guess which it had got — including a branch for a
+   `"false"` that cannot arrive and a fallback for a missing value that
+   cannot arrive either. All three are gone: the vocabulary is owned, and
+   the mirror renders `normalized: 'true' | 'provider-dependent'`.
+3. **A closed vocabulary needs an owner too.** The owner declares the
+   words AND the function that writes them; the Rust gate parses that
+   function out of the crate's source and compares, so the owner can
+   neither invent a word the crate never writes nor forget one it does.
+   The literal that is not a word of the field (the provider name
+   `embed_normalized_to_str` compares against, the `"ndjson"` extension
+   `inspect_index` looks for) is declared as an extra, so the comparison
+   stays exact.
+
+The Rust runner grew with the family: it now parses the `serde` structs
+too, applies serde's OWN rule (copied from `serde_derive`'s
+`internals/case.rs`, not approximated), checks the TYPE of every field
+and its PRESENCE (a napi `Option` is omitted, a serde `Option` is
+`null`, a `skip_serializing_if` field is absent), and checks every
+vocabulary against the source that produces it.
+
+**Dead code cut, measured:** the chain adapter's `embedStore` and
+`embedSearch` had NO callers anywhere in the tree, and with them three
+hand-written copies of the embed payloads (`EmbedStoreResult`,
+`EmbedSearchHit`, `EmbedSearchResult`) — one of which silently dropped
+the `tags` field of every hit. Gone.
+
+**Falsifiers, measured on this host (phase 2):** a misspelled field in the
+table fails the Rust runner with *"the table says normalised, but the wire
+will carry normalized for EmbedStoreOut.normalized"*; a vocabulary word
+the crate never writes fails it with *"the vocabulary of normalized is
+{…'false'…}, but the source writes {…}"*; a hand edit in the generated
+mirror fails the projection's check mode with exit 1; putting
+`RawEmbedStoreResult` back fails the ratchet with *"the embed family has
+no hand-written payload type left"*. The WIRE itself did not move: the
+probe before and after the struct conversion answers the same keys, in
+the same order, with the same values.
+
+**What remains (the ratchet, in the TS runner):** FOUR surfaces still
+declare a bridge payload type by hand — `rust-chain-adapter.ts` (the
+chain family), `case-chain-adapter.ts`, `rust-bridge-manifest.ts` and
+`rust-embed-profile-bridge.ts`. The counter may only go down, and the
+gate fails if a surface outside the list starts declaring a payload type
+of its own. The envelope families (chain, case, soul, mv2, manifest) are
+the next phase; the vault and embed families are closed.
 
 **One thing the owner still does wrong, and this entry does not hide it:**
 the same crate spells the same idea two ways. `JsEntriesResult` has no

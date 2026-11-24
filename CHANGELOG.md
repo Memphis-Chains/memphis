@@ -1,5 +1,39 @@
 ## Unreleased
 
+### The embed family has one owner too
+
+The embed family's payloads were measured on the built module — against an
+isolated index, so the operator's own index was never touched — and three
+things showed up that the source does not say out loud:
+
+- **`embed_discard_replacement` carries TWO shapes.** Without an initialized
+  pipeline it answers three keys; with one it answers seven. The TypeScript
+  side declared `{ discarded: boolean }` and cast the other six away without
+  knowing they were there.
+- **The wire's `normalized` is a WORD, not a boolean** — `"true"` or
+  `"provider-dependent"`, never `"false"`, never missing. The side declared
+  `boolean | string` and wrote a helper to guess which it had got, including
+  a branch for a `"false"` that cannot arrive and a fallback for a missing
+  value that cannot arrive either. Both are dead code, and both are cut.
+- **A closed vocabulary needs an owner too.** The owner declares the words
+  *and* the function that writes them; the gate parses that function out of
+  the crate's source and compares, so the owner can neither invent a word
+  the crate never writes nor forget one it does.
+
+The embed family is migrated onto the same owner as the vault family: nine
+payloads, nine shapes, the closed vocabularies rendered as unions
+(`normalized: 'true' | 'provider-dependent'`) instead of a bare `string`.
+The ratchet counts the surfaces that still own a payload type — six down to
+four — and the counter may only go down.
+
+Dead code went with it: the chain adapter's `embedStore` and `embedSearch`
+had no callers anywhere in the tree, and with them three hand-written copies
+of the embed payloads, one of which silently dropped the `tags` field of
+every hit.
+
+The wire itself did not move: the probe before and after the change answers
+the same keys, in the same order, with the same values.
+
 ### The bridge's payload shapes have one owner
 
 The shape of what the bridge carries was guessed, in seven TypeScript files.
