@@ -158,6 +158,24 @@ jobs:
         # other). Regenerate; never hand-edit a number.
         run: npm run -s ops:sync-site-metrics -- --check
 
+      - name: The postmortem index matches the corpus
+        # The generator exists because a HAND-MAINTAINED index of a corpus
+        # that grows is an index that rots: `docs/postmortems/README.md`
+        # listed three of eleven documents and was dated 2026-09-26. So the
+        # table is derived from the documents themselves.
+        #
+        # MEASURED 2026-11-24: the generator's own doc says "`--check` is
+        # what CI runs" — and CI ran nothing. It was the ONLY `ops:sync-*`
+        # gate of the seven that no workflow invoked, so the index could
+        # drift from the corpus and nothing would say so. It happens to be
+        # in sync today (11 documents, checked), which is exactly why the
+        # hole was invisible: a gate that nobody runs cannot fail, and a
+        # green artefact that nobody checks is not evidence.
+        #
+        # A postmortem added without regenerating the index now fails the
+        # build instead of rotting quietly.
+        run: npm run -s ops:sync-postmortem-index -- --check
+
       - name: Operator PII scan
         # secret-scan.sh matches credential prefixes (ghp_, sk-ant-, AKIA,
         # PEM) and reports OK on a tree carrying an account identifier,
