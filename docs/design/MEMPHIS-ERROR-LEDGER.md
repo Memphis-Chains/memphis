@@ -588,7 +588,7 @@ from the same owner. So no value is written down twice by hand; the
 redundancy is of PROJECTIONS, not of authorship.
 
 **PHASE 6 CLOSED 2026-11-24 — the per-variant shapes of `CaseEntry`**
-(PR #787).
+(PR #787, squash `a31194f8c965`).
 
 Phase 5 left the per-variant shapes as "the explicit residue", and the
 residue turned out to be a hole with a gate that could not see it.
@@ -976,7 +976,7 @@ rebuilds the index when they differ.
 The count, and not the highest index, is the whole difference between a
 check that sees this defect and one that does not. **Three falsifiers,
 measured on this host**: with the reconciliation removed from the query
-path the TypeScript runner fails with *"expected 3 to be 4"*; with the
+path the TypeScript runner fails with _"expected 3 to be 4"_; with the
 check written against the **highest index** instead of the count, it fails
 with the same message; and with the bridge unable to answer, it fails the
 same way again. The Rust arm pins the blindness itself — index the tail
