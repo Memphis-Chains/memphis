@@ -1998,8 +1998,11 @@ package-artifact gate now installs under a declared policy, proves the native
 binding, and probes a command that opens the database (E-12).
 **Next, in this order:** Family B's
 wedge (E-05), which needs the operator's fifteen acknowledgements before
-any code can help — and, beside it, the two residuals this round measured
-rather than hid: the drill's tar passes are still synchronous, so a stop that
-lands inside a drill still waits for it, and the rotation's `.jsonl.gz`
-archives inside a backup are still not verified, because the drill has no
-reader for them.
+any code can help — and, beside it, the ONE residual this round measured
+rather than hid: the rotation's `.jsonl.gz` archives inside a backup are
+still not verified, because the drill has no reader for them. The other
+residual — the drill's synchronous tar passes, which is what turned a stop
+into a SIGKILL — is **closed** as of 2026-11-25 (decision #594): the tar
+rule has one owner and every call through it is asynchronous, the drill's
+longest silence fell from 11 302 ms to 1 842 ms, and a stop aimed at the
+drill is now answered in 1 ms.
