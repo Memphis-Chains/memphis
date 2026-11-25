@@ -1126,6 +1126,73 @@ row whose hash differs — the chain is the truth and the index must
 FOLLOW it, so refusing would turn a legitimate re-index into a false
 alarm).
 
+#### E-15 · A rollback copy can carry a different chain and verify clean
+
+**FOUND AND FIXED 2026-11-25** — the defect is closed on this host and the
+gate that would have caught it is in the tree. The entry is worth keeping
+because of what it shows: the RULE existed, its OWNER existed, and nothing
+enforced either.
+
+**THE HARM, MEASURED.** The archive `chains/system.backup-1782897312539` is
+a ROLLBACK COPY of the `system` chain's prefix — blocks 1…261. Every one of
+its 261 blocks carried `chain: "system.backup-1782897312539"`: the archive's
+own DIRECTORY name, not the chain's name.
+
+**AND NOTHING SAID SO.** The identity is inside the hash, so a block that
+carries the wrong one hashes consistently OVER the wrong value: every hash
+check passed, and `memphis chain verify` answered `ok: true` — for a copy
+that could not be rolled back. MEASURED: the copy's last block did not seam
+with the rotation archive that holds the blocks after it
+(`.archives/system_000001-015271_*.jsonl.gz` holds blocks 1…15 271, and its
+block 262 carries `prev_hash` = the rotation's block 261 hash — which the
+copy's block 261 did NOT have). **0 of 261** of the copy's hashes were the
+rotation's.
+
+**THE RULE WAS ALREADY THERE, AND SO WAS ITS OWNER.**
+`src/memory/chain-catalog.ts` says it out loud: _"the archive suffix is a
+COPY marker, not part of the chain's identity: the blocks inside it carry
+`chain: "journal"`, and that is what the hash chain was built over. Reading
+the directory name as the chain name is how a repair would rewrite every
+archived block's `chain` field and invalidate the archive's hashes."_ — and
+the Rust core behind it owns the rule
+(`crates/memphis-paths/src/chain_names.rs`, `logical_chain_name`). What was
+missing was the GATE: `verifyChainIntegrity` checked hashes, indices and the
+prev_hash chain, and never asked WHICH CHAIN the blocks said they were.
+
+**THE FIX HAS TWO HALVES.**
+
+1. **The gate, and it can fail.** `expectedChainIdentity()` — the
+   directory's LOGICAL name, put through the alias table — is now compared
+   with every block's `chain` field. The failure is structured (_chain field
+   'X' ≠ expected 'Y'_) and the known-forks parser knows it as
+   `identity_mismatch`, so it is a classified failure and not an unknown
+   one.
+   - **FALSIFIER, measured on this host before the repair:** `chain verify
+--chain system.backup-1782897312539` exited **4** with _"chain field
+     'system.backup-1782897312539' ≠ expected 'system'"_, and the
+     whole-corpus verify exited **4** as well.
+2. **The repair.** `memphis chain repair-archive-identity --chain <archive>`
+   puts the identity back and recomputes the hash chain over it. It refuses
+   anything that is not an archive directory — a live chain's identity is its
+   own name — and it copies the archive aside under the data dir's
+   `backups/` before the first byte is written.
+   - **MEASURED after the repair:** **261/261** of the copy's hashes are the
+     rotation archive's, the seam 261→262 holds again, and the copy is
+     identical to the rotation's blocks 1…261 in **every** field — including
+     `data`, once the key order is normalised (the canonical hash sorts keys,
+     so the BYTES may differ and the content may not). `chain verify` on the
+     whole corpus: `ok: true`, 14 chains.
+
+**AND IT IS NOT REPRODUCIBLE ANY MORE, which is why this entry is filed as
+history and not as a live hole.** MEASURED: `resolveChainDir` refuses a
+dotted name (`SAFE_CHAIN_NAME` is `^[A-Za-z0-9_-]{1,64}$`), so no command can
+open an archive directory by name; `rebuildChainHashes` has written the
+NORMALIZED name since `40df35a373d` (2026-03-30); and the rotation's restore
+path reads the rotation's `.archives/*.jsonl.gz`, never these directories.
+The fork is a scar from an older code path, and the archive it left behind
+is the one thing it left behind — unrepairable by the code that made it,
+which is why it needed a tool.
+
 ### Family B — the system degrades quietly instead of failing
 
 Every defect here answers with something plausible. The operator cannot tell
