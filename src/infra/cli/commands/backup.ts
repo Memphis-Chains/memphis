@@ -3,12 +3,15 @@ import { createHash } from 'node:crypto';
 import {
   appendFileSync,
   chmodSync,
+  closeSync,
   copyFileSync,
   existsSync,
   mkdirSync,
   lstatSync,
   mkdtempSync,
+  openSync,
   readFileSync,
+  readSync,
   readdirSync,
   renameSync,
   rmSync,
@@ -20,7 +23,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import readline from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
-import { gunzipSync, gzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync, constants } from 'node:zlib';
 
 import chalk from 'chalk';
 import cliProgress from 'cli-progress';
@@ -47,6 +50,13 @@ import {
   type BackupManifestEntry,
 } from './backup-manifest.js';
 import { getDataDir } from '../../../config/paths.js';
+// The rule that decides what a directory under `chains/` IS — a chain, a
+// rollback copy of one, or neither. The owner is the Rust core; this is its
+// mirror, and the mirror is compared against the owner's answers by
+// `tests/unit/chain-name-contract.test.ts`. The drill asks it instead of
+// guessing, because guessing is what made the drill report three days of
+// false failures.
+import { classifyChainDirectory } from '../../../memory/chain-catalog.js';
 import { requireOperatorAuth } from '../../auth/operator-gate.js';
 import { resolveDotEnvPath } from '../../config/dotenv-file.js';
 import { classifyField } from '../../config/mutability.js';
@@ -262,6 +272,56 @@ function isTarExecutionError(error: unknown): boolean {
 }
 
 /**
+ * tar's own reason, in the message the operator sees.
+ *
+ * `execFileSync` puts tar's stderr in the error object and NOT in the
+ * message, so the drill reported "Command failed: tar -xzf <archive> -C
+ * <dir>" — the command and nothing else. The reason (no space left on
+ * device, a killed process, a corrupt member) was thrown away, so a broken
+ * archive and a broken machine looked identical. MEASURED 2026-11-25 on
+ * this host: three consecutive scheduled backups reported a drill failure
+ * and not one of them said why.
+ */
+function describeTarFailure(error: unknown): Error {
+  const err = error as Error & {
+    stderr?: Buffer | string;
+    status?: number | null;
+    signal?: string | null;
+  };
+  const stderr = typeof err.stderr === 'string' ? err.stderr : (err.stderr?.toString('utf8') ?? '');
+  const reason = stderr
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(' | ');
+  const detail = reason || (err.signal ? `killed by ${err.signal}` : `exit ${err.status}`);
+  return new Error(`${err.message} — ${detail}`);
+}
+
+/**
+ * Where the drill extracts to: NEXT TO THE ARCHIVE.
+ *
+ * The drill needs room for the archive's own contents, and the filesystem
+ * that holds the archive is the one that has it. The old rule was
+ * `os.tmpdir()`, which on this host is a tmpfs — RAM — so the drill's
+ * verdict depended on how much free memory the machine had. MEASURED
+ * 2026-11-25: the scheduled archive is 182 MB and extracts to 486 MB, the
+ * drill also gunzipped the whole archive into a 486 MB buffer and then
+ * into a 486 MB string, and the host's swap was fully consumed (4095 of
+ * 4095 MB). The drill's answer was a property of the machine, not of the
+ * backup.
+ *
+ * Next to the archive the scratch is also inside the backups root, and the
+ * archiver EXCLUDES that root (`--exclude=./backups`,
+ * `scripts/backup-exclude-policy.json`), so a drill in flight can never end
+ * up inside the next backup.
+ */
+function drillScratchRoot(archivePath: string): string {
+  return dirname(resolve(archivePath));
+}
+
+/**
  * Cached result of `tar --warning=no-file-changed --version` probe.
  * GNU tar accepts the flag; BSD tar (macOS default) rejects it with
  * "Option --warning=no-file-changed is not supported" and exit 1,
@@ -311,7 +371,43 @@ function isTarFileChangedWarning(error: unknown, archivePath: string): boolean {
   }
 }
 
+/**
+ * Is this archive the JSON fallback format?
+ *
+ * The fallback archive is a gzip stream whose content is a JSON document
+ * that starts with '{'. A tar archive's content starts with a tar header,
+ * whose first bytes are the member's name — never '{'.
+ *
+ * The check reads the HEAD of the stream, not the whole file. It used to
+ * gunzip the entire archive and convert the result to a string, because the
+ * question was "does the whole thing parse as JSON" — and on this host
+ * that allocated a 486 MB buffer and then a 486 MB string to answer "no,
+ * it is a tar". The drill's verdict must not depend on how much memory the
+ * machine has.
+ */
+function looksLikeFallbackArchive(archivePath: string): boolean {
+  let handle: number | undefined;
+  try {
+    handle = openSync(archivePath, 'r');
+    const head = Buffer.alloc(FALLBACK_PEEK_BYTES);
+    const read = readSync(handle, head, 0, head.length, 0);
+    if (read <= 0) return false;
+    // Z_SYNC_FLUSH returns the bytes decoded so far instead of failing on
+    // the truncated stream — which is exactly what a head is.
+    const prefix = gunzipSync(head.subarray(0, read), {
+      finishFlush: constants.Z_SYNC_FLUSH,
+    }).toString('utf8');
+    return prefix.trimStart().startsWith('{');
+  } catch {
+    return false;
+  } finally {
+    if (handle !== undefined) closeSync(handle);
+  }
+}
+
 function tryReadFallbackArchive(archivePath: string): BackupArchive | null {
+  if (!looksLikeFallbackArchive(archivePath)) return null;
+
   let raw: Buffer;
   try {
     raw = gunzipSync(readFileSync(archivePath));
@@ -357,6 +453,15 @@ type ArchiveListOptions = {
 // on verbose listing. Keep both listing paths bounded, but large enough
 // for ordinary runtime backups; oversized listings still fail closed.
 const MAX_TAR_LIST_BYTES = 64 * 1024 * 1024;
+
+/**
+ * How many COMPRESSED bytes of an archive the fallback probe reads.
+ *
+ * 64 KiB of gzip decompresses to far more than enough to see whether the
+ * stream is a JSON document or a tar header, and it keeps the probe's own
+ * cost off the scale of the archive.
+ */
+const FALLBACK_PEEK_BYTES = 64 * 1024;
 
 function tarListArchiveContents(archivePath: string): string[] {
   const out = execFileSync('tar', ['-tzf', archivePath], {
@@ -793,7 +898,7 @@ function extractArchive(archivePath: string, targetRoot: string): void {
     execFileSync('tar', ['-xzf', archivePath, '-C', targetRoot]);
   } catch (error) {
     if (!isTarExecutionError(error)) {
-      throw error;
+      throw describeTarFailure(error);
     }
     extractFallbackArchive(archivePath, targetRoot);
   }
@@ -1239,6 +1344,16 @@ export interface BackupDrillResult {
   blocksChecked: number;
   databasesChecked: number;
   credentialRecovery: 'not-verified';
+  /**
+   * The directories under `chains/` that are NOT chains and were therefore
+   * not verified — the rotation's `.archives` container, a quarantine folder,
+   * a sidecar writer's dump.
+   *
+   * The count is in the result rather than only in a log line, because a
+   * drill that says nothing about what it skipped is a drill that cannot be
+   * told apart from a drill that verified everything.
+   */
+  foreignDirectories: string[];
 }
 
 /** Restore into an isolated scratch directory; never invoke live restore hooks. */
@@ -1259,7 +1374,7 @@ export async function drillBackup(backupPath: string): Promise<BackupDrillResult
       throw new Error('Backup drill refuses links and special files');
     }
   }
-  const root = mkdtempSync(join(tmpdir(), 'memphis-verified-drill-'));
+  const root = mkdtempSync(join(drillScratchRoot(backupPath), 'memphis-verified-drill-'));
   try {
     if (fallback) extractFallbackArchive(backupPath, root);
     else extractArchive(backupPath, root);
@@ -1270,11 +1385,31 @@ export async function drillBackup(backupPath: string): Promise<BackupDrillResult
       blocksChecked: 0,
       databasesChecked: 0,
       credentialRecovery: 'not-verified',
+      foreignDirectories: [],
     };
     const chains = join(root, 'chains');
     if (existsSync(chains)) {
       for (const entry of readdirSync(chains, { withFileTypes: true })) {
         if (!entry.isDirectory()) continue;
+        // The OWNER decides what a directory under `chains/` is — the same
+        // question the runtime, the audit and the verifier ask, with the
+        // same answer, because they all ask it (the rule is owned in Rust,
+        // `crates/memphis-paths/src/chain_names.rs`, and mirrored here).
+        //
+        // The drill used to treat EVERY directory as a chain, and the
+        // rotation's `.archives` container is not one: it holds the
+        // rotation's `.jsonl.gz` files, not blocks. So the drill aborted
+        // with "invalid chain name" on archives that were complete, and the
+        // scheduled backup reported "restore-drill FAILED — backup may not
+        // be restorable" for three consecutive days on this host. The
+        // artefact of cases already said it (`tests/fixtures/
+        // chain-name-contract.json`: `.archives` is `foreign`); the drill
+        // never asked.
+        const kind = classifyChainDirectory(entry.name);
+        if (kind === 'foreign') {
+          result.foreignDirectories.push(entry.name);
+          continue;
+        }
         const checked = await verifyChainIntegrity(entry.name, { MEMPHIS_DATA_DIR: root });
         result.chainsChecked += checked.chainsChecked;
         result.blocksChecked += checked.blockCount;

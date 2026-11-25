@@ -1,5 +1,56 @@
 ## Unreleased
 
+### The restore drill tells the truth, and the retention is a bound
+
+The scheduled backup ran a restore-drill on three consecutive nights and
+reported it FAILED every time — on archives that were complete. The drill
+was verifying a thing that is not a chain: the archive holds
+`chains/.archives`, the rotation's container, and the drill walked every
+directory under `chains/` and asked the verifier about each one.
+
+**The owner already said so.** `classify_chain_directory` answers `foreign`
+for `.archives`, and the artefact of cases carries that answer. The drill
+never asked. REPRODUCED on this host: `drillBackup` of the newest archive
+ended in `invalid chain name`, while `tar -xzf` of the same archive exits 0
+and yields 486 MB.
+
+**The drill's answer was a property of the machine.** It extracted into
+`os.tmpdir()` — a tmpfs here, 8.09 GB of RAM — and probed "is this the JSON
+fallback format?" by gunzipping the whole 182 MB archive into a 486 MB
+buffer and a 486 MB string, to learn the answer was "no". MEASURED: the
+drill held the Node event loop for **19 300 ms** — a 50 ms timer fired
+**2** times where it should have fired 392 — and inside the runtime it took
+**22 m 16 s** against 19.6 s standalone.
+
+**And that is what turned a stop into a kill.** MEASURED in the journal:
+systemd's SIGTERM arrived while the drill held the loop; the handler never
+ran, not one `shutdown.*` line was written, `TimeoutStopSec=45` expired and
+systemd sent SIGKILL — `Failed with result 'timeout'`. The drill's own
+`tar` was a child of the unit, so the cgroup's SIGTERM killed it, and the
+drill reported that as a failed backup.
+
+|                       | before                                        | after                                              |
+| --------------------- | --------------------------------------------- | -------------------------------------------------- |
+| a non-chain directory | the whole drill aborted: `invalid chain name` | skipped, and NAMED in the result                   |
+| the reason            | `Command failed: tar -xzf …` — nothing else   | tar's own stderr, in the message                   |
+| the scratch           | `os.tmpdir()` — a tmpfs, so RAM               | next to the archive, on its own filesystem         |
+| the format probe      | gunzip the WHOLE archive to ask one question  | read the archive's HEAD                            |
+| the retention         | OFF once a drill failed — a latch             | a BOUND: the window plus ONE candidate, `keep + 1` |
+
+The retention is the part the ledger filed, and it was right about it. One
+failed drill used to switch the cleaner off for good; the drill had been
+failing for three days, so the scheduled archives would have grown by one
+182 MB archive a day, for ever, with nothing in the log saying so. The
+intent is kept as a NUMBER: a failed drill buys exactly one extra recovery
+candidate — the archive just beyond the window — and the cleaner runs either
+way.
+
+MEASURED after, on this host: a fresh archive of the repaired corpus drills
+clean — **15 chains, 12 380 blocks, `foreignDirectories: [".archives"]`**,
+14.1 s. The newest archive still fails, and now for the TRUE reason: the
+`system.backup-1782897312539` copy inside it carries the wrong identity,
+because that archive was written before E-15's repair.
+
 ### The case index's key carries the SOURCE — the chain directory the blocks were read from
 
 The index's key was the block index ALONE, so two chains could not both live

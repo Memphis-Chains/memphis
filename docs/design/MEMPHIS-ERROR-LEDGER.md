@@ -1493,10 +1493,107 @@ drained ? 0 : 75;` — and the unit sets `Restart=on-failure`. An exit 0 leaves
 
 #### E-08 · The backup retention stops when the restore drill fails
 
-> Measured: `~/.memphis/backups` holds **3.3 GB in 27 archives**.
-> `src/infra/runtime/scheduled-backup.ts:301-303` skips pruning whenever
-> `state.lastDrillOk === false` — so one failed drill stops the retention
-> permanently, and the disk grows until something else has to make room.
+**FOUND AND FIXED 2026-11-25** (decision #591) — the entry was filed from a
+reading of the code, and the reading was RIGHT about the latch and WRONG
+about everything else. The drill had not failed once; it had failed three
+times in a row, on archives that were complete, and the failure was the
+drill's own verdict being wrong.
+
+**THE HARM, MEASURED.** The scheduled backup ran a restore-drill on three
+consecutive nights and reported it FAILED every time:
+
+| the backup                          | the drill said               | what was actually true                                       |
+| ----------------------------------- | ---------------------------- | ------------------------------------------------------------ |
+| `scheduled-2026-11-23-02-00.tar.gz` | `invalid chain name`         | the archive was complete                                     |
+| `scheduled-2026-11-24-02-00.tar.gz` | `invalid chain name`         | the archive was complete                                     |
+| `scheduled-2026-11-25-02-00.tar.gz` | `Command failed: tar -xzf …` | the archive was complete — tar was killed by the unit's stop |
+
+**THE DRILL WAS VERIFYING A THING THAT IS NOT A CHAIN.** The archive holds
+`chains/.archives` — the rotation's container, which holds `.jsonl.gz` files
+and no blocks. The drill walked every directory under `chains/` and called
+`verifyChainIntegrity` on it, and the verifier throws `invalid chain name`
+for a name that is neither a plain chain nor a recognised `.backup-*` copy.
+
+**AND THE OWNER ALREADY SAID SO.** `classify_chain_directory`
+(`crates/memphis-paths/src/chain_names.rs`) answers `foreign` for
+`.archives`, and the artefact of cases carries that answer
+(`tests/fixtures/chain-name-contract.json`, the `.archives` case). The drill
+never asked. REPRODUCED on this host, against the newest archive:
+`drillBackup('scheduled-2026-11-25-02-00.tar.gz')` → **`invalid chain
+name`**, while `tar -xzf` of the same archive exits 0 and yields 486 MB.
+
+**THE DRILL'S ANSWER WAS A PROPERTY OF THE MACHINE, NOT OF THE BACKUP.**
+Three things made the drill's verdict depend on the host's free memory:
+
+1. the drill extracted into `os.tmpdir()`, and `/tmp` here is a **tmpfs** —
+   RAM: 1 974 234 blocks of 4 KiB, 8.09 GB of memory, of which 4.9 GB was
+   already used by leftovers;
+2. the drill probed "is this the JSON fallback format?" by gunzipping the
+   WHOLE archive — 182 MB in, a 486 MB buffer and a 486 MB string out — to
+   learn that the answer was "no";
+3. the drill ran inside the runtime, whose cgroup is capped at `MemoryMax=4G`
+   while the host's swap was **fully consumed** (4095 of 4095 MB).
+
+MEASURED: the drill blocks the Node event loop for **19 300 ms** — a 50 ms
+timer fired **2** times in a 19.6 s drill where it should have fired 392.
+And in the runtime it took **22 m 16 s** (`backup.scheduled.success` at
+01:06:39 UTC → `backup.scheduled.drill.failed` at 01:28:55 UTC), against
+19.6 s standalone.
+
+**AND THAT IS WHAT TURNED A STOP INTO A KILL.** MEASURED in the journal:
+systemd sent SIGTERM at 02:28:53 CET — while the drill held the event loop —
+and the handler never ran: **not one `shutdown.*` line** was written in the
+45 seconds that followed. `TimeoutStopSec=45` expired, systemd sent SIGKILL,
+and the unit logged `Failed with result 'timeout'`. The drill's own `tar`
+was a child of the unit, so the cgroup's SIGTERM killed it, and the drill
+reported the tar's death as a failed backup.
+
+**THE REPAIR, in four parts, each with its own falsifier.**
+
+1. **The drill asks the owner.** `classifyChainDirectory` decides what each
+   directory is; `foreign` directories are skipped and NAMED in the result
+   (`foreignDirectories`), so a drill that skipped something says so. The
+   owner is not re-implemented here — the mirror that E-03 put in place is
+   the one that answers.
+   - **FALSIFIER, measured on this host:** before, the drill of the newest
+     archive ended in `invalid chain name`; after, the same archive is
+     verified to its end and the drill reports the **true** defect it holds
+     — the `system.backup-1782897312539` copy inside it carries the wrong
+     identity, because that archive was written BEFORE E-15's repair. A
+     fresh archive of the repaired corpus drills clean: **15 chains, 12 380
+     blocks, `foreignDirectories: [".archives"]`**, 14.1 s.
+2. **The reason is in the message.** `execFileSync` puts tar's stderr in the
+   error object and not in the message, so the drill said `Command failed:
+tar -xzf …` and threw the reason away. A broken archive and a broken
+   machine looked identical — and, measured, three days of failures said
+   nothing about which one it was.
+3. **The scratch directory is created next to the archive**, not in
+   `os.tmpdir()`. The filesystem that holds the archive is the one that has
+   room for its contents, and the backups root is EXCLUDED from the archive
+   (`--exclude=./backups`), so a drill in flight cannot land inside the next
+   backup.
+4. **The retention is a BOUND, not a latch.** The old rule skipped the
+   cleaner entirely once a drill had failed; the drill had been failing for
+   three days, so the scheduled archives would have grown by one 182 MB
+   archive a day, for ever, with nothing in the log saying so. The intent is
+   kept as a NUMBER: a failed drill buys exactly **ONE** extra recovery
+   candidate — the archive just beyond the window — and the cleaner runs
+   either way. The total is bounded by `keep + 1` whatever the drill does.
+   - **FALSIFIER:** three consecutive failed drills must all clean with
+     `keep + 1`, and the number must not creep.
+
+**THE GATES.** `tests/integration/backup-content-drill.test.ts`: the drill
+skips a directory that is not a chain and names it; the drill does not
+materialise the whole archive to decide that it is not a fallback archive.
+`tests/unit/scheduled-backup.test.ts`: the retention is the plain window
+after a good drill, the window plus ONE after a failed drill, and it does
+not creep across failures. Reverting the repair fails **5** of the **17**
+tests in those two files.
+
+**THE RESIDUAL, stated rather than hidden.** The rotation's `.jsonl.gz`
+archives inside a backup are still not verified by the drill — they are not
+blocks, and the drill has no reader for them. What the drill now says is
+"the chains and the rollback copies are intact", which is what it can say.
 
 ### Family C — dead code, committed
 
