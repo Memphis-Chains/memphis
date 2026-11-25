@@ -35,6 +35,16 @@ export const TUI_HOST_CAPABILITIES = [
   'security.tier.set',
   'presence.snapshot',
   'system.restart',
+  // The escape from the wedge has to live where the wedge happens.
+  //
+  // The cockpit is where a turn is refused, and it is where the operator
+  // is — but until now the only way to acknowledge a paused turn was the
+  // CLI, which demands a LOCAL INTERACTIVE TTY and the passphrase. The
+  // cockpit's own error message told the operator to run `/recovery`,
+  // and no such command existed: the TUI has 54 slash commands and
+  // `/recovery` was not one of them.
+  'recovery.list',
+  'recovery.acknowledge',
 ] as const;
 
 export type TuiHostCapability = (typeof TUI_HOST_CAPABILITIES)[number];
