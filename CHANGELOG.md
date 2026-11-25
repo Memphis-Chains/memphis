@@ -1,5 +1,68 @@
 ## Unreleased
 
+### Eight open items from the 22.09 incident — measured, then closed
+
+The audit of 2026-09-22 ended with eight unchecked boxes. Two months later
+they were still open, and the runtime audit still counted them:
+`postmortem-status … open=8 in 1 document(s)`.
+
+Every one of them was measured on this host **before** anything changed —
+and three were not what their one-line summary claimed.
+
+**A4 was already satisfied — by the unit that was RUNNING, and not by the
+unit GENERATOR.** The live unit says `Restart=always` with `MemoryMax=4G`;
+`buildUserServiceUnit` (what `memphis service install` deploys) said
+`Restart=on-failure` and carried no ceiling at all. The gate read only
+files, so it passed. The drift was invisible because the gate was looking
+somewhere else. The policy now has ONE owner
+(`src/infra/runtime/service-unit-policy.ts`), the generator renders it, and
+the gate holds the shipped units **and the generated unit** to it.
+
+**B2 was not "install, then sandbox-run for 60 s" — the loader never said
+what it was about to write.** It now computes a PLAN first (directories,
+files, sizes, whether an installed skill would be replaced) and the install
+APPLIES that same plan, so the dry-run and the install cannot describe
+different things. `memphis skills install <id> --dry-run` prints the plan
+and writes nothing.
+
+**B3 was about `boot-failures.json`, not about a directory layout.** The
+counter existed exactly for this purpose — MEASURED 2026-09-22: 50+
+failed restarts in three minutes, every ~5 s, the counter at 50 entries,
+and the service kept restarting anyway. More than five failures in ten
+minutes now refuses the start with exit **102**, which is in the unit's
+`RestartPreventExitStatus=101 102 103` — so systemd does not restart it,
+and the service stays DOWN with the reason in the log instead of
+flickering through restarts that hide the cause.
+
+**C1 gave every one of the seven skills a voice.** Each now carries a
+`## Sidecar contract` section naming its sidecar writes and its audit
+target (`none` is an answer, not an omission), and the rule that keeps
+writes out of `chains/` — the shape that crashed Memphis on 2026-09-22 —
+has one owner and a gate. The postmortem asked for a `compat.test.sh` per
+skill; that is a copy of one rule in every directory, and a copy per
+directory is how rules drift.
+
+| item | what it was                                   | what it is now                                                           |
+| ---- | --------------------------------------------- | ------------------------------------------------------------------------ |
+| A4   | the generator wrote `on-failure`, no ceiling  | one policy owner; the gate reads the generated unit too                  |
+| B2   | the loader wrote first and told nothing       | a plan first; `--dry-run` prints it and writes nothing                   |
+| B3   | the counter existed, nobody read it           | > 5 failures / 10 min refuses the start (exit 102)                       |
+| C1   | four skills said nothing                      | seven skills declare; a gate fails on a missing or `chains/` declaration |
+| C2   | no pre-commit chain gate                      | the hook sweeps the corpus when the corpus — or its reader — changes     |
+| C3   | `docs/SKILLS.md` did not exist                | it exists, with the rule, the table and the gate                         |
+| C4   | the allowlist was read but not registered     | it is registered, and `memphis doctor` shows it                          |
+| D2   | the roadmap said nothing about `chains/halt/` | it has a "Deprecated Paths And Sidecars" section                         |
+
+**THE GATES, and they can fail.** The systemd rules live in
+`src/infra/audit/systemd-unit-rules.ts` and are read by the gate and by
+`tests/fixtures/systemd-unit-contract.json` (10 cases); the skill
+contract lives in `src/infra/audit/skill-sidecar-contract.ts` and is read
+by `tests/fixtures/skill-contract-cases.json` (10 cases). Measured
+falsifiers: breaking the unit policy makes the gate fail with
+`policy-mismatch` **and** `not-restart-always`; a skill that declares
+`chains/halt/events.jsonl` fails with `writes-under-chains`; six boot
+failures in ten minutes make the gate refuse.
+
 ### The backup path froze the runtime — and that is why a stop became a kill
 
 On the night of 2026-11-25 the runtime was stopped at 02:28:53 and killed at

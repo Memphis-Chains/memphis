@@ -72,3 +72,8 @@ cargo test -p memphis-core --lib loop_engine:: 2>&1 | tail -20
 - `feedback_napi_rebuild_after_rust_changes.md` — root-cause documentation
 - `feedback_truth_model_silent_catch.md` — same family ("what's actually running ≠ what source says")
 - `feedback_install_root_anchoring.md` — same family for path resolution
+
+## Sidecar contract
+
+- **Sidecar writes:** none — the skill only rebuilds the Rust crate; the build output stays under the repository's target directory.
+- **Audit target:** none — the build's own output is the evidence.

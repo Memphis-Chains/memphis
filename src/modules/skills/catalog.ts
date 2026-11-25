@@ -73,6 +73,59 @@ export type SkillMaterializationResult = {
   skillPath: string;
 };
 
+/**
+ * What an install WOULD do — computed without touching the disk.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * Postmortem item B2 (docs/postmortems/2026-09-22-chains-halt-invalid-block-shape.md):
+ * "The skill loader must dry-run before it installs anything."
+ *
+ * The loader wrote two directories and two files per skill with no step in
+ * between that could say what it was about to do. The operator who wanted
+ * to know "where does this skill land, and what does it overwrite?" had
+ * exactly one way to find out: run the install.
+ *
+ * So the plan is now a separate thing: it is computed first, it is
+ * printed by `--dry-run`, and the real install applies the very same
+ * plan. One path — there is no second, slightly different installer that
+ * the dry-run does not describe.
+ */
+export type SkillInstallPlan = {
+  /** The skill's id. */
+  skillId: string;
+  /** The directories the install would create. */
+  directories: string[];
+  /** The files the install would write. */
+  files: Array<{
+    path: string;
+    kind: 'manifest' | 'skill';
+    /** How many bytes the file would hold. */
+    bytes: number;
+  }>;
+  /**
+   * The skill is ALREADY INSTALLED — the runtime's live copy is there, and
+   * the install would replace it. The dry-run reports it, and the install
+   * REFUSES it unless `force` is set: the two loaders of this directory
+   * (`skills install` and `skills import`) now agree, and neither of them
+   * quietly replaces what the operator installed last time.
+   *
+   * The CATALOG copy is not counted: it is the source of truth the
+   * install refreshes, and `skills import` writes it first — so counting
+   * it would make the documented import→install flow look like an
+   * overwrite.
+   */
+  overwrites: boolean;
+  /** The manifest JSON that would be written. */
+  manifestJson: string;
+  /** The markdown that would be written. */
+  markdown: string;
+  /** The catalog directory the skill would be materialized into. */
+  catalogPath: string;
+  /** The installed directory the skill would be materialized into. */
+  installedPath: string;
+};
+
 export type SkillScaffoldResult = {
   ok: true;
   ref: SkillManifestRef;
@@ -537,34 +590,117 @@ export function importSkillManifestFile(
   };
 }
 
-export function materializeInstalledSkill(
+/**
+ * Compute the install plan — what the loader WOULD write, and where.
+ *
+ * This function touches no disk beyond reading the source SKILL.md and
+ * looking at the destination. It is what `--dry-run` prints, and it is
+ * what the real install applies.
+ */
+export function planSkillInstallation(
   ref: SkillManifestRef,
-  options: { force?: boolean; rawEnv?: NodeJS.ProcessEnv } = {},
-): SkillMaterializationResult {
+  options: { rawEnv?: NodeJS.ProcessEnv } = {},
+): SkillInstallPlan {
   const resolvedRawEnv = options.rawEnv ?? process.env;
   const skillMarkdown = resolveSkillMarkdownForRef(ref);
+  const manifestJson = JSON.stringify(ref.manifest, null, 2);
   const resolvedCatalogDir = join(catalogDir(resolvedRawEnv), ref.manifest.id);
   const resolvedInstalledDir = join(installedDir(resolvedRawEnv), ref.manifest.id);
 
-  if (options.force) {
-    mkdirSync(resolvedCatalogDir, { recursive: true });
-    mkdirSync(resolvedInstalledDir, { recursive: true });
+  const manifestBytes = Buffer.byteLength(manifestJson, 'utf8');
+  const markdownBytes = Buffer.byteLength(skillMarkdown, 'utf8');
+  const files: SkillInstallPlan['files'] = [
+    {
+      path: manifestPathForSkillDir(resolvedCatalogDir),
+      kind: 'manifest',
+      bytes: manifestBytes,
+    },
+    { path: skillMarkdownPathForDir(resolvedCatalogDir), kind: 'skill', bytes: markdownBytes },
+    {
+      path: manifestPathForSkillDir(resolvedInstalledDir),
+      kind: 'manifest',
+      bytes: manifestBytes,
+    },
+    { path: skillMarkdownPathForDir(resolvedInstalledDir), kind: 'skill', bytes: markdownBytes },
+  ];
+
+  const overwrites = (() => {
+    if (!existsSync(resolvedInstalledDir)) return false;
+    try {
+      return readdirSync(resolvedInstalledDir).length > 0;
+    } catch {
+      return false;
+    }
+  })();
+
+  return {
+    skillId: ref.manifest.id,
+    directories: [resolvedCatalogDir, resolvedInstalledDir],
+    files,
+    overwrites,
+    manifestJson,
+    markdown: skillMarkdown,
+    catalogPath: resolvedCatalogDir,
+    installedPath: resolvedInstalledDir,
+  };
+}
+
+/**
+ * Apply a plan — the writes the plan described.
+ *
+ * The plan is the only input: the installer does not recompute anything,
+ * so what `--dry-run` printed and what the install does cannot differ.
+ *
+ * A destination that already holds a skill is REFUSED unless `force` is
+ * set — the same rule the sibling loader (`importSkillManifestFile`)
+ * already applies, and the reason `--dry-run` reports `overwrites`. The
+ * two loaders of one directory now agree: neither of them quietly
+ * overwrites what the operator installed last time.
+ */
+export function applySkillInstallation(
+  plan: SkillInstallPlan,
+  ref: SkillManifestRef,
+  options: { force?: boolean } = {},
+): SkillMaterializationResult {
+  if (plan.overwrites && !options.force) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      `skill destination already exists: ${plan.installedPath} — pass --force to overwrite`,
+      409,
+      { skillDir: plan.installedPath },
+    );
   }
 
-  writeSkillPackage(resolvedCatalogDir, ref.manifest, skillMarkdown);
-  writeSkillPackage(resolvedInstalledDir, ref.manifest, skillMarkdown);
+  for (const dir of plan.directories) {
+    mkdirSync(dir, { recursive: true });
+  }
+  for (const file of plan.files) {
+    const content = file.kind === 'manifest' ? plan.manifestJson : plan.markdown;
+    writeFileSync(file.path, content, 'utf8');
+  }
 
   return {
     ok: true,
     ref: {
       manifest: ref.manifest,
-      source: { kind: 'file', path: manifestPathForSkillDir(resolvedCatalogDir) },
+      source: { kind: 'file', path: manifestPathForSkillDir(plan.catalogPath) },
     },
-    catalogPath: resolvedCatalogDir,
-    installedPath: resolvedInstalledDir,
-    manifestPath: manifestPathForSkillDir(resolvedInstalledDir),
-    skillPath: skillMarkdownPathForDir(resolvedInstalledDir),
+    catalogPath: plan.catalogPath,
+    installedPath: plan.installedPath,
+    manifestPath: manifestPathForSkillDir(plan.installedPath),
+    skillPath: skillMarkdownPathForDir(plan.installedPath),
   };
+}
+
+export function materializeInstalledSkill(
+  ref: SkillManifestRef,
+  options: { force?: boolean; rawEnv?: NodeJS.ProcessEnv } = {},
+): SkillMaterializationResult {
+  // The plan is computed FIRST — always — so the loader knows what it is
+  // about to write before it writes it. `--dry-run` (the CLI) stops at
+  // the plan; the install applies the same plan.
+  const plan = planSkillInstallation(ref, { rawEnv: options.rawEnv });
+  return applySkillInstallation(plan, ref, { force: options.force });
 }
 
 export function createSkillScaffold(input: {

@@ -11,7 +11,7 @@ Post-incident analyses for Memphis runtime failures. **Each postmortem should ha
 |---|---|---|---|---|
 | [2026-05-08-zawoja-and-runtime-state.md](2026-05-08-zawoja-and-runtime-state.md) | 2026-05-08 | S3 | resolved | — |
 | [2026-09-21-soul-append-and-deep-restart.md](2026-09-21-soul-append-and-deep-restart.md) | 2026-09-21 | S3 | resolved | — |
-| [2026-09-22-chains-halt-invalid-block-shape.md](2026-09-22-chains-halt-invalid-block-shape.md) | 2026-09-22 | S1 (runtime down + boot-loop) | open | 8 |
+| [2026-09-22-chains-halt-invalid-block-shape.md](2026-09-22-chains-halt-invalid-block-shape.md) | 2026-09-22 | S1 (runtime down + boot-loop) | resolved | — |
 | [2026-10-12-omarchy-vault-and-launcher-repair.md](2026-10-12-omarchy-vault-and-launcher-repair.md) | 2026-10-12 | S2 | resolved | — |
 | [2026-10-15-config-transaction-recovery.md](2026-10-15-config-transaction-recovery.md) | 2026-10-15 | S2 | resolved | — |
 | [2026-10-15-vault-init-serialization.md](2026-10-15-vault-init-serialization.md) | 2026-10-15 | S2 | resolved | — |

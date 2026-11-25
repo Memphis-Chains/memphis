@@ -165,8 +165,26 @@ describe('user service helpers', () => {
     );
     expect(unit).toContain('Environment=NODE_ENV=production');
     expect(buildUserServiceUnit(root, { NODE_ENV: 'development' })).toContain('Environment=NODE_ENV=development');
-    expect(unit).toContain('Restart=on-failure');
+    // MEASURED 2026-11-25 on the operator's host: the unit that was
+    // RUNNING said `Restart=always`, and it was right — the runtime drains
+    // cleanly on SIGTERM and exits 0, and `on-failure` reads that as "it
+    // did what it was told to do" and leaves the unit DOWN with nothing in
+    // the log saying why.
+    //
+    // This test used to assert `Restart=on-failure`, and that assertion is
+    // WHY the drift survived: the generator wrote a policy nobody had
+    // measured, and the test pinned the same stale policy, so both were
+    // green while the deployed unit said something else. The policy now
+    // has one owner (src/infra/runtime/service-unit-policy.ts), and the
+    // gate reads the generated unit too.
+    expect(unit).toContain('Restart=always');
     expect(unit).toContain('RestartPreventExitStatus=101 102 103');
+    expect(unit).toContain('MemoryMax=4G');
+    expect(unit).toContain('OOMPolicy=kill');
+    // The start-limit pair belongs in [Unit] — systemd v229+ ignores it in
+    // [Service], and a cap that is read by nobody is not a cap.
+    expect(unit.split('[Service]')[0]).toContain('StartLimitBurst=5');
+    expect(unit.split('[Service]')[0]).toContain('StartLimitIntervalSec=300');
   });
 
   it('errors with install-root guidance when every discovery path misses', () => {

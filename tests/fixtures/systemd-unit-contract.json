@@ -1,0 +1,88 @@
+{
+  "description": "The rules every systemd unit this runtime ships must satisfy, as cases. They lived inline in the gate script, one `if` at a time, and that is fine until the same rule has to be applied to a unit that is not a file. MEASURED 2026-11-25 on the operator's host, while closing postmortem item A4: the unit that was RUNNING said `Restart=always` with a 4 GB ceiling, while the generator that writes a unit (`buildUserServiceUnit`) said `Restart=on-failure` and carried no ceiling at all. The gate read only files, so it passed — the drift was invisible because the gate was looking somewhere else. The rules are now one owner (`src/infra/audit/systemd-unit-rules.ts`), read by two runners: the gate (over the shipped units AND over the unit the generator would write) and this corpus. {file} = the unit's repo-relative path; the generator's unit is named by the marker `src/infra/runtime/user-service.ts (generated unit)`. {unitName} = the unit's file name. The hard rules (memory ceiling, restart policy, start limit) apply to every long-running service — the corpus exercises them on `ops/memphis.service`, the system-wide unit, whose `MemoryMax=1G` is a documented deployment choice for 2 GB machines and therefore NOT a policy drift. The policy PARITY applies to the local user unit (`scripts/systemd/memphis.service`) and to the unit the generator writes.",
+  "cases": [
+    {
+      "name": "a unit with nothing to run is refused by systemd",
+      "file": "scripts/systemd/memphis-monday-admin-failure-alert.service",
+      "unitName": "memphis-monday-admin-failure-alert.service",
+      "unit": "[Unit]\nDescription=Alert operator: memphis-monday-admin.service failed\n",
+      "expectedRules": ["no-runnable-directive"]
+    },
+    {
+      "name": "an OnFailure target that does not exist reports the failure into the void",
+      "file": "scripts/systemd/memphis-monday-admin.service",
+      "unitName": "memphis-monday-admin.service",
+      "unit": "[Unit]\nDescription=Monday admin\nOnFailure=memphis-monday-admin-failure-alert.service\n\n[Service]\nExecStart=/usr/bin/node /opt/memphis/dist/index.js\n",
+      "expectedRules": ["dangling-onfailure"]
+    },
+    {
+      "name": "an OnFailure target that is itself a stub reports the failure into the void",
+      "file": "scripts/systemd/memphis-monday-admin.service",
+      "unitName": "memphis-monday-admin.service",
+      "unit": "[Unit]\nDescription=Monday admin\nOnFailure=memphis-monday-admin-failure-alert.service\n\n[Service]\nExecStart=/usr/bin/node /opt/memphis/dist/index.js\n",
+      "knownUnits": [
+        {
+          "name": "memphis-monday-admin-failure-alert.service",
+          "text": "[Unit]\nDescription=Alert operator: memphis-monday-admin.service failed\n"
+        }
+      ],
+      "expectedRules": ["stub-onfailure-target"]
+    },
+    {
+      "name": "a long-running service with no memory ceiling lets the kernel OOM killer act",
+      "file": "ops/memphis.service",
+      "unitName": "memphis.service",
+      "unit": "[Unit]\nDescription=MemphisOS Agent Runtime\nStartLimitBurst=5\nStartLimitIntervalSec=300\n\n[Service]\nUser=memphis\nWorkingDirectory=/opt/memphis\nExecStart=/usr/bin/node dist/index.js\nRestart=always\n",
+      "expectedRules": ["no-memory-max"]
+    },
+    {
+      "name": "a clean exit leaves a Restart=on-failure unit DOWN with nothing in the log",
+      "file": "ops/memphis.service",
+      "unitName": "memphis.service",
+      "unit": "[Unit]\nDescription=MemphisOS Agent Runtime\nStartLimitBurst=5\nStartLimitIntervalSec=300\n\n[Service]\nUser=memphis\nWorkingDirectory=/opt/memphis\nExecStart=/usr/bin/node dist/index.js\nRestart=on-failure\nMemoryMax=1G\n",
+      "expectedRules": ["not-restart-always"]
+    },
+    {
+      "name": "a unit with no start-limit pair runs with the systemd default, not with a cap",
+      "file": "ops/memphis.service",
+      "unitName": "memphis.service",
+      "unit": "[Unit]\nDescription=MemphisOS Agent Runtime\n\n[Service]\nUser=memphis\nWorkingDirectory=/opt/memphis\nExecStart=/usr/bin/node dist/index.js\nRestart=always\nMemoryMax=1G\n",
+      "expectedRules": ["no-start-limit"]
+    },
+    {
+      "name": "a start limit in [Service] is read by nobody",
+      "file": "ops/memphis.service",
+      "unitName": "memphis.service",
+      "unit": "[Unit]\nDescription=MemphisOS Agent Runtime\n\n[Service]\nUser=memphis\nWorkingDirectory=/opt/memphis\nExecStart=/usr/bin/node dist/index.js\nRestart=always\nMemoryMax=1G\nStartLimitBurst=5\nStartLimitIntervalSec=300\n",
+      "expectedRules": ["no-start-limit", "start-limit-in-service-section"]
+    },
+    {
+      "name": "the local unit with a different ceiling than the one owner is a drift",
+      "file": "scripts/systemd/memphis.service",
+      "unitName": "memphis.service",
+      "unit": "[Unit]\nDescription=Memphis local runtime\nStartLimitBurst=5\nStartLimitIntervalSec=300\n\n[Service]\nExecStart=/usr/bin/node /opt/memphis/dist/index.js\nRestart=always\nRestartSec=5\nRestartPreventExitStatus=101 102 103\nMemoryHigh=2G\nMemoryMax=1G\nOOMPolicy=kill\nTimeoutStopSec=45\n",
+      "expectedRules": ["policy-mismatch"]
+    },
+    {
+      "name": "a [Service] directive in [Unit] is ignored by systemd and warned about",
+      "file": "scripts/systemd/memphis.service",
+      "unitName": "memphis.service",
+      "unit": "[Unit]\nDescription=Memphis local runtime\nStartLimitBurst=5\nStartLimitIntervalSec=300\nRestart=always\n\n[Service]\nExecStart=/usr/bin/node /opt/memphis/dist/index.js\nRestart=always\nRestartSec=5\nRestartPreventExitStatus=101 102 103\nMemoryHigh=2G\nMemoryMax=4G\nOOMPolicy=kill\nTimeoutStopSec=45\n",
+      "expectedRules": ["policy-directive-in-unit-section"]
+    },
+    {
+      "name": "the local unit exactly as the policy states passes every rule",
+      "file": "scripts/systemd/memphis.service",
+      "unitName": "memphis.service",
+      "unit": "[Unit]\nDescription=Memphis local runtime\nStartLimitBurst=5\nStartLimitIntervalSec=300\n\n[Service]\nExecStart=/usr/bin/node /opt/memphis/dist/index.js\nRestart=always\nRestartSec=5\nRestartPreventExitStatus=101 102 103\nMemoryHigh=2G\nMemoryMax=4G\nOOMPolicy=kill\nTimeoutStopSec=45\n",
+      "expectedRules": []
+    },
+    {
+      "name": "the system-wide unit may carry its own ceiling — that is a deployment choice, not a drift",
+      "file": "ops/memphis.service",
+      "unitName": "memphis.service",
+      "unit": "[Unit]\nDescription=MemphisOS Agent Runtime\nStartLimitBurst=5\nStartLimitIntervalSec=300\n\n[Service]\nUser=memphis\nWorkingDirectory=/opt/memphis\nExecStart=/usr/bin/node dist/index.js\nRestart=always\nRestartSec=5\nRestartPreventExitStatus=101 102 103\nMemoryMax=1G\nCPUQuota=100%\n",
+      "expectedRules": []
+    }
+  ]
+}

@@ -63,6 +63,10 @@ import { loadSoulManifest } from '../../../soul/manifest.js';
 import { readDotEnvFile } from '../../config/hot-reload.js';
 import { envSchema } from '../../config/schema.js';
 import { readRecentSecurityAuditEvents } from '../../logging/security-audit.js';
+import {
+  describeBootFailureGate,
+  evaluateBootFailureGate,
+} from '../../runtime/boot-failure-gate.js';
 import { readEmbeddingMetadata } from '../../runtime/embedding-metadata.js';
 import { resolveInstallRoot } from '../../runtime/install-root.js';
 import { loadKnownForks } from '../../runtime/known-forks.js';
@@ -785,10 +789,9 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     ok: embeddingVectors > 0,
     required: false,
     detail: `stored vectors=${embeddingMetadata?.documents ?? 'unknown'}, state=${embeddingMetadata?.state ?? 'unknown'}, size=${Math.round(embeddingBytes / 1024)}KB`,
-    fix:
-      !embeddingMetadata
-        ? 'Build the native bridge with embedding metadata support'
-        : 'Generate embeddings via memphis embed store or memphis embed reindex',
+    fix: !embeddingMetadata
+      ? 'Build the native bridge with embedding metadata support'
+      : 'Generate embeddings via memphis embed store or memphis embed reindex',
   });
   const exactSearchLevel =
     runtimeSnapshot.exactSearch.status === 'indexed'
@@ -1474,6 +1477,28 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
       lockLevel === 'warn'
         ? `Stale lock auto-clears on next boot. To force-clean: 'rm ${lockState.lockPath}'.`
         : undefined,
+  });
+
+  // Postmortem item B3 (2026-09-22): the boot-failure counter exists
+  // exactly for this purpose, and this row is where the operator sees
+  // what the runtime will decide at its next start.
+  //
+  // MEASURED that day: 50+ failed restarts in three minutes, every ~5 s,
+  // and the counter grew to 50 entries while the service kept restarting.
+  // The gate now refuses to start a runtime that is crash-looping; the
+  // doctor is where that shows up BEFORE the operator tries to start it.
+  const bootFailureGate = evaluateBootFailureGate(process.env);
+  checks.push({
+    id: 't5-boot-failures',
+    tier: 5,
+    title: 'Boot-failure gate',
+    level: bootFailureGate.refuseStart ? 'fail' : 'pass',
+    ok: !bootFailureGate.refuseStart,
+    required: true,
+    detail: describeBootFailureGate(bootFailureGate),
+    fix: bootFailureGate.refuseStart
+      ? `The runtime refuses to start while the counter is over the threshold. Fix the cause, then remove ${bootFailureGate.counterPath}.`
+      : undefined,
   });
 
   // Phase 4.2 (autopilot 2026-05-08): Tier-3 elevated session row.

@@ -518,3 +518,8 @@ HALT_BYPASS=1 HALT_BYPASS_REASON="council-approved" \
 Created 2026-09-22 in response to incident where `scripts/ci-workflow-install-step-lint.mjs` was deleted by minimax-code (peer agent) while collective #25 council-request HALT was active. Operator requested pattern implementation with combo (skill + cron).
 
 See decisions #227 (initial mis-attribution) and #228 (correction + pattern proposal).
+
+## Sidecar contract
+
+- **Sidecar writes:** `~/.memphis/audit/halt/events.jsonl`, `~/.memphis/halt/`
+- **Audit target:** `~/.memphis/audit/halt/events.jsonl`

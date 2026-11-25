@@ -192,3 +192,8 @@ nie plikami skryptów.
 - Decision tui-1789240746667 (Telegram USB ripper plan)
 - Decision tui-1789241403092 (anti-confab format fix)
 - Journal 416-422 (sessions 2026-09-12)
+
+## Sidecar contract
+
+- **Sidecar writes:** `/home/memphis/.memphis/logs/grabber-feed-daily.log`
+- **Audit target:** `/home/memphis/.memphis/logs/grabber-feed-daily.log`

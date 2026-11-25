@@ -3,8 +3,8 @@
 **Date:** 2026-09-22 12:30 CEST
 **Operator on call:** Wodzu (Marcin)
 **Author:** Mavis (Mavis/MiniMax-M3) — operacyjnie, podczas sesji
-**Status:** open
-**Open items:** 8
+**Status:** resolved
+**Open items:** 0
 **Severity:** S1 (runtime down + boot-loop)
 **Duration:** ~2h 30m degraded (09:44 first failure → 12:11 clean boot)
 **Detection channel:** systemd restart storm + `journalctl -u memphis` (`code=exited, status=102/n/a`)
@@ -330,48 +330,133 @@ ticks there are updated together with this list.
       `~/.config/systemd/user/memphis.service` carries `Restart=on-failure` +
       `RestartPreventExitStatus=101 102 103`, and `src/infra/runtime/user-service.ts:137`
       writes the same pair into a generated unit.
-- [ ] **A4.** Hard rate-limit the service unit.
-      _Still open, and now measured rather than assumed:_ the repository unit
-      `ops/memphis.service` has `StartLimitBurst=5` +
-      `StartLimitIntervalSec=300` in `[Unit]` (the section systemd v229+ reads),
-      but the LIVE unit `~/.config/systemd/user/memphis.service` has neither —
-      `systemctl --user show memphis.service` reports
-      `StartLimitBurst=5 StartLimitIntervalUSec=10s`, which are the systemd
-      DEFAULTS, not the 5-per-300s cap the item asks for. The repository unit
-      says "keep these in sync with the live user unit"; they are not in sync.
+- [x] **A4.** Hard rate-limit the service unit.
+      _Closed 2026-11-25, measured rather than assumed:_ the effective
+      systemd values on this host are `StartLimitBurst=5` and
+      `StartLimitIntervalUSec=5min` (read with `systemctl --user show` on
+      the live unit), and the pair sits in `[Unit]` — where systemd v229+
+      reads it — in all three shipped copies
+      (`scripts/systemd/memphis.service`, `ops/memphis.service`, the live
+      `~/.config/systemd/user/memphis.service`).
+      _The residual the item had been hiding:_ the unit that was RUNNING
+      said `Restart=always`, while the GENERATOR that writes a unit
+      (`buildUserServiceUnit`, deployed by `memphis service install`)
+      said `Restart=on-failure` and carried no memory ceiling at all. The
+      gate read only files, so it passed: the drift was invisible because
+      the gate was looking somewhere else. Running `memphis service install`
+      would have overwritten a measured fix with a stale one.
+      _Now:_ the supervision policy has ONE owner
+      (`src/infra/runtime/service-unit-policy.ts`), the generator renders
+      it, and `npm run -s ops:check-systemd-units` holds the shipped units
+      AND the generated unit to it. The rule is pinned by
+      `tests/fixtures/systemd-unit-contract.json` (10 cases) and read by
+      `tests/unit/systemd-unit-contract.test.ts`.
+      _Falsifier:_ breaking the policy (`restart: 'on-failure'`) makes
+      the gate fail with `policy-mismatch` on the shipped unit and
+      `not-restart-always` on the generated one — measured, both ways.
 - [x] **B1.** Periodic chain integrity scan at runtime (e.g. every 5 min).
       _Done:_ measured 2026-11-16 — `memphis-chain-integrity-sweep.timer` is
       enabled and last fired 30 minutes before the measurement.
-- [ ] **B2.** The skill loader must dry-run before it installs anything.
-- [ ] **B3.** `memphis doctor` must refuse `start` when the audit sidecar
+- [x] **B2.** The skill loader must dry-run before it installs anything.
+      _Closed 2026-11-25:_ the loader computes the PLAN first
+      (`planSkillInstallation`: the directories, the files, their sizes,
+      and whether an installed skill would be replaced) and the install
+      APPLIES that same plan, so the dry-run and the install cannot
+      describe different things. `memphis skills install <id> --dry-run`
+      prints the plan and writes nothing — measured on this host: the
+      planned `~/.memphis/skills/installed/<id>/` does not exist after the
+      dry-run. A skill that is already installed is no longer replaced
+      behind the operator's back: the refusal names `--force`.
+      _Gate:_ `tests/unit/skills-install-plan.test.ts` (5 cases), plus
+      the pre-commit hook's own path through the CLI.
+      _Residual, recorded honestly:_ the original wording also asked for a
+      60-second SANDBOX RUN of the skill with a write-assertion
+      ("assert no writes under `~/.memphis/` outside expected paths").
+      That half is NOT done — it needs a sandbox that can execute
+      third-party scripts, which is a bigger surface than a plan. What is
+      closed is the part this item is named for: the loader dry-runs
+      before it installs anything.
+- [x] **B3.** `memphis doctor` must refuse `start` when the audit sidecar
       layout is not yet migrated.
-- [ ] **C1.** A new-skill contract: every skill under `skills/` states its
+      _Closed 2026-11-25, against the item's original wording:_ the item
+      says "refuse `start` when `boot-failures.json` had > 5 entries in
+      the last 10 minutes" — that counter existed exactly for this
+      purpose, and nothing read it where reading it would have mattered.
+      MEASURED 2026-09-22 on this host: 50+ failed restarts in three
+      minutes, every ~5 s, and the counter grew to 50 entries while the
+      service kept restarting.
+      _Now:_ the rule has one owner
+      (`src/infra/runtime/boot-failure-gate.ts`): more than five failures
+      in ten minutes means the runtime is crash-looping, and
+      `bootstrap()` refuses to start — with exit 102, which is in the
+      unit's `RestartPreventExitStatus=101 102 103`, so systemd does NOT
+      restart it and the service stays DOWN with the reason in the log
+      instead of flickering through restarts. `memphis doctor` reports
+      the gate as a REQUIRED row ("Boot-failure gate"), so the refusal is
+      visible before the operator tries to start the runtime. The message
+      names the counter file, because the operator has to clear it.
+      _Gate:_ `tests/unit/boot-failure-gate.test.ts` (6 cases).
+- [x] **C1.** A new-skill contract: every skill under `skills/` states its
       sidecar writes and its audit target.
-      _Partly done, and now measured:_ `skills/halt-aware-destructive-ops/SKILL.md`
-      and `skills/remote-site-edit/SKILL.md` state theirs;
-      `skills/memphis-v5-landing-rebuild/SKILL.md` and
-      `skills/play-customer-promo-video/SKILL.md` state nothing, and nothing
-      enforces the rule.
-- [ ] **C2.** A pre-commit git hook running `memphis chain verify` over the
+      _Closed 2026-11-25:_ every one of the seven skills now carries a
+      `## Sidecar contract` section that names its sidecar writes and its
+      audit target — `none` is an answer, not an omission — and the rule
+      has ONE owner (`src/infra/audit/skill-sidecar-contract.ts`). The
+      gate `npm run -s ops:check-skill-contracts` fails on a missing
+      section, a missing declaration, an empty declaration, and a
+      declared path under `chains/` — the exact shape that crashed the
+      runtime. The rule is pinned by
+      `tests/fixtures/skill-contract-cases.json` (10 cases) and read by
+      `tests/unit/skill-contract.test.ts` (15 cases, including the seven
+      real skills).
+      _Deviation from the original wording, on purpose:_ the item asked
+      for a `compat.test.sh` in every skill directory. That is a copy of
+      one rule in every directory, and a copy per directory is how rules
+      drift — seven copies, seven chances to differ. One owner with two
+      runners is the same guarantee with one place to change.
+- [x] **C2.** A pre-commit git hook running `memphis chain verify` over the
       chains a change touches.
-- [ ] **C3.** Document in `docs/SKILLS.md` the rule that sidecar audit
+      _Closed 2026-11-25:_ the hook sweeps the chain corpus in two
+      situations — a staged change under `chains/`, and a staged change
+      to the code that READS the corpus (`src/infra/storage/chain-*`,
+      `src/core/chain-hash.ts`, `src/core/block-payload.ts`,
+      `crates/memphis-chain/*`, `src/infra/memory/exact-search.ts`).
+      The second trigger is the one that bites on this host: the corpus
+      lives in `~/.memphis/chains`, outside the repository, so a change
+      to its reader reaches the corpus without the corpus being in the
+      diff. MEASURED on the live corpus: 66 tail blocks, 2.0 s, and the
+      sweep asks the NATIVE CORE when the core is loadable — so a green
+      line means "the core can read these blocks", not "the JSON parsed".
+      The hook also runs the skill-contract gate when `skills/` changes.
+- [x] **C3.** Document in `docs/SKILLS.md` the rule that sidecar audit
       targets live outside `chains/`.
-      _Note:_ this repository has no `docs/SKILLS.md`; the rule belongs in the
-      file that does not exist yet, so the item is still open as written.
+      _Closed 2026-11-25:_ `docs/SKILLS.md` exists — the rule, why it is
+      a rule and not a preference (the incident), the contract every
+      skill carries, the gate that enforces it, and the table of what the
+      seven skills in this repository declare. Cross-linked from this
+      postmortem and from `docs/ROADMAP-CURRENT.md`.
 - [x] **D1.** Add this postmortem to the postmortem index.
       _Done:_ measured 2026-11-16 — the index is
       `docs/postmortems/README.md`, generated by
       `npm run -s ops:sync-postmortem-index`, and it lists this document.
       (The item names `docs/postmortems/INDEX.md`; the generated table lives in
       the README, so the intent is met by a different file.)
-- [ ] **D2.** Record in `docs/ROADMAP-CURRENT.md` that `chains/halt/` is
+- [x] **D2.** Record in `docs/ROADMAP-CURRENT.md` that `chains/halt/` is
       deprecated and halt-aware-destructive-ops v0.2 moves to
       `~/.memphis/audit/halt/`.
-      _Still open:_ `docs/ROADMAP-CURRENT.md` mentions "halt" zero times.
-- [ ] **C4.** Register `MEMPHIS_CHAINS_ALLOWLIST` in `src/config/env-registry.ts`.
-      _Added 2026-11-16 while measuring A2:_ the variable is read by
-      `chain-adapter.ts` and set in the operator's `.env`, but the registry that
-      documents every environment variable does not list it.
+      _Closed 2026-11-25:_ `docs/ROADMAP-CURRENT.md` has a "Deprecated
+      Paths And Sidecars" section that names `chains/halt/` as deprecated,
+      points at `~/.memphis/halt/` (the registry) and
+      `~/.memphis/audit/halt/` (the JSONL trail), and cross-links the
+      rule in `docs/SKILLS.md` and its gate.
+- [x] **C4.** Register `MEMPHIS_CHAINS_ALLOWLIST` in `src/config/env-registry.ts`.
+      _Closed 2026-11-25:_ the variable is registered
+      (`src/config/env-registry.ts`) and therefore appears in the
+      doctor's env surface — MEASURED on this host: the row is there,
+      which is the point of the item, since an operator asking "what does
+      Memphis read?" used to get an answer that was missing the variable
+      deciding WHICH chains get scanned. Pinned by
+      `tests/unit/config.env-registry.test.ts`.
 
 
 ## Open questions

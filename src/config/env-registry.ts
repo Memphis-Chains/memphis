@@ -753,6 +753,28 @@ export const MEMPHIS_VISION_TIMEOUT_MS = defineNumberAccessor({
   max: 86_400_000,
 });
 
+/**
+ * `MEMPHIS_CHAINS_ALLOWLIST` — the comma-separated chain names the
+ * verifier and the runtime may touch.
+ *
+ * WHY IT IS REGISTERED HERE (postmortem item C4): the variable was read
+ * by `chain-adapter.ts` and set in the operator's `.env`, but the registry
+ * that documents every env var Memphis reads did not name it. An operator
+ * who asked "what does Memphis actually read?" got an answer that was
+ * missing a variable that changes which chains get scanned — the kind of
+ * omission that reads like "the runtime does not scan other chains" when
+ * it really means "the runtime scans exactly the ones you named".
+ *
+ * The value may only NARROW the registry of known chains; it cannot invent
+ * one. That rule lives with the reader (`getChainAllowlist`), not here.
+ */
+export const MEMPHIS_CHAINS_ALLOWLIST = defineStringAccessor({
+  name: 'MEMPHIS_CHAINS_ALLOWLIST',
+  envKey: 'MEMPHIS_CHAINS_ALLOWLIST',
+  description: 'Comma-separated chain names the runtime may scan (narrows the registry)',
+  defaultValue: '',
+});
+
 // ── Registry surface (for doctor + telemetry) ───────────────────────────────
 
 /**
@@ -814,6 +836,7 @@ export const ENV_REGISTRY: readonly EnvAccessor<unknown>[] = [
   MEMPHIS_GIT_TIMEOUT_MS,
   MEMPHIS_OCR_TIMEOUT_MS,
   MEMPHIS_VISION_TIMEOUT_MS,
+  MEMPHIS_CHAINS_ALLOWLIST,
 ] as const;
 
 export interface RegistryReport {

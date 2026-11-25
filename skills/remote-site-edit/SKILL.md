@@ -309,3 +309,8 @@ Commit and push the repo after the site is verified live. Site work is invisible
 - **Idempotent:** re-running rotates the backup
 - **Reversible:** while a backup exists in `~/site-backups/`
 - **Safe by default:** touches only the files the operator named
+
+## Sidecar contract
+
+- **Sidecar writes:** none — the skill's writes are the deployed site on the remote host and a local backup outside the docroot; neither is inside the chain corpus.
+- **Audit target:** none — the pre-deploy audit is printed for the operator.
