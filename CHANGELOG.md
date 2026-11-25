@@ -90,6 +90,42 @@ the burial case fails with `expected true to be false` — the corpse survived
 the drill that should have buried it — and the "the owner is alive" case
 fails when the liveness proof is mutated away.
 
+### The chain verifier was the other half of the pause
+
+The drill does not only extract — it verifies, and the verification was the
+other half of the pause. The verifier read every block of a chain and hashed
+it in **one uninterrupted burst**, so the silence grew with the length of the
+chain. MEASURED on this host, 2026-11-25, on the live corpus (the `patterns`
+chain, 5 544 blocks):
+
+|                                   | before           | after               |
+| --------------------------------- | ---------------- | ------------------- |
+| the verifier's longest silence    | **963–1 029 ms** | **39–55 ms**        |
+| heartbeat ticks during the verify | 5 of ~100 (5 %)  | **79 of 98 (81 %)** |
+| the verification's own duration   | 2 047 ms         | 1 947 ms            |
+
+and in the REAL drill, on the real archive
+(`scheduled-2026-11-25-11-42.tar.gz` — 15 chains, 12 477 blocks verified):
+
+|                              | before     | after      |
+| ---------------------------- | ---------- | ---------- |
+| the drill's longest silence  | **921 ms** | **115 ms** |
+| heartbeat questions answered | 549 of 779 | 666 of 758 |
+| the drill's own duration     | 15 588 ms  | 15 178 ms  |
+
+The blocks are now read and validated in batches of 64, and the event loop is
+handed back between them, which bounds the pause by **one batch** instead of
+by the length of the chain. The verification did not get slower — it took the
+same time, with a loop that stayed awake.
+
+**THE GATE, and it can fail.** `tests/integration/chain-verify-event-loop.test.ts`
+asks the loop a question every 20 ms while a 5 000-block chain is verified,
+and counts the questions **answered** against the questions **asked** — the
+count scales with the machine, so the gate carries no absolute threshold to
+tune. Against the pre-fix code it fails with `expected 0.104 to be greater
+than 0.333` — the loop answered 10 % of them; after the repair it answers
+95 %.
+
 ### The cockpit tells the operator to run `/recovery` — and now it has one
 
 The cockpit's own error notice said: **Action: run `/recovery` to see the

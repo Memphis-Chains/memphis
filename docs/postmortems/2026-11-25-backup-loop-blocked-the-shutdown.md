@@ -1,8 +1,8 @@
 # The backup drill froze the runtime, and a stop became a kill — 2026-11-25
 
-**Status:** open
+**Status:** resolved
 **Severity:** S2 (runtime SIGKILLed; a nightly backup reported a false failure)
-**Open items:** 1
+**Open items:** 0
 
 ## Summary
 
@@ -122,6 +122,20 @@ the ctime cannot be forged by tar.
 
 Decision #595. Journal #1101.
 
+The chain verifier was the OTHER half of the pause, and it is repaired too.
+It used to read and hash every block of a chain in one uninterrupted burst,
+which held the event loop for as long as the chain was long — MEASURED on the
+live corpus (`patterns`, 5 544 blocks), three runs each: the longest silence
+**1 029 / 988 / 963 ms**, and a 20 ms heartbeat that fired 5 times in
+2 047 ms instead of 79. The verifier now
+reads and validates the blocks in batches of 64 and hands the event loop
+back between them, so the pause is bounded by one batch instead of by the
+length of the chain: the longest silence fell to **50 ms**, the heartbeat
+fired 79 times in 1 947 ms, and the verification took the same time as
+before (2 047 ms → 1 947 ms, medians).
+
+Decision #596. Journal #1102.
+
 ## Anti-confab — what we are NOT claiming
 
 - **NOT** a systemd defect. `TimeoutStopSec=45` behaved exactly as
@@ -134,8 +148,10 @@ Decision #595. Journal #1101.
 - **NOT** the same cause as E-08's false failures. E-08's repair fixed the
   drill's **verdict**; this incident is about the drill's **timing**, and it
   survived that repair unchanged.
-- The remaining 1 842 ms of silence is the chain verifier's block reads, not
-  tar. It is not claimed to be zero.
+- The remaining 1 842 ms of silence was the chain verifier's block reads, not
+  tar. It was not claimed to be zero — and it was later measured on the live
+  corpus at ~1 000 ms and repaired (the verifier now hands the event loop
+  back between batches; the silence fell to ~45 ms).
 - **NOT** a disk-space incident that happened in production. The 489 MB
   corpse was left by the live stop-during-drill **test** on this host,
   minutes after the repair was verified; it was removed by hand. The rule
@@ -150,6 +166,16 @@ Decision #595. Journal #1101.
 - **DONE** — the gate can fail: `tests/integration/backup-event-loop.test.ts`
   installs a `tar` shim that sleeps and marks its own window; against the
   pre-fix code both cases fail with `expected 0 to be greater than 0`.
+- **DONE** — the chain verifier hands the event loop back between batches,
+  so the runtime stays reachable while it verifies. The longest silence on
+  the live corpus fell from ~1 000 ms to ~45 ms, and the verification took
+  the same time as before (2 047 ms → 1 947 ms, medians). In the REAL drill,
+  on the real archive, the longest silence fell from **921 ms to 115 ms**.
+  - **FALSIFIER:** `tests/integration/chain-verify-event-loop.test.ts` asks
+    the loop a question every 20 ms and counts the questions ANSWERED
+    against the questions ASKED; against the pre-fix code it fails with
+    `expected 0.104 to be greater than 0.333` — the loop answered 10 % of
+    them, and 95 % after the repair.
 - **DONE** — the live stop-during-drill test on the RUNNING service:
   `backup.scheduled.start` at 10:41:52, the extraction and the SIGTERM in the
   same second (10:42:42), `shutdown.exit exitCode=0 drained=true` at 10:42:46.
@@ -169,13 +195,32 @@ unchecked boxes and compares the count with the `**Open items:**` header
 above. A document whose header contradicts this list is reported as
 inconsistent, so the two cannot drift apart silently.
 
-- [ ] **A1.** The chain verifier still reads the corpus one block at a time
+- [x] **A1.** The chain verifier still reads the corpus one block at a time
       and pauses the runtime's event loop for up to **1 842 ms** during a
       drill. It fits inside the stop budget today (the drain budget is 15 s,
       the stopper budget 5 s, the unit's `TimeoutStopSec` 45 s) and a stop is
       answered inside it — but it is a real pause, it belongs to the storage
       layer rather than to the tar rule, and it is not claimed to be zero.
-      _Where:_ `verifyChainIntegrity` in `src/infra/storage/chain-adapter.ts`.
+      **CLOSED 2026-11-25** (decision #596): the verifier reads and
+      validates the blocks in batches of 64 and hands the event loop back
+      between them, so the pause is bounded by one batch instead of by the
+      length of the chain. MEASURED on the live corpus (the `patterns` chain,
+      5 544 blocks), three runs each: the longest silence fell from
+      **1 029 / 988 / 963 ms to 55 / 44 / 39 ms**, the heartbeat ticks from
+      5 of ~100 to 79 of 98, and the verification's own duration did not
+      change (2 047 ms → 1 947 ms, medians). AND IN THE REAL DRILL, on the
+      real archive (`scheduled-2026-11-25-11-42.tar.gz`, 15 chains and 12 477
+      blocks verified): the longest silence fell from **921 ms to 115 ms**,
+      the heartbeat answered 549 of 779 questions before and 666 of 758
+      after, and the drill took the same time (15 588 ms → 15 178 ms). - **FALSIFIER:** `tests/integration/chain-verify-event-loop.test.ts`
+      asks the loop a question every 20 ms while a 5 000-block chain is
+      verified, and counts the questions ANSWERED against the questions
+      ASKED. Against the pre-fix code it fails with `expected 0.104 to be
+  greater than 0.333` — the loop answered 10 % of them; after the
+      repair it answers 95 %.
+      _Where:_ `readAndValidateChainBlocks` in
+      `src/infra/storage/chain-adapter.ts`; the gate is
+      `tests/integration/chain-verify-event-loop.test.ts`.
 - [x] **A2.** The scratch of a drill that was killed was left in the backups
       root forever — **489 MB and 13 002 files**, measured on this host after
       the live stop-during-drill test. The drill removed it in a `finally`,
@@ -196,4 +241,8 @@ inconsistent, so the two cannot drift apart silently.
   that is why a stop became a kill".
 - Decision #594, journal #1100 (Memphis chains) — the tar rule.
 - Decision #595, journal #1101 (Memphis chains) — the scratch of a killed drill.
+- Decision #596, journal #1102 (Memphis chains) — the chain verifier's pause.
 - PR #794 — E-08's repair (the drill's verdict) and E-07's `Restart=always`.
+- PR #796 — the tar rule (one owner, asynchronous).
+- PR #798 — the scratch of a killed drill.
+- PR #799 — the chain verifier's pause.
