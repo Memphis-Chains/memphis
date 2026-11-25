@@ -82,21 +82,30 @@ describe('verifyChainIntegrity — tampering detection', () => {
     },
   );
 
-  it.each(['journal.backup-1792925651264', 'cases.backup-2026-07-07T15-07-23-108Z'])(
+  it.each([
+    ['journal.backup-1792925651264', 'journal'],
+    ['cases.backup-2026-07-07T15-07-23-108Z', 'cases'],
+  ])(
     'verifies the recognized recovery directory %s',
-    async (name) => {
+    async (name, chain) => {
       // The hole this stage closes: the allowlist carried three frozen
       // backups, the scanner's name pattern had no dot in it, and
       // `chain verify --chain journal.backup-…` answered `ok: true` after
       // checking NOTHING. A recovery directory is a chain now, so it is
       // opened — and a recovery directory that is not there is an error,
       // not a silent pass.
+      //
+      // The block carries the chain the archive COPIES, not the archive's
+      // own directory name: the archive suffix is a copy marker. A fixture
+      // that put `journal` inside `cases.backup-…` was the same fork the
+      // host's `system.backup-1782897312539` turned out to be, and the
+      // identity check found it here first.
       const chainDir = join(env.dataDir, 'chains', name);
       mkdirSync(chainDir, { recursive: true });
       const block = {
         index: 0,
         timestamp: new Date().toISOString(),
-        chain: 'journal',
+        chain,
         data: { type: 'journal', content: 'recovered', tags: [] },
         prev_hash: '0'.repeat(64),
       };

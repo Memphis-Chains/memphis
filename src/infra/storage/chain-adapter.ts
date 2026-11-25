@@ -23,7 +23,7 @@ import {
   type BridgeAliasMap,
 } from './napi-contract.js';
 import { NapiChainAdapter } from './rust-chain-adapter.js';
-import { getChainPath, normalizeChainName } from '../../config/paths.js';
+import { getChainPath, getDataDir, normalizeChainName } from '../../config/paths.js';
 import { normalizeBlockPayload } from '../../core/block-payload.js';
 import { canonicalHash } from '../../core/chain-hash.js';
 import { parseBool } from '../../core/env.js';
@@ -693,6 +693,29 @@ export function hashBlock(
   return canonicalHash(block, crypto);
 }
 
+/**
+ * The identity every block of a chain directory must carry.
+ *
+ * A chain's identity is its LOGICAL name — an archive's `.backup-<stamp>`
+ * suffix is a COPY marker, not part of the chain's name — put through the
+ * alias table, because a directory named `case` holds the chain `cases`.
+ *
+ * The rule is the owner's own (`memory/chain-catalog.ts`, projected from the
+ * Rust core): _"the blocks inside it carry `chain: "journal"`, and that is
+ * what the hash chain was built over. Reading the directory name as the
+ * chain name is how a repair would rewrite every archived block's `chain`
+ * field and invalidate the archive's hashes."_
+ *
+ * It matters because the identity is INSIDE the hash: a block that carries
+ * the wrong one hashes consistently over the wrong value, so every hash
+ * check passes and the copy verifies clean while being a different history
+ * of the same blocks.
+ */
+export function expectedChainIdentity(directoryName: string): string {
+  const logical = logicalChainNameForDirectory(directoryName);
+  return normalizeChainName(logical) ?? logical;
+}
+
 async function readAndValidateChainBlocks(
   chainsDir: string,
   fs: typeof import('node:fs/promises'),
@@ -729,11 +752,30 @@ async function readAndValidateChainBlocks(
   // out which chain (journal? cases? soul?) was corrupted. Live
   // 2026-05-08 session surfaced exactly this confusion.
   const chainName = chainsDir.split(/[\\/]/).filter(Boolean).pop() ?? '<unknown>';
+  // The chain's IDENTITY is part of every block's hashed content, so a
+  // block that carries the wrong one hashes consistently OVER the wrong
+  // value — the hash check below cannot see it. Measured on this host
+  // (2026-11-25): the archive `system.backup-1782897312539` carried its own
+  // DIRECTORY name in all 261 of its blocks, every hash was self-consistent,
+  // and `chain verify` answered `ok: true`. The copy verified clean and could
+  // not be rolled back: its last block no longer seamed with the rotation
+  // archive that holds the blocks after it.
+  const expectedIdentity = expectedChainIdentity(chainName);
   const formatHashFingerprint = (hash: string | undefined): string => {
     if (!hash) return '<empty>';
     return hash.length > 12 ? `${hash.slice(0, 8)}…${hash.slice(-4)}` : hash;
   };
   for (const { file, block: current } of loaded) {
+    if (current.chain !== expectedIdentity) {
+      throw new Error(
+        `chain '${chainName}' integrity check failed at block ${current.index} (${file}): ` +
+          `chain field '${current.chain}' ≠ expected '${expectedIdentity}'. ` +
+          `A chain's identity is its LOGICAL name — an archive carries the chain it copies, not its own directory name — ` +
+          `and the identity sits inside the hash, so a copy that carries the wrong one is a DIFFERENT history of the same blocks. ` +
+          `Run \`memphis chain repair-archive-identity --chain ${chainName}\` to restore the copy's identity, ` +
+          `or \`memphis chain verify --chain ${chainName}\` to see it again.`,
+      );
+    }
     const mismatch = checkBlockHashMismatch(current, crypto, file);
     if (mismatch?.mismatch) {
       if (options.repairOnMismatch === true && isChainRepairEnabled(rawEnv)) {
@@ -1329,4 +1371,161 @@ export async function rebuildChainHashes(
     blocksRewritten: rewritten,
     backupDir: rewritten > 0 ? backupDir : null,
   };
+}
+
+/**
+ * The result of restoring an archive's chain identity.
+ *
+ * `blocksRewritten` counts the blocks whose bytes changed — the identity is
+ * inside the hash, so a copy that carries the wrong one needs every block
+ * rewritten, not just the first.
+ */
+export interface ChainArchiveIdentityRepairResult {
+  archive: string;
+  chain: string;
+  archivePath: string;
+  blocksProcessed: number;
+  blocksRewritten: number;
+  backupPath: string | null;
+  firstIndex: number | null;
+  lastIndex: number | null;
+}
+
+/**
+ * Restore the chain identity of a ROLLBACK COPY that carries the wrong one.
+ *
+ * The archive of a chain holds the chain's blocks, so the blocks carry the
+ * chain's LOGICAL name — never the archive's own directory name. When they
+ * carry the directory name instead, the copy is not a copy: it is a
+ * different history of the same blocks, because the identity is inside the
+ * hash. Measured on this host (2026-11-25) on the archive
+ * `system.backup-1782897312539`: all 261 blocks carried the directory name,
+ * every hash was self-consistent, `chain verify` answered `ok: true`, and
+ * the copy's last block no longer seamed with the rotation archive that
+ * holds the blocks after it — so the copy could not be rolled back and
+ * nothing said so.
+ *
+ * This restores it: the identity goes back to the chain's logical name and
+ * the hash chain is recomputed over it. The blocks' DATA is never touched,
+ * and the pre-repair copy is kept under the data dir's `backups/` before
+ * the first byte is written.
+ *
+ * It refuses anything that is not an archive directory — a LIVE chain's
+ * identity is its own name, and a live chain whose blocks disagree with it
+ * is a different problem with a different tool.
+ */
+export async function repairArchiveIdentity(
+  archiveName: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): Promise<ChainArchiveIdentityRepairResult> {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const crypto = await import('node:crypto');
+
+  const trimmed = archiveName.trim();
+  if (!isChainBackupDirectory(trimmed)) {
+    throw new Error(
+      `chain archive identity repair refused: '${trimmed}' is not an archive directory ` +
+        `(an archive is '<chain>.backup-<stamp>'). This repair exists for a COPY that carries the wrong chain identity.`,
+    );
+  }
+
+  const identity = expectedChainIdentity(trimmed);
+  const baseDir = path.resolve(getChainPath(undefined, rawEnv));
+  const archivePath = path.resolve(getChainPath(trimmed, rawEnv));
+  if (!archivePath.startsWith(`${baseDir}${path.sep}`)) {
+    throw new Error(
+      'chain archive identity repair refused: the archive is outside the chains directory',
+    );
+  }
+
+  const files = (await fs.readdir(archivePath)).filter((file) => file.endsWith('.json')).sort();
+  const loaded: { file: string; block: ChainBlock }[] = [];
+  for (const file of files) {
+    const parsed = JSON.parse(
+      await fs.readFile(path.join(archivePath, file), 'utf8'),
+    ) as ChainBlock;
+    loaded.push({ file, block: parsed });
+  }
+  loaded.sort((a, b) => a.block.index - b.block.index);
+  const blocks = loaded.map((entry) => entry.block);
+
+  const backupPath = await backUpArchiveDirectory(archivePath, trimmed, rawEnv);
+
+  let rewritten = 0;
+  let prevHash = GENESIS_PREV_HASH;
+  for (const { file, block } of loaded) {
+    const withoutHash = {
+      index: block.index,
+      timestamp: block.timestamp,
+      chain: identity,
+      data: block.data,
+      prev_hash: prevHash,
+    };
+    const correctHash = hashBlock(withoutHash, crypto);
+    const needsRewrite =
+      block.hash !== correctHash || block.prev_hash !== prevHash || block.chain !== identity;
+
+    if (needsRewrite) {
+      const repaired: ChainBlock = {
+        ...withoutHash,
+        hash: correctHash,
+        ...(block.signer ? { signer: block.signer } : {}),
+        ...(block.signature ? { signature: block.signature } : {}),
+      };
+      const target = path.join(archivePath, file);
+      const tmp = `${target}.identity-repair-${process.pid}-${Date.now()}`;
+      await fs.writeFile(tmp, `${serializeBlockForDisk(repaired)}\n`, 'utf8');
+      await fs.rename(tmp, target);
+      rewritten += 1;
+    }
+
+    // The next block links to THIS block's hash — the repaired one when it
+    // changed, the stored one when it did not. They are the same value when
+    // nothing changed, because that is what "did not change" means.
+    prevHash = correctHash;
+  }
+
+  return {
+    archive: trimmed,
+    chain: identity,
+    archivePath,
+    blocksProcessed: blocks.length,
+    blocksRewritten: rewritten,
+    backupPath,
+    firstIndex: blocks[0]?.index ?? null,
+    lastIndex: blocks.at(-1)?.index ?? null,
+  };
+}
+
+/**
+ * Copy an archive directory aside before it is rewritten.
+ *
+ * The copy lives under the data dir's `backups/`, NOT under `chains/` —
+ * a directory under `chains/` is either a chain or an archive, and a third
+ * kind of thing there is a thing every chain scan has to learn about.
+ */
+async function backUpArchiveDirectory(
+  archivePath: string,
+  archiveName: string,
+  rawEnv: NodeJS.ProcessEnv,
+): Promise<string | null> {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+
+  const backupsDir = path.join(getDataDir(rawEnv), 'backups');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const destination = path.join(backupsDir, `archive-identity-repair-${archiveName}-${stamp}`);
+
+  try {
+    await fs.mkdir(backupsDir, { recursive: true });
+    await fs.cp(archivePath, destination, { recursive: true });
+    return destination;
+  } catch {
+    // A missing backup is not a reason to refuse the repair — the repair
+    // itself is what restores a COPY. But the caller must be able to see
+    // that it happened without one, so the null is reported rather than
+    // swallowed.
+    return null;
+  }
 }

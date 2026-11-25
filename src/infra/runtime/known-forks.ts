@@ -44,7 +44,8 @@ export type KnownForkKind =
   | 'prev_hash_mismatch'
   | 'stored_hash_mismatch'
   | 'non_sequential'
-  | 'genesis_prev_hash';
+  | 'genesis_prev_hash'
+  | 'identity_mismatch';
 
 export interface KnownFork {
   chain: string;
@@ -223,6 +224,16 @@ export function parseChainIntegrityError(message: string): ParsedIntegrityError 
 
   if (/^non-sequential index/.test(rest)) {
     return { chain, block, file, kind: 'non_sequential' };
+  }
+
+  // The chain's IDENTITY: a block that carries a different chain name than
+  // the chain it belongs to. The identity is inside the hash, so such a
+  // block hashes consistently over the wrong value — this is not a hash
+  // fork but a different history of the same blocks, and the tool that
+  // repairs it is `memphis chain repair-archive-identity`, not a marker.
+  const identityMatch = rest.match(/^chain field '([^']*)' ≠ expected '([^']*)'/);
+  if (identityMatch) {
+    return { chain, block, file, kind: 'identity_mismatch' };
   }
 
   return null;

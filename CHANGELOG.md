@@ -1,5 +1,51 @@
 ## Unreleased
 
+### A rollback copy can carry a different chain, and `chain verify` called it clean
+
+The chain's identity is inside the hash: `canonicalHash` covers the block
+with sorted keys, and the block carries its `chain`. So a block that
+carries the wrong chain name hashes consistently **over the wrong value** —
+every hash check passes, the prev_hash chain holds, and nothing sees it.
+
+The host carried exactly that. The rollback copy
+`chains/system.backup-1782897312539` — blocks 1…261 of the `system` chain's
+prefix — carried **its own directory name** in all 261 blocks. The other
+two archives are true copies (276/276 and 210/210 hashes shared with the
+rotation archive); this one shared **0 of 261**, so its last block no
+longer seamed with the blocks that follow it. A copy that verifies clean
+and cannot be rolled back.
+
+The rule already had an owner — `src/memory/chain-catalog.ts` says it out
+loud, and the Rust core behind it owns it — and nothing enforced it.
+
+`chain verify` now asks the question. The identity it compares against is
+the directory's **logical** name (an archive's `.backup-<stamp>` suffix is
+a copy marker, not part of the chain's name), put through the alias table.
+The failure is structured, and the known-forks parser classifies it as
+`identity_mismatch` rather than shrugging.
+
+The falsifier, measured on this host before the repair:
+`chain verify --chain system.backup-1782897312539` exited **4** —
+
+```
+chain 'system.backup-1782897312539' integrity check failed at block 1 (000001.json): chain field 'system.backup-1782897312539' ≠ expected 'system'.
+```
+
+— and the whole-corpus verify exited 4 as well.
+
+`memphis chain repair-archive-identity --chain <archive>` puts the identity
+back and recomputes the hash chain over it. It refuses anything that is not
+an archive directory, and it copies the archive aside under the data dir's
+`backups/` before the first byte is written. Measured after the repair:
+**261/261** hashes shared with the rotation archive, the seam 261→262 holds
+again, the copy is identical to the rotation's blocks in every field (key
+order aside — the canonical hash sorts keys), and `chain verify` answers
+`ok: true` over 14 chains.
+
+The fixture in `tests/unit/chain-integrity.test.ts` carried the same fork —
+`chain: 'journal'` inside `cases.backup-…` — and the gate found it there
+first.
+
 ### The eight cases have eight shapes, and the type now says which is which
 
 `CaseEntry` is eight cases with eight different field sets. A genitive
