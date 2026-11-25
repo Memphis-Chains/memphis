@@ -1826,10 +1826,10 @@ be run rather than admired:
 7. **The measurement is on this host.** Every claim in this ledger is a number
    taken here, and the numbers have dates.
 
-State today, measured 2026-11-24: (1) **fails** — E-01, E-02, E-03 and E-04 are
-closed, E-09 remains; (2) **fails** — the bridge's vocabulary, the chain-name
+State today, measured 2026-11-25: (1) **fails** — E-01, E-02, E-03 and E-04 are
+closed, E-09 is closed in six phases; (2) **fails** — the bridge's vocabulary, the chain-name
 vocabulary and the embed profile have their artefacts and their two runners,
-E-09 remains; the package artefact now has an owner and a runner as well
+E-09 is closed in six phases; the package artefact now has an owner and a runner as well
 (E-12: the gate installs under a declared policy, proves the native binding and
 probes a command that opens the database); (3) **holds** — every gate added in
 the last four rounds ships
@@ -1838,7 +1838,11 @@ run, the chain-name gate was run BEFORE its fix and failed with
 `[".archives", "cases.backup-2026-07-07T15-07-23-108Z", "journal"]`, and the
 embed-profile gate was run before the fix and failed with
 `left: 32, right: 768` — and then failed AGAIN on its first CI run, on a
-hole in its own artefact; (4) **fails** — E-05, E-07, E-08; (5) **holds** — the
+hole in its own artefact; (4) **fails** — E-05 alone: the fifteen recovery
+turns need the operator's acknowledgements, and no code can clear them.
+E-07 (a clean drain left the unit down, because a clean exit is not a
+failure) and E-08 (the retention was a latch, and the drill's verdict was a
+property of the machine) are closed; (5) **holds** — the
 two dead files are gone; (6) **holds** — the block-format, tool-contract,
 bridge-vocabulary, chain-name and embed-profile artefacts are generated;
 (7) **holds**.
@@ -1849,10 +1853,10 @@ way through; the second closed (1) for the bridge path; the third closed (1),
 for the embed profile; the fifth closed (2) for the artefact that ships — the
 package-artifact gate now installs under a declared policy, proves the native
 binding, and probes a command that opens the database (E-12).
-**Next, in this order:** the REST of E-09 — the manifest family and the
-embed-profile family (the ratchet is at TWO surfaces, and it may only go
-down), then the per-variant shapes of `CaseEntry`, then the two napi
-naming conventions in one crate, which is a WIRE change and needs a
-compatibility window rather than a quiet edit. And only then Family B's
+**Next, in this order:** Family B's
 wedge (E-05), which needs the operator's fifteen acknowledgements before
-any code can help.
+any code can help — and, beside it, the two residuals this round measured
+rather than hid: the drill's tar passes are still synchronous, so a stop that
+lands inside a drill still waits for it, and the rotation's `.jsonl.gz`
+archives inside a backup are still not verified, because the drill has no
+reader for them.
