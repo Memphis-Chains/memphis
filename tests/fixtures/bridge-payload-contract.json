@@ -2309,7 +2309,272 @@
       ],
       "name": "CaseEntryPayload",
       "naming": "serde",
-      "rustType": "CaseEntry"
+      "rustType": "CaseEntry",
+      "variants": {
+        "tag": "case_type",
+        "variants": [
+          {
+            "fields": [
+              {
+                "legacyName": null,
+                "name": "entity",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              },
+              {
+                "legacyName": null,
+                "name": "action",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              },
+              {
+                "legacyName": null,
+                "name": "timestamp",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              }
+            ],
+            "name": "nominative"
+          },
+          {
+            "fields": [
+              {
+                "legacyName": null,
+                "name": "owner",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              },
+              {
+                "legacyName": null,
+                "name": "possessed",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              }
+            ],
+            "name": "genitive"
+          },
+          {
+            "fields": [
+              {
+                "legacyName": null,
+                "name": "giver",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              },
+              {
+                "legacyName": null,
+                "name": "recipient",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              },
+              {
+                "legacyName": null,
+                "name": "object",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              }
+            ],
+            "name": "dative"
+          },
+          {
+            "fields": [
+              {
+                "legacyName": null,
+                "name": "subject",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              },
+              {
+                "legacyName": null,
+                "name": "verb",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              },
+              {
+                "legacyName": null,
+                "name": "object",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              }
+            ],
+            "name": "accusative"
+          },
+          {
+            "fields": [
+              {
+                "legacyName": null,
+                "name": "actor",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              },
+              {
+                "legacyName": null,
+                "name": "instrument",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              },
+              {
+                "legacyName": null,
+                "name": "target",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              }
+            ],
+            "name": "instrumental"
+          },
+          {
+            "fields": [
+              {
+                "legacyName": null,
+                "name": "entity",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              },
+              {
+                "legacyName": null,
+                "name": "location",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              }
+            ],
+            "name": "locative"
+          },
+          {
+            "fields": [
+              {
+                "legacyName": null,
+                "name": "entity",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              },
+              {
+                "legacyName": null,
+                "name": "origin",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              },
+              {
+                "legacyName": null,
+                "name": "destination",
+                "nullable": false,
+                "optional": true,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              }
+            ],
+            "name": "ablative"
+          },
+          {
+            "fields": [
+              {
+                "legacyName": null,
+                "name": "invoker",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              },
+              {
+                "legacyName": null,
+                "name": "invocation",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              },
+              {
+                "legacyName": null,
+                "name": "target",
+                "nullable": false,
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                },
+                "vocabulary": null
+              }
+            ],
+            "name": "vocative"
+          }
+        ]
+      }
     },
     {
       "fields": [

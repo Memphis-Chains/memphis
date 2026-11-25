@@ -234,6 +234,46 @@ pub struct PayloadShape {
     pub fields: &'static [PayloadField],
 }
 
+/// ONE variant of an enum shape — the fields IT carries on the wire.
+///
+/// A tagged enum does not carry "the union of its variants' fields": it
+/// carries the fields OF THE VARIANT THAT IS ON IT. A genitive carries
+/// `owner` and `possessed` and NOTHING else — no `entity`, no `verb`, no
+/// `timestamp`. The flat `fields` of a [`PayloadShape`] cannot say that,
+/// because a flat list is the union by construction.
+///
+/// So the shape's per-variant split is a SECOND table, and the gate
+/// checks it against the enum it describes: variant by variant, field by
+/// field. MEASURED 2026-11-24: the TypeScript side had written the
+/// per-variant union down BY HAND (`CaseEntry` in
+/// `src/memory/case-types.ts`) and NOTHING compared it with the enum —
+/// the owner's flat table was checked, the strict union was not. The
+/// falsifier: the owner grew a field on `CaseEntry::Dative`, the flat
+/// table and the generated mirror grew it with it, and the contract gate
+/// was green (12/12), `tsc` was clean and the TypeScript suite was green
+/// (41/41) — while the hand-written union still did not have the field.
+#[derive(Clone, Copy, Debug)]
+pub struct PayloadVariant {
+    /// The name the wire carries for this variant — serde's `rename_all`
+    /// rule applied to the Rust variant's name.
+    pub name: &'static str,
+    /// The fields THIS variant carries. A field of the variant is present
+    /// on the wire unless it is `Option` with `skip_serializing_if`, in
+    /// which case it is ABSENT when it has no value.
+    pub fields: &'static [PayloadField],
+}
+
+/// The per-variant shape of one enum shape.
+#[derive(Clone, Copy, Debug)]
+pub struct PayloadVariantShape {
+    /// The name of the [`PayloadShape`] this describes.
+    pub shape: &'static str,
+    /// The serde tag that selects the variant — the key the wire carries.
+    pub tag: &'static str,
+    /// The variants, in the enum's own order.
+    pub variants: &'static [PayloadVariant],
+}
+
 /// How a payload travels from Rust to JavaScript.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PayloadTransport {
@@ -860,6 +900,113 @@ pub const CASE_ENTRY_SHAPE: PayloadShape = PayloadShape {
     ],
 };
 
+/// The PER-VARIANT shape of `CaseEntryPayload`.
+///
+/// `CaseEntry` is a tagged enum (`#[serde(tag = "case_type",
+/// rename_all = "snake_case")]`), so the wire carries the tag plus the
+/// fields OF THAT CASE — and the flat [`CASE_ENTRY_SHAPE`] above cannot
+/// say which fields belong to which case. It is the union by
+/// construction, and a union of eight variants is a shape that permits a
+/// genitive with a `verb`.
+///
+/// MEASURED 2026-11-24 on this host, over the four case types the corpus
+/// actually holds:
+///
+/// | variant | the keys the wire carries |
+/// | --- | --- |
+/// | `accusative` | `case_type`, `subject`, `verb`, `object` |
+/// | `genitive` | `case_type`, `owner`, `possessed` |
+/// | `instrumental` | `case_type`, `actor`, `instrument`, `target` |
+/// | `nominative` | `case_type`, `entity`, `action`, `timestamp` |
+///
+/// Four shapes, four field sets — and the fields of one case are ABSENT
+/// on the wire when another case is the one on it, not null. `entity` and
+/// `timestamp` belong to the NOMINATIVE alone: the other seven cases
+/// carry neither, which is why `memphis explain` printed an empty entity
+/// and a `?` for every row of every other case.
+///
+/// `destination` is the one field with `skip_serializing_if`: it is
+/// ABSENT when the ablative has no destination, not null. That is the
+/// only difference between "absent" and "present and null" anywhere in
+/// this family.
+pub const CASE_ENTRY_VARIANTS: PayloadVariantShape = PayloadVariantShape {
+    shape: "CaseEntryPayload",
+    tag: "case_type",
+    variants: &[
+        PayloadVariant {
+            name: "nominative",
+            fields: &[
+                PayloadField { name: "entity", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+                PayloadField { name: "action", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+                PayloadField { name: "timestamp", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+            ],
+        },
+        PayloadVariant {
+            name: "genitive",
+            fields: &[
+                PayloadField { name: "owner", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+                PayloadField { name: "possessed", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+            ],
+        },
+        PayloadVariant {
+            name: "dative",
+            fields: &[
+                PayloadField { name: "giver", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+                PayloadField { name: "recipient", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+                PayloadField { name: "object", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+            ],
+        },
+        PayloadVariant {
+            name: "accusative",
+            fields: &[
+                PayloadField { name: "subject", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+                PayloadField { name: "verb", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+                PayloadField { name: "object", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+            ],
+        },
+        PayloadVariant {
+            name: "instrumental",
+            fields: &[
+                PayloadField { name: "actor", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+                PayloadField { name: "instrument", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+                PayloadField { name: "target", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+            ],
+        },
+        PayloadVariant {
+            name: "locative",
+            fields: &[
+                PayloadField { name: "entity", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+                PayloadField { name: "location", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+            ],
+        },
+        PayloadVariant {
+            name: "ablative",
+            fields: &[
+                PayloadField { name: "entity", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+                PayloadField { name: "origin", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+                // `Option<String>` with `skip_serializing_if` — ABSENT
+                // when it has no value, never null.
+                PayloadField { name: "destination", ty: PayloadType::String, optional: true, nullable: false, legacy_name: None, vocabulary: None },
+            ],
+        },
+        PayloadVariant {
+            name: "vocative",
+            fields: &[
+                PayloadField { name: "invoker", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+                PayloadField { name: "invocation", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+                PayloadField { name: "target", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+            ],
+        },
+    ],
+};
+
+/// Every per-variant shape — the shapes whose wire carries DIFFERENT
+/// fields depending on the variant.
+///
+/// One table, like the flat one beside it, and the gate checks it
+/// against the enum it describes: variant by variant, field by field.
+pub const PAYLOAD_VARIANT_SHAPES: &[PayloadVariantShape] = &[CASE_ENTRY_VARIANTS];
+
 /// `case_rebuild` — what the index took of the blocks.
 ///
 /// MEASURED: the wire carries THREE keys. The TypeScript side declared
@@ -1324,24 +1471,55 @@ fn render_vocabulary(vocabulary: &Vocabulary) -> Value {
 }
 
 fn render_shape(shape: &PayloadShape) -> Value {
-    json!({
+    let mut rendered = json!({
         "name": shape.name,
         "naming": shape.naming.as_str(),
         "rustType": shape.rust_type,
         "fields": shape
             .fields
             .iter()
-            .map(|field| {
-                json!({
-                    "name": field.name,
-                    "type": field_type(field.ty),
-                    "optional": field.optional,
-                    "nullable": field.nullable,
-                    "legacyName": field.legacy_name,
-                    "vocabulary": field.vocabulary.as_ref().map(render_vocabulary),
-                })
-            })
+            .map(render_field)
             .collect::<Vec<Value>>(),
+    });
+
+    // The per-variant split, for the shapes whose wire carries DIFFERENT
+    // fields depending on the variant. A shape without one has no
+    // "variants" key at all — the key's presence IS the fact.
+    if let Some(variants) = PAYLOAD_VARIANT_SHAPES
+        .iter()
+        .find(|candidate| candidate.shape == shape.name)
+    {
+        rendered["variants"] = json!({
+            "tag": variants.tag,
+            "variants": variants
+                .variants
+                .iter()
+                .map(|variant| {
+                    json!({
+                        "name": variant.name,
+                        "fields": variant
+                            .fields
+                            .iter()
+                            .map(render_field)
+                            .collect::<Vec<Value>>(),
+                    })
+                })
+                .collect::<Vec<Value>>(),
+        });
+    }
+
+    rendered
+}
+
+/// One field, as the manifest carries it.
+fn render_field(field: &PayloadField) -> Value {
+    json!({
+        "name": field.name,
+        "type": field_type(field.ty),
+        "optional": field.optional,
+        "nullable": field.nullable,
+        "legacyName": field.legacy_name,
+        "vocabulary": field.vocabulary.as_ref().map(render_vocabulary),
     })
 }
 
