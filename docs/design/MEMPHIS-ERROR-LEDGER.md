@@ -1487,9 +1487,77 @@ the next wedge.**
 
 #### E-07 · A clean drain exits 0, so systemd does not restart the runtime
 
-> Measured: `src/infra/runtime/graceful-shutdown.ts:368` — `const exitCode =
-drained ? 0 : 75;` — and the unit sets `Restart=on-failure`. An exit 0 leaves
-> the runtime down, with no restart and nothing in the log to say why.
+**FOUND AND FIXED 2026-11-25** (decision #592) — the entry was filed from a
+reading of the code, and the reading was RIGHT about the mechanism and WRONG
+about the consequence. The runtime does not stay down because the drain
+failed; it stays down because the drain SUCCEEDED.
+
+**THE MECHANISM, as filed.** `src/infra/runtime/graceful-shutdown.ts` ends
+with `const exitCode = drained ? 0 : 75;` — a clean drain exits **0** — and
+the unit sets `Restart=on-failure`. A clean exit is not a failure, so the
+supervisor does nothing.
+
+**AND THE CONSEQUENCE WAS WRONG IN ONE DIRECTION AND RIGHT IN THE OTHER.**
+The entry said "an exit 0 leaves the runtime down, with no restart". That is
+true for an exit 0 nobody asked for, and FALSE for the exit 0 the operator
+asked for — and the difference is the whole repair.
+
+MEASURED on this host, with a scratch unit (so the live service was never
+the experiment):
+
+| what was done to the unit             | `Restart=on-failure`  | `Restart=always`    |
+| ------------------------------------- | --------------------- | ------------------- |
+| `systemctl stop` (the operator asked) | stays `inactive`      | stays `inactive`    |
+| an unsolicited `kill -TERM`, exit 0   | **`inactive`, pid 0** | comes back, new pid |
+
+**SO THE HARM IS NARROWER AND WORSE THAN FILED.** An operator-initiated
+stop is honoured either way — systemd does not restart a unit the operator
+stopped. What `on-failure` loses is every UNSOLICITED exit: a SIGTERM from
+anywhere else, a supervisor that decided to stop the process, a `kill` in a
+script. The unit then goes `inactive` with **pid 0** and nothing in the log
+says why. The operator cannot tell "the runtime stopped on purpose" from
+"the runtime is gone" — and the runtime's own last words (`shutdown.exit`,
+`exitCode: 0`, `drained: true`) read like a SUCCESS.
+
+**MEASURED ON THE LIVE SERVICE, after the repair:**
+
+```
+kill -TERM <MainPID>
+→ shutdown.start (reason SIGTERM) → shutdown.exit exitCode=0 drained=true
+→ 12 s later: active=active, MainPID 2339519 (was 2312087), NRestarts=1
+```
+
+and the operator's own stop still works:
+
+```
+systemctl --user stop → 8 s later: active=inactive, pid=0
+systemctl --user start → active=active, health ok
+```
+
+**THE REPAIR IS THE POLICY, and the gate pins it.** Both shipped units
+(`scripts/systemd/memphis.service` and `ops/memphis.service` — two units
+for the same runtime, and the E-03 gate already knew there were two) now
+say `Restart=always`. `RestartPreventExitStatus=101 102 103` still stops
+the supervisor from looping on the same crash, and `StartLimitBurst=5` still
+caps a boot loop, so `always` costs nothing there.
+
+`scripts/check-systemd-units.mts` now flags a long-running service whose
+`Restart=` is not `always` — the gate can fail: flipping the unit back to
+`on-failure` makes it exit **1** with a structured message, and the unit is
+the only place the policy is written.
+
+**AND THIS IS THE OTHER END OF E-08's CHAIN, measured.** The SIGTERM that
+arrived during the drill was never handled — not one `shutdown.*` line was
+written in the 45 seconds that followed, and systemd's SIGKILL is what
+finally ended it. The drill's event-loop block has fallen from **19 300 ms**
+to **9 583 ms** with E-08's repair (the head-only probe removed a 486 MB
+gunzip and a 486 MB string from the drill), but the tar passes are still
+synchronous, so a stop that lands inside a drill still waits for the drill
+to finish. That is the residual, and it is stated rather than hidden: the
+drain budget is 15 s, the stopper budget is 5 s, and the unit's
+`TimeoutStopSec` is 45 s. A drill that took 22 minutes — which is what E-08
+measured on this host — does not fit in that budget, and the answer was a
+SIGKILL.
 
 #### E-08 · The backup retention stops when the restore drill fails
 
