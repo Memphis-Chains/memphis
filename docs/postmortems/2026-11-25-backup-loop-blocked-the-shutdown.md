@@ -51,6 +51,31 @@ The handler was never broken — the drill was the difference.
 drain path was unavailable exactly when it was needed, and the incident
 reported a false failure to the operator.
 
+## The live test — 25.11, 10:41
+
+The repair was verified on the **running service**, not only in a harness: the
+scheduled backup was triggered through the scheduler's own API, and a SIGTERM
+was aimed at the drill while it was extracting.
+
+| time     | event                                           |
+| -------- | ----------------------------------------------- |
+| 10:41:52 | `backup.scheduled.start`                        |
+| 10:42:35 | `backup.scheduled.success` — 182 605 156 bytes  |
+| 10:42:42 | the drill's `tar -xzf` starts                   |
+| 10:42:42 | **SIGTERM** — the same second as the extraction |
+| 10:42:46 | `shutdown.exit exitCode=0 drained=true`         |
+
+The stop was answered in the same second it was sent, and the unit drained
+cleanly. That is the case this incident was filed about, measured on the
+service that had the defect.
+
+**AND THE TEST FOUND SOMETHING ELSE.** The drill's scratch directory is
+removed in a `finally`, and a `finally` does not run when the process is
+killed. The live test therefore left `memphis-verified-drill-Jsb39N` behind —
+**489 MB and 13 002 files**, measured on this host — in the backups root, and
+nothing in the runtime collected it. A drill that is stopped leaves a corpse,
+and there was nothing to bury it.
+
 ## Root cause — VERIFIED
 
 `execFileSync` blocks the calling thread until the child process exits. In the
@@ -85,6 +110,18 @@ archive digest now streams instead of pulling 182 MB into the heap.
 Decision #594. Journal #1100. E-07's and E-08's entries in the error ledger
 carry the full record.
 
+The scratch of a killed drill is now buried by the **next** drill, and only
+when it can be PROVED to be a corpse. The scratch's name carries the pid of
+the process that owns it, so the kernel can be asked whether that owner still
+exists — ESRCH means it is gone, EPERM means it is alive and the scratch is
+left alone. For the scratch of a drill that ran before the name carried the
+owner, the directory's own **ctime** is the proof: it is the last time an
+entry was created inside it, which is the extraction. tar RESTORES the mtime,
+so the mtime points at the ARCHIVE's time and says nothing about the drill;
+the ctime cannot be forged by tar.
+
+Decision #595. Journal #1101.
+
 ## Anti-confab — what we are NOT claiming
 
 - **NOT** a systemd defect. `TimeoutStopSec=45` behaved exactly as
@@ -99,6 +136,10 @@ carry the full record.
   survived that repair unchanged.
 - The remaining 1 842 ms of silence is the chain verifier's block reads, not
   tar. It is not claimed to be zero.
+- **NOT** a disk-space incident that happened in production. The 489 MB
+  corpse was left by the live stop-during-drill **test** on this host,
+  minutes after the repair was verified; it was removed by hand. The rule
+  that buries such corpses now ships, and its gate can fail.
 
 ## Lessons learned — action items
 
@@ -109,6 +150,17 @@ carry the full record.
 - **DONE** — the gate can fail: `tests/integration/backup-event-loop.test.ts`
   installs a `tar` shim that sleeps and marks its own window; against the
   pre-fix code both cases fail with `expected 0 to be greater than 0`.
+- **DONE** — the live stop-during-drill test on the RUNNING service:
+  `backup.scheduled.start` at 10:41:52, the extraction and the SIGTERM in the
+  same second (10:42:42), `shutdown.exit exitCode=0 drained=true` at 10:42:46.
+  The case this incident was filed about, measured on the service that had
+  the defect.
+- **DONE** — the scratch of a killed drill is buried by the next drill, and
+  only a scratch that can be proved abandoned is touched.
+  - **FALSIFIER:** against the pre-fix code the burial case fails with
+    `expected true to be false` — the corpse survived the drill that should
+    have buried it; and the "the owner is alive" case fails when the
+    liveness proof is mutated away. The gate can fail in both directions.
 
 ## Open items
 
@@ -124,11 +176,24 @@ inconsistent, so the two cannot drift apart silently.
       answered inside it — but it is a real pause, it belongs to the storage
       layer rather than to the tar rule, and it is not claimed to be zero.
       _Where:_ `verifyChainIntegrity` in `src/infra/storage/chain-adapter.ts`.
+- [x] **A2.** The scratch of a drill that was killed was left in the backups
+      root forever — **489 MB and 13 002 files**, measured on this host after
+      the live stop-during-drill test. The drill removed it in a `finally`,
+      which does not run when the process dies, and nothing else collected
+      it. The scratch's name now carries the pid of the process that owns it,
+      and the next drill buries the corpses it can PROVE are corpses: the
+      owner is gone according to the kernel, or the scratch carries no owner
+      and its ctime — the extraction — is older than the drill's longest
+      measured runtime. A scratch whose owner is alive is never touched.
+      _Where:_ `reapDeadDrillScratch` in `src/infra/cli/commands/backup.ts`;
+      the gates are `tests/integration/backup-content-drill.test.ts` and
+      `tests/unit/backup-drill-scratch.test.ts`.
 
 ## Related
 
 - [The error ledger](../design/MEMPHIS-ERROR-LEDGER.md) — E-07 and E-08.
 - [CHANGELOG](../../CHANGELOG.md) — "The backup path froze the runtime — and
   that is why a stop became a kill".
-- Decision #594, journal #1100 (Memphis chains).
+- Decision #594, journal #1100 (Memphis chains) — the tar rule.
+- Decision #595, journal #1101 (Memphis chains) — the scratch of a killed drill.
 - PR #794 — E-08's repair (the drill's verdict) and E-07's `Restart=always`.
