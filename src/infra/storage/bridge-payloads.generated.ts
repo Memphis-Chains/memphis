@@ -74,7 +74,17 @@ export interface EmbedProfileDefaultsPayload {
 export interface EmbedProfileModesPayload {
   local: string;
   alias: string;
-  providers: ('openai-compatible' | 'ollama' | 'cohere' | 'voyage' | 'jina' | 'mistral' | 'together' | 'nvidia' | 'mixedbread')[];
+  providers: (
+    | 'openai-compatible'
+    | 'ollama'
+    | 'cohere'
+    | 'voyage'
+    | 'jina'
+    | 'mistral'
+    | 'together'
+    | 'nvidia'
+    | 'mixedbread'
+  )[];
 }
 
 /** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
@@ -253,7 +263,22 @@ export interface BlockPayload {
 
 /** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
 export interface BlockDataPayload {
-  type: 'journal' | 'ask' | 'decision' | 'system' | 'system_event' | 'insight' | 'tool_call' | 'tool_result' | 'error' | 'case' | 'wallet_tx_requested' | 'wallet_tx_signed' | 'wallet_tx_broadcast' | 'wallet_tx_confirmed' | 'wallet_tx_failed';
+  type:
+    | 'journal'
+    | 'ask'
+    | 'decision'
+    | 'system'
+    | 'system_event'
+    | 'insight'
+    | 'tool_call'
+    | 'tool_result'
+    | 'error'
+    | 'case'
+    | 'wallet_tx_requested'
+    | 'wallet_tx_signed'
+    | 'wallet_tx_broadcast'
+    | 'wallet_tx_confirmed'
+    | 'wallet_tx_failed';
   content: string;
   tags: string[];
 }
@@ -315,28 +340,16 @@ export interface CaseIndexRowPayload {
   entry: CaseEntryPayload;
 }
 
-/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
-export interface CaseEntryPayload {
-  case_type: 'nominative' | 'genitive' | 'dative' | 'accusative' | 'instrumental' | 'locative' | 'ablative' | 'vocative';
-  entity?: string;
-  action?: string;
-  timestamp?: string;
-  owner?: string;
-  possessed?: string;
-  giver?: string;
-  recipient?: string;
-  object?: string;
-  subject?: string;
-  verb?: string;
-  actor?: string;
-  instrument?: string;
-  target?: string;
-  location?: string;
-  origin?: string;
-  destination?: string;
-  invoker?: string;
-  invocation?: string;
-}
+/** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. One variant's fields per variant — the tag says which. */
+export type CaseEntryPayload =
+  | { case_type: 'nominative'; entity: string; action: string; timestamp: string }
+  | { case_type: 'genitive'; owner: string; possessed: string }
+  | { case_type: 'dative'; giver: string; recipient: string; object: string }
+  | { case_type: 'accusative'; subject: string; verb: string; object: string }
+  | { case_type: 'instrumental'; actor: string; instrument: string; target: string }
+  | { case_type: 'locative'; entity: string; location: string }
+  | { case_type: 'ablative'; entity: string; origin: string; destination?: string }
+  | { case_type: 'vocative'; invoker: string; invocation: string; target: string };
 
 /** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */
 export interface CaseRebuildPayload {

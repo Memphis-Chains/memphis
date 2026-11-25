@@ -27,10 +27,18 @@
  * -------------------
  * `CaseEntry` is the DOMAIN model: eight variants, each with its own
  * fields, so an invalid combination (a genitive with a `verb`) cannot be
- * written down. The owner's shape is deliberately LOOSER — the tag plus
- * the union of the variants' fields — because that is what the wire
- * carries. The two agree, and the per-variant shapes are the explicit
- * residue of E-09 (see the ledger).
+ * written down. It is now the OWNER'S per-variant shape, projected —
+ * `CaseEntryPayload` in `src/infra/storage/bridge-payloads.generated.ts`
+ * is a DISCRIMINATED UNION, one arm per case, and the two names below
+ * are that union.
+ *
+ * MEASURED 2026-11-24: the union used to be written down HERE, by hand,
+ * and NOTHING compared it with the owner — so it could drift while every
+ * gate stayed green. The falsifier: the owner grew a field on
+ * `CaseEntry::Dative`, the owner's table and the generated mirror grew
+ * it with it, the payload contract gate was green (13/13), `tsc` was
+ * clean and the TypeScript suite was green — and the hand-written union
+ * still did not have the field.
  *
  * `CaseQuery` is an INPUT, not a payload: it is what the TypeScript side
  * SENDS. Its fields match the Rust `CaseQuery` struct one for one
@@ -39,6 +47,8 @@
  * gated by the payload contract, because the payload contract owns what
  * the bridge RETURNS.
  */
+
+import type { CaseEntryPayload } from '../infra/storage/bridge-payloads.generated.js';
 
 /**
  * The legal case types, as a runtime value.
@@ -63,23 +73,35 @@ export const CASE_TYPES = [
 export type CaseType = (typeof CASE_TYPES)[number];
 
 /**
- * One case entry — the domain model.
+ * One case entry — the domain model, and the OWNER's per-variant shape.
  *
  * The Rust core spells the same eight cases as an enum tagged with
  * `case_type` (`#[serde(tag = "case_type", rename_all = "snake_case")]`),
- * so the wire carries the tag plus the fields OF THAT CASE. This union is
- * the stricter half of the same contract: it says which fields belong to
- * which case, so a genitive cannot carry a `verb`.
+ * so the wire carries the tag plus the fields OF THAT CASE: a nominative
+ * entry carries `entity`, `action` and `timestamp`, a genitive one
+ * `owner` and `possessed` — and NOT the other's fields.
+ *
+ * MEASURED 2026-11-24 on this host, over the four case types the corpus
+ * holds:
+ *
+ * | case | the keys the wire carries |
+ * | --- | --- |
+ * | `accusative` | `case_type`, `subject`, `verb`, `object` |
+ * | `genitive` | `case_type`, `owner`, `possessed` |
+ * | `instrumental` | `case_type`, `actor`, `instrument`, `target` |
+ * | `nominative` | `case_type`, `entity`, `action`, `timestamp` |
+ *
+ * So `entity` and `timestamp` belong to the NOMINATIVE alone — which is
+ * why `memphis explain` used to print an empty entity and a `?` for
+ * every row of every other case: it read fields that only one case has.
+ *
+ * This is the owner's shape, PROJECTED — the union is generated into
+ * `src/infra/storage/bridge-payloads.generated.ts` from the Rust table,
+ * and the gate checks that table against the enum it describes, variant
+ * by variant. The union here is that projection under a name the domain
+ * model uses; it is not a second hand-written copy.
  */
-export type CaseEntry =
-  | { case_type: 'nominative'; entity: string; action: string; timestamp: string }
-  | { case_type: 'genitive'; owner: string; possessed: string }
-  | { case_type: 'dative'; giver: string; recipient: string; object: string }
-  | { case_type: 'accusative'; subject: string; verb: string; object: string }
-  | { case_type: 'instrumental'; actor: string; instrument: string; target: string }
-  | { case_type: 'locative'; entity: string; location: string }
-  | { case_type: 'ablative'; entity: string; origin: string; destination?: string }
-  | { case_type: 'vocative'; invoker: string; invocation: string; target: string };
+export type CaseEntry = CaseEntryPayload;
 
 /**
  * The filter `case_query` accepts — an INPUT, sent to the bridge.

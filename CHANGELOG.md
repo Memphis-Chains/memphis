@@ -1,5 +1,70 @@
 ## Unreleased
 
+### The eight cases have eight shapes, and the type now says which is which
+
+`CaseEntry` is eight cases with eight different field sets. A genitive
+carries `owner` and `possessed`; a nominative carries `entity`, `action`
+and `timestamp`; neither carries the other's fields. Measured on this
+host, over the four case types the corpus holds:
+
+| case           | the keys the wire carries                    |
+| -------------- | -------------------------------------------- |
+| `accusative`   | `case_type`, `subject`, `verb`, `object`     |
+| `genitive`     | `case_type`, `owner`, `possessed`            |
+| `instrumental` | `case_type`, `actor`, `instrument`, `target` |
+| `nominative`   | `case_type`, `entity`, `action`, `timestamp` |
+
+The TypeScript side knew this — it had written the strict union down by
+hand, one arm per case — and **nothing compared it with the owner**. The
+owner's flat shape was gated; the strict union was not, and a flat shape
+cannot say "not on this variant".
+
+The falsifier, measured: the owner grew a field on `CaseEntry::Dative`,
+the owner's table and the generated mirror grew it with it — and the
+contract gate was green (12/12), `tsc` was clean and the suite was green
+(41/41), while the hand-written union still had **zero** occurrences of
+the new field. Every gate green and the domain model wrong.
+
+The union is the owner's now: the Rust table gained a per-variant split,
+the gate checks it against the enum variant by variant and field by
+field, and the projection renders it as a **discriminated union** — the
+tag as a literal, because the fields that follow depend on it. The
+hand-written copy is gone, so there is nothing left to drift.
+
+With the union discriminated, the compiler said what the code had been
+getting wrong: `memphis explain` read `entity`, `timestamp`, `actor` and
+`target` off a value whose type says those belong to other cases, and
+printed an **empty entity and a `?`** for every row of every case but
+the nominative. It now prints the case's own fields — `owner` for a
+genitive, `giver` for a dative, `invoker` for a vocative.
+
+The new check also found a real bug in the gate's own parser: the
+variant's field attributes were stripped before the field parser could
+see them, so `skip_serializing_if` was invisible — and that attribute is
+the only thing that decides whether `Ablative::destination` is absent or
+present.
+
+The path to the command was closed too. `memphis explain --case-type
+<typ>` was unreachable: `CliArgs` had no `caseType` and no `entity` field,
+so the parser dropped both flags and the command fell through to the
+journal chain — while the usage line had promised both flags all along.
+Measured on this host, before: `memphis explain --case-type genitive`
+printed twenty journal blocks. Measured after:
+
+```text
+$ memphis explain --case-type genitive
+  [#2180] genitive: soul
+    possessed: self.learnings
+
+$ memphis explain --case-type nominative
+  [2026-09-29T17:54:00Z] nominative: collective/000025
+    action: instance-council-response
+```
+
+Each case prints its own fields — `owner` for a genitive, `giver` for a
+dative, `invoker` for a vocative — and the block index identifies the
+entry when the case carries no timestamp, which only the nominative does.
+
 ### The case index is checked against the chain it caches
 
 The case index is a cache; the chain files are the truth. On this host the
@@ -15,7 +80,7 @@ Two findings:
 
 - **Nothing noticed, because the wrong signal was available.** The index's
   highest block index was the chain's last, so every check that looked at
-  the tail said "fine" — a gap at the *head* is invisible to it.
+  the tail said "fine" — a gap at the _head_ is invisible to it.
 - **The repair existed and was dead code.** `reconcileIfNeeded()` — whose
   own doc says it ensures the index matches the filesystem — had no caller
   in the tree, and neither did `rebuildIndex()` beside it.
@@ -24,7 +89,7 @@ The index is now checked before it is read: the owner answers how many
 entries it holds (`case_index_status`, a new optional bridge export — 43
 exports now, not 42), the runtime compares that count with the chain's
 count of case blocks, and the index is rebuilt when they differ. The count
-is the chain's count of *case* blocks, so the check cannot loop, and it
+is the chain's count of _case_ blocks, so the check cannot loop, and it
 cannot miss a gap at the head.
 
 This host is repaired: one query through the adapter took the index from
@@ -141,7 +206,7 @@ things showed up that the source does not say out loud:
   a branch for a `"false"` that cannot arrive and a fallback for a missing
   value that cannot arrive either. Both are dead code, and both are cut.
 - **A closed vocabulary needs an owner too.** The owner declares the words
-  *and* the function that writes them; the gate parses that function out of
+  _and_ the function that writes them; the gate parses that function out of
   the crate's source and compares, so the owner can neither invent a word
   the crate never writes nor forget one it does.
 
@@ -288,10 +353,10 @@ whenever `MEMPHIS_DATA_DIR` is not `~/.memphis`.
 
 Measured on the operator's host, 2026-11-23:
 
-| process | index it reads | dim | result |
-| --- | --- | --- | --- |
-| the service (systemd `EnvironmentFile`) | `embed/bge-m3-20261106/index-v1.json` | 1024 | `mode: semantic` |
-| a shell, the CLI, any spawned script | `embed/index-v1.json` | 768 on disk vs **32** configured | `index_dimension_mismatch: disk_dim=768 config_dim=32` |
+| process                                 | index it reads                        | dim                              | result                                                 |
+| --------------------------------------- | ------------------------------------- | -------------------------------- | ------------------------------------------------------ |
+| the service (systemd `EnvironmentFile`) | `embed/bge-m3-20261106/index-v1.json` | 1024                             | `mode: semantic`                                       |
+| a shell, the CLI, any spawned script    | `embed/index-v1.json`                 | 768 on disk vs **32** configured | `index_dimension_mismatch: disk_dim=768 config_dim=32` |
 
 The mismatch was not the cause. The cause was that the shell has no
 provider configured at all.
@@ -307,9 +372,9 @@ vocabulary reaches it as a projection.
 Measured again, 2026-11-24, the owner asked for the two processes this host
 has:
 
-| process | dimension | verdict |
-| --- | --- | --- |
-| the service | **1024** (from `env`) | `ok` |
+| process      | dimension                | verdict       |
+| ------------ | ------------------------ | ------------- |
+| the service  | **1024** (from `env`)    | `ok`          |
 | a bare shell | **768** (from the index) | `no-provider` |
 
 The false mismatch is gone, and the verdict names the cause that is there.
@@ -414,7 +479,7 @@ reports no vulnerabilities against the new lockfile.
 ### The chain-name vocabulary has one owner (ledger E-03)
 
 "What is a chain called?" had four owners and three answers. The native
-runtime asked *"does the name end in `.backup-<digits>`?"* and nothing else —
+runtime asked _"does the name end in `.backup-<digits>`?"_ and nothing else —
 so an archive whose stamp was a DATE was a live chain, an archive whose stamp
 was a number was not, and `.archives` (the dot-directory the rotation writes
 its `.jsonl.gz` files into) was a chain.

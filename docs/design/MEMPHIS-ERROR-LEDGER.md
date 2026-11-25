@@ -55,13 +55,13 @@ supposed to be the owner.
 **CLOSED 2026-11-23** — this was the first step (§3). The vocabulary now has
 one owner:
 
-| piece | what it is |
-| --- | --- |
-| `crates/memphis-napi/src/bridge_exports.rs` | **the owner** — one table: canonical name, JavaScript name, whether it is required |
-| `crates/memphis-napi/src/lib.rs` | `bridge_manifest()` serves that table, and the manifest now carries the `canonical → jsName` bindings |
-| `scripts/sync-bridge-export-contract.mts` | the projection: the Rust table → `tests/fixtures/bridge-export-contract.json` (the artefact) and `src/infra/storage/bridge-exports.generated.ts` (the mirror, no longer hand-written) |
-| `crates/memphis-napi/tests/bridge_export_contract.rs` | the Rust arm: the table against the crate's own `#[napi]` declarations, plus the required floor |
-| `tests/unit/bridge-export-contract.test.ts` | the TypeScript arm: the mirror against the artefact, and the artefact against the REAL binary |
+| piece                                                 | what it is                                                                                                                                                                            |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `crates/memphis-napi/src/bridge_exports.rs`           | **the owner** — one table: canonical name, JavaScript name, whether it is required                                                                                                    |
+| `crates/memphis-napi/src/lib.rs`                      | `bridge_manifest()` serves that table, and the manifest now carries the `canonical → jsName` bindings                                                                                 |
+| `scripts/sync-bridge-export-contract.mts`             | the projection: the Rust table → `tests/fixtures/bridge-export-contract.json` (the artefact) and `src/infra/storage/bridge-exports.generated.ts` (the mirror, no longer hand-written) |
+| `crates/memphis-napi/tests/bridge_export_contract.rs` | the Rust arm: the table against the crate's own `#[napi]` declarations, plus the required floor                                                                                       |
+| `tests/unit/bridge-export-contract.test.ts`           | the TypeScript arm: the mirror against the artefact, and the artefact against the REAL binary                                                                                         |
 
 The projection refuses to run when the manifest and the built module
 disagree, so a manifest that lies about its own crate cannot be projected
@@ -90,23 +90,23 @@ rule — they were THREE RULES, and the third answered a different question.
 `is_active_chain_name` asked "does the name end in `.backup-<digits>`?" and
 nothing else:
 
-| directory under `chains/` | TypeScript registry | Rust `is_active_chain_name` |
-|---|---|---|
-| `journal` | chain | chain |
-| `journal.backup-1784913076785` (epoch stamp) | archive | not a chain |
-| `cases.backup-2026-07-07T15-07-23-108Z` (dated stamp) | archive | **a live chain** |
-| `.archives` (the rotation's dot-directory) | not a chain | **a live chain** |
-| `_quarantine` | a plain name — the taxonomy decides | a plain name — the taxonomy decides |
+| directory under `chains/`                             | TypeScript registry                 | Rust `is_active_chain_name`         |
+| ----------------------------------------------------- | ----------------------------------- | ----------------------------------- |
+| `journal`                                             | chain                               | chain                               |
+| `journal.backup-1784913076785` (epoch stamp)          | archive                             | not a chain                         |
+| `cases.backup-2026-07-07T15-07-23-108Z` (dated stamp) | archive                             | **a live chain**                    |
+| `.archives` (the rotation's dot-directory)            | not a chain                         | **a live chain**                    |
+| `_quarantine`                                         | a plain name — the taxonomy decides | a plain name — the taxonomy decides |
 
 So the treatment of an archive depended on the SHAPE OF ITS TIMESTAMP, and a
 dot-directory was a chain. Three numbers for one host, measured on the same
 disk state (2026-11-23):
 
-| figure | owner | value |
-|---|---|---|
-| the runtime's status `blocks:` | Rust `count_chain_blocks` | **11 510** blocks in 14 directories |
-| the live chains' own blocks | the chains | **11 234** blocks in 12 directories |
-| the audit's `totalBlocks` | TypeScript `collectBlockVocabulary` | **11 981** blocks |
+| figure                         | owner                               | value                               |
+| ------------------------------ | ----------------------------------- | ----------------------------------- |
+| the runtime's status `blocks:` | Rust `count_chain_blocks`           | **11 510** blocks in 14 directories |
+| the live chains' own blocks    | the chains                          | **11 234** blocks in 12 directories |
+| the audit's `totalBlocks`      | TypeScript `collectBlockVocabulary` | **11 981** blocks                   |
 
 The 276-block gap between the first two numbers was one archive of `cases`
 (`cases.backup-2026-07-07T15-07-23-108Z`, 276 blocks) counted as if it were
@@ -114,13 +114,13 @@ the chain itself. The same rule counted `.archives` — the dot-directory the
 rotation writes its `.jsonl.gz` files into — as a chain, so the cockpit
 listed it as one.
 
-| file | role |
-|---|---|
-| `crates/memphis-paths/src/chain_names.rs` | **the owner** — one module: the plain-name pattern, the archive stamp forms, the alias table, and `classify_chain_directory()` |
-| `crates/memphis-napi/src/lib.rs` | the owner speaks to the TypeScript arm: `bridge_chain_name_manifest()` (the vocabulary) and `bridge_chain_name_facts()` (one name's verdict) |
-| `scripts/sync-chain-name-contract.mts` | the projection: the owner → `tests/fixtures/chain-name-contract.json` (the artefact, 36 cases) and `src/memory/chain-names.generated.ts` (the mirror, no longer hand-written) |
-| `crates/memphis-paths/tests/chain_name_contract.rs` | the Rust arm: the owner against the artefact |
-| `tests/unit/chain-name-contract.test.ts` | the TypeScript arm: the mirror against the artefact |
+| file                                                | role                                                                                                                                                                          |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `crates/memphis-paths/src/chain_names.rs`           | **the owner** — one module: the plain-name pattern, the archive stamp forms, the alias table, and `classify_chain_directory()`                                                |
+| `crates/memphis-napi/src/lib.rs`                    | the owner speaks to the TypeScript arm: `bridge_chain_name_manifest()` (the vocabulary) and `bridge_chain_name_facts()` (one name's verdict)                                  |
+| `scripts/sync-chain-name-contract.mts`              | the projection: the owner → `tests/fixtures/chain-name-contract.json` (the artefact, 36 cases) and `src/memory/chain-names.generated.ts` (the mirror, no longer hand-written) |
+| `crates/memphis-paths/tests/chain_name_contract.rs` | the Rust arm: the owner against the artefact                                                                                                                                  |
+| `tests/unit/chain-name-contract.test.ts`            | the TypeScript arm: the mirror against the artefact                                                                                                                           |
 
 The projection reads the owner's answers through the BUILT BRIDGE rather
 than re-implementing the rule, so the artefact carries the owner's verdicts
@@ -152,7 +152,7 @@ repair, and it belongs to the ADR the ownership question opens.
 > path, resolved against the process's working directory.
 > `src/infra/runtime/install-root.ts:169-174` documents that this exact footgun
 > was centralised away from five sibling files ("`Rust vault bridge not found at
-> ./crates/memphis-napi` because `loadBridgeModule` resolved the relative path
+./crates/memphis-napi` because `loadBridgeModule` resolved the relative path
 > against `process.cwd()`"). **This one survived it** — and it was the last
 > one: the vault, the embed and the chain adapters all delegate to
 > `resolveRustBridgePath`, verified by reading each of them.
@@ -186,13 +186,13 @@ the types from the same source).
 **MEASURED 2026-11-24, on the built module, not on the source.** The guess
 was not carelessness — the owner speaks TWO conventions:
 
-| export | the field on the wire | why |
-| --- | --- | --- |
-| `vault_load_state` | `error_code` | the struct sets `#[napi(js_name = "error_code")]` |
-| `vault_decode_entry` | `errorCode` | that struct sets NO `js_name`, so napi-rs camelCases it |
-| `vault_parse_entries` | `entriesJson` | the same |
-| `vault_store` | `created_at` | explicit `js_name` |
-| `vault_init_full` | `master_key`, `qa_question` | explicit `js_name` |
+| export                | the field on the wire       | why                                                     |
+| --------------------- | --------------------------- | ------------------------------------------------------- |
+| `vault_load_state`    | `error_code`                | the struct sets `#[napi(js_name = "error_code")]`       |
+| `vault_decode_entry`  | `errorCode`                 | that struct sets NO `js_name`, so napi-rs camelCases it |
+| `vault_parse_entries` | `entriesJson`               | the same                                                |
+| `vault_store`         | `created_at`                | explicit `js_name`                                      |
+| `vault_init_full`     | `master_key`, `qa_question` | explicit `js_name`                                      |
 
 One hand-written TypeScript interface (`EntryBridgeResult`) had to cover two
 different payloads, so it hedged over both spellings — and the hedge was
@@ -208,23 +208,23 @@ present and `null`. The vocabulary distinguishes the two.
 phase 5 EVERY family is migrated: the counter of surfaces that own a
 payload type by hand is EMPTY.** One owner, one artefact, two runners:
 
-| piece | what it is |
-| --- | --- |
-| `crates/memphis-napi/src/bridge_payloads.rs` | **the owner** — one table: the export, the transport, the shape, the field names napi-rs really exports |
-| `crates/memphis-napi/src/lib.rs` | `bridge_payload_manifest()` — the table, served through the built module (`required: false`, so an old binary still loads) |
-| `scripts/sync-bridge-payload-contract.mts` | the projection: reads the table from the BUILT module, writes the artefact and the TypeScript mirror |
-| `tests/fixtures/bridge-payload-contract.json` | the artefact (26 payloads, 35 shapes — measured 2026-11-24, after phase 5) |
-| `src/infra/storage/bridge-payloads.generated.ts` | the TypeScript mirror — a projection, not a second hand-written copy |
-| `crates/memphis-napi/tests/bridge_payload_contract.rs` | runner 1: the table against the crate's own structs, and the artefact |
-| `tests/unit/bridge-payload-contract.test.ts` | runner 2: the mirror, the REAL binary (the third witness), and the ratchet |
+| piece                                                  | what it is                                                                                                                 |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `crates/memphis-napi/src/bridge_payloads.rs`           | **the owner** — one table: the export, the transport, the shape, the field names napi-rs really exports                    |
+| `crates/memphis-napi/src/lib.rs`                       | `bridge_payload_manifest()` — the table, served through the built module (`required: false`, so an old binary still loads) |
+| `scripts/sync-bridge-payload-contract.mts`             | the projection: reads the table from the BUILT module, writes the artefact and the TypeScript mirror                       |
+| `tests/fixtures/bridge-payload-contract.json`          | the artefact (26 payloads, 35 shapes — measured 2026-11-24, after phase 5)                                                 |
+| `src/infra/storage/bridge-payloads.generated.ts`       | the TypeScript mirror — a projection, not a second hand-written copy                                                       |
+| `crates/memphis-napi/tests/bridge_payload_contract.rs` | runner 1: the table against the crate's own structs, and the artefact                                                      |
+| `tests/unit/bridge-payload-contract.test.ts`           | runner 2: the mirror, the REAL binary (the third witness), and the ratchet                                                 |
 
 The Rust runner applies napi-rs's own rule to every field of every shape —
 an explicit `js_name` verbatim, a field without one in camelCase — so the
 table cannot drift from the struct it claims to describe.
 
 **Falsifiers, measured on this host:** changing one field name in the table
-(`entriesJson` → `entries_json`) fails the Rust runner with *"the table says
-entries_json, but napi-rs will export entriesJson"*; putting the hedge back
+(`entriesJson` → `entries_json`) fails the Rust runner with _"the table says
+entries_json, but napi-rs will export entriesJson"_; putting the hedge back
 into the TypeScript adapter fails the ratchet; a stale artefact fails the
 projection's check mode, which runs in CI.
 
@@ -234,21 +234,21 @@ second family. Measured on the built module against an ISOLATED index
 (`RUST_EMBED_PERSIST_PATH` pointed at a scratch directory, so the
 operator's own index was not touched):
 
-| export | the payload on the wire |
-| --- | --- |
-| `embed_store` | id, count, dim, dtype, provider, normalized, persistence_enabled, persistence_load_state |
-| `embed_store_many` | inserted, count, dim, dtype, provider, normalized, persistence_enabled |
-| `embed_flush` | flushed, dim, dtype |
-| `embed_search` / `embed_search_tuned` | query, count, dim, dtype, provider, normalized, hits |
-| `embed_clear_in_memory` / `embed_reset` | cleared |
-| `embed_discard_replacement` | **TWO shapes**: 3 keys without an initialized pipeline, 7 with it |
-| `embed_index_metadata` | schemaVersion, path, formatVersion, state, documents, invalidRecords, dimension, sizeBytes |
+| export                                  | the payload on the wire                                                                    |
+| --------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `embed_store`                           | id, count, dim, dtype, provider, normalized, persistence_enabled, persistence_load_state   |
+| `embed_store_many`                      | inserted, count, dim, dtype, provider, normalized, persistence_enabled                     |
+| `embed_flush`                           | flushed, dim, dtype                                                                        |
+| `embed_search` / `embed_search_tuned`   | query, count, dim, dtype, provider, normalized, hits                                       |
+| `embed_clear_in_memory` / `embed_reset` | cleared                                                                                    |
+| `embed_discard_replacement`             | **TWO shapes**: 3 keys without an initialized pipeline, 7 with it                          |
+| `embed_index_metadata`                  | schemaVersion, path, formatVersion, state, documents, invalidRecords, dimension, sizeBytes |
 
 Three findings the source does not say out loud:
 
 1. **`embed_discard_replacement` carries TWO shapes.** Without an
    initialized pipeline it answers `{ discarded, was_initialized,
-   replacement_state }`; with one it answers SEVEN keys. The TypeScript
+replacement_state }`; with one it answers SEVEN keys. The TypeScript
    side declared `{ discarded: boolean }` and cast the other six away —
    it did not know they were there. The payload is now a struct
    (`EmbedDiscardOut`) whose `#[serde(skip_serializing_if)]` keeps the
@@ -284,13 +284,13 @@ hand-written copies of the embed payloads (`EmbedStoreResult`,
 the `tags` field of every hit. Gone.
 
 **Falsifiers, measured on this host (phase 2):** a misspelled field in the
-table fails the Rust runner with *"the table says normalised, but the wire
-will carry normalized for EmbedStoreOut.normalized"*; a vocabulary word
-the crate never writes fails it with *"the vocabulary of normalized is
-{…'false'…}, but the source writes {…}"*; a hand edit in the generated
+table fails the Rust runner with _"the table says normalised, but the wire
+will carry normalized for EmbedStoreOut.normalized"_; a vocabulary word
+the crate never writes fails it with _"the vocabulary of normalized is
+{…'false'…}, but the source writes {…}"_; a hand edit in the generated
 mirror fails the projection's check mode with exit 1; putting
-`RawEmbedStoreResult` back fails the ratchet with *"the embed family has
-no hand-written payload type left"*. The WIRE did not move in MEANING:
+`RawEmbedStoreResult` back fails the ratchet with _"the embed family has
+no hand-written payload type left"_. The WIRE did not move in MEANING:
 the probe before and after the struct conversion answers the same keys
 with the same values. Its key ORDER did move, and the ledger used to
 claim otherwise — see the note on key order below.
@@ -329,16 +329,16 @@ side ended up hand-writing its shape.
 MEASURED on the built module (the case family's SQLite index pointed at
 a scratch directory, so the operator's own index was never touched):
 
-| export | the payload on the wire |
-| --- | --- |
-| `chain_validate` | `valid` — and `errors` ONLY on the failure path (absent, not null) |
-| `chain_append` | `appended`, `length`, `chain` — and `errors` only on the rejected path |
-| `chain_query` | `count`, `blocks` |
-| `soul_loop_step` | `applied`, `state` — and `reason` only when the step did not apply |
-| `soul_replay` | `accepted`, `rejected`, `errors`, `snapshot` |
-| `case_append` | `appended`, `indexed`, `length`, `chain` — and `errors` only on the rejected path |
-| `case_query` | `count`, `entries` |
-| `case_rebuild` | `indexed`, `skipped`, `errors` |
+| export           | the payload on the wire                                                           |
+| ---------------- | --------------------------------------------------------------------------------- |
+| `chain_validate` | `valid` — and `errors` ONLY on the failure path (absent, not null)                |
+| `chain_append`   | `appended`, `length`, `chain` — and `errors` only on the rejected path            |
+| `chain_query`    | `count`, `blocks`                                                                 |
+| `soul_loop_step` | `applied`, `state` — and `reason` only when the step did not apply                |
+| `soul_replay`    | `accepted`, `rejected`, `errors`, `snapshot`                                      |
+| `case_append`    | `appended`, `indexed`, `length`, `chain` — and `errors` only on the rejected path |
+| `case_query`     | `count`, `entries`                                                                |
+| `case_rebuild`   | `indexed`, `skipped`, `errors`                                                    |
 
 Three findings, all of them wrong guesses on the TypeScript side:
 
@@ -388,18 +388,18 @@ read, never a word the wire writes.
 
 **Falsifiers, measured on this host (phase 3), six of them:**
 a misspelled word in the `BlockType` vocabulary fails the Rust runner
-with *"the vocabulary of type is {…toolcall…}, but the source writes
-{…tool_call…}"*; a misspelled word in the `CaseEntry` tag vocabulary
+with _"the vocabulary of type is {…toolcall…}, but the source writes
+{…tool_call…}"_; a misspelled word in the `CaseEntry` tag vocabulary
 fails it the same way; dropping the `#[serde(skip_serializing_if)]` from
-`ChainAppendOut.errors` fails it with *"the table says
+`ChainAppendOut.errors` fails it with _"the table says
 optional=true nullable=false for errors, but the struct declares
-Option<Vec<String>>"*; putting a read-side alias into the `BlockType`
-vocabulary fails it with *"the vocabulary of type declares the read-side
-alias security_event, which the wire never writes"*; putting the
+Option<Vec<String>>"_; putting a read-side alias into the `BlockType`
+vocabulary fails it with _"the vocabulary of type declares the read-side
+alias security_event, which the wire never writes"_; putting the
 hand-written `CaseIndexRow` back into `case-types.ts` fails the
-TypeScript ratchet with *"src/memory/case-types.ts: interface CaseIndexRow
-{"*; a hand edit in the generated mirror fails the projection's check
-mode with exit 1 and *"mirror … is stale"*. The binary was probed after
+TypeScript ratchet with _"src/memory/case-types.ts: interface CaseIndexRow
+{"_; a hand edit in the generated mirror fails the projection's check
+mode with exit 1 and _"mirror … is stale"_. The binary was probed after
 every change, and the answers kept their key set and their values.
 
 **The ratchet: FOUR surfaces → TWO.** `rust-chain-adapter.ts` and
@@ -464,23 +464,23 @@ pair cannot come back.
 **A compat fact the owner now carries, and it is measured, not guessed:**
 `exportBindings` is ABSENT on a binary older than the vocabulary table
 (before 2026-11-23) — the export projection already failed loudly on it
-with *"the manifest carries no exportBindings — the Rust core predates the
-vocabulary table"*. So the contract says the key MAY be absent, the Rust
+with _"the manifest carries no exportBindings — the Rust core predates the
+vocabulary table"_. So the contract says the key MAY be absent, the Rust
 struct carries it as an `Option` (so the gate's presence rule can check
 it), and this binary always fills it.
 
 **Falsifiers, measured on this host (phase 4):** a misspelled field in
-the manifest shape fails the Rust runner with *"the table says … but the
-wire will carry …"*; dropping the `#[serde(skip_serializing_if)]` from
-`BridgeManifestOut.export_bindings` fails it with *"the table says
-optional=true nullable=false for exportBindings"*; putting the hand-written
+the manifest shape fails the Rust runner with _"the table says … but the
+wire will carry …"_; dropping the `#[serde(skip_serializing_if)]` from
+`BridgeManifestOut.export_bindings` fails it with _"the table says
+optional=true nullable=false for exportBindings"_; putting the hand-written
 `RustBridgeManifest` interface back fails the TypeScript ratchet with
-*"src/infra/storage/rust-bridge-manifest.ts: interface RustBridgeManifest
-{"*; putting the hand-written binding type back into the export
-projection fails the same ratchet with *"scripts/sync-bridge-export-contract.mts:
-jsName: string;"*; and putting the hand-written two-name list back into
-the Rust manifest fails the crate's own test with *"the manifest's
-optional exports are not the optional exports of the table"*.
+_"src/infra/storage/rust-bridge-manifest.ts: interface RustBridgeManifest
+{"_; putting the hand-written binding type back into the export
+projection fails the same ratchet with _"scripts/sync-bridge-export-contract.mts:
+jsName: string;"_; and putting the hand-written two-name list back into
+the Rust manifest fails the crate's own test with _"the manifest's
+optional exports are not the optional exports of the table"_.
 
 **The ratchet: TWO surfaces → ONE.** What remains is the embed-profile
 family (`rust-embed-profile-bridge.ts`), which is the last one.
@@ -499,11 +499,11 @@ hand. The ratchet's counter is EMPTY.
 
 MEASURED 2026-11-24 on the built module, the family's two answers:
 
-* `bridge_embed_profile_manifest` — SIX keys, in the struct's own order:
+- `bridge_embed_profile_manifest` — SIX keys, in the struct's own order:
   `schemaVersion`, `env`, `defaults`, `dimensionSources`, `verdicts`,
   `modes`; and inside `modes` THREE keys — `local`, `alias`,
   `providers`.
-* `bridge_embed_profile_facts` — FOURTEEN keys, in the struct's own
+- `bridge_embed_profile_facts` — FOURTEEN keys, in the struct's own
   order, from `schemaVersion` to `dimensionRemedy`. The `Option` fields
   are PRESENT and null when they have no value — MEASURED, not assumed:
   an environment without an index answers `indexDimension: null`, and a
@@ -537,21 +537,21 @@ different type and a wrong one.
 
 **Falsifiers, measured on this host (phase 5), six of them:** a
 misspelled word in a constant-sourced vocabulary fails the Rust runner
-with *"the vocabulary of dimensionSources is {…localdeterministic…}, but
-the source writes {…local-deterministic…}"*; a vocabulary pointing at a
-constant the crate does not declare fails it with *"the vocabulary points
+with _"the vocabulary of dimensionSources is {…localdeterministic…}, but
+the source writes {…local-deterministic…}"_; a vocabulary pointing at a
+constant the crate does not declare fails it with _"the vocabulary points
 at the source SOURCE_MISSING, and the crate declares it 0 times — the
-source must be exactly one of a function, an enum or a constant"*; the
-owner losing `modes.alias` fails the Rust runner twice — *"EmbedProfileModesPayload:
-the struct has 3 fields, the table has 2"* and *"left: [local, providers]
-right: [local, alias, providers]"* — and the TypeScript runner with
-*"expected [ 'alias', 'local', 'providers' ] to deeply equal [ 'local',
-'providers' ]"*; putting the hand-written `EmbedProfileManifest` back
-fails the TypeScript ratchet with *"src/infra/storage/rust-embed-profile-bridge.ts:
-interface EmbedProfileManifest {"*; a surface that owns a payload type
-again fails the counter with *"expected 1 to be +0"*; and a hand edit in
+source must be exactly one of a function, an enum or a constant"_; the
+owner losing `modes.alias` fails the Rust runner twice — _"EmbedProfileModesPayload:
+the struct has 3 fields, the table has 2"_ and _"left: [local, providers]
+right: [local, alias, providers]"_ — and the TypeScript runner with
+_"expected [ 'alias', 'local', 'providers' ] to deeply equal [ 'local',
+'providers' ]"_; putting the hand-written `EmbedProfileManifest` back
+fails the TypeScript ratchet with _"src/infra/storage/rust-embed-profile-bridge.ts:
+interface EmbedProfileManifest {"_; a surface that owns a payload type
+again fails the counter with _"expected 1 to be +0"_; and a hand edit in
 the generated mirror fails the projection's check mode with exit 1 and
-*"mirror … is stale"*.
+_"mirror … is stale"_.
 
 **The ratchet: ONE surface → ZERO.** No TypeScript surface declares a
 bridge payload type by hand any more. Every shape the bridge carries is
@@ -587,6 +587,117 @@ are consumed at runtime from the OTHER projection,
 from the same owner. So no value is written down twice by hand; the
 redundancy is of PROJECTIONS, not of authorship.
 
+**PHASE 6 CLOSED 2026-11-24 — the per-variant shapes of `CaseEntry`**
+(PR #787).
+
+Phase 5 left the per-variant shapes as "the explicit residue", and the
+residue turned out to be a hole with a gate that could not see it.
+
+> Measured 2026-11-24 on this host, over the four case types the corpus
+> actually holds — the keys the wire carries, per case:
+>
+> | case           | the keys                                     |
+> | -------------- | -------------------------------------------- |
+> | `accusative`   | `case_type`, `subject`, `verb`, `object`     |
+> | `genitive`     | `case_type`, `owner`, `possessed`            |
+> | `instrumental` | `case_type`, `actor`, `instrument`, `target` |
+> | `nominative`   | `case_type`, `entity`, `action`, `timestamp` |
+>
+> Eight cases, eight field sets. `entity` and `timestamp` belong to the
+> NOMINATIVE alone.
+
+**The finding.** The flat shape said `entity?` — and a flat shape CANNOT
+say "not on this variant", because a flat list is the union by
+construction. So the TypeScript side wrote the STRICT union down by hand
+(`CaseEntry` in `src/memory/case-types.ts`, eight arms, one per case) —
+and **nothing compared it with the owner**. The owner's flat table was
+gated; the strict union was not.
+
+**THE FALSIFIER, measured, and it is the quiet one.** The owner grew a
+field on `CaseEntry::Dative`. The owner's table grew it, the generated
+artefact grew it, the generated mirror grew it (`medium?: string`). And
+then: the payload contract gate **12/12 green**, `tsc --noEmit` **clean**,
+the TypeScript suite **41/41 green** — and the hand-written union still
+had **ZERO** occurrences of the new field. Every gate was green and the
+domain model was wrong. That is the shape of this defect: it does not
+fail, it drifts.
+
+**The fix, in the house pattern.** The owner's table gains a per-variant
+split (`PayloadVariantShape`), the gate checks it against the enum
+**variant by variant and field by field** (`every_variant_shape_is_the_variants_of_its_enum`),
+the projection renders it as a **discriminated union** — one arm per case,
+the tag as a literal, because the fields that follow depend on it — and
+`src/memory/case-types.ts` re-exports that union under the name the
+domain model uses. The hand-written copy is gone; there is nothing left
+to drift.
+
+**And the compiler finally said something.** With the union discriminated,
+`tsc` refused the code that had been silently wrong: `explain.ts` read
+`entry.entity`, `entry.timestamp`, `entry.actor` and `entry.target` off a
+value whose type says those fields belong to OTHER cases. MEASURED
+before the fix, on the host: `memphis explain` printed an **empty entity
+and a `?`** for every row of every case but the nominative. The command
+now prints the case's OWN fields — `owner` for a genitive, `giver` for a
+dative, `invoker` for a vocative — and the block index when the case
+carries no timestamp.
+
+**A REAL BUG IN THE GATE, found by the new check.** The per-variant
+check could not pass at first, and the reason was a defect in the gate's
+own PARSER: `split_attributes` ran on the whole variant chunk, so the
+field's `#[serde(skip_serializing_if = "Option::is_none")]` was removed
+BEFORE `parse_variant_fields` ever saw it. MEASURED: the parser reported
+`skip_serializing_if = false` for `CaseEntry::Ablative::destination`,
+which declares it. The union rule had masked it — the field is in ONE
+variant, so "optional" was right for a reason that had nothing to do with
+the attribute. A gate that could not see the attribute could not check
+the one field whose presence the attribute decides. Fixed: the fields are
+parsed from the original chunk.
+
+**And the path to it was closed too.** `memphis explain --case-type <typ>`
+was **unreachable**: `CliArgs` had no `caseType` and no `entity` field, so
+the parser dropped both flags and the command fell through to the journal
+chain. MEASURED on the host: `memphis explain --case-type genitive`
+printed twenty JOURNAL blocks — the operator's question answered with a
+different one. The usage line had promised the flags all along
+(`explain [--chain <name>] [--case-type <type>] [--entity <name>]`), so
+the promise was in the help and the parser did not keep it.
+
+MEASURED on this host AFTER the fix:
+
+```text
+$ memphis explain --case-type genitive
+  Case entries: 20 results
+
+  [#2180] genitive: soul
+    possessed: self.learnings
+
+$ memphis explain --case-type nominative
+  Case entries: 1 results
+
+  [2026-09-29T17:54:00Z] nominative: collective/000025
+    action: instance-council-response
+
+$ memphis explain --case-type instrumental
+  Case entries: 2 results
+
+  [#295] instrumental: crates/memphis-napi/src/lib.rs:704
+    instrument: embed_shutdown()
+    target: persistent index state on process exit
+```
+
+Each case prints ITS OWN fields — `owner` for a genitive, `giver` for a
+dative, `invoker` for a vocative — and the block index identifies the
+entry when the case carries no timestamp, which only the nominative does.
+
+**What this phase does NOT close, said out loud:** the two napi naming
+conventions in one crate (a WIRE change, so it needs the compatibility
+window E-01 built — queued, not started).
+
+**WHERE E-09 STANDS after phase 6.** The payload types have one owner,
+the counter of surfaces that own a type by hand is empty, and the
+per-variant shapes are the owner's too. What is left is the residue that
+needs a decision of its own: the two napi naming conventions in one crate
+— a WIRE change, so it needs a compatibility window, not a quiet edit.
 
 #### E-10 · The published tarball is not the thing the gates look at
 
@@ -618,12 +729,12 @@ not run by hand.
 **CLOSED 2026-11-23.** The rule is inverted: the omissions are DISCOVERED
 instead of the list being trusted.
 
-| piece | what it is |
-| --- | --- |
-| `scripts/check-package-runtime-closure.mts` | **the owner** — finds every file the shipped code imports from outside its own tree |
-| `tests/fixtures/package-runtime-closure.json` | the artefact of cases (2 edges on this host) |
-| `scripts/check-package-runtime-closure.mts --check` | one runner: the gate |
-| `tests/ops/package-runtime-closure.test.ts` | the other runner: the test, importing the owner |
+| piece                                               | what it is                                                                          |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `scripts/check-package-runtime-closure.mts`         | **the owner** — finds every file the shipped code imports from outside its own tree |
+| `tests/fixtures/package-runtime-closure.json`       | the artefact of cases (2 edges on this host)                                        |
+| `scripts/check-package-runtime-closure.mts --check` | one runner: the gate                                                                |
+| `tests/ops/package-runtime-closure.test.ts`         | the other runner: the test, importing the owner                                     |
 
 And the suite is the same on both sides: `ops:release-preflight` now runs
 **both** packaging gates — the fast closure check (seconds) and
@@ -671,7 +782,7 @@ runs on.**
 > - the install **succeeds** (exit 0);
 > - the CLI dies on every command with
 >   `[ERROR] Failed to load Memphis CLI: Could not locate the bindings file.
->   Tried: → …/better-sqlite3/build/Release/better_sqlite3.node → …`
+Tried: → …/better-sqlite3/build/Release/better_sqlite3.node → …`
 >   — thirteen candidate paths, no sentence saying what to do;
 > - `node_modules/better-sqlite3/build/` does not exist: the native binding
 >   was never built.
@@ -707,11 +818,11 @@ fact that nothing proved the tarball **runs**.
 
 **CLOSED 2026-11-24 (v1.14.2).** Three pieces:
 
-| piece | what it is |
-| --- | --- |
-| `scripts/validate-package-artifact.mts` | **the owner** — installs under a declared policy (`allowScripts: {better-sqlite3: true}`, `onnxruntime-node-install-cuda=skip`), asserts the native binding exists, and probes `memphis vault list --json` — a command that opens the database |
-| `bin/install-remedy.mjs` | the sentence the CLI prints when the binding is missing: what npm 12 did, and the one line that fixes it |
-| `tests/ops/package-install-contract.test.ts` | the runner (6 assertions) |
+| piece                                        | what it is                                                                                                                                                                                                                                     |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scripts/validate-package-artifact.mts`      | **the owner** — installs under a declared policy (`allowScripts: {better-sqlite3: true}`, `onnxruntime-node-install-cuda=skip`), asserts the native binding exists, and probes `memphis vault list --json` — a command that opens the database |
+| `bin/install-remedy.mjs`                     | the sentence the CLI prints when the binding is missing: what npm 12 did, and the one line that fixes it                                                                                                                                       |
+| `tests/ops/package-install-contract.test.ts` | the runner (6 assertions)                                                                                                                                                                                                                      |
 
 **Falsifier, measured:** with the approval revoked in the prefix project, the
 install produces no binding and the gate **fails** (exit 1) with
@@ -724,13 +835,13 @@ that is the measurement of the hole, not an argument about it.
 
 > Measured 2026-11-24 on this host, through the adapter's own public API:
 >
-> | | |
-> | --- | --- |
-> | the `cases` chain | **2 190** case blocks (accusative 2 058, genitive 129, instrumental 2, nominative 1) |
-> | `~/.memphis/case-index.sqlite` | **1 372** rows (accusative 1 313, genitive 59) |
-> | the index's `block_index` range | **818 … 2 189** — the chain's LAST block |
-> | the Rust path (the LIVE one, `RUST_CHAIN_ENABLED=true`) | **1 372** entries |
-> | the TypeScript path (the chain files) | **2 190** entries |
+> |                                                         |                                                                                      |
+> | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+> | the `cases` chain                                       | **2 190** case blocks (accusative 2 058, genitive 129, instrumental 2, nominative 1) |
+> | `~/.memphis/case-index.sqlite`                          | **1 372** rows (accusative 1 313, genitive 59)                                       |
+> | the index's `block_index` range                         | **818 … 2 189** — the chain's LAST block                                             |
+> | the Rust path (the LIVE one, `RUST_CHAIN_ENABLED=true`) | **1 372** entries                                                                    |
+> | the TypeScript path (the chain files)                   | **2 190** entries                                                                    |
 >
 > So the index had lost the **first 818** entries — 37% of the corpus — and
 > the missing ones included the host's **only nominative entry** and **both**
@@ -743,20 +854,20 @@ looks at the tail said "fine" — a gap at the HEAD is invisible to the
 highest index, and the gap was at the head. Second, and this is the one
 that matters: **the mechanism that was written to repair exactly this
 state had no caller in the tree.** `reconcileIfNeeded()` — whose own doc
-says *"Startup reconciliation: rebuild the Rust index from chain block
+says _"Startup reconciliation: rebuild the Rust index from chain block
 files. Ensures the index matches the filesystem after a potential partial
-write"* — was never called, and neither was `rebuildIndex()` beside it.
+write"_ — was never called, and neither was `rebuildIndex()` beside it.
 The repair existed. It was idle.
 
-**THE FIX — three pieces, in the house pattern.** The rule is: *the index
+**THE FIX — three pieces, in the house pattern.** The rule is: _the index
 is a cache of the chain, and the chain is the truth; so the cache is
-checked before it is read.*
+checked before it is read._
 
-| piece | what it is |
-| --- | --- |
-| `crates/memphis-case-index/src/lib.rs` | `CaseIndex::status()` — the owner answers how many entries the index holds, and the highest block among them |
-| `crates/memphis-napi/src/lib.rs` | `case_index_status` — the bridge export that serves it (OPTIONAL: a binary from before 2026-11-24 does not have it, and a runtime that cannot ask keeps using the index as it finds it) |
-| `src/infra/storage/case-chain-adapter.ts` | the reconciliation: compare the index's COUNT with the chain's count of case blocks, and rebuild when they differ |
+| piece                                     | what it is                                                                                                                                                                              |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `crates/memphis-case-index/src/lib.rs`    | `CaseIndex::status()` — the owner answers how many entries the index holds, and the highest block among them                                                                            |
+| `crates/memphis-napi/src/lib.rs`          | `case_index_status` — the bridge export that serves it (OPTIONAL: a binary from before 2026-11-24 does not have it, and a runtime that cannot ask keeps using the index as it finds it) |
+| `src/infra/storage/case-chain-adapter.ts` | the reconciliation: compare the index's COUNT with the chain's count of case blocks, and rebuild when they differ                                                                       |
 
 The bridge exports **43** now, not 42 — the 43rd is `case_index_status`,
 and it is OPTIONAL, so a binary from before 2026-11-24 still loads.
@@ -773,7 +884,7 @@ equal.
 
 **Falsifiers, measured on this host (three of them):** with the
 reconciliation removed from the query path, the TypeScript runner fails
-with *"expected 3 to be 4"*; with the check written against the **highest
+with _"expected 3 to be 4"_; with the check written against the **highest
 index** instead of the count, it fails with the same message — the count
 is the only signal that sees a gap at the head; and with the bridge unable
 to answer (`case_index_status` missing), it fails the same way again. The
@@ -829,9 +940,9 @@ with its own twin.
 **And the fix this entry recorded was wrong too — which the measurement is
 why.** The obvious repair, a composite key `(chain, block_index)`, would
 **not** have separated the two, and the house says so out loud:
-`src/memory/chain-catalog.ts` states that *"the archive suffix is a COPY
+`src/memory/chain-catalog.ts` states that _"the archive suffix is a COPY
 marker, not part of the chain's identity: the blocks inside it carry
-`chain: "journal"`"*. MEASURED: all **276** archived blocks carry
+`chain: "journal"`"_. MEASURED: all **276** archived blocks carry
 `chain: "cases"` — the same value as the live chain's. The one column
 that could have told them apart is the one column that does not. A key
 has to carry the **source** the blocks were read from, not the logical
@@ -913,11 +1024,11 @@ belong to two different eras.
 > Measured 2026-11-23 on this host, at the recall surface
 > (`runMemphisRecall` — the path the operator and the agent actually use):
 >
-> | process | index it reads | dim | result |
-> | --- | --- | --- | --- |
-> | the service (full `.env`, systemd `EnvironmentFile`) | `embed/bge-m3-20261106/index-v1.json` | 1024 | `mode: semantic`, `degraded: false`, 3 hits |
-> | dim and path only, no provider model | the same index | 1024 | `provider returned invalid response: ollama returned embedding dimension 768, expected 1024` |
-> | without it (any script, any spawned process, the CLI) | `embed/index-v1.json` (stale, 82 KB) | 768 on disk vs **32** configured | `embed_search: index_dimension_mismatch: disk_dim=768 config_dim=32` |
+> | process                                               | index it reads                        | dim                              | result                                                                                       |
+> | ----------------------------------------------------- | ------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------- |
+> | the service (full `.env`, systemd `EnvironmentFile`)  | `embed/bge-m3-20261106/index-v1.json` | 1024                             | `mode: semantic`, `degraded: false`, 3 hits                                                  |
+> | dim and path only, no provider model                  | the same index                        | 1024                             | `provider returned invalid response: ollama returned embedding dimension 768, expected 1024` |
+> | without it (any script, any spawned process, the CLI) | `embed/index-v1.json` (stale, 82 KB)  | 768 on disk vs **32** configured | `embed_search: index_dimension_mismatch: disk_dim=768 config_dim=32`                         |
 >
 > **CORRECTION (2026-11-23, later the same day).** This entry used to end
 > with "the recall swallows that error and falls back to exact search. The
@@ -925,7 +1036,7 @@ belong to two different eras.
 > off." The first half was measured and true; the second half was not. The
 > recall result carries `degraded: true` and the error message itself
 > (`warning: "embed_search: embed_search_failed: … index_dimension_mismatch:
-> disk_dim=768 config_dim=32"`), and the mode tells the caller which half
+disk_dim=768 config_dim=32"`), and the mode tells the caller which half
 > answered. So the operator is not left in the dark at the tool level.
 >
 > What the operator genuinely does NOT learn:
@@ -960,14 +1071,14 @@ belong to two different eras.
 (`crates/memphis-embed/src/profile.rs`), ONE artefact of cases, and TWO
 runners — the same shape as E-03 and E-01.
 
-| piece | what it is |
-| --- | --- |
-| `crates/memphis-embed/src/profile.rs` | **the owner** — the index path, the dimension, the model, the source of each, and the verdict |
-| `tests/fixtures/embed-profile-contract.json` | the artefact of cases (14 cases, every one naming a committed fixture index) |
-| `scripts/sync-embed-profile-contract.mts` | the projection: the rule and every verdict, asked of the owner THROUGH THE BUILT BRIDGE |
-| `src/infra/storage/embed-profile.generated.ts` | the TypeScript mirror — the names, the sources, the verdicts, the local width |
-| `crates/memphis-operator/tests/embed_profile_contract.rs` | the native runner (7 tests) |
-| `tests/unit/embed-profile-contract.test.ts` | the TypeScript runner (10 tests) |
+| piece                                                     | what it is                                                                                    |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `crates/memphis-embed/src/profile.rs`                     | **the owner** — the index path, the dimension, the model, the source of each, and the verdict |
+| `tests/fixtures/embed-profile-contract.json`              | the artefact of cases (14 cases, every one naming a committed fixture index)                  |
+| `scripts/sync-embed-profile-contract.mts`                 | the projection: the rule and every verdict, asked of the owner THROUGH THE BUILT BRIDGE       |
+| `src/infra/storage/embed-profile.generated.ts`            | the TypeScript mirror — the names, the sources, the verdicts, the local width                 |
+| `crates/memphis-operator/tests/embed_profile_contract.rs` | the native runner (7 tests)                                                                   |
+| `tests/unit/embed-profile-contract.test.ts`               | the TypeScript runner (10 tests)                                                              |
 
 The dimension follows the INDEX on disk — the vectors a query has to match
 — and only falls back to the local deterministic width when there is no
@@ -984,10 +1095,10 @@ as local.
 > Measured 2026-11-24 on this host, the owner asked for the two processes
 > this machine actually has:
 >
-> | process | index | dimension | verdict |
-> | --- | --- | --- | --- |
-> | the service (systemd `EnvironmentFile`) | `embed/bge-m3-20261106/index-v1.json` | **1024** (from `env`) | `ok` |
-> | a bare shell (the CLI, a hand-started TUI, any spawned script) | `embed/index-v1.json` | **768** (from `index`) | `no-provider` |
+> | process                                                        | index                                 | dimension              | verdict       |
+> | -------------------------------------------------------------- | ------------------------------------- | ---------------------- | ------------- |
+> | the service (systemd `EnvironmentFile`)                        | `embed/bge-m3-20261106/index-v1.json` | **1024** (from `env`)  | `ok`          |
+> | a bare shell (the CLI, a hand-started TUI, any spawned script) | `embed/index-v1.json`                 | **768** (from `index`) | `no-provider` |
 >
 > Before the fix the second row answered **32** against an index that holds
 > 768 — `index_dimension_mismatch: disk_dim=768 config_dim=32` — a
@@ -1012,7 +1123,7 @@ as local.
 >
 > **The gate found a hole in its own artefact.** The first CI run of
 > `ops:sync-embed-profile-contract -- --check` failed with `fixture
-> tests/fixtures/embed-profile-contract.json is stale` — on the runner,
+tests/fixtures/embed-profile-contract.json is stale` — on the runner,
 > with a fixture that was fine here. The cause: the owner's remedy is
 > prose for a live host and names the index by its ABSOLUTE path, and the
 > artefact carried that string as it came out of the owner. The cases'
@@ -1028,7 +1139,6 @@ as local.
 > this one on its first CI run), and the reason the pattern insists that
 > a gate must be able to FAIL: a gate that has never failed is a gate
 > nobody has tested.
-
 
 #### E-05 · Fifteen recovery turns wait for an operator who cannot clear them from where he is
 
@@ -1048,7 +1158,7 @@ the next wedge.**
 #### E-07 · A clean drain exits 0, so systemd does not restart the runtime
 
 > Measured: `src/infra/runtime/graceful-shutdown.ts:368` — `const exitCode =
-> drained ? 0 : 75;` — and the unit sets `Restart=on-failure`. An exit 0 leaves
+drained ? 0 : 75;` — and the unit sets `Restart=on-failure`. An exit 0 leaves
 > the runtime down, with no restart and nothing in the log to say why.
 
 #### E-08 · The backup retention stops when the restore drill fails
@@ -1120,8 +1230,8 @@ would clear today's symptom and leave the loop intact.
 
 **And the connections inside Family A are the same shape one layer down.** E-01,
 E-03 and E-04 are not three unrelated bugs: they are three instances of the
-defect this repository's own ledger keeps finding — *one rule, two owners, no
-gate that compares them*. E-01 is the bridge's vocabulary, E-03 is the rule
+defect this repository's own ledger keeps finding — _one rule, two owners, no
+gate that compares them_. E-01 is the bridge's vocabulary, E-03 is the rule
 that decides whether a chain name is safe, E-04 is the rule that decides
 where the bridge lives. The block hash (closed 2026-11-23) and the tool
 contract (closed by ADR-012) were the same shape.
@@ -1129,14 +1239,14 @@ contract (closed by ADR-012) were the same shape.
 **So there are two ways to spend the next rounds**, and the ledger is explicit
 about the difference:
 
-| | what it fixes | what it costs |
-| --- | --- | --- |
-| **Break the loop (Family B first)** | the operator gets loud failures; the wedge stops feeding itself | does not make the runtime *developed* — it makes it honest |
-| **Close the owners (Family A first)** | the boundary stops being a guess | does not stop the loop today |
+|                                       | what it fixes                                                   | what it costs                                              |
+| ------------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------- |
+| **Break the loop (Family B first)**   | the operator gets loud failures; the wedge stops feeding itself | does not make the runtime _developed_ — it makes it honest |
+| **Close the owners (Family A first)** | the boundary stops being a guess                                | does not stop the loop today                               |
 
 The house has already decided which of these it does first: the ledger's own
 rule is "one owner per rule, one artefact, two runners", and every gate in
-this repository is of that shape. A runtime is called *developed* when its
+this repository is of that shape. A runtime is called _developed_ when its
 rules have owners and its owners are compared. Honesty without owners is a
 runtime that fails well.
 
@@ -1186,15 +1296,15 @@ Family B remain.)
 
 Listed so that nobody spends a round on them again.
 
-| Hypothesis | What the measurement said |
-| --- | --- |
-| The `src/` tree still reverts the #767 stale-WAL-lock fix, so the next build restores a busy-wait | **False.** `src/infra/storage/task-queue-wal.ts`, `src/infra/runtime/process-lock.ts` and `tests/unit/task-queue-wal.test.ts` all match commit `807350e85e` byte for byte. The fix is present. |
+| Hypothesis                                                                                                               | What the measurement said                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The `src/` tree still reverts the #767 stale-WAL-lock fix, so the next build restores a busy-wait                        | **False.** `src/infra/storage/task-queue-wal.ts`, `src/infra/runtime/process-lock.ts` and `tests/unit/task-queue-wal.test.ts` all match commit `807350e85e` byte for byte. The fix is present.                                                                                                                                                                                                                |
 | Two different native binaries are reachable in production (the service's release `.so` and the CLI's debug `index.node`) | **False today.** `crates/memphis-napi/index.node` and `target/release/libmemphis_napi.so` are the same file — sha256 `0f47b84c81c8e3ea…`, 7 377 664 B. It was true on 2026-11-21 (a 58.7 MB debug build) and was closed by `scripts/check-native-bridge.mts`, which now gates artifact freshness, the split brain, and `catch_unwind` on every export (added 2026-11-22, commits `722653bb05`, `370014cf90`). |
-| `scheduler.tick()` can reject and kill the daemon every 30 s | **False.** `tick()` has its own `try`/`catch`/`finally` (`src/infra/runtime/scheduler.ts:1012`+), and the daemon policy does not exit on an unhandled rejection either. |
-| The block hash is computed by several different formulas | **False since 2026-11-23.** `src/core/chain-hash.ts` is the only TypeScript owner; the native owner is `crates/memphis-core/src/hash.rs`, and the two are compared by `tests/fixtures/block-format-parity.json`. |
-| The public chat loads every block of three chains per request | **False since 2026-11-23.** `PUBLIC_CHAIN_TAIL_LIMIT = 1000` windows the non-journal chains and the reader is streaming (`readPublicCandidates`). |
-| The consent gate and the relay have no tests | **False since 2026-11-23.** 22 tests, 12 falsifiers. |
-| The fatal guard decides "daemon" by scanning argv for `serve`, and the parser lets a boolean flag eat the command | **False since 2026-11-23.** Both closed, with 18 tests and 11 falsifiers. |
+| `scheduler.tick()` can reject and kill the daemon every 30 s                                                             | **False.** `tick()` has its own `try`/`catch`/`finally` (`src/infra/runtime/scheduler.ts:1012`+), and the daemon policy does not exit on an unhandled rejection either.                                                                                                                                                                                                                                       |
+| The block hash is computed by several different formulas                                                                 | **False since 2026-11-23.** `src/core/chain-hash.ts` is the only TypeScript owner; the native owner is `crates/memphis-core/src/hash.rs`, and the two are compared by `tests/fixtures/block-format-parity.json`.                                                                                                                                                                                              |
+| The public chat loads every block of three chains per request                                                            | **False since 2026-11-23.** `PUBLIC_CHAIN_TAIL_LIMIT = 1000` windows the non-journal chains and the reader is streaming (`readPublicCandidates`).                                                                                                                                                                                                                                                             |
+| The consent gate and the relay have no tests                                                                             | **False since 2026-11-23.** 22 tests, 12 falsifiers.                                                                                                                                                                                                                                                                                                                                                          |
+| The fatal guard decides "daemon" by scanning argv for `serve`, and the parser lets a boolean flag eat the command        | **False since 2026-11-23.** Both closed, with 18 tests and 11 falsifiers.                                                                                                                                                                                                                                                                                                                                     |
 
 ---
 

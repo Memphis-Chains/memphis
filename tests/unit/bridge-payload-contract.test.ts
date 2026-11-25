@@ -80,6 +80,14 @@ type PayloadShape = {
   naming: 'napiObject' | 'serde';
   rustType: string;
   fields: PayloadField[];
+  /**
+   * The PER-VARIANT split, for a shape whose wire carries different
+   * fields depending on the variant.
+   */
+  variants?: {
+    tag: string;
+    variants: Array<{ name: string; fields: PayloadField[] }>;
+  };
 };
 
 type PayloadRow = {
@@ -147,6 +155,50 @@ function shapeOf(name: string): PayloadShape {
 }
 
 /**
+ * The mirror's text, with the WHITESPACE that prettier chose removed.
+ *
+ * The gate checks that the mirror renders a vocabulary — and prettier
+ * decides where the lines break. A nine-word union does not fit on one
+ * line, so prettier writes it as a list of `|`-prefixed lines:
+ *
+ * ```ts
+ *   providers: (
+ *     | 'openai-compatible'
+ *     | 'ollama'
+ *     …
+ *   )[];
+ * ```
+ *
+ * which is the SAME type as `providers: ('openai-compatible' | 'ollama' |
+ * …)[]`, split across lines. So the gate normalizes both sides: whitespace
+ * runs collapse to one space, and the `|` that opens a wrapped union and
+ * the space before its `)` are dropped.
+ *
+ * MEASURED 2026-11-24: the mirror is written by the projection and
+ * FORMATTED by prettier (the projection writes prettier's formatting, so
+ * the file it generates is never born stale), and the vocabulary of the
+ * embed-profile's nine provider names is the first thing prettier wraps.
+ */
+function normalizeType(text: string): string {
+  return (
+    text
+      .replace(/\s+/g, ' ')
+      // A union prettier had to wrap: `(` `|` word — the `|` and the
+      // space around it are prettier's line break, not the type.
+      .replace(/\(\s*\|\s*/g, '(')
+      // The same, without the brackets: `type:` `|` word.
+      .replace(/:\s*\|\s*/g, ': ')
+      .replace(/\s*\)/g, ')')
+      .trim()
+  );
+}
+
+/** The mirror, normalized — the form the gate compares against. */
+function normalizedMirror(): string {
+  return normalizeType(readFileSync(MIRROR, 'utf8'));
+}
+
+/**
  * The source of a surface, with its COMMENTS removed.
  *
  * The ratchet looks for hand-written payload types, and the migration
@@ -182,9 +234,16 @@ describe('the bridge payload contract', () => {
   });
 
   it('the mirror declares every shape and every payload of the artefact', () => {
-    const mirror = readFileSync(MIRROR, 'utf8');
+    const mirror = normalizedMirror();
     for (const shape of artefact.shapes) {
-      expect(mirror).toContain(`export interface ${shape.name} {`);
+      // A shape with a PER-VARIANT split is a discriminated union, and
+      // the others are interfaces. Both are declarations of the shape —
+      // what the mirror must NOT do is leave one out.
+      const declared =
+        shape.variants && shape.variants.variants.length > 0
+          ? `export type ${shape.name} =`
+          : `export interface ${shape.name} {`;
+      expect(mirror, `the mirror does not declare ${shape.name}`).toContain(declared);
     }
     for (const payload of artefact.payloads) {
       expect(mirror).toContain(`${payload.export}: `);
@@ -249,11 +308,23 @@ describe('the bridge payload contract', () => {
     if (!bridge) return;
 
     const probes: Array<{ export: string; shape: string; args: unknown[] }> = [
-      { export: 'embed_store', shape: 'EmbedStorePayload', args: ['contract-probe', 'contract probe text'] },
-      { export: 'embed_store_many', shape: 'EmbedStoreManyPayload', args: [JSON.stringify([{ id: 'contract-probe-2', text: 'contract probe text 2' }])] },
+      {
+        export: 'embed_store',
+        shape: 'EmbedStorePayload',
+        args: ['contract-probe', 'contract probe text'],
+      },
+      {
+        export: 'embed_store_many',
+        shape: 'EmbedStoreManyPayload',
+        args: [JSON.stringify([{ id: 'contract-probe-2', text: 'contract probe text 2' }])],
+      },
       { export: 'embed_flush', shape: 'EmbedFlushPayload', args: [] },
       { export: 'embed_search', shape: 'EmbedSearchPayload', args: ['contract probe text', 5] },
-      { export: 'embed_search_tuned', shape: 'EmbedSearchPayload', args: ['contract probe text', 5] },
+      {
+        export: 'embed_search_tuned',
+        shape: 'EmbedSearchPayload',
+        args: ['contract probe text', 5],
+      },
     ];
 
     for (const probe of probes) {
@@ -452,6 +523,122 @@ describe('the bridge payload contract', () => {
     expect(Object.keys(rebuilt!).sort()).toEqual(['errors', 'indexed', 'skipped']);
   });
 
+  it('the case entry carries ITS OWN fields, and only its own', () => {
+    if (!bridge) return;
+
+    // THE PER-VARIANT SPLIT, ON THE WIRE.
+    //
+    // A tagged enum puts ONE variant's fields on the wire: a genitive
+    // carries `owner` and `possessed` and NOTHING else — no `entity`, no
+    // `verb`, no `timestamp`. MEASURED 2026-11-24 on this host: the flat
+    // shape said `entity?`, and a flat shape cannot say "not on this
+    // variant" — it is the union by construction.
+    //
+    // The falsifier for the gate that was missing: the owner grew a field
+    // on `CaseEntry::Dative`, the owner's table and the generated mirror
+    // grew it with it, the Rust contract gate was green, `tsc` was clean
+    // and this suite was green — while the hand-written TypeScript union
+    // still did not have the field. The union is now the owner's
+    // projection, and this test says what the wire really carries.
+    const indexDbPath = path.join(scratch, 'case-variants-index.sqlite');
+
+    const genitive = {
+      case_type: 'genitive',
+      owner: 'soul',
+      possessed: 'user.name',
+    };
+
+    const appended = envelopeData('case_append', '[]', JSON.stringify(genitive), indexDbPath);
+    expect(appended).not.toBeNull();
+
+    const queried = envelopeData('case_query', JSON.stringify({}), indexDbPath);
+    expect(queried).not.toBeNull();
+
+    const rows = queried!.entries as Array<Record<string, unknown>>;
+    expect(rows.length).toBe(1);
+
+    const entry = rows[0]!.entry as Record<string, unknown>;
+    // THREE keys: the tag and the genitive's own two. NOT `entity`, NOT
+    // `timestamp` — those are the nominative's.
+    expect(Object.keys(entry).sort()).toEqual(['case_type', 'owner', 'possessed']);
+    expect(entry.case_type).toBe('genitive');
+    expect(entry.entity).toBeUndefined();
+    expect(entry.timestamp).toBeUndefined();
+  });
+
+  it('the mirror renders the per-variant split as a discriminated union', () => {
+    // The artefact carries the split, and the mirror renders one arm per
+    // variant — with the tag as a LITERAL, because the fields that follow
+    // depend on it.
+    const shape = shapeOf('CaseEntryPayload');
+    expect(shape.variants, 'the artefact carries no per-variant split').toBeDefined();
+    expect(shape.variants!.tag).toBe('case_type');
+
+    const variants = shape.variants!.variants.map((variant) => variant.name);
+    expect(variants).toEqual([
+      'nominative',
+      'genitive',
+      'dative',
+      'accusative',
+      'instrumental',
+      'locative',
+      'ablative',
+      'vocative',
+    ]);
+
+    // The per-variant fields, from the artefact — the same eight sets the
+    // owner declares. MEASURED 2026-11-24: `entity` and `timestamp`
+    // belong to the nominative alone.
+    const fieldsOf = (name: string): string[] =>
+      shape
+        .variants!.variants.find((variant) => variant.name === name)!
+        .fields.map((field) => field.name);
+
+    expect(fieldsOf('nominative')).toEqual(['entity', 'action', 'timestamp']);
+    expect(fieldsOf('genitive')).toEqual(['owner', 'possessed']);
+    expect(fieldsOf('dative')).toEqual(['giver', 'recipient', 'object']);
+    expect(fieldsOf('accusative')).toEqual(['subject', 'verb', 'object']);
+    expect(fieldsOf('instrumental')).toEqual(['actor', 'instrument', 'target']);
+    expect(fieldsOf('locative')).toEqual(['entity', 'location']);
+    expect(fieldsOf('ablative')).toEqual(['entity', 'origin', 'destination']);
+    expect(fieldsOf('vocative')).toEqual(['invoker', 'invocation', 'target']);
+
+    // The union of the variants' fields is the flat shape — and the
+    // `destination` of the ablative is OPTIONAL and NOT nullable: it is
+    // an `Option` with `skip_serializing_if`, so it is ABSENT when it has
+    // no value, never null.
+    const destination = shape
+      .variants!.variants.find((variant) => variant.name === 'ablative')!
+      .fields.find((field) => field.name === 'destination')!;
+    expect(destination.optional).toBe(true);
+    expect(destination.nullable).toBe(false);
+
+    // And the MIRROR renders it as a union, not as a flat interface.
+    const mirror = normalizedMirror();
+    expect(mirror).toContain('export type CaseEntryPayload =');
+    expect(mirror).toContain(
+      "| { case_type: 'nominative'; entity: string; action: string; timestamp: string }",
+    );
+    expect(mirror).toContain("| { case_type: 'genitive'; owner: string; possessed: string }");
+    expect(mirror).not.toContain('export interface CaseEntryPayload');
+  });
+
+  it('the case family has no hand-written payload type left', () => {
+    // The case family is done: the row, the query's answer and the
+    // rebuild's answer are all the owner's shapes — and so is the ENTRY,
+    // which used to be a hand-written union in `src/memory/case-types.ts`
+    // that nothing compared with the owner.
+    const surface = 'src/memory/case-types.ts';
+    const code = codeOf(surface);
+
+    // The domain model's union is the owner's projection, under the name
+    // the domain uses — not a second copy of it. The union LITERAL is
+    // gone; what is left is the alias.
+    expect(code).toMatch(/export type CaseEntry = CaseEntryPayload;/);
+    expect(code).not.toMatch(/case_type: 'nominative'/);
+    expect(code).not.toMatch(/case_type: 'genitive'/);
+  });
+
   it('the manifest family has no hand-written payload type left', () => {
     // The manifest's shape was written down TWICE — once in the runtime's
     // `RustBridgeManifest` and once in the export projection's reader —
@@ -514,7 +701,7 @@ describe('the bridge payload contract', () => {
   });
 
   it('the mirror renders the closed vocabularies, not a bare string', () => {
-    const mirror = readFileSync(MIRROR, 'utf8');
+    const mirror = normalizedMirror();
     for (const shape of artefact.shapes) {
       for (const field of shape.fields) {
         if (!field.vocabulary) continue;
@@ -527,6 +714,17 @@ describe('the bridge payload contract', () => {
         // An OPTIONAL key is rendered with a `?` — the mirror's spelling
         // of "this key may be absent".
         const optional = field.optional || Boolean(field.legacyName);
+        // A shape with a PER-VARIANT split renders its tag as a LITERAL
+        // per arm — the tag is the discriminator, so the words are the
+        // arm's own name, not a union of all eight.
+        if (shape.variants && shape.variants.variants.length > 0) {
+          for (const variant of shape.variants.variants) {
+            expect(mirror, `${shape.name} lost the ${variant.name} arm`).toContain(
+              `${shape.variants!.tag}: '${variant.name}'`,
+            );
+          }
+          continue;
+        }
         expect(mirror, `${shape.name}.${field.name} lost its vocabulary`).toContain(
           `${field.name}${optional ? '?' : ''}: ${rendered}`,
         );
@@ -547,11 +745,7 @@ describe('the bridge payload contract', () => {
       'src/infra/storage/rust-embed-profile-bridge.ts',
     ];
 
-    const guesses = [
-      'entries_json ??',
-      'error_code ??',
-      'createdAt ?? entry.created_at',
-    ];
+    const guesses = ['entries_json ??', 'error_code ??', 'createdAt ?? entry.created_at'];
 
     const offenders: string[] = [];
     for (const surface of surfaces) {
@@ -794,7 +988,7 @@ describe('the bridge payload contract', () => {
     // compatibility fallback must be exactly the pair the owner declares.
     // The two spellings that exist are the ones the naming stabilization
     // of 2026-03-21 changed — `master_key` and `created_at`.
-    const mirror = readFileSync(MIRROR, 'utf8');
+    const mirror = normalizedMirror();
     const source = readFileSync('src/infra/storage/rust-vault-adapter.ts', 'utf8');
 
     const declaredPairs: Array<{ canonical: string; legacy: string }> = [];
