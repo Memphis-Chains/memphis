@@ -1,10 +1,10 @@
-import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   appendFileSync,
   chmodSync,
   closeSync,
   copyFileSync,
+  createReadStream,
   existsSync,
   mkdirSync,
   lstatSync,
@@ -19,11 +19,13 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import readline from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
-import { gunzipSync, gzipSync, constants } from 'node:zlib';
+import { promisify } from 'node:util';
+import { gunzip, gzip, gunzipSync, constants } from 'node:zlib';
 
 import chalk from 'chalk';
 import cliProgress from 'cli-progress';
@@ -49,6 +51,21 @@ import {
   type BackupManifest,
   type BackupManifestEntry,
 } from './backup-manifest.js';
+// The rule that invokes tar — ONE owner, TWO runners: this CLI (which the
+// runtime calls from inside its own event loop) and the plain-Node systemd
+// runner. The calls are asynchronous on purpose: a synchronous `tar` froze
+// the runtime's event loop for 22 minutes, and a frozen loop cannot answer a
+// stop signal — measured 2026-11-25 on this host, see
+// `scripts/backup-tar.mjs` for the whole measurement.
+import {
+  describeTarFailure,
+  isTarExecutionError,
+  isTarFileChangedWarning,
+  tarCreateArchive,
+  tarExtractArchive,
+  tarListArchiveContents,
+  tarListArchiveVerbose,
+} from './backup-tar.js';
 import { getDataDir } from '../../../config/paths.js';
 // The rule that decides what a directory under `chains/` IS — a chain, a
 // rollback copy of one, or neither. The owner is the Rust core; this is its
@@ -124,9 +141,21 @@ const BACKUP_EXCLUDE_POLICY = readBackupExcludePolicy();
 
 /** tar argv entries (`--exclude=...`) shared by every archive path. */
 export const BACKUP_EXCLUDE_PATTERNS: readonly string[] = BACKUP_EXCLUDE_POLICY.excludePatterns;
-
 /** Top-level directory + file names the JSON fallback archiver must skip. */
 export const FALLBACK_EXCLUDE_NAMES: readonly string[] = BACKUP_EXCLUDE_POLICY.fallbackExcludeNames;
+
+/**
+ * gzip/gunzip that do not hold the event loop.
+ *
+ * The JSON fallback archiver compresses and decompresses the WHOLE archive
+ * in memory. `gzipSync`/`gunzipSync` do that work on the main thread, which
+ * is the runtime's thread — the same freeze the synchronous `tar` caused.
+ * Node's zlib has no promise form of its own, so the callback API is
+ * promisified here. Measured on this host: `promisify(zlib.gunzip)` resolves
+ * with a Buffer, exactly like the synchronous form.
+ */
+const gunzipAsync = promisify(gunzip);
+const gzipAsync = promisify(gzip);
 
 /**
  * Basenames of secret material, WITHOUT the glob prefix and without the
@@ -239,9 +268,22 @@ function createUniqueBackupFilename(backupRoot: string, tag?: string): string {
   return candidate;
 }
 
-function sha256ForFile(path: string): string {
-  const data = readFileSync(path);
-  return createHash('sha256').update(data).digest('hex');
+/**
+ * The archive's digest, read as a STREAM.
+ *
+ * `readFileSync` on a 182 MB archive pulls the whole file into the heap and
+ * holds the event loop for the length of the read — measured on this host:
+ * 0.83 s for the digest alone, all of it inside the runtime's loop. The
+ * stream reads the same bytes in chunks and yields between them, so the
+ * loop keeps turning while the digest is computed.
+ */
+async function sha256ForFile(path: string): Promise<string> {
+  const hash = createHash('sha256');
+  const stream = createReadStream(path);
+  for await (const chunk of stream) {
+    hash.update(chunk as Buffer);
+  }
+  return hash.digest('hex');
 }
 
 function checksumFilePathFor(archivePath: string): string {
@@ -261,42 +303,6 @@ function humanSize(bytes: number): string {
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-}
-
-function isTarExecutionError(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    (['EPERM', 'EACCES', 'ENOENT'].includes((error as NodeJS.ErrnoException).code ?? '') ||
-      /(spawnSync tar EPERM|spawnSync tar EACCES|tar is required)/.test(error.message))
-  );
-}
-
-/**
- * tar's own reason, in the message the operator sees.
- *
- * `execFileSync` puts tar's stderr in the error object and NOT in the
- * message, so the drill reported "Command failed: tar -xzf <archive> -C
- * <dir>" — the command and nothing else. The reason (no space left on
- * device, a killed process, a corrupt member) was thrown away, so a broken
- * archive and a broken machine looked identical. MEASURED 2026-11-25 on
- * this host: three consecutive scheduled backups reported a drill failure
- * and not one of them said why.
- */
-function describeTarFailure(error: unknown): Error {
-  const err = error as Error & {
-    stderr?: Buffer | string;
-    status?: number | null;
-    signal?: string | null;
-  };
-  const stderr = typeof err.stderr === 'string' ? err.stderr : (err.stderr?.toString('utf8') ?? '');
-  const reason = stderr
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 3)
-    .join(' | ');
-  const detail = reason || (err.signal ? `killed by ${err.signal}` : `exit ${err.status}`);
-  return new Error(`${err.message} — ${detail}`);
 }
 
 /**
@@ -329,47 +335,6 @@ function drillScratchRoot(archivePath: string): string {
  * flag without checking. Caching avoids re-probing on every backup
  * (tar variant doesn't change mid-runtime).
  */
-
-/**
- * Detect tar's "file changed as we read it" (or "file removed") exit
- * code 1 — a non-fatal warning that the archive WAS still produced
- * (tar tolerates partial reads of changed files). Common when backing
- * up a live data dir while Memphis is running (sqlite WAL flushes,
- * journal block appends, lockfile churn).
- *
- * Returns true if (a) tar exited with status 1 (non-fatal), AND (b)
- * the stderr message contains the file-changed/removed signature, AND
- * (c) the archive file actually exists with non-zero size on disk.
- * In that case the caller can safely treat the backup as successful.
- *
- * Cron task `morning-raport-wodzu` (id task-1777576880613) was failing
- * since 2026-05-01 with this exact pattern blocking the `git-pull-build`
- * pipeline. Fixed 2026-05-08 evening as part of Codex Round 2 follow-up.
- */
-function isTarFileChangedWarning(error: unknown, archivePath: string): boolean {
-  if (!(error instanceof Error)) return false;
-  const errWithStatus = error as Error & {
-    status?: number | null;
-    stderr?: Buffer | string;
-  };
-  if (errWithStatus.status !== 1) return false;
-  const stderrStr =
-    typeof errWithStatus.stderr === 'string'
-      ? errWithStatus.stderr
-      : errWithStatus.stderr instanceof Buffer
-        ? errWithStatus.stderr.toString('utf8')
-        : '';
-  if (!/file changed as we read it|file removed before we read it/.test(stderrStr)) {
-    return false;
-  }
-  // Verify the archive actually exists and has content
-  try {
-    const stat = statSync(archivePath);
-    return stat.isFile() && stat.size > 0;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Is this archive the JSON fallback format?
@@ -405,12 +370,20 @@ function looksLikeFallbackArchive(archivePath: string): boolean {
   }
 }
 
-function tryReadFallbackArchive(archivePath: string): BackupArchive | null {
+/**
+ * The JSON fallback archive, read without freezing the loop.
+ *
+ * The probe above (`looksLikeFallbackArchive`) stays synchronous on purpose:
+ * it reads 64 KiB and gunzips that, which is bounded and takes microseconds.
+ * This function reads the WHOLE archive, so it does the reading and the
+ * decompression off the main thread.
+ */
+async function tryReadFallbackArchive(archivePath: string): Promise<BackupArchive | null> {
   if (!looksLikeFallbackArchive(archivePath)) return null;
 
   let raw: Buffer;
   try {
-    raw = gunzipSync(readFileSync(archivePath));
+    raw = await gunzipAsync(await readFile(archivePath));
   } catch {
     return null;
   }
@@ -433,8 +406,8 @@ function tryReadFallbackArchive(archivePath: string): BackupArchive | null {
   return parsed;
 }
 
-function readFallbackArchive(archivePath: string): BackupArchive {
-  const archive = tryReadFallbackArchive(archivePath);
+async function readFallbackArchive(archivePath: string): Promise<BackupArchive> {
+  const archive = await tryReadFallbackArchive(archivePath);
   if (!archive) {
     throw new Error('invalid fallback backup archive format');
   }
@@ -446,13 +419,13 @@ function fallbackArchiveEntriesToPaths(archive: BackupArchive): string[] {
 }
 
 type ArchiveListOptions = {
-  tarList?: (archivePath: string) => string[];
+  /**
+   * The listing seam. It is ASYNCHRONOUS because the real listing is: the
+   * runtime calls this from inside its own event loop, and a synchronous
+   * listing froze that loop for minutes.
+   */
+  tarList?: (archivePath: string) => string[] | Promise<string[]>;
 };
-
-// A real 21k-file operator archive exceeds Node's default 1 MiB buffer
-// on verbose listing. Keep both listing paths bounded, but large enough
-// for ordinary runtime backups; oversized listings still fail closed.
-const MAX_TAR_LIST_BYTES = 64 * 1024 * 1024;
 
 /**
  * How many COMPRESSED bytes of an archive the fallback probe reads.
@@ -462,17 +435,6 @@ const MAX_TAR_LIST_BYTES = 64 * 1024 * 1024;
  * cost off the scale of the archive.
  */
 const FALLBACK_PEEK_BYTES = 64 * 1024;
-
-function tarListArchiveContents(archivePath: string): string[] {
-  const out = execFileSync('tar', ['-tzf', archivePath], {
-    encoding: 'utf8',
-    maxBuffer: MAX_TAR_LIST_BYTES,
-  });
-  return out
-    .split('\n')
-    .map((v) => v.trim())
-    .filter(Boolean);
-}
 
 function isSafeArchiveEntryPath(entryPath: string): boolean {
   if (!entryPath || isAbsolute(entryPath)) return false;
@@ -524,11 +486,11 @@ const fallbackExcludeMatchers = BACKUP_EXCLUDE_PATTERNS.map((pattern) => {
   );
 });
 
-function collectFallbackArchiveEntries(
+async function collectFallbackArchiveEntries(
   root: string,
   relativePath = '.',
   excludedPaths: readonly string[] = [],
-): BackupArchiveEntry[] {
+): Promise<BackupArchiveEntry[]> {
   const currentRoot = relativePath === '.' ? root : join(root, relativePath);
   const entries: BackupArchiveEntry[] = [];
 
@@ -539,7 +501,7 @@ function collectFallbackArchiveEntries(
     if (excludedPaths.includes(entryPath.replace(/\\/g, '/'))) continue;
     if (entry.isDirectory()) {
       entries.push({ path: entryPath, kind: 'dir' });
-      entries.push(...collectFallbackArchiveEntries(root, entryPath, excludedPaths));
+      entries.push(...(await collectFallbackArchiveEntries(root, entryPath, excludedPaths)));
       continue;
     }
 
@@ -547,7 +509,7 @@ function collectFallbackArchiveEntries(
       entries.push({
         path: entryPath,
         kind: 'file',
-        contentBase64: readFileSync(join(root, entryPath)).toString('base64'),
+        contentBase64: (await readFile(join(root, entryPath))).toString('base64'),
       });
     }
   }
@@ -555,15 +517,15 @@ function collectFallbackArchiveEntries(
   return entries;
 }
 
-function createFallbackArchive(
+async function createFallbackArchive(
   memphisRoot: string,
   backupPath: string,
   snapshot: DatabaseSnapshotResult,
-): void {
+): Promise<void> {
   const archive: BackupArchive = {
     format: 'memphis-backup-v1',
     entries: [
-      ...collectFallbackArchiveEntries(memphisRoot, '.', snapshot.excludedPaths),
+      ...(await collectFallbackArchiveEntries(memphisRoot, '.', snapshot.excludedPaths)),
       // The staged name, not the final path: the snapshot on disk is written
       // under STAGED_PREFIX, and the JSON fallback must carry the same
       // placement manifest the tar archive does, or restore would place the
@@ -589,26 +551,26 @@ function createFallbackArchive(
         : []),
     ],
   };
-  writeFileSync(backupPath, gzipSync(Buffer.from(JSON.stringify(archive), 'utf8')));
+  await writeFile(backupPath, await gzipAsync(Buffer.from(JSON.stringify(archive), 'utf8')));
 }
 
-function ensureArchiveListableOrFallback(
+async function ensureArchiveListableOrFallback(
   memphisRoot: string,
   backupPath: string,
   snapshot: DatabaseSnapshotResult,
-): void {
+): Promise<void> {
   try {
-    tarListArchiveContents(backupPath);
+    await tarListArchiveContents(backupPath);
   } catch (error) {
     if (!isTarExecutionError(error)) {
       throw error;
     }
-    createFallbackArchive(memphisRoot, backupPath, snapshot);
+    await createFallbackArchive(memphisRoot, backupPath, snapshot);
   }
 }
 
-function extractFallbackArchive(archivePath: string, targetRoot: string): void {
-  const archive = readFallbackArchive(archivePath);
+async function extractFallbackArchive(archivePath: string, targetRoot: string): Promise<void> {
+  const archive = await readFallbackArchive(archivePath);
   for (const entry of archive.entries) {
     const targetPath = safeTargetPath(targetRoot, entry.path);
     if (entry.kind === 'dir') {
@@ -617,21 +579,28 @@ function extractFallbackArchive(archivePath: string, targetRoot: string): void {
     }
 
     mkdirSync(dirname(targetPath), { recursive: true });
-    writeFileSync(targetPath, Buffer.from(entry.contentBase64 ?? '', 'base64'), { mode: 0o600 });
+    await writeFile(targetPath, Buffer.from(entry.contentBase64 ?? '', 'base64'), { mode: 0o600 });
   }
 }
 
-export function listArchiveContents(
+/**
+ * The names inside an archive, whichever archiver produced it.
+ *
+ * ASYNCHRONOUS because the listing is: the runtime calls this from inside
+ * its own event loop, and a synchronous listing froze that loop for minutes
+ * on this host.
+ */
+export async function listArchiveContents(
   archivePath: string,
   options: ArchiveListOptions = {},
-): string[] {
-  const fallback = tryReadFallbackArchive(archivePath);
+): Promise<string[]> {
+  const fallback = await tryReadFallbackArchive(archivePath);
   if (fallback) {
     return fallbackArchiveEntriesToPaths(fallback);
   }
 
   try {
-    return (options.tarList ?? tarListArchiveContents)(archivePath);
+    return await (options.tarList ?? tarListArchiveContents)(archivePath);
   } catch (error) {
     if (isTarExecutionError(error)) {
       const message = error instanceof Error ? error.message : String(error);
@@ -762,11 +731,11 @@ function buildRedactedDotEnv(): string | null {
   return out.join('\n');
 }
 
-function createArchive(
+async function createArchive(
   memphisRoot: string,
   backupPath: string,
   snapshot: DatabaseSnapshotResult,
-): void {
+): Promise<void> {
   // Phase C (2026-04-26): write a redacted .env into memphisRoot for the
   // tar run so backup carries provider URLs + vault refs. Always cleaned
   // up afterwards so the file doesn't linger in the data dir between
@@ -793,10 +762,8 @@ function createArchive(
   }
 
   const tarArgs = [
-    '-czf',
-    backupPath,
     // Keep live-file diagnostics available to the exit-1 classifier.
-    ...tarWarningFlags(),
+    ...(await tarWarningFlags()),
     // CRITICAL — never include vault or auth secrets. Culture requires
     // secrets to be vault-managed, not file-committed; backing them up
     // violates that and creates a leak path if an archive is
@@ -813,14 +780,11 @@ function createArchive(
   ];
 
   try {
-    execFileSync('tar', tarArgs, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, LC_ALL: 'C' },
-    });
+    await tarCreateArchive(backupPath, tarArgs);
   } catch (error) {
     // Directory churn can produce exit 1 while leaving a readable archive.
     if (isTarFileChangedWarning(error, backupPath)) {
-      ensureArchiveListableOrFallback(memphisRoot, backupPath, snapshot);
+      await ensureArchiveListableOrFallback(memphisRoot, backupPath, snapshot);
       cleanupRedactedEnv();
       return;
     }
@@ -828,12 +792,12 @@ function createArchive(
       cleanupRedactedEnv();
       throw error;
     }
-    createFallbackArchive(memphisRoot, backupPath, snapshot);
+    await createFallbackArchive(memphisRoot, backupPath, snapshot);
     cleanupRedactedEnv();
     return;
   }
 
-  ensureArchiveListableOrFallback(memphisRoot, backupPath, snapshot);
+  await ensureArchiveListableOrFallback(memphisRoot, backupPath, snapshot);
   cleanupRedactedEnv();
 }
 
@@ -893,14 +857,14 @@ function applyRedactedDotEnv(memphisRoot: string): number {
   return additions.length;
 }
 
-function extractArchive(archivePath: string, targetRoot: string): void {
+async function extractArchive(archivePath: string, targetRoot: string): Promise<void> {
   try {
-    execFileSync('tar', ['-xzf', archivePath, '-C', targetRoot]);
+    await tarExtractArchive(archivePath, targetRoot);
   } catch (error) {
     if (!isTarExecutionError(error)) {
       throw describeTarFailure(error);
     }
-    extractFallbackArchive(archivePath, targetRoot);
+    await extractFallbackArchive(archivePath, targetRoot);
   }
 }
 
@@ -989,9 +953,22 @@ export function resolveRuntimeDatabasePath(rawEnv: NodeJS.ProcessEnv = process.e
   return resolve(raw);
 }
 
-function withProgress<T>(label: string, enabled: boolean, fn: () => T): T {
+/**
+ * A progress bar around work that may take minutes.
+ *
+ * ASYNCHRONOUS because the work it wraps is: the archive step runs `tar` as
+ * a child process, and awaiting it is what keeps the event loop turning.
+ * The bar's own timer now ticks DURING the work instead of being frozen by
+ * it — which is the visible difference between a runtime that is busy and a
+ * runtime that is stuck.
+ */
+async function withProgress<T>(
+  label: string,
+  enabled: boolean,
+  fn: () => T | Promise<T>,
+): Promise<T> {
   if (!enabled) {
-    return fn();
+    return await fn();
   }
 
   const bar = new cliProgress.SingleBar(
@@ -1015,7 +992,7 @@ function withProgress<T>(label: string, enabled: boolean, fn: () => T): T {
   }, 120);
 
   try {
-    const result = fn();
+    const result = await fn();
     bar.update(100);
     return result;
   } finally {
@@ -1024,13 +1001,13 @@ function withProgress<T>(label: string, enabled: boolean, fn: () => T): T {
   }
 }
 
-function verifyChecksum(archivePath: string): {
+async function verifyChecksum(archivePath: string): Promise<{
   valid: boolean;
   expected?: string;
   actual: string;
-} {
+}> {
   const expected = readChecksumHex(archivePath);
-  const actual = sha256ForFile(archivePath);
+  const actual = await sha256ForFile(archivePath);
   if (!expected) return { valid: false, expected: undefined, actual };
   return { valid: expected === actual, expected, actual };
 }
@@ -1153,12 +1130,12 @@ export async function createBackup(options: BackupOptions = {}): Promise<{
     // reach the backups directory, not even as a partial file.
     assertRuntimeDatabaseSnapshotted(snapshot, runtimeDatabasePath);
 
-    withProgress('Creating backup', options.showProgress ?? true, () => {
-      createArchive(memphisRoot, partialPath, snapshot);
-    });
+    await withProgress('Creating backup', options.showProgress ?? true, () =>
+      createArchive(memphisRoot, partialPath, snapshot),
+    );
 
     const size = statSync(partialPath).size;
-    const contents = listArchiveContents(partialPath);
+    const contents = await listArchiveContents(partialPath);
     verifyDatabaseSnapshotEntries(snapshot, contents);
     const fileCount = contents.filter((entry) => !entry.endsWith('/')).length;
 
@@ -1197,7 +1174,7 @@ export async function createBackup(options: BackupOptions = {}): Promise<{
       );
     }
 
-    const checksumHex = sha256ForFile(partialPath);
+    const checksumHex = await sha256ForFile(partialPath);
     const partialSidecar = checksumFilePathFor(partialPath);
     writeFileSync(partialSidecar, `${checksumHex}  ${file}\n`, { flag: 'wx', mode: 0o600 });
     // An archive is operator data (chains, indexes, redacted env). Under the
@@ -1310,11 +1287,11 @@ export async function verifyBackup(options: {
   const backupRoot = getBackupsRoot(options);
   const backupPath = resolveBackupFile(options.file, backupRoot);
   const size = statSync(backupPath).size;
-  const checksum = verifyChecksum(backupPath);
+  const checksum = await verifyChecksum(backupPath);
 
   let entries: string[];
   try {
-    entries = withProgress('Verifying archive', true, () => listArchiveContents(backupPath));
+    entries = await withProgress('Verifying archive', true, () => listArchiveContents(backupPath));
   } catch {
     return {
       file: basename(backupPath),
@@ -1358,26 +1335,27 @@ export interface BackupDrillResult {
 
 /** Restore into an isolated scratch directory; never invoke live restore hooks. */
 export async function drillBackup(backupPath: string): Promise<BackupDrillResult> {
-  const entries = listArchiveContents(backupPath);
-  if (!entries.length || hasUnsafeArchiveEntries(entries) || !verifyChecksum(backupPath).valid) {
+  const entries = await listArchiveContents(backupPath);
+  if (
+    !entries.length ||
+    hasUnsafeArchiveEntries(entries) ||
+    !(await verifyChecksum(backupPath)).valid
+  ) {
     throw new Error('Backup drill rejected empty, unsafe or checksum-invalid archive');
   }
-  const fallback = tryReadFallbackArchive(backupPath);
+  const fallback = await tryReadFallbackArchive(backupPath);
   if (!fallback) {
     // Refuse links and special files before extraction, including links whose
     // target could escape the scratch directory. GNU tar lists type first.
-    const listing = execFileSync('tar', ['-tvzf', backupPath], {
-      encoding: 'utf8',
-      maxBuffer: MAX_TAR_LIST_BYTES,
-    });
+    const listing = await tarListArchiveVerbose(backupPath);
     if (listing.split('\n').some((line) => line && !['-', 'd'].includes(line[0]))) {
       throw new Error('Backup drill refuses links and special files');
     }
   }
   const root = mkdtempSync(join(drillScratchRoot(backupPath), 'memphis-verified-drill-'));
   try {
-    if (fallback) extractFallbackArchive(backupPath, root);
-    else extractArchive(backupPath, root);
+    if (fallback) await extractFallbackArchive(backupPath, root);
+    else await extractArchive(backupPath, root);
     const { verifyChainIntegrity } = await import('../../storage/chain-adapter.js');
     const result: BackupDrillResult = {
       verification: 'extracted-chain-sqlite',
@@ -1499,9 +1477,9 @@ export async function restoreBackup(options: RestoreOptions): Promise<{
   const stagedRoot = join(extractRoot, 'data');
   mkdirSync(stagedRoot, { recursive: true });
 
-  withProgress('Extracting backup', options.showProgress ?? true, () => {
-    extractArchive(backupPath, stagedRoot);
-  });
+  await withProgress('Extracting backup', options.showProgress ?? true, () =>
+    extractArchive(backupPath, stagedRoot),
+  );
 
   const tempCurrent = mkdtempSync(join(tmpdir(), 'memphis-current-'));
   const memphisItems = readdirSync(memphisRoot);

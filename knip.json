@@ -28,6 +28,7 @@
     "tests/helpers/concurrent-writer.mjs",
     "scripts/backup-db-snapshot.d.mts",
     "scripts/backup-manifest.d.mts",
+    "scripts/backup-tar.d.mts",
     "tests/helpers/vault-init-process.mts",
     "tests/helpers/vault-rotation-process.mts",
     "src/providers/openai-codex/bridge.ts",
