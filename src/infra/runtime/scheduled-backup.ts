@@ -73,8 +73,15 @@ export interface ScheduledBackupOptions {
   }>;
   /** Test seam — substitute the restore-drill. */
   drillFn?: (backupPath: string) => Promise<void>;
-  /** Test seam — substitute the cleaner. */
-  cleanFn?: () => Promise<void>;
+  /**
+   * Test seam — substitute the cleaner.
+   *
+   * `keep` is the retention the CALLER decided: the window the policy names,
+   * plus one when the drill failed. The seam receives it so a test can see
+   * the number the retention was applied with — a cleaner that is called
+   * with no number cannot be told apart from one that is never called.
+   */
+  cleanFn?: (options?: { keep?: number }) => Promise<void>;
   /** Per-tick callback for tests. */
   onTick?: (state: ScheduledBackupState) => void;
 }
@@ -212,11 +219,15 @@ export function startScheduledBackupLoop(
     });
   const cleanFn =
     options.cleanFn ??
-    (async () => {
-      // Re-read keep on each clean so /config set MEMPHIS_BACKUP_KEEP
-      // actually takes effect immediately.
+    (async (cleanOptions?: { keep?: number }) => {
+      // The caller decides the retention; MEMPHIS_BACKUP_KEEP is where that
+      // number starts, and it is re-read on each clean so /config set
+      // MEMPHIS_BACKUP_KEEP actually takes effect immediately.
       const { cleanBackups } = await import('../cli/commands/backup.js');
-      await cleanBackups({ keep: readKeep(rawEnv), tag: 'scheduled' });
+      await cleanBackups({
+        keep: cleanOptions?.keep ?? readKeep(rawEnv),
+        tag: 'scheduled',
+      });
     });
 
   let inFlight = false;
@@ -298,9 +309,21 @@ export function startScheduledBackupLoop(
         }
       }
 
-      // Preserve previous recovery candidates if the newest drill failed.
+      // The retention is a BOUND, not a latch.
+      //
+      // The old rule skipped the cleaner ENTIRELY once a drill had failed,
+      // and the drill had been failing for three consecutive days on this
+      // host — so the scheduled archives grew by one 182 MB archive a day,
+      // forever, and nothing in the logs said the retention had stopped.
+      //
+      // The intent is kept ("do not throw away the recovery candidates when
+      // the newest archive is suspect") and it is kept as a NUMBER: a
+      // failed drill buys exactly ONE extra candidate — the archive just
+      // beyond the retention window — and the cleaner runs either way. The
+      // total is bounded by `keep + 1`, whatever the drill does.
       try {
-        if (state.lastDrillOk !== false) await cleanFn();
+        const keep = readKeep(rawEnv);
+        await cleanFn({ keep: state.lastDrillOk === false ? keep + 1 : keep });
       } catch (err) {
         log.warn(
           {

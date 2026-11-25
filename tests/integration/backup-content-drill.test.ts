@@ -73,6 +73,43 @@ function backupChainFixture(): { archive: string; root: string } {
   return { archive, root };
 }
 
+/**
+ * An archive that holds the rotation's `.archives` container next to the
+ * chains.
+ *
+ * `.archives` is NOT a chain: it holds the rotation's `.jsonl.gz` files,
+ * not blocks. The owner says so — `classify_chain_directory` in the Rust
+ * core returns `foreign`, and the artefact of cases carries it
+ * (`tests/fixtures/chain-name-contract.json`, the `.archives` case).
+ */
+function rotationContainerFixture(): { archive: string; root: string } {
+  const root = mkdtempSync(join(tmpdir(), 'backup-rotation-drill-'));
+  roots.push(root);
+  mkdirSync(join(root, 'source', 'chains', 'journal'), { recursive: true });
+  mkdirSync(join(root, 'source', 'chains', '.archives'), { recursive: true });
+  const block = {
+    index: 0,
+    chain: 'journal',
+    timestamp: '2026-01-01T00:00:00.000Z',
+    prev_hash: '0'.repeat(64),
+    data: { type: 'journal', content: 'retained memory' },
+  };
+  writeFileSync(
+    join(root, 'source', 'chains', 'journal', '000000.json'),
+    JSON.stringify({ ...block, hash: hashBlock(block, crypto) }),
+  );
+  // The rotation writes gzip archives here. The drill must not treat the
+  // container as a chain, and it must not treat its members as blocks.
+  writeFileSync(join(root, 'source', 'chains', '.archives', 'journal_000001-000010.gz'), 'x');
+  const archive = join(root, 'fixture.tar.gz');
+  execFileSync('tar', ['-czf', archive, '-C', join(root, 'source'), '.']);
+  writeFileSync(
+    `${archive}.sha256`,
+    `${createHash('sha256').update(readFileSync(archive)).digest('hex')}  fixture.tar.gz\n`,
+  );
+  return { archive, root };
+}
+
 describe('backup content drill', () => {
   it('validates large listings instead of failing at the default child-process buffer limit', async () => {
     const root = mkdtempSync(join(tmpdir(), 'backup-large-listing-'));
@@ -135,5 +172,37 @@ describe('backup content drill', () => {
     // The real chain AND its recovery copy are both verified.
     expect(result.chainsChecked).toBe(2);
     expect(result.blocksChecked).toBeGreaterThan(0);
+  });
+
+  // The drill used to treat EVERY directory under `chains/` as a chain, and
+  // the rotation's `.archives` container is not one. The whole drill
+  // aborted with "invalid chain name" on archives that were complete, and
+  // the scheduled backup said "restore-drill FAILED — backup may not be
+  // restorable" for three consecutive days on this host (2026-11-23,
+  // 2026-11-24, 2026-11-25). The drill now asks the owner what a directory
+  // is, and says what it skipped.
+  it('skips a directory that is not a chain instead of failing the whole drill', async () => {
+    const { archive } = rotationContainerFixture();
+    const result = await drillBackup(archive);
+    expect(result.chainsChecked).toBe(1);
+    expect(result.blocksChecked).toBe(1);
+    expect(result.foreignDirectories).toEqual(['.archives']);
+  });
+
+  // The drill's answer must not depend on the machine's free memory. The
+  // old rule extracted into `os.tmpdir()`, which on this host is a tmpfs —
+  // RAM — so a 182 MB archive wanted 486 MB of memory while the drill
+  // ALSO gunzipped the whole archive into a 486 MB buffer and a 486 MB
+  // string. The probe now reads the archive's HEAD instead of the whole
+  // file, and the scratch directory is created next to the archive.
+  it('does not materialise the whole archive to decide that it is not a fallback archive', async () => {
+    const { archive } = rotationContainerFixture();
+    const before = process.memoryUsage().heapUsed;
+    await drillBackup(archive);
+    const growth = process.memoryUsage().heapUsed - before;
+    // A tar archive of this size decompresses to far more than the head
+    // peek needs. The bound is generous — the point is that the probe is
+    // not O(archive).
+    expect(growth).toBeLessThan(256 * 1024 * 1024);
   });
 });

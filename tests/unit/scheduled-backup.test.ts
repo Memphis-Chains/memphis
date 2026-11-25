@@ -158,7 +158,64 @@ describe('scheduled backup loop (Phase 1.2 production sprint)', () => {
     expect(s.totalSuccess).toBe(1);
     expect(s.lastDrillOk).toBe(false);
     expect(s.lastDrillError).toMatch(/archive corrupt/);
-    expect(cleanFn).not.toHaveBeenCalled();
+    // The retention is a BOUND, not a latch: the cleaner still runs, and it
+    // runs with the window PLUS ONE — the failed drill buys exactly one
+    // extra recovery candidate and never freezes the retention.
+    expect(cleanFn).toHaveBeenCalledOnce();
+    expect(cleanFn).toHaveBeenCalledWith({ keep: 8 });
+  });
+
+  it('the retention keeps the window plus ONE candidate after a failed drill, whatever the drill does', async () => {
+    const cleanFn = vi.fn(async () => {});
+    const handle = startScheduledBackupLoop({
+      rawEnv: {
+        MEMPHIS_BACKUP_INTERVAL_MS: String(MIN_BACKUP_INTERVAL_MS),
+        MEMPHIS_BACKUP_DRILL_EVERY_N: '1',
+        MEMPHIS_BACKUP_KEEP: '3',
+      } as NodeJS.ProcessEnv,
+      createBackupFn: async () => ({
+        backupPath: '/tmp/x.tar.gz',
+        file: 'x.tar.gz',
+        size: 100,
+      }),
+      cleanFn,
+      drillFn: async () => {
+        throw new Error('archive corrupt');
+      },
+    });
+    // Three consecutive failures. The retention must NOT creep: the archives
+    // on disk are bounded by keep + 1, not by how long the drill has been
+    // failing. MEASURED 2026-11-25 on this host: the drill had failed for
+    // three days and the old latch had stopped the cleaner entirely, so
+    // the scheduled archives grew by one 182 MB archive a day.
+    await handle.tickNow();
+    await handle.tickNow();
+    await handle.tickNow();
+    expect(cleanFn).toHaveBeenCalledTimes(3);
+    for (const call of cleanFn.mock.calls) {
+      expect(call[0]).toEqual({ keep: 4 });
+    }
+  });
+
+  it('the retention is the plain window when the drill succeeded', async () => {
+    const cleanFn = vi.fn(async () => {});
+    const handle = startScheduledBackupLoop({
+      rawEnv: {
+        MEMPHIS_BACKUP_INTERVAL_MS: String(MIN_BACKUP_INTERVAL_MS),
+        MEMPHIS_BACKUP_DRILL_EVERY_N: '1',
+        MEMPHIS_BACKUP_KEEP: '5',
+      } as NodeJS.ProcessEnv,
+      createBackupFn: async () => ({
+        backupPath: '/tmp/x.tar.gz',
+        file: 'x.tar.gz',
+        size: 100,
+      }),
+      cleanFn,
+      drillFn: async () => {},
+    });
+    await handle.tickNow();
+    expect(cleanFn).toHaveBeenCalledOnce();
+    expect(cleanFn).toHaveBeenCalledWith({ keep: 5 });
   });
 
   it('records failure on createBackup throw', async () => {
