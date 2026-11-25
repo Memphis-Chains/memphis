@@ -1454,6 +1454,18 @@ export interface BackupDrillResult {
    * told apart from a drill that verified everything.
    */
   foreignDirectories: string[];
+  /**
+   * How many of the rotation's ARCHIVES were verified — the `.jsonl.gz`
+   * files under `chains/.archives/`, which hold the oldest blocks of the
+   * chains.
+   *
+   * The count is in the result rather than only in a log line, because a
+   * drill that says nothing about what it skipped is a drill that cannot be
+   * told apart from a drill that verified everything.
+   */
+  archivesChecked: number;
+  /** How many blocks those archives hold. */
+  archiveBlocksChecked: number;
 }
 
 /** Restore into an isolated scratch directory; never invoke live restore hooks. */
@@ -1501,6 +1513,8 @@ export async function drillBackup(backupPath: string): Promise<BackupDrillResult
     if (fallback) await extractFallbackArchive(backupPath, root);
     else await extractArchive(backupPath, root);
     const { verifyChainIntegrity } = await import('../../storage/chain-adapter.js');
+    const { verifyRotationArchives } = await import('../../storage/chain-archive-verify.js');
+    const { ARCHIVES_DIR_NAME } = await import('../../storage/chain-archive-format.js');
     const result: BackupDrillResult = {
       verification: 'extracted-chain-sqlite',
       chainsChecked: 0,
@@ -1508,11 +1522,33 @@ export async function drillBackup(backupPath: string): Promise<BackupDrillResult
       databasesChecked: 0,
       credentialRecovery: 'not-verified',
       foreignDirectories: [],
+      archivesChecked: 0,
+      archiveBlocksChecked: 0,
     };
     const chains = join(root, 'chains');
     if (existsSync(chains)) {
       for (const entry of readdirSync(chains, { withFileTypes: true })) {
         if (!entry.isDirectory()) continue;
+        // The rotation's `.archives` container is not a chain — it holds the
+        // rotation's `.jsonl.gz` files, not blocks — but it IS the chains'
+        // history: the rotation moved the oldest blocks aside, and they
+        // travel inside every backup.
+        //
+        // So the drill does not skip it and does not call it foreign
+        // either: it VERIFIES what is inside. The rule is the archive
+        // verifier's (`chain-archive-verify.ts`) — the same one the restore
+        // uses, because it is the same question.
+        //
+        // Until now the drill skipped the container and said so in its
+        // result (`foreignDirectories: [".archives"]`), and a backup could
+        // carry a corrupt archived history and still drill clean. The error
+        // ledger named that as the ONE residual of the backup round.
+        if (entry.name === ARCHIVES_DIR_NAME) {
+          const archives = await verifyRotationArchives(join(chains, entry.name));
+          result.archivesChecked += archives.archivesChecked;
+          result.archiveBlocksChecked += archives.blocksChecked;
+          continue;
+        }
         // The OWNER decides what a directory under `chains/` is — the same
         // question the runtime, the audit and the verifier ask, with the
         // same answer, because they all ask it (the rule is owned in Rust,

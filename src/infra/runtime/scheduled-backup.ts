@@ -34,6 +34,7 @@ import { dirname, join } from 'node:path';
 
 import { LOG_LEVEL } from '../../config/env-registry.js';
 import { getDataDir } from '../../config/paths.js';
+import type { BackupDrillResult } from '../cli/commands/backup.js';
 import { writePrivateAtomicFile } from '../config/private-atomic-file.js';
 import { createPinoLogger } from '../logging/pino.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
@@ -71,8 +72,15 @@ export interface ScheduledBackupOptions {
     file: string;
     size: number;
   }>;
-  /** Test seam — substitute the restore-drill. */
-  drillFn?: (backupPath: string) => Promise<void>;
+  /**
+   * Test seam — substitute the restore-drill.
+   *
+   * The result is what the drill verified, and the runtime logs it: a drill
+   * that says nothing about what it checked cannot be told apart from a
+   * drill that checked nothing. A seam that returns nothing is allowed (the
+   * tests do), and then the log line carries no counts.
+   */
+  drillFn?: (backupPath: string) => Promise<BackupDrillResult | void>;
   /**
    * Test seam — substitute the cleaner.
    *
@@ -184,9 +192,9 @@ function readKeep(rawEnv: NodeJS.ProcessEnv): number {
 }
 
 /** Extract and validate archived chains and SQLite, without touching live state. */
-async function defaultDrill(backupPath: string): Promise<void> {
+async function defaultDrill(backupPath: string): Promise<BackupDrillResult> {
   const { drillBackup } = await import('../cli/commands/backup.js');
-  await drillBackup(backupPath);
+  return drillBackup(backupPath);
 }
 
 /**
@@ -279,14 +287,28 @@ export function startScheduledBackupLoop(
       // Restore-drill every Nth success, or forced (cron path: force=true)
       if (opts.forceDrill || successOrdinal % drillEveryN === 0) {
         try {
-          await drillFn(result.backupPath);
+          const drillResult = await drillFn(result.backupPath);
           state.lastDrillAt = new Date().toISOString();
           state.lastDrillOk = true;
           state.lastDrillError = undefined;
           state.totalDrills += 1;
           log.info(
-            { event: 'backup.scheduled.drill.success', file: result.file },
-            'restore-drill verified archived chains and SQLite; credentials not verified',
+            {
+              event: 'backup.scheduled.drill.success',
+              file: result.file,
+              // What the drill actually checked. A drill that says nothing
+              // about what it checked cannot be told apart from a drill that
+              // checked nothing.
+              ...(drillResult
+                ? {
+                    chainsChecked: drillResult.chainsChecked,
+                    blocksChecked: drillResult.blocksChecked,
+                    archivesChecked: drillResult.archivesChecked,
+                    archiveBlocksChecked: drillResult.archiveBlocksChecked,
+                  }
+                : {}),
+            },
+            'restore-drill verified archived chains, rotation archives and SQLite; credentials not verified',
           );
         } catch (err) {
           state.lastDrillAt = new Date().toISOString();

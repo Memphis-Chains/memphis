@@ -1840,6 +1840,47 @@ greater than 0.333`** — the loop answered 10 % of the questions; after the
   (1 883 bytes on this host), because a gate built on toy blocks would
   measure a cost the runtime never pays.
 
+**AND THE LAST RESIDUAL — CLOSED 2026-11-25** (decision #597, journal #1103).
+The rotation moves the oldest blocks of a chain into a gzipped archive under
+`chains/.archives/`. Those blocks ARE the chain's history — the rotation only
+moved them aside — and they travel inside every backup. The drill SKIPPED
+the container and said so in its result (`foreignDirectories: [".archives"]`),
+so a backup could carry a corrupt archived history and still drill clean.
+This was the ONE residual this round measured rather than hid.
+
+**THE RULE HAS ONE OWNER NOW.** The restore already asked "is this archive
+intact?" — inside `restoreChainFromArchive`, where the answer was buried and
+unreachable. The drill asks the same question, so the answer is computed
+once, in `chain-archive-verify.ts`, and both callers use it. The reader
+moved to the format owner (`chain-archive-format.ts`) for the same reason:
+one reader, not two.
+
+The checks: every block's **hash**, every block's **identity** (the chain
+the archive is named after — the hash cannot see a wrong identity, because
+the identity sits inside the hash), the **index range** the name promises,
+and the **prev_hash links** between the blocks.
+
+MEASURED on this host, 2026-11-25, on the live corpus — the two archives
+under `chains/.archives/`:
+
+| archive                                                  | blocks | hash     | identity | links    |
+| -------------------------------------------------------- | ------ | -------- | -------- | -------- |
+| `insights_000001-000297_…jsonl.gz` (current JSON Lines)  | 297    | 297 ✓    | 297 ✓    | 297 ✓    |
+| `system_000001-015271_…jsonl.gz` (LEGACY pretty-printed) | 15 271 | 15 271 ✓ | 15 271 ✓ | 15 271 ✓ |
+
+Every block in both is intact — including the legacy one, a stream of
+404 379 pretty-printed lines that the format owner's scanner reads with the
+same code as the current JSON Lines.
+
+- **FALSIFIER:** `tests/integration/backup-content-drill.test.ts` builds the
+  container with the **REAL writer** (`rotateChain`), so the gate reads an
+  archive the runtime really produces — a hand-built one would be a corpus
+  for a writer that does not exist, which is how the last reader gate
+  passed for months against archives nobody could read. Three cases: the
+  archives are verified and counted, a corrupt archive FAILS the drill, and
+  the container is no longer in the list of what the drill did not look at.
+  Against the pre-fix code all three fail.
+
 **AND THEN THE LIVE TEST FOUND THE NEXT THING.** The repair was verified on
 the **running service**, not only in a harness: the scheduled backup was
 triggered through the scheduler's own API, and a SIGTERM was aimed at the
@@ -2078,20 +2119,24 @@ package-artifact gate now installs under a declared policy, proves the native
 binding, and probes a command that opens the database (E-12).
 **Next, in this order:** Family B's
 wedge (E-05), which needs the operator's fifteen acknowledgements before
-any code can help — and, beside it, the ONE residual this round measured
-rather than hid: the rotation's `.jsonl.gz` archives inside a backup are
-still not verified, because the drill has no reader for them. The other
-residual — the drill's synchronous tar passes, which is what turned a stop
-into a SIGKILL — is **closed** as of 2026-11-25 (decision #594): the tar
-rule has one owner and every call through it is asynchronous, the drill's
-longest silence fell from 11 302 ms to 1 842 ms, and a stop aimed at the
-drill is now answered in 1 ms. The case the incident was filed about has
-since been measured on the **running service**: the extraction and the
-SIGTERM in the same second (10:42:42), `shutdown.exit exitCode=0
-drained=true` four seconds later — and the scratch that the killed drill
-left behind, 489 MB and 13 002 files, is now buried by the next drill that
-can prove it is a corpse. The last pause of that round is closed too
-(decision #596): the chain verifier hands the event loop back between
+any code can help — and, beside it, the residual this round measured rather
+than hid: the rotation's `.jsonl.gz` archives inside a backup were not
+verified, because the drill had no reader for them. That residual is now
+**closed** as well (decision #597): the rule has one owner — the same one
+the restore asks — and the drill verifies 15 568 archived blocks on this
+host's corpus, every one of them intact, including the archive in the
+LEGACY format. The other residual — the drill's synchronous tar passes,
+which is what turned a stop into a SIGKILL — is **closed** as of 2026-11-25
+(decision #594): the tar rule has one owner and every call through it is
+asynchronous, the drill's longest silence fell from 11 302 ms to 1 842 ms,
+and a stop aimed at the drill is now answered in 1 ms. The case the incident
+was filed about has since been measured on the **running service**: the
+extraction and the SIGTERM in the same second (10:42:42), `shutdown.exit
+exitCode=0 drained=true` four seconds later — and the scratch that the
+killed drill left behind, 489 MB and 13 002 files, is now buried by the next
+drill that can prove it is a corpse. The last pause of that round is closed
+too (decision #596): the chain verifier hands the event loop back between
 batches, so its silence on the live corpus fell from ~1 000 ms to ~45 ms and
 the verification took the same time as before. In the REAL drill, on the
-real archive, the longest silence fell from **921 ms to 115 ms**.
+real archive, the longest silence fell from **921 ms to 115 ms** — and that
+is with the rotation's archives now verified as well.

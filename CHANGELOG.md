@@ -126,6 +126,55 @@ tune. Against the pre-fix code it fails with `expected 0.104 to be greater
 than 0.333` — the loop answered 10 % of them; after the repair it answers
 95 %.
 
+### The drill verifies the rotation's archived history
+
+The rotation moves the oldest blocks of a chain into a gzipped archive under
+`chains/.archives/`. Those blocks **are** the chain's history — the rotation
+only moved them aside — and they travel inside every backup. The drill
+skipped the container and said so in its result (`foreignDirectories:
+['.archives']`), so a backup could carry a corrupt archived history and still
+drill clean. That was the one residual the backup round left open.
+
+**ONE OWNER FOR THE RULE.** The restore already asked "is this archive
+intact?" — inside `restoreChainFromArchive`, where the answer was buried and
+unreachable. The drill asks the same question, so the answer is computed
+once, in `chain-archive-verify.ts`, and both callers use it. The reader moved
+to the format owner (`chain-archive-format.ts`) for the same reason: one
+reader, not two.
+
+The checks: every block's **hash**, every block's **identity** (the chain the
+archive is named after — the hash cannot see a wrong identity, because the
+identity sits inside the hash), the **index range** the name promises, and
+the **prev_hash links** between the blocks. The verification runs in batches
+of 64 with the event loop handed back between them — 15 271 blocks in one
+burst is a ~450 ms pause.
+
+MEASURED on this host, 2026-11-25, on the live corpus — the two archives
+under `chains/.archives/`:
+
+| archive                                                  | blocks | hash     | identity | links    |
+| -------------------------------------------------------- | ------ | -------- | -------- | -------- |
+| `insights_000001-000297_…jsonl.gz` (current JSON Lines)  | 297    | 297 ✓    | 297 ✓    | 297 ✓    |
+| `system_000001-015271_…jsonl.gz` (legacy pretty-printed) | 15 271 | 15 271 ✓ | 15 271 ✓ | 15 271 ✓ |
+
+Every block in both is intact — including the legacy one, a stream of
+404 379 pretty-printed lines that the format owner's scanner reads with the
+same code as the current JSON Lines.
+
+**THE GATE, and it can fail.** `tests/integration/backup-content-drill.test.ts`
+builds the container with the **real writer** (`rotateChain`), so the gate
+reads an archive the runtime really produces. Three cases: the archives are
+verified and counted, a corrupt archive **fails** the drill, and the
+container is no longer in the list of what the drill did not look at.
+Against the pre-fix code all three fail.
+
+The drill on the real archive now verifies **15 chains (12 477 blocks) and 2
+archives (15 568 blocks)** — 28 045 blocks — with a longest silence of
+**115 ms**. And the scheduled backup's own log line now says what it
+checked (`chainsChecked`, `blocksChecked`, `archivesChecked`,
+`archiveBlocksChecked`) — a drill that says nothing about what it checked
+cannot be told apart from a drill that checked nothing.
+
 ### The cockpit tells the operator to run `/recovery` — and now it has one
 
 The cockpit's own error notice said: **Action: run `/recovery` to see the

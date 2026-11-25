@@ -74,8 +74,19 @@
  * archive BODY is read by the TypeScript arm only.
  */
 
-import { readFileSync } from 'node:fs';
-import { gunzipSync } from 'node:zlib';
+import { createReadStream, readFileSync } from 'node:fs';
+import { StringDecoder } from 'node:string_decoder';
+import { createGunzip, gunzipSync } from 'node:zlib';
+
+/**
+ * The name of the directory the rotation puts its archives in, next to the
+ * chains.
+ *
+ * One owner: the rotation writes it, the exact-search resolver reads it, and
+ * the backup drill verifies what is inside it. Before this constant it was a
+ * literal in three places, and a fourth reader would have made four.
+ */
+export const ARCHIVES_DIR_NAME = '.archives';
 
 /** A JSON object, as it is stored inside an archive. */
 export type ArchiveBlockValue = Record<string, unknown>;
@@ -209,8 +220,76 @@ export function readArchiveBlocksSync(archivePath: string): ArchiveBlockValue[] 
 }
 
 /**
- * Serialize one block file into one archive line.
+ * The blocks an archive file holds, read WITHOUT holding the event loop.
  *
+ * The synchronous reader above exists for the callers that cannot await; this
+ * one is for the callers that must not freeze the runtime — the restore and
+ * the backup drill both read archives of tens of thousands of blocks, and a
+ * synchronous decompression of one is a pause of hundreds of milliseconds.
+ *
+ * The decompression is STREAMED, and a UTF-8 decoder holds the incomplete
+ * tail of a chunk until the next one arrives: a multi-byte character that
+ * straddles a chunk boundary is one character, not two.
+ *
+ * Measured 2026-11-23 on this host, on a real rotation of the `insights`
+ * chain (297 blocks archived): 20 of the 297 lines came back corrupted, the
+ * first of them at block 190 — where the restore then failed with "hash
+ * mismatch at block 190", because the corrupted byte sat inside a
+ * hash-covered field. Every corrupted character sat exactly two bytes before
+ * a 16 KB chunk boundary: the two bytes of `ó` (0xC3 0xB3), split in half.
+ *
+ * @throws Error when a value cannot be parsed.
+ */
+export async function readArchiveBlocks(archivePath: string): Promise<ArchiveBlockValue[]> {
+  const blocks: ArchiveBlockValue[] = [];
+  await new Promise<void>((resolve, reject) => {
+    const stream = createReadStream(archivePath).pipe(createGunzip());
+    const decoder = new StringDecoder('utf8');
+    let buffer = '';
+    stream.on('data', (chunk: Buffer | string) => {
+      buffer += typeof chunk === 'string' ? chunk : decoder.write(chunk);
+      const scan = scanArchiveValues(buffer);
+      buffer = scan.rest;
+      for (const value of scan.values) {
+        try {
+          blocks.push(JSON.parse(value) as ArchiveBlockValue);
+        } catch (err) {
+          reject(
+            new Error(
+              `parse error in archive: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          );
+          stream.destroy();
+          return;
+        }
+      }
+    });
+    stream.on('end', () => {
+      // Flush the decoder's tail — a truncated character at the very end of
+      // the stream still has to be surfaced, not silently dropped.
+      buffer += decoder.end();
+      const tail = buffer.trim();
+      if (tail) {
+        try {
+          blocks.push(JSON.parse(tail) as ArchiveBlockValue);
+        } catch (err) {
+          reject(
+            new Error(
+              `parse error at archive tail: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          );
+          return;
+        }
+      }
+      resolve();
+    });
+    stream.on('error', reject);
+  });
+  return blocks;
+}
+
+/**
+ * Serialize one block file into one archive line.
  * The block file on disk is pretty-printed JSON. The archive line is
  * the same object, compact, on a single line.
  *
