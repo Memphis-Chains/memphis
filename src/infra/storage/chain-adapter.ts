@@ -49,6 +49,36 @@ import { resolveRustBridgePath } from '../runtime/install-root.js';
 // ~/.memphis chain.
 const AUDIT_GUARDED_CHAINS: ReadonlySet<string> = new Set(['system', 'security']);
 
+/**
+ * How many blocks are read and validated between two yields to the event
+ * loop.
+ *
+ * WHY: the verifier's cost is CPU — one JSON.parse and one SHA-256 per
+ * block — and it used to run in one uninterrupted burst. MEASURED on this
+ * host, 2026-11-25, on the `patterns` chain (5 544 blocks), three runs
+ * each: the longest silence 1 029 / 988 / 963 ms → 55 / 44 / 39 ms, and a
+ * 20 ms heartbeat that fired 5 times in 2 047 ms instead of 79.
+ *
+ * The number is a trade-off, not a constant of nature: a bigger batch reads
+ * faster and yields less often. MEASURED on this host on a 5 000-block
+ * corpus, batches of 16, 32 and 64 all hold the longest silence near 30 ms;
+ * 64 is taken because it keeps the read concurrency the highest.
+ */
+const VERIFY_BATCH_SIZE = 64;
+
+/**
+ * Hand the event loop back for one turn.
+ *
+ * `setImmediate` runs in the check phase of the current iteration, and the
+ * next iteration's timers phase follows it — so a pending timer (the
+ * runtime's heartbeat, a stop watchdog) gets its turn before the work
+ * continues. This is the same primitive the archive path uses to stay
+ * answerable while tar runs.
+ */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 export type ChainBackend = 'ts-legacy' | 'rust-napi';
 
 export interface ChainAdapterStatus {
@@ -737,15 +767,6 @@ async function readAndValidateChainBlocks(
     return [];
   }
 
-  // Read and parse blocks concurrently to reduce I/O latency on long chains.
-  const loaded = await Promise.all(
-    indexed.map(async (entry) => ({
-      file: entry.file,
-      block: await readBlockFile(`${chainsDir}/${entry.file}`, entry.file, fs),
-    })),
-  );
-
-  const blocks: ChainBlock[] = [];
   // Pull a chain name from the directory path for diagnostic messages —
   // without this, operators saw bare `chain integrity check failed for
   // 00042.json: hash mismatch` and had to grep their data dir to find
@@ -765,96 +786,132 @@ async function readAndValidateChainBlocks(
     if (!hash) return '<empty>';
     return hash.length > 12 ? `${hash.slice(0, 8)}…${hash.slice(-4)}` : hash;
   };
-  for (const { file, block: current } of loaded) {
-    if (current.chain !== expectedIdentity) {
-      throw new Error(
-        `chain '${chainName}' integrity check failed at block ${current.index} (${file}): ` +
-          `chain field '${current.chain}' ≠ expected '${expectedIdentity}'. ` +
-          `A chain's identity is its LOGICAL name — an archive carries the chain it copies, not its own directory name — ` +
-          `and the identity sits inside the hash, so a copy that carries the wrong one is a DIFFERENT history of the same blocks. ` +
-          `Run \`memphis chain repair-archive-identity --chain ${chainName}\` to restore the copy's identity, ` +
-          `or \`memphis chain verify --chain ${chainName}\` to see it again.`,
-      );
-    }
-    const mismatch = checkBlockHashMismatch(current, crypto, file);
-    if (mismatch?.mismatch) {
-      if (options.repairOnMismatch === true && isChainRepairEnabled(rawEnv)) {
-        await repairBlockHash(current, file, chainsDir, crypto, fs, rawEnv);
-        // Re-check hash after repair (block was updated in place)
-        current.hash = mismatch.expectedHash;
-      } else {
+  const blocks: ChainBlock[] = [];
+  // The blocks are read and validated in BATCHES, and the event loop is
+  // handed back between them.
+  //
+  // WHY: the verifier's cost is CPU — one JSON.parse and one SHA-256 per
+  // block — and it used to run in a single burst that held the event loop
+  // for as long as the chain was long. MEASURED on this host, 2026-11-25,
+  // on the `patterns` chain (5 544 blocks), three runs each: the longest
+  // silence 1 029 / 988 / 963 ms → 55 / 44 / 39 ms. A loop that is asleep
+  // cannot dispatch a signal handler — that is the mechanism that turned
+  // E-07's stop into a SIGKILL, one layer up: the drill's tar froze the
+  // loop, and the chain verifier froze it too.
+  //
+  // Batching also stops the verifier from opening every block file at once:
+  // 5 544 concurrent reads is 5 544 file descriptors, which is the next
+  // thing to break on a longer chain.
+  //
+  // The ORDER is unchanged: batches follow the index order, and the blocks
+  // inside a batch keep their order, so the first failure reported is still
+  // the first failure in the chain.
+  for (let start = 0; start < indexed.length; start += VERIFY_BATCH_SIZE) {
+    const batch = indexed.slice(start, start + VERIFY_BATCH_SIZE);
+    // Read and parse blocks concurrently to reduce I/O latency on long chains.
+    const loaded = await Promise.all(
+      batch.map(async (entry) => ({
+        file: entry.file,
+        block: await readBlockFile(`${chainsDir}/${entry.file}`, entry.file, fs),
+      })),
+    );
+
+    for (const { file, block: current } of loaded) {
+      if (current.chain !== expectedIdentity) {
         throw new Error(
           `chain '${chainName}' integrity check failed at block ${current.index} (${file}): ` +
-            `stored hash ${formatHashFingerprint(mismatch.storedHash)} ≠ ` +
-            `computed ${formatHashFingerprint(mismatch.expectedHash)}. ` +
-            `Run \`memphis chain rebuild\` (or \`memphis doctor --fix\`) to recompute the chain — \`memphis repair runtime\` only rebuilds derived runtime/index state, not block hashes. Or set MEMPHIS_CHAIN_REPAIR_ON_MISMATCH=true to auto-heal individual blocks at read time.`,
+            `chain field '${current.chain}' ≠ expected '${expectedIdentity}'. ` +
+            `A chain's identity is its LOGICAL name — an archive carries the chain it copies, not its own directory name — ` +
+            `and the identity sits inside the hash, so a copy that carries the wrong one is a DIFFERENT history of the same blocks. ` +
+            `Run \`memphis chain repair-archive-identity --chain ${chainName}\` to restore the copy's identity, ` +
+            `or \`memphis chain verify --chain ${chainName}\` to see it again.`,
         );
       }
-    }
+      const mismatch = checkBlockHashMismatch(current, crypto, file);
+      if (mismatch?.mismatch) {
+        if (options.repairOnMismatch === true && isChainRepairEnabled(rawEnv)) {
+          await repairBlockHash(current, file, chainsDir, crypto, fs, rawEnv);
+          // Re-check hash after repair (block was updated in place)
+          current.hash = mismatch.expectedHash;
+        } else {
+          throw new Error(
+            `chain '${chainName}' integrity check failed at block ${current.index} (${file}): ` +
+              `stored hash ${formatHashFingerprint(mismatch.storedHash)} ≠ ` +
+              `computed ${formatHashFingerprint(mismatch.expectedHash)}. ` +
+              `Run \`memphis chain rebuild\` (or \`memphis doctor --fix\`) to recompute the chain — \`memphis repair runtime\` only rebuilds derived runtime/index state, not block hashes. Or set MEMPHIS_CHAIN_REPAIR_ON_MISMATCH=true to auto-heal individual blocks at read time.`,
+          );
+        }
+      }
 
-    if (blocks.length === 0) {
-      // The chain may CONTINUE an archived prefix instead of starting at
-      // genesis. Rotation archives the old blocks and leaves a marker
-      // with the head of the archive; the first live block then links to
-      // that head, and the chain's history stays provable.
-      //
-      // Without this the validators rejected every rotated chain with
-      // "missing genesis block", which is why rotation was never
-      // enabled. See `src/infra/storage/chain-rotation-head.ts`.
-      const head = await readChainRotationHead(chainsDir);
-      if (isValidChainStart(head, current.index, current.prev_hash)) {
+      if (blocks.length === 0) {
+        // The chain may CONTINUE an archived prefix instead of starting at
+        // genesis. Rotation archives the old blocks and leaves a marker
+        // with the head of the archive; the first live block then links to
+        // that head, and the chain's history stays provable.
+        //
+        // Without this the validators rejected every rotated chain with
+        // "missing genesis block", which is why rotation was never
+        // enabled. See `src/infra/storage/chain-rotation-head.ts`.
+        const head = await readChainRotationHead(chainsDir);
+        if (isValidChainStart(head, current.index, current.prev_hash)) {
+          blocks.push(current);
+          continue;
+        }
+        // Accept index 0 or 1 as valid genesis (Rust uses index 0, TS uses index 1)
+        if (current.index !== 0 && current.index !== 1) {
+          throw new Error(
+            `chain '${chainName}' integrity check failed at block ${current.index} (${file}): ` +
+              `missing genesis block (chain must start at index 0 or 1` +
+              (head
+                ? `, or continue the archived prefix recorded in ${ROTATION_HEAD_FILENAME}`
+                : '') +
+              `)`,
+          );
+        }
+        // For index=0 genesis: prev_hash must be GENESIS_PREV_HASH
+        // For index=1 genesis: prev_hash must be '' or GENESIS_PREV_HASH
+        if (current.index === 0 && current.prev_hash !== GENESIS_PREV_HASH) {
+          throw new Error(
+            `chain '${chainName}' integrity check failed at genesis block 0 (${file}): ` +
+              `prev_hash ${formatHashFingerprint(current.prev_hash)} ≠ expected ${formatHashFingerprint(GENESIS_PREV_HASH)}`,
+          );
+        }
+        if (
+          current.index === 1 &&
+          current.prev_hash !== '' &&
+          current.prev_hash !== GENESIS_PREV_HASH
+        ) {
+          throw new Error(
+            `chain '${chainName}' integrity check failed at genesis block 1 (${file}): ` +
+              `prev_hash ${formatHashFingerprint(current.prev_hash)} ≠ expected '' or ${formatHashFingerprint(GENESIS_PREV_HASH)}`,
+          );
+        }
         blocks.push(current);
         continue;
       }
-      // Accept index 0 or 1 as valid genesis (Rust uses index 0, TS uses index 1)
-      if (current.index !== 0 && current.index !== 1) {
+
+      const previous = blocks[blocks.length - 1]!;
+      if (current.index !== previous.index + 1) {
         throw new Error(
           `chain '${chainName}' integrity check failed at block ${current.index} (${file}): ` +
-            `missing genesis block (chain must start at index 0 or 1` +
-            (head
-              ? `, or continue the archived prefix recorded in ${ROTATION_HEAD_FILENAME}`
-              : '') +
-            `)`,
+            `non-sequential index after block ${previous.index}`,
         );
       }
-      // For index=0 genesis: prev_hash must be GENESIS_PREV_HASH
-      // For index=1 genesis: prev_hash must be '' or GENESIS_PREV_HASH
-      if (current.index === 0 && current.prev_hash !== GENESIS_PREV_HASH) {
+
+      if (current.prev_hash !== previous.hash) {
         throw new Error(
-          `chain '${chainName}' integrity check failed at genesis block 0 (${file}): ` +
-            `prev_hash ${formatHashFingerprint(current.prev_hash)} ≠ expected ${formatHashFingerprint(GENESIS_PREV_HASH)}`,
+          `chain '${chainName}' integrity check failed at block ${current.index} (${file}): ` +
+            `prev_hash ${formatHashFingerprint(current.prev_hash)} ≠ previous block's hash ${formatHashFingerprint(previous.hash)}`,
         );
       }
-      if (
-        current.index === 1 &&
-        current.prev_hash !== '' &&
-        current.prev_hash !== GENESIS_PREV_HASH
-      ) {
-        throw new Error(
-          `chain '${chainName}' integrity check failed at genesis block 1 (${file}): ` +
-            `prev_hash ${formatHashFingerprint(current.prev_hash)} ≠ expected '' or ${formatHashFingerprint(GENESIS_PREV_HASH)}`,
-        );
-      }
+
       blocks.push(current);
-      continue;
     }
 
-    const previous = blocks[blocks.length - 1]!;
-    if (current.index !== previous.index + 1) {
-      throw new Error(
-        `chain '${chainName}' integrity check failed at block ${current.index} (${file}): ` +
-          `non-sequential index after block ${previous.index}`,
-      );
-    }
-
-    if (current.prev_hash !== previous.hash) {
-      throw new Error(
-        `chain '${chainName}' integrity check failed at block ${current.index} (${file}): ` +
-          `prev_hash ${formatHashFingerprint(current.prev_hash)} ≠ previous block's hash ${formatHashFingerprint(previous.hash)}`,
-      );
-    }
-
-    blocks.push(current);
+    // Hand the event loop back for one turn. `setImmediate` runs in the
+    // check phase, so a pending timer — the runtime's heartbeat, a stop
+    // watchdog — gets its turn before the next batch starts.
+    await yieldToEventLoop();
   }
 
   return blocks;
