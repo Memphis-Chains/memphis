@@ -78,7 +78,7 @@ describe('the runtime database survives a backup/restore round trip', () => {
     });
 
     // The archive carries the runtime database under its own name.
-    const entries = listArchiveContents(created.backupPath);
+    const entries = await listArchiveContents(created.backupPath);
     expect(entries.some((entry) => entry.includes('runtime-memphis.db'))).toBe(true);
 
     // Restore into a fresh data directory, as a recovery would.

@@ -1621,18 +1621,21 @@ caps a boot loop, so `always` costs nothing there.
 `on-failure` makes it exit **1** with a structured message, and the unit is
 the only place the policy is written.
 
-**AND THIS IS THE OTHER END OF E-08's CHAIN, measured.** The SIGTERM that
-arrived during the drill was never handled — not one `shutdown.*` line was
-written in the 45 seconds that followed, and systemd's SIGKILL is what
-finally ended it. The drill's event-loop block has fallen from **19 300 ms**
-to **9 583 ms** with E-08's repair (the head-only probe removed a 486 MB
-gunzip and a 486 MB string from the drill), but the tar passes are still
-synchronous, so a stop that lands inside a drill still waits for the drill
-to finish. That is the residual, and it is stated rather than hidden: the
-drain budget is 15 s, the stopper budget is 5 s, and the unit's
-`TimeoutStopSec` is 45 s. A drill that took 22 minutes — which is what E-08
-measured on this host — does not fit in that budget, and the answer was a
-SIGKILL.
+**AND THIS IS THE OTHER END OF E-08's CHAIN — and that end is now closed
+(2026-11-25, decision #594).** The SIGTERM that arrived during the drill was
+never handled — not one `shutdown.*` line was written in the 45 seconds that
+followed, and systemd's SIGKILL is what finally ended it. The cause was not
+systemd and not the drill's logic: the drill's `tar` was a **synchronous** child
+process, and a synchronous child process holds the runtime's event loop, and
+the event loop is what dispatches the signal handler. E-08's repair took the
+drill's block from **19 300 ms** to **9 583 ms**, but the tar passes were
+still synchronous, so a stop that landed inside a drill still waited for the
+drill to finish. The tar passes are now **asynchronous** (`scripts/backup-tar.mjs`
+owns the rule, and the runtime calls it from inside its own loop), so the
+worst silence inside a drill is **1 842 ms** — the chain verifier's block
+reads, not tar — and a stop that lands inside a drill is answered in **1 ms**.
+The drain budget is 15 s, the stopper budget is 5 s, and the unit's
+`TimeoutStopSec` is 45 s: the drill now fits in all three.
 
 #### E-08 · The backup retention stops when the restore drill fails
 
@@ -1737,6 +1740,69 @@ tests in those two files.
 archives inside a backup are still not verified by the drill — they are not
 blocks, and the drill has no reader for them. What the drill now says is
 "the chains and the rollback copies are intact", which is what it can say.
+
+**THE RESIDUAL THAT WAS LEFT AFTER THE REPAIR — CLOSED 2026-11-25** (decision
+#594). The four repairs above fixed the drill's VERDICT. They did not fix the
+drill's TIMING: the tar passes were still `execFileSync`, so the drill still
+held the runtime's event loop for the length of the extraction — and that is
+what turned E-07's stop into a kill.
+
+MEASURED, from the runtime's own journal on 2026-11-25 (local time):
+
+```
+02:00:05  backup.scheduled.start
+02:06:39  backup.scheduled.success  (182 229 559 bytes)
+           ... the drill calls execFileSync('tar', ['-xzf', …]) — the loop is BLOCKED …
+02:28:53  systemd: Stopping memphis.service  (SIGTERM)
+           ... ZERO shutdown.* lines: a signal handler cannot run while the loop is asleep …
+02:29:38  systemd: State 'stop-sigterm' timed out. Killing.
+02:29:38  SIGKILL — "Failed with result 'timeout'"
+```
+
+and the scheduler task closed with `lastError: "Command failed: tar -xzf
+…/scheduled-2026-11-25-02-00.tar.gz -C /tmp/memphis-verified-drill-RRgpLl"` —
+the drill died of the stop, and the stop died of the freeze. (An ordinary stop
+at 01:14:57 the same night logged `shutdown.start` and `shutdown.exit` within
+two seconds: the handler was fine. The drill was the difference.)
+
+**THE REPAIR, fifth part.** `scripts/backup-tar.mjs` is the ONE owner of the
+tar rule — how tar is invoked, how its failures are read, how its stderr
+reaches the operator — and **every** call through it is asynchronous. The two
+runners (the compiled CLI, which the runtime calls from inside its own loop,
+and the plain-Node systemd runner) had already drifted: the CLI classified
+tar's failures one way and the runner re-implemented the "file changed as we
+read it" rule inline and dropped the reason from the message. The capability
+probes moved with it (tar's `--version` probe was 6 ms and the substitution
+probe 14 ms, once per process — small, but still a synchronous child process
+in the loop), and the archive digest now STREAMS instead of reading 182 MB
+into the heap.
+
+MEASURED after, on this host, against the same 181 MB archive:
+
+|                                  | before             | after                                      |
+| -------------------------------- | ------------------ | ------------------------------------------ |
+| the drill's longest silence      | **11 302 ms**      | **1 842 ms** (the chain verifier, not tar) |
+| heartbeat ticks during the drill | 35 of 336 (10.4 %) | **520 of 693 (75 %)**                      |
+| a SIGTERM aimed at the drill     | **never answered** | answered in **1 ms**, clean exit 0         |
+
+- **FALSIFIER, and the gate can fail:** `tests/integration/backup-event-loop.test.ts`
+  puts a `tar` shim first on PATH that sleeps a second and writes a marker
+  before and after the sleep, so the test knows exactly the window in which
+  tar ran; a 20 ms heartbeat runs for the whole call. Against the pre-fix
+  code both cases fail with **`expected 0 to be greater than 0`** — zero
+  heartbeat ticks inside the tar window — and pass after. The gate asserts
+  about the LOOP, not about a duration: no threshold to tune.
+- `tests/unit/backup-tar-contract.test.ts` holds the artefact of cases: the
+  bridge re-exports every runtime export of the shared module; the CLI and
+  the runner produce the **same archive** from the same tree; a tar failure
+  still names the reason; and no file in the archive path waits on a child
+  process synchronously.
+
+**WHAT IS STILL OPEN, stated rather than hidden.** The 1 842 ms that remain is
+the chain verifier's block reads (`verifyChainIntegrity` reads 12 380 blocks
+one at a time), not tar. It is 24× under the unit's `TimeoutStopSec=45`, and a
+stop is answered inside it — but it is a real pause, and it belongs to the
+storage layer, not to this rule.
 
 ### Family C — dead code, committed
 
