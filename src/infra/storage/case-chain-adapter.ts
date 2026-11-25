@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { BRIDGE_EXPORT_ALIASES } from './bridge-exports.generated.js';
 import type {
@@ -30,11 +30,7 @@ import {
 import { getChainPath, getDataDir } from '../../config/paths.js';
 import { canonicalHash } from '../../core/chain-hash.js';
 import { parseBool } from '../../core/env.js';
-import type {
-  CaseAppendResult,
-  CaseEntry,
-  CaseQuery,
-} from '../../memory/case-types.js';
+import type { CaseAppendResult, CaseEntry, CaseQuery } from '../../memory/case-types.js';
 import { resolveRustBridgePath } from '../runtime/install-root.js';
 
 /**
@@ -50,17 +46,20 @@ const CASE_BRIDGE_ALIASES = {
   case_query: BRIDGE_EXPORT_ALIASES.case_query,
   case_rebuild: BRIDGE_EXPORT_ALIASES.case_rebuild,
   case_index_status: BRIDGE_EXPORT_ALIASES.case_index_status,
-} satisfies BridgeAliasMap<
-  'case_append' | 'case_query' | 'case_rebuild' | 'case_index_status'
->;
+} satisfies BridgeAliasMap<'case_append' | 'case_query' | 'case_rebuild' | 'case_index_status'>;
 
 type CaseBridgeKey = keyof typeof CASE_BRIDGE_ALIASES;
 
 interface ResolvedCaseBridge {
-  case_append?: (chainJson: string, entryJson: string, indexDbPath: string) => string;
-  case_query?: (queryJson: string, indexDbPath: string) => string;
-  case_rebuild?: (blocksJson: string, indexDbPath: string) => string;
-  case_index_status?: (indexDbPath: string) => string;
+  case_append?: (
+    chainJson: string,
+    entryJson: string,
+    indexDbPath: string,
+    source?: string,
+  ) => string;
+  case_query?: (queryJson: string, indexDbPath: string, source?: string) => string;
+  case_rebuild?: (blocksJson: string, indexDbPath: string, source?: string) => string;
+  case_index_status?: (indexDbPath: string, source?: string) => string;
 }
 
 /**
@@ -203,6 +202,8 @@ function toNapiBlock(
 export class CaseChainAdapter {
   private readonly bridge: BridgeResolution<CaseBridgeKey>;
   private readonly rawEnv: NodeJS.ProcessEnv;
+  /** Whether the bridge understands the SOURCE — the compatibility window. */
+  private sourceAware: boolean | null = null;
 
   constructor(rawEnv: NodeJS.ProcessEnv = process.env) {
     this.rawEnv = rawEnv;
@@ -261,14 +262,68 @@ export class CaseChainAdapter {
    * must still work — it keeps using the index as it finds it. That is
    * the compatibility window, and it is why the export is OPTIONAL.
    */
-  private indexStatus(): { indexed: number; lastIndexedBlock: number | null } | null {
+  private indexStatus(): {
+    indexed: number;
+    lastIndexedBlock: number | null;
+    sourceAware: boolean;
+  } | null {
     const bridge = this.bridge.resolved as ResolvedCaseBridge;
     const statusFn = bridge.case_index_status;
     if (typeof statusFn !== 'function') return null;
 
-    const raw = statusFn(getIndexDbPath(this.rawEnv));
+    // The source rides along on the probe. A binary that predates it
+    // IGNORES the extra argument — MEASURED on the bridge — and answers
+    // without `sourceAware`, which is how this caller finds out.
+    const raw = statusFn(getIndexDbPath(this.rawEnv), this.chainSource());
     const out = parseEnvelope<CaseIndexStatusPayload>(raw, 'case_index_status');
-    return { indexed: out.indexed, lastIndexedBlock: out.lastIndexedBlock };
+    return {
+      indexed: out.indexed,
+      lastIndexedBlock: out.lastIndexedBlock,
+      sourceAware: out.sourceAware === true,
+    };
+  }
+
+  /**
+   * Whether the bridge in front of us understands the SOURCE.
+   *
+   * The compatibility window, read in one place. MEASURED on the bridge:
+   * napi-rs IGNORES an extra argument, so a caller that passed the source
+   * to a binary that does not know it would lose the source SILENTLY and
+   * go on believing it had threaded it. The status payload carries the
+   * answer instead, and this is where it is read — so the loss is never
+   * silent.
+   */
+  private bridgeKnowsSource(): boolean {
+    if (this.sourceAware !== null) return this.sourceAware;
+    this.sourceAware = this.indexStatus()?.sourceAware === true;
+    return this.sourceAware;
+  }
+
+  /**
+   * The source to hand the bridge — or `undefined` when the bridge in front
+   * of us does not understand one.
+   *
+   * `undefined` is the legacy call, and the legacy call is what keeps an
+   * older bridge working: its rows live in the legacy bucket and its
+   * queries read it, which is exactly what it did before.
+   */
+  private sourceArgument(): string | undefined {
+    return this.bridgeKnowsSource() ? this.chainSource() : undefined;
+  }
+
+  /**
+   * The SOURCE of the index rows: the chain DIRECTORY the blocks were read
+   * from.
+   *
+   * Not the chain's name as the blocks carry it — the blocks disagree among
+   * themselves. MEASURED 2026-11-25 on this host: two of the three
+   * archives carry the chain's name and the third carries its own directory
+   * name, so a key built from the blocks could not tell a copy from a fork.
+   * The directory the caller read is the only source that tells them
+   * apart, and the caller is the only one who knows it.
+   */
+  private chainSource(chainName: string = CHAIN_NAME): string {
+    return basename(getChainPath(chainName, this.rawEnv));
   }
 
   /**
@@ -326,7 +381,7 @@ export class CaseChainAdapter {
       const entryJson = JSON.stringify(entry);
       const indexDbPath = getIndexDbPath(writeEnv);
 
-      const raw = appendFn(chainJson, entryJson, indexDbPath);
+      const raw = appendFn(chainJson, entryJson, indexDbPath, this.sourceArgument());
 
       const out = parseEnvelope<CaseAppendPayload>(raw, 'case_append');
 
@@ -408,7 +463,7 @@ export class CaseChainAdapter {
     const queryFn = bridge.case_query!;
     const indexDbPath = getIndexDbPath(this.rawEnv);
 
-    const raw = queryFn(JSON.stringify(query), indexDbPath);
+    const raw = queryFn(JSON.stringify(query), indexDbPath, this.sourceArgument());
     return parseEnvelope<CaseQueryPayload>(raw, 'case_query');
   }
 
@@ -467,7 +522,7 @@ export class CaseChainAdapter {
     const blocks = chainBlocks ?? (await readChainBlocks(CHAIN_NAME, rawEnv));
     const indexDbPath = getIndexDbPath(rawEnv);
 
-    const raw = rebuildFn(JSON.stringify(blocks), indexDbPath);
+    const raw = rebuildFn(JSON.stringify(blocks), indexDbPath, this.sourceArgument());
     return parseEnvelope<CaseRebuildPayload>(raw, 'case_rebuild');
   }
 }

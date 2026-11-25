@@ -199,6 +199,16 @@ pub(crate) const GENESIS_PREV_HASH: &str =
 /// that have not opted in.
 pub const JOURNAL_TARGET_CHAINS: &[&str] = &["journal", "soul", "reflections", "cases", "patterns"];
 
+/// The chain DIRECTORY the case index's rows belong to.
+///
+/// The index is keyed by the source — the directory the blocks were read
+/// from — so every writer and every reader of the `cases` index has to
+/// name the same one. The blocks cannot be asked: they carry the chain's
+/// NAME, and a copy of a chain carries that name too (MEASURED 2026-11-25
+/// on this host: two of the three archives carry the chain's name and the
+/// third carries its own directory name).
+pub const CASE_CHAIN_SOURCE: &str = "cases";
+
 /// Is this chain one a tool may write to on the operator's request?
 pub fn is_journal_target_chain(name: &str) -> bool {
     JOURNAL_TARGET_CHAINS.contains(&name)
@@ -720,8 +730,10 @@ pub(crate) fn append_case_entry(
     };
     let index = CaseIndex::open(&runtime.config.case_index_path)
         .map_err(|error| OperatorError::Message(error.to_string()))?;
+    // The SOURCE is the chain DIRECTORY the block was read from — the same
+    // directory the block was appended to, one line above.
     index
-        .index_block(&block)
+        .index_block(&block, CASE_CHAIN_SOURCE)
         .map_err(|error| OperatorError::Message(error.to_string()))?;
     Ok(append)
 }

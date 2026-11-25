@@ -1,5 +1,46 @@
 ## Unreleased
 
+### The case index's key carries the SOURCE — the chain directory the blocks were read from
+
+The index's key was the block index ALONE, so two chains could not both live
+in it, and the `chain` column it carried said `cases` for every row and so
+told nobody anything.
+
+The source cannot come from the blocks. MEASURED 2026-11-25 on this host:
+the three archives do not agree — `cases.backup-…` and `journal.backup-…`
+carry the chain's name, and `system.backup-1782897312539` carries **its own
+directory name**. A key built from the blocks could not tell a copy from a
+fork.
+
+So the source is the chain **DIRECTORY**, and it is threaded from the caller
+— the adapter, which knows the directory it read — down to the owner:
+
+|                    | before                                           | after                                        |
+| ------------------ | ------------------------------------------------ | -------------------------------------------- |
+| the key            | `block_index INTEGER PRIMARY KEY`                | `PRIMARY KEY (source, block_index)`          |
+| the schema version | `PRAGMA user_version = 0` — no versioning at all | `PRAGMA user_version = 1`                    |
+| `rebuild()`        | `DELETE FROM case_entries` — a **global** wipe   | `DELETE … WHERE source = ?` — per source     |
+| the status         | the total count                                  | the count for ONE source, plus `sourceAware` |
+
+**The compatibility window is a handshake, not a parameter.** The obvious
+repair is to add the source as a parameter to the three case exports — and
+MEASURED on the bridge: napi-rs **ignores an extra argument**, so a newer
+caller against an older binary would lose the source silently and go on
+believing it had threaded it. So the source is optional on every export, and
+the status payload says whether the binary understands the source at all
+(`sourceAware`). A caller that does not find the flag knows, and keeps using
+the legacy calls — whose bucket still works exactly as it did.
+
+The migration drops the rows it cannot attribute. The legacy schema recorded
+no source, and the blocks cannot be asked for one, so the legacy rows belong
+to nobody: the index is a rebuildable cache and the chain files are the
+truth, so the migration drops them and the caller's count check rebuilds
+them, attributed this time.
+
+Measured on this host: the legacy index was `user_version = 0` with **2 190**
+rows and no `source` column; after the upgrade it holds **2 190** rows under
+`source = 'cases'` and the legacy bucket holds **0**.
+
 ### A rollback copy can carry a different chain, and `chain verify` called it clean
 
 The chain's identity is inside the hash: `canonicalHash` covers the block

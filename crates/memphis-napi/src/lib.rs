@@ -1073,8 +1073,19 @@ pub fn soul_replay(chain_name: String, blocks_json: String) -> String {
 
 // ── Case-based chain functions ────────────────────────────────────────
 
+/// Append a case entry to a chain and index it.
+///
+/// The SOURCE is the chain DIRECTORY the blocks were read from, and it is
+/// OPTIONAL: a caller that does not pass one gets the legacy behaviour
+/// (the legacy bucket), so an older caller against this bridge keeps
+/// working exactly as it did.
 #[napi(catch_unwind, js_name = "case_append")]
-pub fn case_append(chain_json: String, entry_json: String, index_db_path: String) -> String {
+pub fn case_append(
+    chain_json: String,
+    entry_json: String,
+    index_db_path: String,
+    source: Option<String>,
+) -> String {
     use memphis_case_index::CaseIndex;
     use memphis_core::block::{BlockData, BlockType};
     use memphis_core::case_entry::CaseEntry;
@@ -1147,7 +1158,13 @@ pub fn case_append(chain_json: String, entry_json: String, index_db_path: String
 
     // Index into SQLite
     let index_result = CaseIndex::open(std::path::Path::new(&index_db_path))
-        .and_then(|idx| idx.index_block(&block).map(|_| ()));
+        .and_then(|idx| {
+            idx.index_block(
+                &block,
+                source.as_deref().unwrap_or(memphis_case_index::LEGACY_SOURCE),
+            )
+            .map(|_| ())
+        });
     let indexed = index_result.is_ok();
     if let Err(e) = index_result {
         eprintln!("case_index warning: {e}");
@@ -1163,8 +1180,16 @@ pub fn case_append(chain_json: String, entry_json: String, index_db_path: String
     })
 }
 
+/// Query the index within one SOURCE.
+///
+/// The source is optional for the same reason as in `case_append`: without
+/// one the query runs in the legacy bucket, which is what it did before.
 #[napi(catch_unwind, js_name = "case_query")]
-pub fn case_query(query_json: String, index_db_path: String) -> String {
+pub fn case_query(
+    query_json: String,
+    index_db_path: String,
+    source: Option<String>,
+) -> String {
     use memphis_case_index::CaseIndex;
     use memphis_core::case_entry::CaseQuery;
 
@@ -1178,21 +1203,37 @@ pub fn case_query(query_json: String, index_db_path: String) -> String {
         Err(e) => return err(format!("case_index_open_failed: {e}")),
     };
 
-    match idx.query(&query) {
+    match idx.query(
+        &query,
+        source.as_deref().unwrap_or(memphis_case_index::LEGACY_SOURCE),
+    ) {
         Ok(rows) => ok(CaseQueryOut { count: rows.len(), entries: rows }),
         Err(e) => err(format!("case_query_failed: {e}")),
     }
 }
 
+/// Rebuild the index from a chain's blocks, within one SOURCE.
+///
+/// The source is optional for the same reason as in `case_append`. The
+/// rebuild's scope is the source: it replaces that source's rows and
+/// leaves every other source's alone.
 #[napi(catch_unwind, js_name = "case_rebuild")]
-pub fn case_rebuild(blocks_json: String, index_db_path: String) -> String {
+pub fn case_rebuild(
+    blocks_json: String,
+    index_db_path: String,
+    source: Option<String>,
+) -> String {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        case_rebuild_inner(blocks_json, index_db_path)
+        case_rebuild_inner(blocks_json, index_db_path, source)
     }))
     .unwrap_or_else(|_| err("case_rebuild_panic"))
 }
 
-fn case_rebuild_inner(blocks_json: String, index_db_path: String) -> String {
+fn case_rebuild_inner(
+    blocks_json: String,
+    index_db_path: String,
+    source: Option<String>,
+) -> String {
     use memphis_case_index::CaseIndex;
 
     let blocks: Vec<Block> = match serde_json::from_str(&blocks_json) {
@@ -1205,7 +1246,10 @@ fn case_rebuild_inner(blocks_json: String, index_db_path: String) -> String {
         Err(e) => return err(format!("case_index_open_failed: {e}")),
     };
 
-    match idx.rebuild(&blocks) {
+    match idx.rebuild(
+        &blocks,
+        source.as_deref().unwrap_or(memphis_case_index::LEGACY_SOURCE),
+    ) {
         Ok(report) => ok(report),
         Err(e) => err(format!("case_rebuild_failed: {e}")),
     }
@@ -1223,8 +1267,14 @@ fn case_rebuild_inner(blocks_json: String, index_db_path: String) -> String {
 /// chain's own count of case blocks and repairs the index when they
 /// differ; the repair (`case_rebuild`) already existed and was never
 /// called.
+/// What the index holds for one SOURCE — the health of the cache.
+///
+/// The source is optional, and the answer says which source it is about
+/// and whether this binary understands the source at all. That last flag is
+/// the compatibility window's handshake: a caller that does not find it
+/// knows the binary in front of it predates the source.
 #[napi(catch_unwind, js_name = "case_index_status")]
-pub fn case_index_status(index_db_path: String) -> String {
+pub fn case_index_status(index_db_path: String, source: Option<String>) -> String {
     use memphis_case_index::CaseIndex;
 
     let idx = match CaseIndex::open(std::path::Path::new(&index_db_path)) {
@@ -1232,7 +1282,7 @@ pub fn case_index_status(index_db_path: String) -> String {
         Err(e) => return err(format!("case_index_open_failed: {e}")),
     };
 
-    match idx.status() {
+    match idx.status(source.as_deref().unwrap_or(memphis_case_index::LEGACY_SOURCE)) {
         Ok(status) => ok(status),
         Err(e) => err(format!("case_index_status_failed: {e}")),
     }
@@ -1530,9 +1580,9 @@ pub fn mv2_inspect(bytes_hex: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        bridge_exports, bridge_manifest, case_append, case_query, case_rebuild, chain_append,
-        chain_validate, current_embed_mode, embed_persistence_enabled_from_env, embed_reset,
-        embed_search, embed_search_tuned, embed_shutdown, embed_store,
+        bridge_exports, bridge_manifest, case_append, case_index_status, case_query, case_rebuild,
+        chain_append, chain_validate, current_embed_mode, embed_persistence_enabled_from_env,
+        embed_reset, embed_search, embed_search_tuned, embed_shutdown, embed_store,
         paths_normalize_chain_name, paths_resolve_chain_path, paths_resolve_chains_dir,
         paths_resolve_data_dir, paths_resolve_vault_entries, paths_resolve_vault_state,
         soul_loop_step, soul_replay,
@@ -1901,6 +1951,7 @@ mod tests {
             "[]".to_string(),
             entry.to_string(),
             case_index.db_path_string(),
+            None,
         );
         let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(parsed["ok"], true);
@@ -1923,6 +1974,7 @@ mod tests {
             "[]".to_string(),
             entry.to_string(),
             case_index.db_path_string(),
+            None,
         );
         let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(parsed["ok"], false);
@@ -1945,7 +1997,7 @@ mod tests {
             "instrument": "tool_a",
             "target": "file.rs"
         });
-        let out1 = case_append("[]".to_string(), entry1.to_string(), db_str.clone());
+        let out1 = case_append("[]".to_string(), entry1.to_string(), db_str.clone(), None);
         let p1: serde_json::Value = serde_json::from_str(&out1).unwrap();
         let chain = p1["data"]["chain"].to_string();
 
@@ -1955,11 +2007,11 @@ mod tests {
             "action": "started",
             "timestamp": "2026-03-22T10:00:00Z"
         });
-        let _ = case_append(chain, entry2.to_string(), db_str.clone());
+        let _ = case_append(chain, entry2.to_string(), db_str.clone(), None);
 
         // Query instrumental
         let query = serde_json::json!({ "case_type": "instrumental" });
-        let out = case_query(query.to_string(), db_str.clone());
+        let out = case_query(query.to_string(), db_str.clone(), None);
         let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(parsed["ok"], true);
         assert_eq!(parsed["data"]["count"], 1);
@@ -1977,16 +2029,157 @@ mod tests {
             "entity": "Agent",
             "location": "session"
         });
-        let out = case_append("[]".to_string(), entry.to_string(), db_str.clone());
+        let out = case_append("[]".to_string(), entry.to_string(), db_str.clone(), None);
         let p: serde_json::Value = serde_json::from_str(&out).unwrap();
         let chain = p["data"]["chain"].to_string();
 
         // Rebuild
-        let rebuild_out = case_rebuild(chain, db_str.clone());
+        let rebuild_out = case_rebuild(chain, db_str.clone(), None);
         let parsed: serde_json::Value = serde_json::from_str(&rebuild_out).unwrap();
         assert_eq!(parsed["ok"], true);
         assert_eq!(parsed["data"]["indexed"], 1);
         assert_eq!(parsed["data"]["errors"], 0);
+    }
+
+    // ── The source, through the bridge ───────────────────────────────────
+    //
+    // The index's key carries the SOURCE — the chain directory the blocks
+    // were read from. The blocks cannot be asked for it, so the CALLER
+    // supplies it, and the bridge is where the caller's answer travels.
+    //
+    // The source is OPTIONAL, and that is the compatibility window: a
+    // caller that does not pass one gets the legacy bucket and the legacy
+    // behaviour, so an older caller against this bridge keeps working
+    // exactly as it did.
+
+    fn a_case_entry() -> serde_json::Value {
+        serde_json::json!({
+            "case_type": "instrumental",
+            "actor": "Agent",
+            "instrument": "memphis_exec",
+            "target": "providers"
+        })
+    }
+
+    #[test]
+    fn case_index_status_says_it_is_source_aware() {
+        let _guard = env_lock();
+        let case_index = TestCaseIndexPath::new("case-status-aware");
+        let out = case_index_status(case_index.db_path_string(), Some("cases".to_string()));
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["ok"], true);
+        assert_eq!(
+            parsed["data"]["sourceAware"], true,
+            "the handshake a caller reads to know the binary understands the source"
+        );
+        assert_eq!(parsed["data"]["source"], "cases");
+        assert_eq!(parsed["data"]["indexed"], 0);
+    }
+
+    #[test]
+    fn case_index_keeps_two_sources_apart() {
+        let _guard = env_lock();
+        let case_index = TestCaseIndexPath::new("case-two-sources");
+        let db = case_index.db_path_string();
+        let entry = a_case_entry();
+
+        let appended = case_append(
+            "[]".to_string(),
+            entry.to_string(),
+            db.clone(),
+            Some("cases".to_string()),
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&appended).unwrap();
+        assert_eq!(parsed["ok"], true);
+        assert_eq!(parsed["data"]["indexed"], true);
+
+        // The same block index, indexed under a second source, does not
+        // replace the first one.
+        let appended_again = case_append(
+            "[]".to_string(),
+            entry.to_string(),
+            db.clone(),
+            Some("cases.backup-1700000000000".to_string()),
+        );
+        let parsed_again: serde_json::Value = serde_json::from_str(&appended_again).unwrap();
+        assert_eq!(parsed_again["ok"], true);
+
+        let live = case_index_status(db.clone(), Some("cases".to_string()));
+        let live: serde_json::Value = serde_json::from_str(&live).unwrap();
+        assert_eq!(live["data"]["indexed"], 1);
+
+        let archive = case_index_status(
+            db.clone(),
+            Some("cases.backup-1700000000000".to_string()),
+        );
+        let archive: serde_json::Value = serde_json::from_str(&archive).unwrap();
+        assert_eq!(archive["data"]["indexed"], 1);
+
+        // A query without a source is the legacy query: it answers with
+        // the legacy bucket, which is empty.
+        let legacy = case_query("{}".to_string(), db, None);
+        let legacy: serde_json::Value = serde_json::from_str(&legacy).unwrap();
+        assert_eq!(legacy["data"]["count"], 0);
+    }
+
+    #[test]
+    fn case_index_without_a_source_keeps_the_legacy_behaviour() {
+        let _guard = env_lock();
+        let case_index = TestCaseIndexPath::new("case-legacy-source");
+        let db = case_index.db_path_string();
+
+        let appended = case_append(
+            "[]".to_string(),
+            a_case_entry().to_string(),
+            db.clone(),
+            None,
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&appended).unwrap();
+        assert_eq!(parsed["ok"], true);
+
+        // The legacy status (no source) counts the legacy bucket.
+        let status = case_index_status(db.clone(), None);
+        let status: serde_json::Value = serde_json::from_str(&status).unwrap();
+        assert_eq!(status["data"]["indexed"], 1);
+
+        // And the legacy query still finds it.
+        let query = case_query("{}".to_string(), db.clone(), None);
+        let query: serde_json::Value = serde_json::from_str(&query).unwrap();
+        assert_eq!(query["data"]["count"], 1);
+
+        // A named source is a different bucket, and it is empty.
+        let named = case_index_status(db, Some("cases".to_string()));
+        let named: serde_json::Value = serde_json::from_str(&named).unwrap();
+        assert_eq!(named["data"]["indexed"], 0);
+    }
+
+    #[test]
+    fn case_rebuild_is_scoped_to_its_source() {
+        let _guard = env_lock();
+        let case_index = TestCaseIndexPath::new("case-rebuild-scope");
+        let db = case_index.db_path_string();
+
+        let appended = case_append(
+            "[]".to_string(),
+            a_case_entry().to_string(),
+            db.clone(),
+            Some("other".to_string()),
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&appended).unwrap();
+        assert_eq!(parsed["ok"], true);
+        let chain = parsed["data"]["chain"].to_string();
+
+        // A rebuild of "cases" must not destroy "other"'s rows.
+        let rebuilt = case_rebuild(chain, db.clone(), Some("cases".to_string()));
+        let rebuilt: serde_json::Value = serde_json::from_str(&rebuilt).unwrap();
+        assert_eq!(rebuilt["ok"], true);
+
+        let other = case_index_status(db.clone(), Some("other".to_string()));
+        let other: serde_json::Value = serde_json::from_str(&other).unwrap();
+        assert_eq!(
+            other["data"]["indexed"], 1,
+            "a rebuild of one source destroyed another source's rows"
+        );
     }
 
     #[test]

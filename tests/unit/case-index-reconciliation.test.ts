@@ -67,7 +67,12 @@ function loadBridge(): Bridge | null {
 const bridge = loadBridge();
 
 const CASES: Array<Record<string, string>> = [
-  { case_type: 'nominative', entity: 'Kot', action: 'szedl', timestamp: '2026-11-24T10:00:00.000Z' },
+  {
+    case_type: 'nominative',
+    entity: 'Kot',
+    action: 'szedl',
+    timestamp: '2026-11-24T10:00:00.000Z',
+  },
   { case_type: 'genitive', owner: 'Kota', possessed: 'dom' },
   { case_type: 'instrumental', actor: 'Kot', instrument: 'kij', target: 'pies' },
   { case_type: 'accusative', subject: 'Kot', verb: 'goni', object: 'mysza' },
@@ -87,14 +92,14 @@ const rawEnv: NodeJS.ProcessEnv = {
 /** The blocks the chain holds — built through the bridge's own append. */
 function buildChain(): BlockPayload[] {
   const append = bridge?.case_append as
-    | ((chainJson: string, entryJson: string, indexDbPath: string) => string)
+    | ((chainJson: string, entryJson: string, indexDbPath: string, source?: string) => string)
     | undefined;
   if (typeof append !== 'function') return [];
 
   let blocks: BlockPayload[] = [];
   for (const entry of CASES) {
     const envelope = JSON.parse(
-      append(JSON.stringify(blocks), JSON.stringify(entry), indexPath),
+      append(JSON.stringify(blocks), JSON.stringify(entry), indexPath, SOURCE),
     ) as { ok: boolean; data?: { chain?: BlockPayload[] }; error?: string };
     if (!envelope.ok || !envelope.data?.chain) {
       throw new Error(`case_append failed: ${envelope.error ?? 'unknown error'}`);
@@ -125,14 +130,25 @@ function writeChainFiles(blocks: BlockPayload[]): void {
  * at the tail would not reproduce it: there the highest index would
  * already differ from the chain's last.
  */
+/**
+ * The SOURCE the adapter indexes under: the chain DIRECTORY it reads.
+ *
+ * The index is keyed by it, so a helper that builds an index has to build
+ * it in the SAME bucket the adapter asks about — otherwise the helper
+ * measures a different index than the one under test.
+ */
+const SOURCE = 'cases';
+
 function buildBehindIndex(blocks: BlockPayload[]): void {
   const rebuild = bridge?.case_rebuild as
-    | ((blocksJson: string, indexDbPath: string) => string)
+    | ((blocksJson: string, indexDbPath: string, source?: string) => string)
     | undefined;
   if (typeof rebuild !== 'function') return;
-  const envelope = JSON.parse(
-    rebuild(JSON.stringify(blocks.slice(1)), indexPath),
-  ) as { ok: boolean; data?: { indexed?: number }; error?: string };
+  const envelope = JSON.parse(rebuild(JSON.stringify(blocks.slice(1)), indexPath, SOURCE)) as {
+    ok: boolean;
+    data?: { indexed?: number };
+    error?: string;
+  };
   if (!envelope.ok) throw new Error(`case_rebuild failed: ${envelope.error ?? 'unknown error'}`);
 }
 
@@ -157,13 +173,18 @@ describe('the case index is reconciled with the chain it caches', () => {
     if (!bridge) return;
 
     const statusFn = bridge.case_index_status as
-      | ((indexDbPath: string) => string)
+      | ((indexDbPath: string, source?: string) => string)
       | undefined;
     expect(typeof statusFn, 'the bridge cannot be asked about the index').toBe('function');
 
-    const status = JSON.parse(statusFn!(indexPath)) as {
+    const status = JSON.parse(statusFn!(indexPath, SOURCE)) as {
       ok: boolean;
-      data?: { indexed: number; lastIndexedBlock: number | null };
+      data?: {
+        indexed: number;
+        lastIndexedBlock: number | null;
+        sourceAware: boolean;
+        source: string;
+      };
     };
     expect(status.ok).toBe(true);
     expect(status.data!.indexed).toBe(blocks.length - 1);
@@ -172,8 +193,8 @@ describe('the case index is reconciled with the chain it caches', () => {
   it('the owner counts the entries, and the count is what sees a gap', () => {
     if (!bridge) return;
 
-    const statusFn = bridge.case_index_status as (indexDbPath: string) => string;
-    const status = JSON.parse(statusFn(indexPath)) as {
+    const statusFn = bridge.case_index_status as (indexDbPath: string, source?: string) => string;
+    const status = JSON.parse(statusFn(indexPath, SOURCE)) as {
       data?: { indexed: number; lastIndexedBlock: number | null };
     };
 
@@ -220,5 +241,46 @@ describe('the case index is reconciled with the chain it caches', () => {
     // again would rebuild the index on every query for ever.
     const second = await adapter.reconcileIfNeeded();
     expect(second, 'the second reconciliation rebuilt again').toBeNull();
+  });
+
+  it('the adapter indexes under the chain DIRECTORY it reads', async () => {
+    if (!bridge) return;
+
+    buildBehindIndex(blocks);
+
+    const adapter = new CaseChainAdapter(rawEnv);
+    await adapter.reconcileIfNeeded();
+
+    const statusFn = bridge.case_index_status as (indexDbPath: string, source?: string) => string;
+
+    // The source's bucket holds the chain's cases.
+    const named = JSON.parse(statusFn(indexPath, SOURCE)) as {
+      data?: { indexed: number; source: string; sourceAware: boolean };
+    };
+    expect(named.data!.indexed).toBe(blocks.length);
+    expect(named.data!.source).toBe(SOURCE);
+
+    // And the LEGACY bucket — the one a caller that does not name a source
+    // reads — is empty. That is the proof the adapter threaded the source
+    // rather than writing into the old global bucket: both buckets would
+    // hold the same rows otherwise.
+    const legacy = JSON.parse(statusFn(indexPath)) as {
+      data?: { indexed: number };
+    };
+    expect(legacy.data!.indexed).toBe(0);
+  });
+
+  it('the bridge says whether it understands the source', () => {
+    if (!bridge) return;
+
+    const statusFn = bridge.case_index_status as (indexDbPath: string, source?: string) => string;
+    const status = JSON.parse(statusFn(indexPath, SOURCE)) as {
+      data?: { sourceAware: boolean };
+    };
+
+    // The handshake the compatibility window is read through: a caller
+    // that does not find this flag knows the binary in front of it
+    // predates the source, and keeps using the legacy calls.
+    expect(status.data!.sourceAware).toBe(true);
   });
 });
