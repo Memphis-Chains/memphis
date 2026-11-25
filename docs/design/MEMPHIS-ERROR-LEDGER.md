@@ -1485,6 +1485,81 @@ and `RunningCheckpointGuard`'s own doc comment admits that "a hard process kill
 still leaves `running`". **The operator's cure — killing the process — creates
 the next wedge.**
 
+#### E-16 · The cockpit tells the operator to run a command it does not have
+
+**FOUND AND FIXED 2026-11-25** (decision #593) — the code half of E-05. The
+fifteen turns still need the operator; what was missing was the ESCAPE, in
+the place the wedge happens.
+
+**THE LIE, MEASURED.** The cockpit's own error notice says:
+
+> **Action:** run `/recovery` to see the pending work, acknowledge it, and
+> continue.
+
+MEASURED on this host: the TUI has **54** slash commands
+(`HELP_ENTRIES` in `crates/memphis-tui/src/app.rs`) and **`/recovery` is not
+one of them.** The operator who follows the instruction types `/recovery`
+and gets "unsupported command" — from the very cockpit that sent him
+there.
+
+**AND THE OTHER HALF OF THE MISTAKE WAS MEASURED TOO.** Two more notices in
+the same cockpit pointed at `memphis recovery list` — a CLI command that
+demands a **local interactive TTY** and the operator's passphrase
+(`promptOperatorPassphrase` throws without a TTY). So the cockpit offered
+three ways out and none of them worked from the cockpit: one command that
+did not exist, and two commands that needed a different machine.
+
+**THE OWNER OF THE ACKNOWLEDGEMENT.** It is
+`acknowledgeRecoveryTurn` in `src/infra/runtime/turn-recovery.ts` — and the
+Rust arm has NO acknowledgement at all (MEASURED: `acknowledged` appears
+nowhere in `crates/memphis-operator/`; the Rust arm owns the table, the
+guard and the listing, and the TS arm owns the write). So the cockpit had
+no owner to call.
+
+**THE REPAIR, in four parts.**
+
+1. **The cockpit asks the host.** `/recovery` and
+   `/recovery acknowledge <turn-id>` are TUI slash commands that resolve to
+   the host capabilities `recovery.list` and `recovery.acknowledge`
+   (`src/infra/tui-host/protocol.ts` — the one owner of the capability
+   vocabulary). The host reaches the SAME owner the CLI reaches; no second
+   owner is created.
+2. **The authority is the cockpit's own.** The owner now takes an
+   AUTHORITY, and validates both kinds itself: the CLI's passphrase, and
+   the cockpit's **tier-3 session** — which `/tier 3 <passphrase>` already
+   mints, and which expires on its own. One function, one gate, two
+   callers.
+   - **FALSIFIER:** a tier-3 session that is not alive is refused exactly
+     like a wrong passphrase — the owner's own check, not the caller's.
+3. **The notices point at the cockpit.** All five recovery notices now say
+   `/recovery` (with the CLI named as the alternative for a terminal), so
+   the message the cockpit prints is a command the cockpit HAS.
+4. **The help lists them.** `/recovery` and
+   `/recovery acknowledge <turn-id>` are in the cockpit's help, with the
+   route they take.
+
+**THE GATES.** The Rust arm: `/recovery`, `/recovery list` and
+`/recovery acknowledge <id>` resolve to the host capabilities — and the
+help lists them. The TypeScript arm: the host answers `recovery.list` over
+the stdio JSON protocol, and refuses an unauthorised acknowledgement with
+the authority that is missing. The owner: the tier-3 session is accepted
+when it is alive and refused when it is not.
+
+**MEASURED ON THIS HOST, through the cockpit's own path.** The host
+advertises `recovery.list` and `recovery.acknowledge`, and
+`recovery.list` answers **49 turns, 15 needing acknowledgement** — the
+SAME numbers the CLI reports for the same corpus, because it is the same
+owner. The listing names the pending turns with their sessions and their
+unsettled counts, and it ends with the command the operator should type.
+
+**THE RESIDUAL, stated rather than hidden.** The acknowledgement is still
+implemented in the TypeScript arm while the Rust arm owns the schema and
+the guard — two arms, one write. Moving the write into the Rust core means
+adding `memphis-operator` to the bridge's dependency set, which is a
+DECISION (the bridge would carry the operator's database code) and not a
+repair; it is filed here rather than done quietly. And the fifteen turns
+still need the operator — this entry gives him a place to do it from.
+
 #### E-07 · A clean drain exits 0, so systemd does not restart the runtime
 
 **FOUND AND FIXED 2026-11-25** (decision #592) — the entry was filed from a
@@ -1842,7 +1917,9 @@ hole in its own artefact; (4) **fails** — E-05 alone: the fifteen recovery
 turns need the operator's acknowledgements, and no code can clear them.
 E-07 (a clean drain left the unit down, because a clean exit is not a
 failure) and E-08 (the retention was a latch, and the drill's verdict was a
-property of the machine) are closed; (5) **holds** — the
+property of the machine) are closed, and so is E-16 — the cockpit named a
+`/recovery` command it did not have, and the escape from the wedge now
+lives where the wedge happens; (5) **holds** — the
 two dead files are gone; (6) **holds** — the block-format, tool-contract,
 bridge-vocabulary, chain-name and embed-profile artefacts are generated;
 (7) **holds**.

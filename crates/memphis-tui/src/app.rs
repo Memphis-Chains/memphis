@@ -271,6 +271,19 @@ const HELP_ENTRIES: &[HelpEntry] = &[
         example: "/doctor --deep",
         route: CommandRoute::Host,
     },
+    // The cockpit's own error message tells the operator to run
+    // `/recovery`. Before this entry, that message named a command the
+    // cockpit did not have.
+    HelpEntry {
+        display: "/recovery",
+        example: "/recovery",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/recovery acknowledge <turn-id>",
+        example: "/recovery acknowledge 0123456789abcdef0123456789abcdef",
+        route: CommandRoute::Host,
+    },
     HelpEntry {
         display: "/agents list",
         example: "/agents list",
@@ -5271,6 +5284,37 @@ fn extension_host_command_for_tokens(
             },
             ActiveCommandKind::Generic,
         ))),
+        // The escape from the wedge lives where the wedge happens.
+        //
+        // The cockpit refuses a turn when an earlier one left an operation
+        // without a settled outcome, and its own error message told the
+        // operator to run `/recovery` — a command that did not exist in a
+        // cockpit of 54. The acknowledgement lives in the runtime's
+        // recovery owner, so the cockpit asks the host for it.
+        [cmd] if *cmd == "recovery" => Ok(Some((
+            ExtensionHostCommand {
+                label: "recovery list".to_string(),
+                command: "recovery.list".to_string(),
+                args: json!({}),
+            },
+            ActiveCommandKind::Generic,
+        ))),
+        [cmd, sub] if *cmd == "recovery" && *sub == "list" => Ok(Some((
+            ExtensionHostCommand {
+                label: "recovery list".to_string(),
+                command: "recovery.list".to_string(),
+                args: json!({}),
+            },
+            ActiveCommandKind::Generic,
+        ))),
+        [cmd, sub, id] if *cmd == "recovery" && *sub == "acknowledge" => Ok(Some((
+            ExtensionHostCommand {
+                label: "recovery acknowledge".to_string(),
+                command: "recovery.acknowledge".to_string(),
+                args: json!({ "id": id }),
+            },
+            ActiveCommandKind::Generic,
+        ))),
         [cmd, rest @ ..] if *cmd == "doctor" => {
             let (bools, values) =
                 parse_supported_flags(rest, &["--fix", "--force", "--deep"], &[])?;
@@ -5811,7 +5855,7 @@ fn classify_runtime_error(error: &str) -> RuntimeErrorPresentation {
         return RuntimeErrorPresentation::Recoverable {
             status: "Status: tool outcome unknown",
             detail: "The tool was interrupted or timed out; it may already have changed something.",
-            action: "Action: inspect `memphis recovery list` before deciding whether to repeat the work.",
+            action: "Action: inspect `/recovery` before deciding whether to repeat the work.",
         };
     }
     if contains_any(
@@ -5853,7 +5897,7 @@ fn classify_runtime_error(error: &str) -> RuntimeErrorPresentation {
         return RuntimeErrorPresentation::Recoverable {
             status: "Status: provider did not answer in time",
             detail: "The runtime call reached a timeout or transient provider/network failure.",
-            action: "Action: inspect incomplete work with `memphis recovery list` before retrying. Switch providers explicitly if needed.",
+            action: "Action: inspect incomplete work with `/recovery` before retrying. Switch providers explicitly if needed.",
         };
     }
 
@@ -7900,9 +7944,42 @@ mod tests {
         }
     }
 
+    /// The escape from the wedge has to be reachable from the cockpit.
+    ///
+    /// The cockpit refuses a turn when an earlier one left an operation
+    /// without a settled outcome, and its own error message tells the
+    /// operator to run `/recovery`. That command did not exist — the TUI
+    /// had 54 slash commands and `/recovery` was not one of them, so the
+    /// message pointed at nothing.
     #[test]
-    fn apps_show_host_mapping_accepts_file_without_id() {
-        let tokens =
+    fn recovery_maps_to_the_host_that_owns_the_acknowledgement() {
+        let tokens = split_command_tokens("recovery").expect("command tokens");
+        let (command, _kind) = extension_host_command_for_tokens(&tokens)
+            .expect("host mapping parse")
+            .expect("/recovery should resolve through the host");
+        assert_eq!(command.command, "recovery.list");
+
+        let list_tokens = split_command_tokens("recovery list").expect("command tokens");
+        let (list_command, _kind) = extension_host_command_for_tokens(&list_tokens)
+            .expect("host mapping parse")
+            .expect("/recovery list should resolve through the host");
+        assert_eq!(list_command.command, "recovery.list");
+
+        let turn_id = "a".repeat(32);
+        let acknowledge_tokens =
+            split_command_tokens(&format!("recovery acknowledge {turn_id}")).expect("command tokens");
+        let (acknowledge_command, _kind) = extension_host_command_for_tokens(&acknowledge_tokens)
+            .expect("host mapping parse")
+            .expect("/recovery acknowledge should resolve through the host");
+        assert_eq!(acknowledge_command.command, "recovery.acknowledge");
+        assert_eq!(
+            acknowledge_command.args.get("id").and_then(Value::as_str),
+            Some(turn_id.as_str())
+        );
+    }
+
+    #[test]
+    fn apps_show_host_mapping_accepts_file_without_id() {        let tokens =
             split_command_tokens("apps show --file /tmp/demo.json").expect("command tokens");
         let (command, _kind) = extension_host_command_for_tokens(&tokens)
             .expect("host mapping parse")
@@ -7934,6 +8011,8 @@ mod tests {
             "/pulse status",
             "/init status",
             "/doctor [--fix] [--force] [--deep]",
+            "/recovery",
+            "/recovery acknowledge <turn-id>",
             "/agents show <did>",
             "/sync status [--chain <name>]",
             "/apps show --file <manifest.json>",

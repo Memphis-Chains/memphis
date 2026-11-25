@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
+import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -184,6 +185,62 @@ describe('tui host', { timeout: 30_000 }, () => {
       }),
     });
   }, 15000);
+
+  /**
+   * The cockpit's escape from the wedge.
+   *
+   * The TUI refuses a turn when an earlier one left an operation without
+   * a settled outcome, and its own error message tells the operator to run
+   * `/recovery`. The command did not exist; the host is where it lives, so
+   * the host must ANSWER it — and it must refuse an acknowledgement that
+   * carries no operator authority, naming the authority that is missing.
+   */
+  it('executes recovery.list over stdio JSON and refuses an unauthorised acknowledgement', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'memphis-tui-host-'));
+    tempDirs.push(tempDir);
+    // The recovery tables live in the operator's database. Give the host a
+    // real file, or the listing has nothing to answer about.
+    new Database(join(tempDir, 'memphis.db')).close();
+    const child = spawnTuiHost(tempDir);
+    children.push(child);
+    const nextEvent = createEventReader(child);
+
+    const ready = await nextEvent();
+    expect(ready.type).toBe('ready');
+    expect(ready.capabilities).toContain('recovery.list');
+    expect(ready.capabilities).toContain('recovery.acknowledge');
+
+    child.stdin!.write(
+      `${JSON.stringify({
+        type: 'execute',
+        id: 'recovery-1',
+        command: 'recovery.list',
+        args: {},
+      })}\n`,
+    );
+    const started = await nextEvent();
+    expect(started).toMatchObject({ type: 'started', id: 'recovery-1', label: 'recovery.list' });
+    const { lines, terminal } = await collectUntilTerminal(nextEvent, 'recovery-1');
+    expect(lines.length).toBeGreaterThan(0);
+    expect(terminal).toMatchObject({
+      type: 'result',
+      id: 'recovery-1',
+      data: { ok: true, total: 0, needsAcknowledgement: 0 },
+    });
+
+    child.stdin!.write(
+      `${JSON.stringify({
+        type: 'execute',
+        id: 'recovery-2',
+        command: 'recovery.acknowledge',
+        args: { id: 'a'.repeat(32) },
+      })}\n`,
+    );
+    await nextEvent();
+    const refused = await collectUntilTerminal(nextEvent, 'recovery-2');
+    expect(refused.terminal).toMatchObject({ type: 'error', id: 'recovery-2' });
+    expect(String(refused.terminal.message)).toMatch(/tier-3/);
+  }, 20000);
 
   it('executes config.surfaces.list over stdio JSON', async () => {
     const tempDir = mkdtempSync(join(tmpdir(), 'memphis-tui-host-'));

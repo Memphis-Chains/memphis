@@ -9,6 +9,8 @@
 // possible — the key set is operator-driven at runtime, not statically
 // known.
 //
+import { isAbsolute, resolve } from 'node:path';
+
 import type { TuiHostCapability } from './protocol.js';
 import { createAppContainer } from '../../app/container.js';
 import { getCognitiveModeConfig, isValidCognitiveMode } from '../../cognitive/modes.js';
@@ -62,6 +64,8 @@ import { envSchema } from '../config/schema.js';
 import { buildHealthPayload } from '../http/health.js';
 import { buildOperatorGuide } from '../operator-guide.js';
 import { loadPulseEntries, writePulseEvent } from '../runtime/heartbeat-watchdog.js';
+import { resolveInstallRoot } from '../runtime/install-root.js';
+import { acknowledgeRecoveryTurn, listRecoveryTurns } from '../runtime/turn-recovery.js';
 import { verifyChainIntegrity } from '../storage/chain-adapter.js';
 import { createSqliteClient, runMigrations } from '../storage/sqlite/client.js';
 import { SqliteToolCallApprovalRepository } from '../storage/sqlite/repositories/tool-call-approval-repository.js';
@@ -168,6 +172,10 @@ export async function executeTuiHostCommand(
       return executeSecurityTierSet(args, context);
     case 'presence.snapshot':
       return executePresenceSnapshot(context);
+    case 'recovery.list':
+      return executeRecoveryList(context);
+    case 'recovery.acknowledge':
+      return executeRecoveryAcknowledge(args, context);
     case 'system.restart':
       return executeSystemRestart(args, context);
     default:
@@ -706,6 +714,102 @@ async function executeCognitiveModeSet(
 
 const TUI_TIER_SURFACE = 'tui' as const;
 const TUI_TIER_ACTOR_ID = 'local' as const;
+
+/**
+ * The operator's SQLite, resolved the way the CLI resolves it.
+ *
+ * The recovery tables live in the OPERATOR's database — the one the
+ * runtime's `DATABASE_URL` names — and not in the data dir. The CLI
+ * resolves it the same way, so the two surfaces cannot point at two
+ * different databases.
+ */
+function recoveryDatabasePath(): string {
+  const url = loadConfig().DATABASE_URL;
+  if (!url.startsWith('file:')) throw new Error('recovery requires a file: SQLite database');
+  const file = url.slice(5);
+  return isAbsolute(file) ? file : resolve(resolveInstallRoot(), file);
+}
+
+/**
+ * The pending turns, for the cockpit.
+ *
+ * The cockpit is where a turn is REFUSED — "write tools paused pending
+ * review" — so it is where the operator must be able to see what is
+ * pending. Before this command existed, the only surface that could show
+ * it was the CLI, and the CLI's acknowledgement demands a LOCAL
+ * INTERACTIVE TTY plus the passphrase: the escape was in a different
+ * place from the wedge.
+ *
+ * The turns that need a decision come first, and the summary says how
+ * many — the same order the CLI uses, because the ORDERING is a rule and
+ * it must not differ between the two surfaces.
+ */
+async function executeRecoveryList(context: TuiHostCommandContext): Promise<unknown> {
+  const path = recoveryDatabasePath();
+  const turns = listRecoveryTurns(path);
+  const ordered = [...turns].sort((a, b) => {
+    if (a.needsAcknowledgement !== b.needsAcknowledgement) return a.needsAcknowledgement ? -1 : 1;
+    return b.updatedAt.localeCompare(a.updatedAt);
+  });
+  const needsAcknowledgement = ordered.filter((turn) => turn.needsAcknowledgement).length;
+  context.emitLine(
+    'info',
+    `${ordered.length} turn(s) under review, ${needsAcknowledgement} carrying an unsettled operation.`,
+  );
+  for (const turn of ordered.slice(0, 20)) {
+    context.emitLine(
+      'info',
+      `${turn.id}  session=${turn.sessionId}  status=${turn.status}  unsettled=${turn.unsettledCount}${turn.needsAcknowledgement ? '  — needs acknowledgement' : ''}`,
+    );
+  }
+  if (needsAcknowledgement > 0) {
+    context.emitLine(
+      'info',
+      'Acknowledge with: /recovery acknowledge <turn-id>  (tier 3 required — /tier 3 <passphrase>)',
+    );
+  }
+  return { ok: true, total: ordered.length, needsAcknowledgement, turns: ordered };
+}
+
+/**
+ * Acknowledge one turn, from the cockpit.
+ *
+ * The authority is the cockpit's OWN: a tier-3 session, which the
+ * operator mints once with `/tier 3 <passphrase>` and which expires on
+ * its own. The owner validates it — the same function the CLI reaches
+ * with a passphrase — so "only the operator may acknowledge" keeps one
+ * owner and one gate.
+ */
+async function executeRecoveryAcknowledge(
+  args: Record<string, unknown> | undefined,
+  context: TuiHostCommandContext,
+): Promise<unknown> {
+  const id = requireStringArg(args, 'id');
+  const path = recoveryDatabasePath();
+  const forceRunning = optionalBooleanArg(args, 'forceRunning') ?? false;
+  try {
+    acknowledgeRecoveryTurn(
+      path,
+      id,
+      { kind: 'elevated-session', surface: TUI_TIER_SURFACE, actorId: TUI_TIER_ACTOR_ID },
+      forceRunning,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('tier-3')) {
+      context.emitLine(
+        'warning',
+        'Tier 3 is required to acknowledge a turn: run /tier 3 <passphrase>, then acknowledge again.',
+      );
+    }
+    throw error;
+  }
+  context.emitLine(
+    'info',
+    `Acknowledged ${id}. This does not undo or prove the effects of prior operations.`,
+  );
+  return { ok: true, id, forceRunning };
+}
 
 function isTier2FullAccess(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
   return parseBool(rawEnv.MEMPHIS_TIER2_FULL_ACCESS, false);

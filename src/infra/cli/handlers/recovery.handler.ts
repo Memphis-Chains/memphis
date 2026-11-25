@@ -92,8 +92,9 @@ export const recoveryCommandHandler: CommandHandler = {
     const force = context.argv.includes('--force-running');
     if (force) process.stderr.write('Warning: verify the original turn is no longer running before forcing acknowledgement.\n');
     const passphrase = await promptOperatorPassphrase();
-    if (action === 'acknowledge-legacy') acknowledgeLegacyOperation(path, id, passphrase, force);
-    else acknowledgeRecoveryTurn(path, id, passphrase, force);
+    const authority = { kind: 'passphrase', passphrase } as const;
+    if (action === 'acknowledge-legacy') acknowledgeLegacyOperation(path, id, authority, force);
+    else acknowledgeRecoveryTurn(path, id, authority, force);
     console.log(`Acknowledged ${id}. This does not undo or prove the effects of prior operations.`);
     return true;
   },

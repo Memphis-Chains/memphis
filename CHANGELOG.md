@@ -1,5 +1,50 @@
 ## Unreleased
 
+### The cockpit tells the operator to run `/recovery` — and now it has one
+
+The cockpit's own error notice said: **Action: run `/recovery` to see the
+pending work, acknowledge it, and continue.**
+
+MEASURED on this host: the TUI has **54** slash commands and `/recovery` was
+not one of them. Two more notices in the same cockpit pointed at
+`memphis recovery list` — a CLI command that demands a **local interactive
+TTY** and the operator's passphrase. So the cockpit offered three ways out
+and none of them worked from the cockpit: one command that did not exist,
+and two that needed a different machine.
+
+The acknowledgement had no owner the cockpit could call: it is
+`acknowledgeRecoveryTurn` in `src/infra/runtime/turn-recovery.ts`, and the
+Rust arm has none at all — the Rust arm owns the table, the guard and the
+listing, and the TypeScript arm owns the write.
+
+|                              | before                                        | after                                  |
+| ---------------------------- | --------------------------------------------- | -------------------------------------- |
+| `/recovery`                  | named in the cockpit's own notice, and absent | a command that lists the pending turns |
+| `/recovery acknowledge <id>` | not reachable from the cockpit                | reaches the SAME owner the CLI reaches |
+| the authority                | the passphrase, typed into a CLI's TTY        | the cockpit's OWN tier-3 session       |
+
+The owner now takes an **authority** and validates both kinds itself: the
+CLI's passphrase, and the cockpit's tier-3 session — which `/tier 3
+<passphrase>` already mints, and which expires on its own. One function, one
+gate, two callers; the cockpit does not become a second, weaker door.
+
+All five recovery notices now name `/recovery` (with the CLI named as the
+alternative for a terminal), and the cockpit's help lists both commands.
+
+**THE GATES.** The Rust arm pins that `/recovery`, `/recovery list` and
+`/recovery acknowledge <id>` resolve to the host capabilities, and that the
+help lists them. The TypeScript arm pins that the host answers
+`recovery.list` over the stdio JSON protocol and refuses an unauthorised
+acknowledgement with the authority that is missing. The owner pins that a
+tier-3 session is accepted while it is alive and refused when it is not.
+
+**THE RESIDUAL, stated rather than hidden.** The write is still in the
+TypeScript arm while the Rust arm owns the schema and the guard — two arms,
+one write. Moving it into the Rust core means adding `memphis-operator` to
+the bridge's dependency set: a decision, not a repair. And the fifteen
+recovery turns still need the operator — this gives him a place to do it
+from.
+
 ### The runtime comes back — because a clean drain is not a failure
 
 The runtime drains cleanly on SIGTERM and exits **0**, and the unit set
