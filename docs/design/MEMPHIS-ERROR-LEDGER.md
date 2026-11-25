@@ -690,14 +690,113 @@ dative, `invoker` for a vocative — and the block index identifies the
 entry when the case carries no timestamp, which only the nominative does.
 
 **What this phase does NOT close, said out loud:** the two napi naming
-conventions in one crate (a WIRE change, so it needs the compatibility
-window E-01 built — queued, not started).
+conventions in one crate — and that residue turned out NOT to be the WIRE
+change it was assumed to be (decision #587: it is a corpus migration, and
+the measured detail is below).
 
 **WHERE E-09 STANDS after phase 6.** The payload types have one owner,
 the counter of surfaces that own a type by hand is empty, and the
 per-variant shapes are the owner's too. What is left is the residue that
-needs a decision of its own: the two napi naming conventions in one crate
-— a WIRE change, so it needs a compatibility window, not a quiet edit.
+needs a decision of its own: the two napi naming conventions in one crate.
+
+**AND THAT RESIDUE WAS MEASURED ON 2026-11-24, RE-MEASURED ON 2026-11-25, and
+the item was WRONG about what it would change** (decision #587). It is not a
+bridge convention: the snake_case names are the shapes that speak the
+WRITER's spelling, and one of them — `prev_hash` — is inside the **HASHED**
+corpus.
+
+Over the owner's own table — **36 shapes, 176 field names** — counted from the
+shape consts in `crates/memphis-napi/src/bridge_payloads.rs` and reproduced by
+the generated fixture `tests/fixtures/bridge-payload-contract.json`:
+
+| the name                                                   | count   | what the name carries            |
+| ---------------------------------------------------------- | ------- | -------------------------------- |
+| single-word (`entity`, `owner`, `timestamp`)               | **126** | identical under both conventions |
+| multi-word camelCase (`exportBindings`, `schemaVersion`)   | **26**  | a computed **VIEW**              |
+| multi-word snake_case (`prev_hash`, `persistence_enabled`) | **24**  | a stored **RECORD**              |
+
+**THE FIRST FIGURE THIS ENTRY GAVE WAS WRONG, and the correction is the
+METHOD, not the number.** It said "136 camelCase and 23 snake_case". That pair
+cannot be reproduced: the counting rule behind it was never written down, and
+no rule over this table yields it. The rule that IS reproducible is the one
+above — split the names by whether they are single-word, because a single-word
+name is the same under both conventions and therefore says nothing about
+which one the shape uses. Under that rule the case family is **5**, not 4: the
+union's tag `case_type` is a name of its own.
+
+**AND THE TWO CONVENTIONS ARE NOT MIXED — they partition the table, and the
+partition is the answer.** Every one of the **26** multi-word camelCase names
+lives in a **VIEW** family — the bridge manifest (`exportBindings`,
+`optionalExports`, `requiredExports`, `schemaVersion`), the export binding
+(`jsName`), the embed-profile manifest and facts (`indexPath`,
+`dimensionSources`, `localDimension`, `dimensionMismatch`, `dimensionRemedy`,
+`providerConfigured`, …), the embed index metadata (`formatVersion`,
+`invalidRecords`, `sizeBytes`), the vault entries result (`entriesJson`,
+`errorCode`) and the case-index status (`lastIndexedBlock`). Every one of the
+**24** multi-word snake_case names lives in a **RECORD** family — the vault
+four (`error_code`, `master_key`, `created_at`, `qa_question` — explicit napi
+`js_name`), the embed store and search (`persistence_enabled`,
+`persistence_load_state`, `text_preview`, `was_initialized`,
+`previous_replacement_state`, `replacement_state`), the chain block
+(`prev_hash`), the soul loop and replay (`tool_calls`, `wait_ms`,
+`halt_reason`, `last_hash`, `state_hash`) and the case entry and index row
+(`case_type`, `block_index`, `block_hash`, `full_json`).
+
+**MEASURED: no shape carries both.** The two conventions are not a style
+inconsistency inside a family — they are the family's own kind. A view is
+COMPUTED, so it is named for the reader; a record is STORED, so it is named
+for the writer, and the writer is `serde` with no `rename_all`.
+
+The 24, by family: vault **4**, embed **9**, chain **1** (`prev_hash`), soul
+**5**, case **5**.
+
+**WHY MOST OF THEM CANNOT MOVE, and this is the part that matters.** The
+serde shapes ARE the on-disk format: `memphis_core::block::Block` is the
+struct the chain files are written from, its field is `prev_hash`, and the
+files carry `prev_hash` (MEASURED 2026-11-25 on this host: `memphis chain
+verify` reports **12 345** blocks over **14** chain directories — **11 598**
+live and **747** in the three `.backup-*` copies). And the hash covers the
+**KEY NAMES**: `canonicalHash` in
+`src/core/chain-hash.ts` is `canonicalStringify({...block, data:
+toCanonicalHashData(block.data)})` — the canonical string is the block
+object with sorted keys, so the names are inside the digest.
+`src/core/canonical-json.ts` says it plainly: _"the hash covers a block's
+VALUES, not its bytes"_ — the BYTES may be reordered, but the key names
+are fixed by the canonical projection.
+
+So renaming `prev_hash` would change **every** block hash and break the
+chain. This is not a WIRE change with a compatibility window; it is a
+corpus migration that invalidates every live block hash — **11 598** of them.
+
+**WHY THE VAULT FOUR ARE DIFFERENT, and why changing them buys almost
+nothing.** All four are pinned by an explicit `#[napi(js_name = "...")]`, and
+they were pinned DELIBERATELY: `master_key`, `created_at` and `qa_question`
+in `52ef4e2a56` (_"refactor(bridge): stabilize napi contract naming"_,
+2026-03-21) — the commit that also gave the EXPORT FUNCTIONS an explicit
+`js_name`, so their names do not depend on napi-rs's camelCase default — and
+`error_code` in `10fac3d8190` (_"refactor(vault): share persisted readers
+across TypeScript and Rust"_, 2026-10-17). Two of them had a PREVIOUS
+spelling of camelCase (`masterKey`, `createdAt`), which is why the table
+carries a `legacyName` for those two and for no other field. So "unifying
+to camelCase" would REVERT two deliberate stabilizations.
+
+And the benefit is now near ZERO: E-09's phases 1–5 already put every
+wire spelling in ONE table — the owner's — so the TypeScript side no
+longer hedges: `result.entries_json ?? result.entriesJson` is gone, and
+the `legacyName` alias is carried by the **2** fields that ever had an
+older spelling (`master_key` → `masterKey`, `created_at` → `createdAt`;
+MEASURED: 2 of the table's 176 field names carry one). The two spellings
+are DOCUMENTED, not ambiguous.
+
+**WHAT THE REAL RESIDUE IS.** The manifest and embed-profile families
+declare `rename_all = "camelCase"` (`BridgeManifestOut` in
+`crates/memphis-napi/src/lib.rs`, and the embed crate's `profile.rs` and
+`metadata.rs`) because those payloads are COMPUTED views; the stored
+families have no `rename_all` and speak snake_case for their multi-word
+fields — the vault four excepted, because their `js_name` pins the name
+inside a camelCase shape. That is not an inconsistency to fix — it is the
+difference between a **view** and a **record**, and the difference is the
+storage format.
 
 #### E-10 · The published tarball is not the thing the gates look at
 
