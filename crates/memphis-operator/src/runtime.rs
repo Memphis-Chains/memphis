@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use zeroize::Zeroizing;
 
+use crate::chat_memory::CASE_CHAIN_SOURCE;
 use crate::config::{format_path, OperatorConfig};
 
 #[path = "vault_snapshot.rs"]
@@ -711,10 +712,13 @@ impl OperatorRuntime {
         let index = CaseIndex::open(&self.config.case_index_path)
             .map_err(|error| OperatorError::Message(error.to_string()))?;
         let rows = index
-            .query(&CaseQuery {
-                limit: Some(20),
-                ..CaseQuery::default()
-            })
+            .query(
+                &CaseQuery {
+                    limit: Some(20),
+                    ..CaseQuery::default()
+                },
+                CASE_CHAIN_SOURCE,
+            )
             .map_err(|error| OperatorError::Message(error.to_string()))?;
         let cases = rows
             .into_iter()

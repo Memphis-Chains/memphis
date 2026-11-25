@@ -6,9 +6,24 @@ use memphis_core::case_entry::{CaseEntry, CaseQuery};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
+/// The schema version this build writes.
+///
+/// 1 — the key carries the SOURCE (the chain directory the blocks were read
+///     from) next to the block index. Before it, the key was the block
+///     index ALONE, so two chains could not both be indexed.
+const SCHEMA_VERSION: i64 = 1;
+
+/// The SOURCE a row belongs to when the caller did not say.
+///
+/// The legacy bucket. A caller that predates the source (an older binary
+/// against a newer bridge) writes and reads HERE, so its behaviour is
+/// exactly what it was — that is the compatibility window.
+pub const LEGACY_SOURCE: &str = "";
+
 const SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS case_entries (
-    block_index     INTEGER PRIMARY KEY,
+    source          TEXT NOT NULL DEFAULT '',
+    block_index     INTEGER NOT NULL,
     block_hash      TEXT NOT NULL,
     chain           TEXT NOT NULL DEFAULT 'cases',
     case_type       TEXT NOT NULL,
@@ -30,7 +45,8 @@ CREATE TABLE IF NOT EXISTS case_entries (
     invocation      TEXT,
     entry_timestamp TEXT,
     full_json       TEXT NOT NULL,
-    indexed_at      TEXT NOT NULL
+    indexed_at      TEXT NOT NULL,
+    PRIMARY KEY (source, block_index)
 );
 
 CREATE INDEX IF NOT EXISTS idx_case_type ON case_entries(case_type);
@@ -96,13 +112,71 @@ impl CaseIndex {
     }
 
     fn init_schema(&self) -> Result<(), CaseIndexError> {
+        // The legacy schema keyed the table by the block index ALONE, so
+        // two chains could not both live in it, and it recorded no SOURCE —
+        // the chain directory the blocks were read from.
+        //
+        // The migration is decided by the TABLE, not by the version: a
+        // table without a `source` column is the legacy shape whatever
+        // `user_version` says (a crash between the DDL and the version
+        // bump must not drop an index twice).
+        let table_exists: bool = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'case_entries'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|count| count > 0)?;
+        if table_exists && !self.has_column("case_entries", "source")? {
+            self.migrate_to_source_aware()?;
+        }
+
         self.conn.execute_batch(SCHEMA_SQL)?;
+        self.conn
+            .execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
         Ok(())
     }
 
-    /// Index a single block. Only indexes blocks with `BlockType::Case`.
-    /// Silently skips non-case blocks.
-    pub fn index_block(&self, block: &Block) -> Result<bool, CaseIndexError> {
+    /// Whether a table has a named column.
+    fn has_column(&self, table: &str, column: &str) -> Result<bool, CaseIndexError> {
+        let mut stmt = self.conn.prepare(&format!("PRAGMA table_info({table})"))?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let name: String = row.get(1)?;
+            if name == column {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Migrate the legacy schema to the source-aware one.
+    ///
+    /// The legacy rows cannot be ATTRIBUTED. The source is the chain
+    /// DIRECTORY the blocks were read from, and the legacy schema never
+    /// recorded it — and the blocks cannot be asked either, because they do
+    /// not agree among themselves: MEASURED 2026-11-25 on this host, two of
+    /// the three archives carry the chain's name and the third carries its
+    /// own directory name.
+    ///
+    /// The index is a rebuildable cache and the chain files are the truth,
+    /// so the migration DROPS the unattributable rows. The caller's count
+    /// check then rebuilds them — attributed, this time.
+    fn migrate_to_source_aware(&self) -> Result<(), CaseIndexError> {
+        self.conn
+            .execute_batch("DROP TABLE IF EXISTS case_entries")?;
+        Ok(())
+    }
+
+    /// Index a single block under a SOURCE. Only indexes blocks with
+    /// `BlockType::Case`. Silently skips non-case blocks.
+    ///
+    /// The SOURCE is the chain directory the blocks were read from. It is
+    /// part of the key, so two chains' cases can live in one index — and
+    /// because the caller knows the directory and the blocks do not, the
+    /// caller is the only one who can supply it.
+    pub fn index_block(&self, block: &Block, source: &str) -> Result<bool, CaseIndexError> {
         if !matches!(block.data.block_type, BlockType::Case) {
             return Ok(false);
         }
@@ -125,17 +199,18 @@ impl CaseIndex {
 
         self.conn.execute(
             "INSERT OR REPLACE INTO case_entries (
-                block_index, block_hash, chain, case_type,
+                source, block_index, block_hash, chain, case_type,
                 entity, actor, target, instrument, location, origin, destination,
                 owner, possessed, giver, recipient, object, subject, verb,
                 invoker, invocation, entry_timestamp, full_json, indexed_at
             ) VALUES (
-                ?1, ?2, ?3, ?4,
-                ?5, ?6, ?7, ?8, ?9, ?10, ?11,
-                ?12, ?13, ?14, ?15, ?16, ?17, ?18,
-                ?19, ?20, ?21, ?22, ?23
+                ?1, ?2, ?3, ?4, ?5,
+                ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                ?13, ?14, ?15, ?16, ?17, ?18, ?19,
+                ?20, ?21, ?22, ?23, ?24
             )",
             params![
+                source,
                 block.index as i64,
                 block.hash,
                 block.chain,
@@ -165,33 +240,38 @@ impl CaseIndex {
         Ok(true)
     }
 
-    /// Query the index with optional filters.
-    pub fn query(&self, q: &CaseQuery) -> Result<Vec<CaseIndexRow>, CaseIndexError> {
-        let mut conditions = Vec::new();
-        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    /// Query the index with optional filters, within one SOURCE.
+    ///
+    /// The SOURCE filter is not optional: a query without one would answer
+    /// with another chain's cases. A caller that predates the source asks
+    /// for [`LEGACY_SOURCE`] and gets exactly what it got before.
+    pub fn query(&self, q: &CaseQuery, source: &str) -> Result<Vec<CaseIndexRow>, CaseIndexError> {
+        let mut conditions = vec!["source = ?".to_string()];
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> =
+            vec![Box::new(source.to_string())];
 
         if let Some(ref ct) = q.case_type {
-            conditions.push("case_type = ?");
+            conditions.push("case_type = ?".to_string());
             param_values.push(Box::new(ct.as_str().to_string()));
         }
         if let Some(ref entity) = q.entity {
-            conditions.push("entity = ?");
+            conditions.push("entity = ?".to_string());
             param_values.push(Box::new(entity.clone()));
         }
         if let Some(ref actor) = q.actor {
-            conditions.push("actor = ?");
+            conditions.push("actor = ?".to_string());
             param_values.push(Box::new(actor.clone()));
         }
         if let Some(ref target) = q.target {
-            conditions.push("target = ?");
+            conditions.push("target = ?".to_string());
             param_values.push(Box::new(target.clone()));
         }
         if let Some(ref instrument) = q.instrument {
-            conditions.push("instrument = ?");
+            conditions.push("instrument = ?".to_string());
             param_values.push(Box::new(instrument.clone()));
         }
         if let Some(ref location) = q.location {
-            conditions.push("location = ?");
+            conditions.push("location = ?".to_string());
             param_values.push(Box::new(location.clone()));
         }
 
@@ -242,17 +322,24 @@ impl CaseIndex {
         Ok(results)
     }
 
-    /// Rebuild the index from a set of blocks (e.g., read from chain files).
-    /// Drops all existing data and re-indexes.
-    pub fn rebuild(&self, blocks: &[Block]) -> Result<RebuildReport, CaseIndexError> {
-        self.conn.execute("DELETE FROM case_entries", [])?;
+    /// Rebuild the index from a set of blocks (e.g., read from chain files),
+    /// within one SOURCE.
+    ///
+    /// The delete is scoped to the SOURCE. It used to wipe the whole table,
+    /// which meant rebuilding one chain destroyed every other chain's
+    /// entries — the reason a per-source index needs a per-source rebuild.
+    pub fn rebuild(&self, blocks: &[Block], source: &str) -> Result<RebuildReport, CaseIndexError> {
+        self.conn.execute(
+            "DELETE FROM case_entries WHERE source = ?1",
+            params![source],
+        )?;
 
         let mut indexed = 0;
         let mut skipped = 0;
         let mut errors = 0;
 
         for block in blocks {
-            match self.index_block(block) {
+            match self.index_block(block, source) {
                 Ok(true) => indexed += 1,
                 Ok(false) => skipped += 1,
                 Err(_) => errors += 1,
@@ -266,86 +353,104 @@ impl CaseIndex {
         })
     }
 
-    /// Returns the highest block_index that has been indexed, or None if empty.
-    pub fn last_indexed_block(&self) -> Result<Option<u64>, CaseIndexError> {
+    /// Returns the highest block_index indexed under a SOURCE, or None when
+    /// it holds none.
+    pub fn last_indexed_block(&self, source: &str) -> Result<Option<u64>, CaseIndexError> {
         let result: Option<i64> = self
             .conn
-            .query_row("SELECT MAX(block_index) FROM case_entries", [], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT MAX(block_index) FROM case_entries WHERE source = ?1",
+                params![source],
+                |row| row.get(0),
+            )
             .optional()?
             .flatten();
         Ok(result.map(|v| v as u64))
     }
 
-    /// Checks if the number of indexed entries matches the expected count.
-    pub fn verify_count(&self, expected: u64) -> Result<bool, CaseIndexError> {
-        let count: i64 = self
-            .conn
-            .query_row("SELECT COUNT(*) FROM case_entries", [], |row| row.get(0))?;
+    /// Checks if the number of entries indexed under a SOURCE matches the
+    /// expected count.
+    pub fn verify_count(&self, source: &str, expected: u64) -> Result<bool, CaseIndexError> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM case_entries WHERE source = ?1",
+            params![source],
+            |row| row.get(0),
+        )?;
         Ok(count as u64 == expected)
     }
 
-    /// Verifies that a specific block's hash matches the stored hash.
+    /// Verifies that a specific block's hash matches the stored hash, within
+    /// a SOURCE.
     pub fn verify_hash(
         &self,
+        source: &str,
         block_index: u64,
         expected_hash: &str,
     ) -> Result<bool, CaseIndexError> {
         let stored: Option<String> = self
             .conn
             .query_row(
-                "SELECT block_hash FROM case_entries WHERE block_index = ?1",
-                params![block_index as i64],
+                "SELECT block_hash FROM case_entries WHERE source = ?1 AND block_index = ?2",
+                params![source, block_index as i64],
                 |row| row.get(0),
             )
             .optional()?;
         Ok(stored.as_deref() == Some(expected_hash))
     }
 
-    /// What the index holds — the health of the CACHE.
+    /// What the index holds, for one SOURCE.
     ///
-    /// MEASURED 2026-11-24 on the operator's host: the index held 1 372
-    /// entries while the `cases` chain held 2 190 case blocks, and the
-    /// index's `last_indexed_block` was 2 189 — the chain's LAST block.
-    /// So the tail looked perfect while the first 818 entries were gone,
-    /// and nothing could tell: the highest index says nothing about the
-    /// lowest.
-    ///
-    /// The COUNT is the answer, and the count is what the caller compares
-    /// with the chain's own count of case blocks. That is the only
-    /// comparison that catches a gap at the HEAD.
-    pub fn status(&self) -> Result<CaseIndexStatus, CaseIndexError> {
-        let count: i64 = self
-            .conn
-            .query_row("SELECT COUNT(*) FROM case_entries", [], |row| row.get(0))?;
+    /// The count and the highest block index among the entries. A caller that
+    /// knows how many case blocks its chain holds can tell, with the count
+    /// alone, whether the index is in step with the chain — the highest index
+    /// cannot: a gap at the head leaves it untouched.
+    pub fn status(&self, source: &str) -> Result<CaseIndexStatus, CaseIndexError> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM case_entries WHERE source = ?1",
+            params![source],
+            |row| row.get(0),
+        )?;
         let last: Option<i64> = self
             .conn
-            .query_row("SELECT MAX(block_index) FROM case_entries", [], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT MAX(block_index) FROM case_entries WHERE source = ?1",
+                params![source],
+                |row| row.get(0),
+            )
             .optional()?
             .flatten();
         Ok(CaseIndexStatus {
             indexed: count as usize,
             last_indexed_block: last.map(|v| v as u64),
+            source_aware: true,
+            source: source.to_string(),
         })
     }
 }
 
 /// What the case index holds.
 ///
-/// The count and the highest block index among the entries. A caller that
-/// knows how many case blocks its chain holds can tell, with the count
-/// alone, whether the index is in step with the chain — the highest index
-/// cannot: a gap at the head leaves it untouched.
+/// The count and the highest block index among the entries, for ONE source.
+/// A caller that knows how many case blocks its chain holds can tell, with
+/// the count alone, whether the index is in step with the chain — the
+/// highest index cannot: a gap at the head leaves it untouched.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CaseIndexStatus {
-    /// How many entries the index holds.
+    /// How many entries the index holds under this source.
     pub indexed: usize,
     /// The highest block index the index holds, or None when it holds none.
     pub last_indexed_block: Option<u64>,
+    /// Whether this index understands the source at all.
+    ///
+    /// The compatibility window: a caller that reads this and does not find
+    /// it knows the binary in front of it predates the source, and keeps
+    /// using the legacy calls. Measured on the bridge: napi-rs IGNORES an
+    /// extra argument, so a newer caller against an older binary loses the
+    /// source SILENTLY — this flag is what makes that loss visible.
+    pub source_aware: bool,
+    /// The source the counts are about.
+    pub source: String,
 }
 
 fn extract_common_fields(
@@ -484,6 +589,10 @@ impl From<rusqlite::Error> for CaseIndexError {
 
 #[cfg(test)]
 mod tests {
+    /// The source every pre-existing case uses. The behaviour under test is
+    /// the SAME as before the source existed — one bucket, one chain.
+    const SOURCE: &str = "cases";
+
     use super::*;
     use memphis_core::block::BlockData;
     use memphis_core::case_entry::CaseType;
@@ -525,8 +634,8 @@ mod tests {
     #[test]
     fn schema_init() {
         let idx = CaseIndex::open_in_memory().unwrap();
-        assert!(idx.verify_count(0).unwrap());
-        assert_eq!(idx.last_indexed_block().unwrap(), None);
+        assert!(idx.verify_count(SOURCE, 0).unwrap());
+        assert_eq!(idx.last_indexed_block(SOURCE).unwrap(), None);
     }
 
     #[test]
@@ -538,10 +647,10 @@ mod tests {
             target: "providers".into(),
         };
         let block = make_case_block(0, &entry);
-        assert!(idx.index_block(&block).unwrap());
-        assert!(idx.verify_count(1).unwrap());
+        assert!(idx.index_block(&block, SOURCE).unwrap());
+        assert!(idx.verify_count(SOURCE, 1).unwrap());
 
-        let results = idx.query(&CaseQuery::default()).unwrap();
+        let results = idx.query(&CaseQuery::default(), SOURCE).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].entry, entry);
         assert_eq!(results[0].block_index, 0);
@@ -551,37 +660,43 @@ mod tests {
     fn skips_non_case_blocks() {
         let idx = CaseIndex::open_in_memory().unwrap();
         let block = make_journal_block(0);
-        assert!(!idx.index_block(&block).unwrap());
-        assert!(idx.verify_count(0).unwrap());
+        assert!(!idx.index_block(&block, SOURCE).unwrap());
+        assert!(idx.verify_count(SOURCE, 0).unwrap());
     }
 
     #[test]
     fn query_by_case_type() {
         let idx = CaseIndex::open_in_memory().unwrap();
-        idx.index_block(&make_case_block(
-            0,
-            &CaseEntry::Nominative {
-                entity: "Agent".into(),
-                action: "started".into(),
-                timestamp: "2026-03-22T10:00:00Z".into(),
-            },
-        ))
+        idx.index_block(
+            &make_case_block(
+                0,
+                &CaseEntry::Nominative {
+                    entity: "Agent".into(),
+                    action: "started".into(),
+                    timestamp: "2026-03-22T10:00:00Z".into(),
+                },
+            ),
+            SOURCE,
+        )
         .unwrap();
-        idx.index_block(&make_case_block(
-            1,
-            &CaseEntry::Instrumental {
-                actor: "Agent".into(),
-                instrument: "tool".into(),
-                target: "file.rs".into(),
-            },
-        ))
+        idx.index_block(
+            &make_case_block(
+                1,
+                &CaseEntry::Instrumental {
+                    actor: "Agent".into(),
+                    instrument: "tool".into(),
+                    target: "file.rs".into(),
+                },
+            ),
+            SOURCE,
+        )
         .unwrap();
 
         let q = CaseQuery {
             case_type: Some(CaseType::Instrumental),
             ..Default::default()
         };
-        let results = idx.query(&q).unwrap();
+        let results = idx.query(&q, SOURCE).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].case_type, "instrumental");
     }
@@ -589,30 +704,36 @@ mod tests {
     #[test]
     fn query_by_actor() {
         let idx = CaseIndex::open_in_memory().unwrap();
-        idx.index_block(&make_case_block(
-            0,
-            &CaseEntry::Instrumental {
-                actor: "Agent".into(),
-                instrument: "tool".into(),
-                target: "file.rs".into(),
-            },
-        ))
+        idx.index_block(
+            &make_case_block(
+                0,
+                &CaseEntry::Instrumental {
+                    actor: "Agent".into(),
+                    instrument: "tool".into(),
+                    target: "file.rs".into(),
+                },
+            ),
+            SOURCE,
+        )
         .unwrap();
-        idx.index_block(&make_case_block(
-            1,
-            &CaseEntry::Instrumental {
-                actor: "User".into(),
-                instrument: "tool".into(),
-                target: "file2.rs".into(),
-            },
-        ))
+        idx.index_block(
+            &make_case_block(
+                1,
+                &CaseEntry::Instrumental {
+                    actor: "User".into(),
+                    instrument: "tool".into(),
+                    target: "file2.rs".into(),
+                },
+            ),
+            SOURCE,
+        )
         .unwrap();
 
         let q = CaseQuery {
             actor: Some("Agent".into()),
             ..Default::default()
         };
-        let results = idx.query(&q).unwrap();
+        let results = idx.query(&q, SOURCE).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].block_index, 0);
     }
@@ -620,30 +741,36 @@ mod tests {
     #[test]
     fn query_by_target() {
         let idx = CaseIndex::open_in_memory().unwrap();
-        idx.index_block(&make_case_block(
-            0,
-            &CaseEntry::Vocative {
-                invoker: "User".into(),
-                invocation: "deploy".into(),
-                target: "agent".into(),
-            },
-        ))
+        idx.index_block(
+            &make_case_block(
+                0,
+                &CaseEntry::Vocative {
+                    invoker: "User".into(),
+                    invocation: "deploy".into(),
+                    target: "agent".into(),
+                },
+            ),
+            SOURCE,
+        )
         .unwrap();
-        idx.index_block(&make_case_block(
-            1,
-            &CaseEntry::Vocative {
-                invoker: "User".into(),
-                invocation: "status".into(),
-                target: "system".into(),
-            },
-        ))
+        idx.index_block(
+            &make_case_block(
+                1,
+                &CaseEntry::Vocative {
+                    invoker: "User".into(),
+                    invocation: "status".into(),
+                    target: "system".into(),
+                },
+            ),
+            SOURCE,
+        )
         .unwrap();
 
         let q = CaseQuery {
             target: Some("agent".into()),
             ..Default::default()
         };
-        let results = idx.query(&q).unwrap();
+        let results = idx.query(&q, SOURCE).unwrap();
         assert_eq!(results.len(), 1);
     }
 
@@ -651,14 +778,17 @@ mod tests {
     fn query_with_limit() {
         let idx = CaseIndex::open_in_memory().unwrap();
         for i in 0..10 {
-            idx.index_block(&make_case_block(
-                i,
-                &CaseEntry::Nominative {
-                    entity: "Agent".into(),
-                    action: format!("action_{i}"),
-                    timestamp: "2026-03-22T10:00:00Z".into(),
-                },
-            ))
+            idx.index_block(
+                &make_case_block(
+                    i,
+                    &CaseEntry::Nominative {
+                        entity: "Agent".into(),
+                        action: format!("action_{i}"),
+                        timestamp: "2026-03-22T10:00:00Z".into(),
+                    },
+                ),
+                SOURCE,
+            )
             .unwrap();
         }
 
@@ -666,7 +796,7 @@ mod tests {
             limit: Some(3),
             ..Default::default()
         };
-        let results = idx.query(&q).unwrap();
+        let results = idx.query(&q, SOURCE).unwrap();
         assert_eq!(results.len(), 3);
         // Most recent first (ORDER BY block_index DESC)
         assert_eq!(results[0].block_index, 9);
@@ -675,32 +805,41 @@ mod tests {
     #[test]
     fn query_composite_case_type_and_actor() {
         let idx = CaseIndex::open_in_memory().unwrap();
-        idx.index_block(&make_case_block(
-            0,
-            &CaseEntry::Instrumental {
-                actor: "Agent".into(),
-                instrument: "tool_a".into(),
-                target: "file.rs".into(),
-            },
-        ))
+        idx.index_block(
+            &make_case_block(
+                0,
+                &CaseEntry::Instrumental {
+                    actor: "Agent".into(),
+                    instrument: "tool_a".into(),
+                    target: "file.rs".into(),
+                },
+            ),
+            SOURCE,
+        )
         .unwrap();
-        idx.index_block(&make_case_block(
-            1,
-            &CaseEntry::Instrumental {
-                actor: "User".into(),
-                instrument: "tool_b".into(),
-                target: "file2.rs".into(),
-            },
-        ))
+        idx.index_block(
+            &make_case_block(
+                1,
+                &CaseEntry::Instrumental {
+                    actor: "User".into(),
+                    instrument: "tool_b".into(),
+                    target: "file2.rs".into(),
+                },
+            ),
+            SOURCE,
+        )
         .unwrap();
-        idx.index_block(&make_case_block(
-            2,
-            &CaseEntry::Nominative {
-                entity: "Agent".into(),
-                action: "test".into(),
-                timestamp: "2026-03-22T10:00:00Z".into(),
-            },
-        ))
+        idx.index_block(
+            &make_case_block(
+                2,
+                &CaseEntry::Nominative {
+                    entity: "Agent".into(),
+                    action: "test".into(),
+                    timestamp: "2026-03-22T10:00:00Z".into(),
+                },
+            ),
+            SOURCE,
+        )
         .unwrap();
 
         let q = CaseQuery {
@@ -708,7 +847,7 @@ mod tests {
             actor: Some("Agent".into()),
             ..Default::default()
         };
-        let results = idx.query(&q).unwrap();
+        let results = idx.query(&q, SOURCE).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].block_index, 0);
     }
@@ -736,36 +875,42 @@ mod tests {
             ),
         ];
 
-        let report = idx.rebuild(&blocks).unwrap();
+        let report = idx.rebuild(&blocks, SOURCE).unwrap();
         assert_eq!(report.indexed, 2);
         assert_eq!(report.skipped, 1);
         assert_eq!(report.errors, 0);
-        assert!(idx.verify_count(2).unwrap());
+        assert!(idx.verify_count(SOURCE, 2).unwrap());
     }
 
     #[test]
     fn last_indexed_block_returns_max() {
         let idx = CaseIndex::open_in_memory().unwrap();
-        assert_eq!(idx.last_indexed_block().unwrap(), None);
+        assert_eq!(idx.last_indexed_block(SOURCE).unwrap(), None);
 
-        idx.index_block(&make_case_block(
-            5,
-            &CaseEntry::Locative {
-                entity: "Agent".into(),
-                location: "session".into(),
-            },
-        ))
+        idx.index_block(
+            &make_case_block(
+                5,
+                &CaseEntry::Locative {
+                    entity: "Agent".into(),
+                    location: "session".into(),
+                },
+            ),
+            SOURCE,
+        )
         .unwrap();
-        idx.index_block(&make_case_block(
-            10,
-            &CaseEntry::Locative {
-                entity: "Agent".into(),
-                location: "session2".into(),
-            },
-        ))
+        idx.index_block(
+            &make_case_block(
+                10,
+                &CaseEntry::Locative {
+                    entity: "Agent".into(),
+                    location: "session2".into(),
+                },
+            ),
+            SOURCE,
+        )
         .unwrap();
 
-        assert_eq!(idx.last_indexed_block().unwrap(), Some(10));
+        assert_eq!(idx.last_indexed_block(SOURCE).unwrap(), Some(10));
     }
 
     #[test]
@@ -778,11 +923,11 @@ mod tests {
                 possessed: "API key".into(),
             },
         );
-        idx.index_block(&block).unwrap();
+        idx.index_block(&block, SOURCE).unwrap();
 
-        assert!(idx.verify_hash(0, &block.hash).unwrap());
-        assert!(!idx.verify_hash(0, "wrong_hash").unwrap());
-        assert!(!idx.verify_hash(999, &block.hash).unwrap());
+        assert!(idx.verify_hash(SOURCE, 0, &block.hash).unwrap());
+        assert!(!idx.verify_hash(SOURCE, 0, "wrong_hash").unwrap());
+        assert!(!idx.verify_hash(SOURCE, 999, &block.hash).unwrap());
     }
 
     #[test]
@@ -830,10 +975,11 @@ mod tests {
         ];
 
         for (i, entry) in entries.iter().enumerate() {
-            idx.index_block(&make_case_block(i as u64, entry)).unwrap();
+            idx.index_block(&make_case_block(i as u64, entry), SOURCE)
+                .unwrap();
         }
 
-        assert!(idx.verify_count(8).unwrap());
+        assert!(idx.verify_count(SOURCE, 8).unwrap());
 
         // Query each case type individually
         for ct in &[
@@ -850,7 +996,7 @@ mod tests {
                 case_type: Some(*ct),
                 ..Default::default()
             };
-            let results = idx.query(&q).unwrap();
+            let results = idx.query(&q, SOURCE).unwrap();
             assert_eq!(results.len(), 1, "expected 1 result for {ct:?}");
         }
     }
@@ -865,7 +1011,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
 
         let idx = CaseIndex::open(&db_path).unwrap();
-        assert!(idx.verify_count(0).unwrap());
+        assert!(idx.verify_count(SOURCE, 0).unwrap());
 
         // Cleanup
         let _ = std::fs::remove_dir_all(&dir);
@@ -906,10 +1052,10 @@ mod tests {
             ));
         }
         for block in blocks.iter().skip(5) {
-            assert!(idx.index_block(block).unwrap());
+            assert!(idx.index_block(block, SOURCE).unwrap());
         }
 
-        let status = idx.status().unwrap();
+        let status = idx.status(SOURCE).unwrap();
         assert_eq!(status.indexed, 3, "the index holds three entries");
         assert_eq!(
             status.last_indexed_block,
@@ -927,9 +1073,9 @@ mod tests {
         );
 
         // And the repair makes them equal — so the check cannot loop.
-        let report = idx.rebuild(&blocks).unwrap();
+        let report = idx.rebuild(&blocks, SOURCE).unwrap();
         assert_eq!(report.indexed, 8);
-        let status = idx.status().unwrap();
+        let status = idx.status(SOURCE).unwrap();
         assert_eq!(status.indexed, chain_case_blocks);
         assert_eq!(status.last_indexed_block, Some(7));
 
@@ -946,7 +1092,7 @@ mod tests {
         let db_path = dir.join("case-index.sqlite");
 
         let idx = CaseIndex::open(&db_path).unwrap();
-        let status = idx.status().unwrap();
+        let status = idx.status(SOURCE).unwrap();
         assert_eq!(status.indexed, 0);
         assert_eq!(status.last_indexed_block, None);
 
@@ -957,6 +1103,261 @@ mod tests {
             "the highest block is PRESENT and null, not absent: {:?}",
             json
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── The source ────────────────────────────────────────────────────────
+    //
+    // The key carries the SOURCE — the chain DIRECTORY the blocks were
+    // read from. The blocks cannot be asked for it (they disagree among
+    // themselves), so the caller supplies it, and the index is keyed by it.
+
+    /// Two sources can hold the SAME block index. Before the source was in
+    /// the key, the second one replaced the first.
+    #[test]
+    fn two_sources_can_hold_the_same_block_index() {
+        let idx = CaseIndex::open_in_memory().unwrap();
+        let entry = CaseEntry::Nominative {
+            entity: "Agent".into(),
+            action: "started".into(),
+            timestamp: "2026-03-22T10:00:00Z".into(),
+        };
+        let block = make_case_block(7, &entry);
+
+        assert!(idx.index_block(&block, "cases").unwrap());
+        assert!(idx
+            .index_block(&block, "cases.backup-1700000000000")
+            .unwrap());
+
+        assert!(idx.verify_count("cases", 1).unwrap());
+        assert!(idx.verify_count("cases.backup-1700000000000", 1).unwrap());
+
+        let live = idx.query(&CaseQuery::default(), "cases").unwrap();
+        let archive = idx
+            .query(&CaseQuery::default(), "cases.backup-1700000000000")
+            .unwrap();
+        assert_eq!(live.len(), 1);
+        assert_eq!(archive.len(), 1);
+    }
+
+    /// A query answers with its OWN source's rows and nobody else's.
+    #[test]
+    fn a_query_never_answers_with_another_sources_rows() {
+        let idx = CaseIndex::open_in_memory().unwrap();
+        let entry = CaseEntry::Nominative {
+            entity: "Agent".into(),
+            action: "started".into(),
+            timestamp: "2026-03-22T10:00:00Z".into(),
+        };
+        idx.index_block(&make_case_block(1, &entry), "cases")
+            .unwrap();
+        idx.index_block(&make_case_block(2, &entry), "other")
+            .unwrap();
+
+        assert_eq!(idx.query(&CaseQuery::default(), "cases").unwrap().len(), 1);
+        assert_eq!(idx.query(&CaseQuery::default(), "other").unwrap().len(), 1);
+        assert_eq!(idx.query(&CaseQuery::default(), "nobody").unwrap().len(), 0);
+    }
+
+    /// A rebuild is scoped to ITS source. It used to wipe the whole table,
+    /// so rebuilding one chain destroyed every other chain's entries.
+    #[test]
+    fn a_rebuild_leaves_another_sources_rows_alone() {
+        let idx = CaseIndex::open_in_memory().unwrap();
+        let entry = CaseEntry::Nominative {
+            entity: "Agent".into(),
+            action: "started".into(),
+            timestamp: "2026-03-22T10:00:00Z".into(),
+        };
+        idx.index_block(&make_case_block(1, &entry), "other")
+            .unwrap();
+        idx.index_block(&make_case_block(2, &entry), "cases")
+            .unwrap();
+
+        let report = idx.rebuild(&[make_case_block(9, &entry)], "cases").unwrap();
+        assert_eq!(report.indexed, 1);
+
+        assert!(idx.verify_count("cases", 1).unwrap());
+        assert!(
+            idx.verify_count("other", 1).unwrap(),
+            "the other source's row was destroyed by a rebuild of another source"
+        );
+    }
+
+    /// The legacy bucket: a caller that does not name a source keeps the
+    /// behaviour it had — its own rows, and nobody else's.
+    #[test]
+    fn the_legacy_bucket_behaves_as_it_did() {
+        let idx = CaseIndex::open_in_memory().unwrap();
+        let entry = CaseEntry::Nominative {
+            entity: "Agent".into(),
+            action: "started".into(),
+            timestamp: "2026-03-22T10:00:00Z".into(),
+        };
+        idx.index_block(&make_case_block(1, &entry), LEGACY_SOURCE)
+            .unwrap();
+        idx.index_block(&make_case_block(1, &entry), "cases")
+            .unwrap();
+
+        assert_eq!(
+            idx.query(&CaseQuery::default(), LEGACY_SOURCE)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(idx.verify_count(LEGACY_SOURCE, 1).unwrap());
+        assert!(idx.verify_count("cases", 1).unwrap());
+    }
+
+    /// The status says WHICH source it is about, and that it understands the
+    /// source at all — the handshake the compatibility window relies on.
+    #[test]
+    fn the_status_answers_for_one_source_and_says_it_is_source_aware() {
+        let idx = CaseIndex::open_in_memory().unwrap();
+        let entry = CaseEntry::Nominative {
+            entity: "Agent".into(),
+            action: "started".into(),
+            timestamp: "2026-03-22T10:00:00Z".into(),
+        };
+        idx.index_block(&make_case_block(1, &entry), "cases")
+            .unwrap();
+        idx.index_block(&make_case_block(2, &entry), "other")
+            .unwrap();
+
+        let status = idx.status("cases").unwrap();
+        assert_eq!(status.indexed, 1);
+        assert_eq!(status.source, "cases");
+        assert!(status.source_aware);
+
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!(json["sourceAware"], true);
+        assert_eq!(json["source"], "cases");
+    }
+
+    /// The legacy schema — the key was the block index ALONE — is migrated.
+    ///
+    /// The legacy rows cannot be ATTRIBUTED (the source is the chain
+    /// directory the blocks were read from, and the old schema never
+    /// recorded it), so the migration drops them and lets the caller
+    /// rebuild from the chain, which is the truth. What must NOT happen is
+    /// the migration leaving the old key in place, or the rows surviving
+    /// under a source nobody chose.
+    #[test]
+    fn the_legacy_schema_is_migrated_and_its_unattributable_rows_are_dropped() {
+        let dir =
+            std::env::temp_dir().join(format!("memphis-case-index-legacy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("case-index.sqlite");
+
+        // Build the legacy shape by hand: block_index alone is the key and
+        // there is no source column at all.
+        {
+            let conn = rusqlite::Connection::open(&db_path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE case_entries (
+                    block_index INTEGER PRIMARY KEY,
+                    block_hash TEXT NOT NULL,
+                    chain TEXT NOT NULL DEFAULT 'cases',
+                    case_type TEXT NOT NULL,
+                    entity TEXT,
+                    actor TEXT,
+                    target TEXT,
+                    instrument TEXT,
+                    location TEXT,
+                    origin TEXT,
+                    destination TEXT,
+                    owner TEXT,
+                    possessed TEXT,
+                    giver TEXT,
+                    recipient TEXT,
+                    object TEXT,
+                    subject TEXT,
+                    verb TEXT,
+                    invoker TEXT,
+                    invocation TEXT,
+                    entry_timestamp TEXT,
+                    full_json TEXT NOT NULL,
+                    indexed_at TEXT NOT NULL
+                );
+                INSERT INTO case_entries (block_index, block_hash, case_type, full_json, indexed_at)
+                VALUES (1, 'legacy-hash', 'nominative', '{}', '2026-01-01T00:00:00Z');",
+            )
+            .unwrap();
+        }
+
+        let idx = CaseIndex::open(&db_path).unwrap();
+
+        let version: i64 = idx
+            .conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+
+        let has_source: i64 = idx
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('case_entries') WHERE name = 'source'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(has_source, 1, "the migrated table has no source column");
+
+        let rows: i64 = idx
+            .conn
+            .query_row("SELECT COUNT(*) FROM case_entries", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            rows, 0,
+            "the legacy rows cannot be attributed and must not survive the migration"
+        );
+
+        // The migrated index still works, and the same block index can now
+        // be indexed under two sources.
+        let entry = CaseEntry::Nominative {
+            entity: "Agent".into(),
+            action: "started".into(),
+            timestamp: "2026-03-22T10:00:00Z".into(),
+        };
+        idx.index_block(&make_case_block(1, &entry), "cases")
+            .unwrap();
+        idx.index_block(&make_case_block(1, &entry), "other")
+            .unwrap();
+        assert!(idx.verify_count("cases", 1).unwrap());
+        assert!(idx.verify_count("other", 1).unwrap());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A legacy index that is ALREADY in the new shape is not migrated
+    /// twice — a crash between the DDL and the version bump must not drop
+    /// an index that was already rebuilt.
+    #[test]
+    fn an_index_in_the_new_shape_is_not_dropped_again() {
+        let dir = std::env::temp_dir().join(format!(
+            "memphis-case-index-newshape-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("case-index.sqlite");
+
+        {
+            let idx = CaseIndex::open(&db_path).unwrap();
+            let entry = CaseEntry::Nominative {
+                entity: "Agent".into(),
+                action: "started".into(),
+                timestamp: "2026-03-22T10:00:00Z".into(),
+            };
+            idx.index_block(&make_case_block(1, &entry), "cases")
+                .unwrap();
+        }
+
+        // Open it again — the second open must keep the rows.
+        let idx = CaseIndex::open(&db_path).unwrap();
+        assert!(idx.verify_count("cases", 1).unwrap());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -141,6 +141,26 @@
             "kind": "integer"
           },
           "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "sourceAware",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "boolean"
+          },
+          "vocabulary": null
+        },
+        {
+          "legacyName": null,
+          "name": "source",
+          "nullable": false,
+          "optional": false,
+          "type": {
+            "kind": "string"
+          },
+          "vocabulary": null
         }
       ],
       "name": "CaseIndexStatusPayload",

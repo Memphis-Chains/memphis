@@ -1244,6 +1244,8 @@ pub const CASE_INDEX_STATUS_SHAPE: PayloadShape = PayloadShape {
     fields: &[
         PayloadField { name: "indexed", ty: PayloadType::Integer, optional: false, nullable: false, legacy_name: None, vocabulary: None },
         PayloadField { name: "lastIndexedBlock", ty: PayloadType::Integer, optional: false, nullable: true, legacy_name: None, vocabulary: None },
+        PayloadField { name: "sourceAware", ty: PayloadType::Boolean, optional: false, nullable: false, legacy_name: None, vocabulary: None },
+        PayloadField { name: "source", ty: PayloadType::String, optional: false, nullable: false, legacy_name: None, vocabulary: None },
     ],
 };
 

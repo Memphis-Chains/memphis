@@ -42,6 +42,8 @@ export interface BridgeExportBindingPayload {
 export interface CaseIndexStatusPayload {
   indexed: number;
   lastIndexedBlock: number | null;
+  sourceAware: boolean;
+  source: string;
 }
 
 /** serde — serde's rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name. */

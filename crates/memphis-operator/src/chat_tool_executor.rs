@@ -26,10 +26,10 @@ use crate::chat_guards::{
     build_wrapped_segment, sha256_hex,
 };
 use crate::chat_memory::{
-    append_case_entry, append_generic_block, is_scannable_chain_directory_name,
-    normalize_case_append_input, read_chain_blocks, recall_result_with_sources,
-    run_native_chain_query, run_native_journal, run_soul_read, run_soul_write,
-    search_result_to_json, value_string_array, value_usize,
+    CASE_CHAIN_SOURCE, append_case_entry, append_generic_block,
+    is_scannable_chain_directory_name, normalize_case_append_input, read_chain_blocks,
+    recall_result_with_sources, run_native_chain_query, run_native_journal, run_soul_read,
+    run_soul_write, search_result_to_json, value_string_array, value_usize,
 };
 use crate::chat_self_modify::{assert_inside_runtime_root, canonical_self_modify_request};
 use crate::chat_tool_catalog::tool_tier;
@@ -471,7 +471,7 @@ fn execute_native_tool_inner(
             let index = CaseIndex::open(&runtime.config.case_index_path)
                 .map_err(|error| OperatorError::Message(error.to_string()))?;
             let rows = index
-                .query(&query)
+                .query(&query, CASE_CHAIN_SOURCE)
                 .map_err(|error| OperatorError::Message(error.to_string()))?;
             let json = serde_json::to_string(&json!({ "count": rows.len(), "entries": rows }))
                 .map_err(|error| OperatorError::Json(error.to_string()))?;

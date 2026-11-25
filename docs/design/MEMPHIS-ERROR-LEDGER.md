@@ -1122,7 +1122,56 @@ plan this entry first recorded.
 
 #### E-14 · The case index's key cannot tell two chains apart, and the fix is a WIRE change
 
-**OPEN — designed 2026-11-24 (decision #586), NOT started.** The harm
+**IMPLEMENTED 2026-11-25** (decision #590) — the key carries the SOURCE, the
+source travels from the CALLER to the OWNER, and the compatibility window is
+a HANDSHAKE rather than a parameter. What this entry designed is what the
+code does now; what follows is the measurement of it.
+
+**THE WINDOW, and why it is a handshake and not a parameter.** The obvious
+repair is to add the source as a parameter to the three case exports — and
+MEASURED on the bridge: napi-rs IGNORES an extra argument, so a newer caller
+against an older binary would lose the source SILENTLY and go on believing
+it had threaded it. So the source is OPTIONAL on every export (a caller that
+names none keeps the legacy behaviour exactly), and the status payload says
+out loud whether the binary understands the source at all (`sourceAware`). A
+caller that does not find the flag knows, and keeps using the legacy calls.
+The legacy bucket is real and it works: a caller that names no source writes
+and reads THERE, exactly as it did before.
+
+|                    | before                                           | after                                              |
+| ------------------ | ------------------------------------------------ | -------------------------------------------------- |
+| the key            | `block_index INTEGER PRIMARY KEY`                | `PRIMARY KEY (source, block_index)`                |
+| the schema version | `PRAGMA user_version = 0` — no versioning at all | `PRAGMA user_version = 1`                          |
+| `rebuild()`        | `DELETE FROM case_entries` — a **global** wipe   | `DELETE … WHERE source = ?` — per source           |
+| the source         | nowhere                                          | the chain **DIRECTORY**, threaded from the adapter |
+| the status         | the total count                                  | the count for ONE source, plus `sourceAware`       |
+
+**THE MIGRATION DROPS THE ROWS IT CANNOT ATTRIBUTE.** The legacy schema
+recorded no source, and the blocks cannot be asked for one (they disagree
+among themselves — the archive table below), so the legacy rows cannot be
+attributed to a source. The index is a rebuildable cache and the chain files
+are the truth: the migration drops them, and the caller's count check
+rebuilds them — attributed, this time. MEASURED on this host: the legacy
+index was `user_version = 0` with **2 190** rows and **no** `source` column;
+after the upgrade it holds **2 190** rows under `source = 'cases'` and the
+legacy bucket holds **0**.
+
+**THE GATES, and what they pin.** The owner's arm (`cargo test -p
+memphis-case-index`, **22/22**): two sources can hold the SAME block index;
+a query never answers with another source's rows; a rebuild leaves another
+source's rows alone; the legacy bucket behaves as it did; the status says
+which source it is about and that it is source-aware; the legacy schema is
+migrated and its unattributable rows are dropped; an index already in the
+new shape is NOT dropped again (a crash between the DDL and the version bump
+must not drop an index twice). The bridge's arm (`cargo test -p memphis-napi
+--lib`, **29/29**): the status says it is source-aware; two sources stay
+apart; no source keeps the legacy behaviour; the rebuild is scoped to its
+source. The TypeScript arm (`case-index-reconciliation`, **6/6**): the
+adapter indexes under the chain DIRECTORY it reads — the proof is that the
+LEGACY bucket stays empty, where a caller that had not threaded the source
+would have written the same rows there.
+
+**OPEN, designed 2026-11-24 (decision #586).** The harm
 today is ZERO, and the plan this entry first recorded was WRONG. Both
 facts are measured.
 
