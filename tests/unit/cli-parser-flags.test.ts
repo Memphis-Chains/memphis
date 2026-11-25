@@ -123,4 +123,33 @@ describe('CLI parser — flags in front of the command', () => {
     const extra = [...BOOLEAN_FLAGS].filter((flag) => !read.has(flag)).sort();
     expect(extra).toEqual([]);
   });
+
+  it('the case query flags reach the command that reads them', () => {
+    // MEASURED 2026-11-24 on the operator's host:
+    //
+    // ```text
+    // $ memphis explain --case-type genitive
+    //   Chain: journal (20 recent blocks)      <- twenty JOURNAL blocks
+    // ```
+    //
+    // The usage line PROMISED the flags —
+    // `explain [--chain <name>] [--case-type <type>] [--entity <name>]` —
+    // and the explain command READ them, and the parser had no slot for
+    // either: `CliArgs` had no `caseType` and no `entity`, so the flags
+    // were dropped on the floor and the command fell through to the
+    // journal chain. The case path was unreachable, and the operator's
+    // request was answered with a different question.
+    const args = parseCommand(['node', 'cli', 'explain', '--case-type', 'genitive']);
+
+    expect(args.command).toBe('explain');
+    expect(args.caseType).toBe('genitive');
+
+    const withEntity = parseCommand(['node', 'cli', 'explain', '--entity', 'soul']);
+    expect(withEntity.entity).toBe('soul');
+
+    // And the `--flag=value` shape, which the parser supports for every
+    // other flag.
+    const equals = parseCommand(['node', 'cli', 'explain', '--case-type=instrumental']);
+    expect(equals.caseType).toBe('instrumental');
+  });
 });
