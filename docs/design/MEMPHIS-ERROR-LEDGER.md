@@ -1798,11 +1798,47 @@ MEASURED after, on this host, against the same 181 MB archive:
   still names the reason; and no file in the archive path waits on a child
   process synchronously.
 
-**WHAT IS STILL OPEN, stated rather than hidden.** The 1 842 ms that remain is
+**WHAT WAS STILL OPEN, and is now closed.** The 1 842 ms that remained was
 the chain verifier's block reads (`verifyChainIntegrity` reads 12 380 blocks
-one at a time), not tar. It is 24× under the unit's `TimeoutStopSec=45`, and a
-stop is answered inside it — but it is a real pause, and it belongs to the
-storage layer, not to this rule.
+one at a time), not tar. It fitted inside the unit's `TimeoutStopSec=45`, and
+a stop was answered inside it — but it was a real pause, and it belonged to
+the storage layer, not to this rule.
+
+**AND THE STORAGE LAYER WAS REPAIRED TOO** (decision #596, journal #1102).
+The verifier read every block of a chain and hashed it in ONE uninterrupted
+burst, so the silence grew with the length of the chain. MEASURED on this
+host, 2026-11-25, on the LIVE corpus — the `patterns` chain, 5 544 blocks:
+
+|                                   | before           | after               |
+| --------------------------------- | ---------------- | ------------------- |
+| the verifier's longest silence    | **963–1 029 ms** | **39–55 ms**        |
+| heartbeat ticks during the verify | 5 of ~100 (5 %)  | **79 of 98 (81 %)** |
+| the verification's own duration   | 2 047 ms         | 1 947 ms            |
+
+and in the REAL drill, on the real archive
+(`scheduled-2026-11-25-11-42.tar.gz` — 15 chains, 12 477 blocks verified):
+
+|                              | before     | after      |
+| ---------------------------- | ---------- | ---------- |
+| the drill's longest silence  | **921 ms** | **115 ms** |
+| heartbeat questions answered | 549 of 779 | 666 of 758 |
+| the drill's own duration     | 15 588 ms  | 15 178 ms  |
+
+The blocks are now read and validated in batches of 64, and the event loop
+is handed back between them (`setImmediate`, so a pending timer gets its
+turn), which bounds the pause by ONE BATCH instead of by the length of the
+chain. The verification did not get slower — it got the same duration, with
+a loop that stayed awake.
+
+- **FALSIFIER:** `tests/integration/chain-verify-event-loop.test.ts` asks
+  the loop a question every 20 ms while a 5 000-block chain is verified, and
+  counts the questions ANSWERED against the questions ASKED — the count
+  scales with the machine, so the gate carries no absolute threshold to
+  tune. Against the pre-fix code it fails with **`expected 0.104 to be
+greater than 0.333`** — the loop answered 10 % of the questions; after the
+  repair it answers 95 %. The fixture's blocks are the size of real blocks
+  (1 883 bytes on this host), because a gate built on toy blocks would
+  measure a cost the runtime never pays.
 
 **AND THEN THE LIVE TEST FOUND THE NEXT THING.** The repair was verified on
 the **running service**, not only in a harness: the scheduled backup was
@@ -2054,4 +2090,8 @@ since been measured on the **running service**: the extraction and the
 SIGTERM in the same second (10:42:42), `shutdown.exit exitCode=0
 drained=true` four seconds later — and the scratch that the killed drill
 left behind, 489 MB and 13 002 files, is now buried by the next drill that
-can prove it is a corpse.
+can prove it is a corpse. The last pause of that round is closed too
+(decision #596): the chain verifier hands the event loop back between
+batches, so its silence on the live corpus fell from ~1 000 ms to ~45 ms and
+the verification took the same time as before. In the REAL drill, on the
+real archive, the longest silence fell from **921 ms to 115 ms**.
