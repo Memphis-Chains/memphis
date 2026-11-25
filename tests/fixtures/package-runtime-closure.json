@@ -10,6 +10,11 @@
       "importer": "src/infra/cli/commands/backup-manifest.ts",
       "specifier": "../../../../scripts/backup-manifest.mjs",
       "resolved": "scripts/backup-manifest.mjs"
+    },
+    {
+      "importer": "src/infra/cli/commands/backup-tar.ts",
+      "specifier": "../../../../scripts/backup-tar.mjs",
+      "resolved": "scripts/backup-tar.mjs"
     }
   ]
 }

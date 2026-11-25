@@ -40,13 +40,13 @@ export function snapshotDatabases(options: {
   databasePath?: string;
 }): Promise<DatabaseSnapshotResult>;
 export function cleanupDatabaseSnapshots(snapshot: DatabaseSnapshotResult): void;
-export function tarSubstitutionFlags(substitution: string): string[];
+export function tarSubstitutionFlags(substitution: string): Promise<string[]>;
 export function databasePlacementManifest(snapshot: DatabaseSnapshotResult): {
   manifestName: string;
   content: string;
 };
-export function tarSupportsWarningOpt(): boolean;
-export function tarWarningFlags(): string[];
+export function tarSupportsWarningOpt(): Promise<boolean>;
+export function tarWarningFlags(): Promise<string[]>;
 export function databaseSnapshotTarArgs(
   snapshot: DatabaseSnapshotResult,
   memphisRoot: string,

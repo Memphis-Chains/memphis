@@ -89,7 +89,7 @@ describe('backup .env-redacted capture (Phase C)', () => {
       showProgress: false,
     });
 
-    const entries = listArchiveContents(created.backupPath);
+    const entries = await listArchiveContents(created.backupPath);
     const redactedInArchive = entries.find((e) => e.endsWith('.env-redacted') || e === './.env-redacted');
     expect(redactedInArchive).toBeDefined();
 
@@ -197,7 +197,7 @@ describe('backup .env-redacted capture (Phase C)', () => {
       showProgress: false,
     });
 
-    const entries = listArchiveContents(created.backupPath);
+    const entries = await listArchiveContents(created.backupPath);
     const redacted = entries.find(
       (e) => e.endsWith('.env-redacted') || e === './.env-redacted',
     );

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Scheduled backups with consistent SQLite snapshots and gated publication.
 
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -16,6 +16,9 @@ import {
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 import {
   cleanupDatabaseSnapshots,
@@ -30,6 +33,18 @@ import {
 // recording them and delete archives without forgetting them, which left
 // the index wrong in both directions.
 import { removeManifestEntries, upsertManifestEntry } from './backup-manifest.mjs';
+// The rule that invokes tar — ONE owner, TWO runners: this runner and the
+// compiled CLI. The runner used to call `tar` on its own and classify its
+// failures on its own, and the two classifications had already drifted: the
+// CLI grew a "file changed as we read it" rule that the runner re-implemented
+// inline. The calls are asynchronous because the runtime calls the same rule
+// from inside its own event loop, and a synchronous tar froze that loop for
+// 22 minutes on 2026-11-25 — see `scripts/backup-tar.mjs`.
+import {
+  isTarFileChangedWarning,
+  tarCreateArchive,
+  tarListArchiveContents,
+} from './backup-tar.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -125,9 +140,16 @@ function ensureDir(p) {
   if (!existsSync(p)) mkdirSync(p, { recursive: true });
 }
 
-function sha256(file) {
-  const out = execFileSync('sha256sum', [file], { encoding: 'utf8' });
-  return out.split(' ')[0].trim();
+/**
+ * The archive's digest, computed without blocking the process.
+ *
+ * The runner is its own short-lived process, so a blocking call here would
+ * not freeze the runtime — but the archive path has ONE rule, and the rule
+ * is that it never waits on a child process synchronously.
+ */
+async function sha256(file) {
+  const { stdout } = await execFileAsync('sha256sum', [file], { encoding: 'utf8' });
+  return stdout.split(' ')[0].trim();
 }
 
 function cleanupOldBackups(keepN) {
@@ -160,13 +182,14 @@ function cleanupOldBackups(keepN) {
 }
 
 async function main() {
-  const tarArgs = [
-    '-czf',
-    partialPath,
+  // The arguments AFTER the archive path. `-czf <path>` belongs to the tar
+  // rule (`scripts/backup-tar.mjs`), so it is not repeated here — that is
+  // how the runner and the CLI could stop calling tar in two different ways.
+  const tarExtraArgs = [
     // Probed, not assumed: a hardcoded `--warning=` kills the archive on tar
     // builds that lack it, which is the same class of bug the macOS runner
     // hit in the CLI writer.
-    ...tarWarningFlags(),
+    ...(await tarWarningFlags()),
     // Shared policy — see loadExcludePolicy() above. Never hand-maintain a
     // second exclude list here; that is how vault material got into 6/7
     // nightly archives.
@@ -212,7 +235,17 @@ async function main() {
       }
     };
     walk('.');
-    console.log(JSON.stringify({ dryRun: true, tarArgs, excluded: excluded.sort() }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          dryRun: true,
+          tarArgs: ['-czf', partialPath, ...tarExtraArgs],
+          excluded: excluded.sort(),
+        },
+        null,
+        2,
+      ),
+    );
     return;
   }
 
@@ -240,20 +273,20 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    tarArgs.splice(-3, 3, ...databaseSnapshotTarArgs(dbSnapshot, DATA_DIR));
+    tarExtraArgs.splice(-3, 3, ...databaseSnapshotTarArgs(dbSnapshot, DATA_DIR));
     writeFileSync(partialPath, '', { flag: 'wx', mode: 0o600 });
     let tarOk = false;
     let tarErr = '';
     try {
-      execFileSync('tar', tarArgs, { stdio: 'pipe', env: { ...process.env, LC_ALL: 'C' } });
+      await tarCreateArchive(partialPath, tarExtraArgs);
       tarOk = true;
     } catch (e) {
       tarErr = `${e.message}${e.stderr ? ` | tar: ${String(e.stderr).trim()}` : ''}`;
       // Keep diagnostics enabled: suppressing the warning also hides the
       // evidence needed to distinguish directory churn from a real failure.
-      tarOk =
-        e.status === 1 &&
-        /file changed as we read it|file removed before we read it/.test(String(e.stderr ?? ''));
+      // The rule is the owner's, so the runner and the CLI read the same
+      // "tar warned, the archive is there" case in the same way.
+      tarOk = isTarFileChangedWarning(e, partialPath);
     }
 
     if (!tarOk) {
@@ -265,7 +298,7 @@ async function main() {
     }
 
     const size = statSync(partialPath).size;
-    const checksum = sha256(partialPath);
+    const checksum = await sha256(partialPath);
 
     // Validate BEFORE publishing. drillOk means the archive actually contains
     // chain blocks, i.e. there is something to restore. It used to be computed
@@ -275,8 +308,7 @@ async function main() {
     let fileCount = 0;
     let listError = null;
     try {
-      const listOutput = execFileSync('tar', ['-tzf', partialPath], { encoding: 'utf8' });
-      const entries = listOutput.split('\n').filter(Boolean);
+      const entries = await tarListArchiveContents(partialPath);
       verifyDatabaseSnapshotEntries(dbSnapshot, entries);
       fileCount = entries.length;
       drillOk = entries.some((e) => /chains\/.+\.json/.test(e));

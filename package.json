@@ -20,6 +20,7 @@
     "scripts/backup-exclude-policy.json",
     "scripts/backup-db-snapshot.mjs",
     "scripts/backup-manifest.mjs",
+    "scripts/backup-tar.mjs",
     "scripts/public-chat-gateway.mjs",
     "sites/memphis-v5/chat/index.html",
     "sites/memphis-v5/chat/style.css",

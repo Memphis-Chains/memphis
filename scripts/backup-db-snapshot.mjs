@@ -8,10 +8,16 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { execFileSync } from 'node:child_process';
+
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import Database from 'better-sqlite3';
+
+// The rule that invokes tar. The capability probes below ask the LOCAL tar
+// what it supports, and they ask it the same way the archive run does —
+// through the one owner, asynchronously, so a probe cannot freeze the
+// runtime's event loop the way the archive run used to.
+import { runTar } from './backup-tar.mjs';
 
 // Kept in the exclusion policy for staging directories left by older versions.
 export const SNAPSHOT_DIR_NAME = 'db-snapshot';
@@ -168,13 +174,17 @@ let cachedWarningOpt = null;
  * runner while the real run died with
  * `tar: Option --warning=file-changed is not supported`, exit 2 — tar accepts
  * an unknown long option while merely printing its version.
+ *
+ * ASYNCHRONOUS because it runs tar, and the runtime runs it from inside its
+ * own event loop. Measured on this host: 6 ms for the probe, once per
+ * process. Small — but it was a synchronous child process in the loop that
+ * the 22-minute freeze came from, and the rule is that the archive path
+ * never blocks the loop.
  */
-export function tarSupportsWarningOpt() {
+export async function tarSupportsWarningOpt() {
   if (cachedWarningOpt !== null) return cachedWarningOpt;
   try {
-    execFileSync('tar', ['--warning=file-changed', '--warning=file-removed', '--version'], {
-      stdio: ['ignore', 'ignore', 'ignore'],
-    });
+    await runTar(['--warning=file-changed', '--warning=file-removed', '--version']);
     cachedWarningOpt = true;
   } catch {
     cachedWarningOpt = false;
@@ -183,8 +193,10 @@ export function tarSupportsWarningOpt() {
 }
 
 /** Warning flags, or none when tar cannot take them. */
-export function tarWarningFlags() {
-  return tarSupportsWarningOpt() ? ['--warning=file-changed', '--warning=file-removed'] : [];
+export async function tarWarningFlags() {
+  return (await tarSupportsWarningOpt())
+    ? ['--warning=file-changed', '--warning=file-removed']
+    : [];
 }
 
 let cachedSubstitution = null;
@@ -201,8 +213,12 @@ let cachedSubstitution = null;
  * So this performs the smallest real archive run that must succeed, and
  * remembers which flag produced a readable archive. A guess here is what
  * made two consecutive CI runs red on macOS while passing on Linux.
+ *
+ * ASYNCHRONOUS for the same reason as the warning probe: it runs tar, and
+ * the runtime runs it from inside its own event loop. Measured on this host:
+ * 14 ms, once per process.
  */
-export function tarSubstitutionFlags(substitution) {
+export async function tarSubstitutionFlags(substitution) {
   if (cachedSubstitution === null) {
     const probe = mkdtempSync(join(tmpdir(), 'memphis-tar-probe-'));
     try {
@@ -210,33 +226,28 @@ export function tarSubstitutionFlags(substitution) {
       mkdirSync(join(probe, 'stage'));
       writeFileSync(join(probe, 'in/keep.txt'), 'keep');
       writeFileSync(join(probe, 'stage/staged.txt'), 'staged');
-      const attempt = (args) => {
+      const attempt = async (args) => {
         try {
-          execFileSync(
-            'tar',
-            [
-              '-czf',
-              join(probe, 'probe.tar.gz'),
-              ...args,
-              '-C',
-              join(probe, 'in'),
-              '.',
-              '-C',
-              join(probe, 'stage'),
-              'staged.txt',
-            ],
-            { stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, LC_ALL: 'C' } },
-          );
-          return execFileSync('tar', ['-tzf', join(probe, 'probe.tar.gz')], {
-            encoding: 'utf8',
-          }).includes('staged.txt');
+          await runTar([
+            '-czf',
+            join(probe, 'probe.tar.gz'),
+            ...args,
+            '-C',
+            join(probe, 'in'),
+            '.',
+            '-C',
+            join(probe, 'stage'),
+            'staged.txt',
+          ]);
+          const listing = await runTar(['-tzf', join(probe, 'probe.tar.gz')]);
+          return listing.stdout.includes('staged.txt');
         } catch {
           return false;
         }
       };
-      cachedSubstitution = attempt([`--transform=s|^stage/|./|`])
+      cachedSubstitution = (await attempt([`--transform=s|^stage/|./|`]))
         ? ['--transform']
-        : attempt(['-s', 's|^stage/|./|'])
+        : (await attempt(['-s', 's|^stage/|./|']))
           ? ['-s']
           : [];
     } finally {

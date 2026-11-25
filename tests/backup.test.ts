@@ -105,7 +105,7 @@ describe('backup full workflow', () => {
     ).rejects.toThrow(/Checksum verification failed/);
   });
 
-  it('lists fallback archives without tar', () => {
+  it('lists fallback archives without tar', async () => {
     const root = mkdtempSync(join(tmpdir(), 'memphis-backup-fallback-list-'));
     const archivePath = join(root, 'fallback.tar.gz');
     writeFileSync(
@@ -124,7 +124,7 @@ describe('backup full workflow', () => {
       ),
     );
 
-    const entries = listArchiveContents(archivePath, {
+    const entries = await listArchiveContents(archivePath, {
       tarList: () => {
         throw new Error('spawnSync tar EPERM');
       },
@@ -133,17 +133,17 @@ describe('backup full workflow', () => {
     expect(entries).toEqual(['chains/', 'chains/journal/000001.json']);
   });
 
-  it('does not parse non-fallback gzip archives as JSON when tar listing is unavailable', () => {
+  it('does not parse non-fallback gzip archives as JSON when tar listing is unavailable', async () => {
     const root = mkdtempSync(join(tmpdir(), 'memphis-backup-real-tar-unavailable-'));
     const archivePath = join(root, 'real.tar.gz');
     writeFileSync(archivePath, gzipSync(Buffer.from('./\0\0not-json', 'utf8')));
 
-    expect(() =>
+    await expect(
       listArchiveContents(archivePath, {
         tarList: () => {
           throw new Error('spawnSync tar EPERM');
         },
       }),
-    ).toThrow(/tar listing failed and archive is not a Memphis fallback archive/);
+    ).rejects.toThrow(/tar listing failed and archive is not a Memphis fallback archive/);
   });
 });

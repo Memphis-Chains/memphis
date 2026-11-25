@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFile, execFileSync, spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -39,7 +39,10 @@ import {
 
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
-  return { ...actual, execFileSync: vi.fn(actual.execFileSync) };
+  // `execFile` is mocked too: the tar rule is asynchronous now, so the
+  // failures these tests simulate arrive through the callback, not through a
+  // thrown `execFileSync`.
+  return { ...actual, execFileSync: vi.fn(actual.execFileSync), execFile: vi.fn(actual.execFile) };
 });
 vi.mock('../../src/infra/auth/operator-gate.js', () => ({
   requireOperatorAuth: vi.fn(async () => true),
@@ -83,6 +86,7 @@ beforeEach(() => {
   writeFileSync(join(state, 'chains/journal-000001.json'), '{"fixture":"chain-data"}');
   vi.stubEnv('MEMPHIS_ENV_FILE', join(root, 'absent.env'));
   vi.mocked(execFileSync).mockImplementation(actualChildProcess.execFileSync);
+  vi.mocked(execFile).mockImplementation(actualChildProcess.execFile);
 });
 
 afterEach(() => {
@@ -91,6 +95,7 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
   vi.unstubAllEnvs();
   vi.mocked(execFileSync).mockReset();
+  vi.mocked(execFile).mockReset();
 });
 
 describe('the compiled CLI and the systemd runner share one implementation', () => {
@@ -104,7 +109,7 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
     expect(runtimeExports.length).toBeGreaterThan(0);
   });
 
-  it('reports which substitution flag this tar accepts, and with what syntax', () => {
+  it('reports which substitution flag this tar accepts, and with what syntax', async () => {
     // Six rounds of this PR chose tar's dialect from documentation or from the
     // Linux host, and every guess was wrong. This prints what the local tar
     // actually does with each syntax, so a failing run on any platform states
@@ -222,9 +227,9 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
     // the local tar rejected is a bug the next run would repeat.
     expect(
       observed[
-        tarSubstitutionFlags(expr).length === 0
+        (await tarSubstitutionFlags(expr)).length === 0
           ? 'no-substitution (two -C)'
-          : tarSubstitutionFlags(expr)[0] === '-s'
+          : (await tarSubstitutionFlags(expr))[0] === '-s'
             ? '-s EXPR'
             : '--transform=EXPR'
       ],
@@ -276,14 +281,14 @@ describe('the compiled CLI and the systemd runner share one implementation', () 
     );
   });
 
-  it('probes tar for the exact warning flag the archive run emits', () => {
+  it('probes tar for the exact warning flag the archive run emits', async () => {
     // The old probe asked tar to accept `--warning=no-file-changed` beside
     // `--version`, which macOS tar accepts while it is only printing its
     // version. The real run then died with
     // `tar: Option --warning=file-changed is not supported`.
-    const flags = tarWarningFlags();
-    expect(flags).toEqual(snapshotModule.tarWarningFlags());
-    expect(tarSupportsWarningOpt()).toBe(snapshotModule.tarSupportsWarningOpt());
+    const flags = await tarWarningFlags();
+    expect(flags).toEqual(await snapshotModule.tarWarningFlags());
+    expect(await tarSupportsWarningOpt()).toBe(await snapshotModule.tarSupportsWarningOpt());
     for (const flag of flags) expect(flag).toMatch(/^--warning=file-(changed|removed)$/);
   });
 });
@@ -303,9 +308,19 @@ describe('consistent database snapshots through every archive writer', () => {
         writeFileSync(join(state, '.env'), 'FIXTURE_TOKEN=must-not-ship');
         writeFileSync(join(state, 'chains/.env.local'), 'FIXTURE_TOKEN=must-not-ship');
         if (mode === 'fallback') {
-          vi.mocked(execFileSync).mockImplementation(() => {
-            throw Object.assign(new Error('tar unavailable in fixture'), { code: 'EACCES' });
-          });
+          vi.mocked(execFile).mockImplementation(((
+            _file: string,
+            _args: readonly string[],
+            _options: unknown,
+            callback: (error: Error | null, stdout: string, stderr: string) => void,
+          ) => {
+            callback(
+              Object.assign(new Error('tar unavailable in fixture'), { code: 'EACCES' }),
+              '',
+              '',
+            );
+            return undefined;
+          }) as never);
         }
 
         let archive: string;
@@ -322,7 +337,9 @@ describe('consistent database snapshots through every archive writer', () => {
           expect(existsSync(created.dbSnapshot.snapshotDir)).toBe(false);
           archive = created.backupPath;
         }
-        const entries = listArchiveContents(archive).map((entry) => entry.replace(/^\.\//, ''));
+        const entries = (await listArchiveContents(archive)).map((entry) =>
+          entry.replace(/^\.\//, ''),
+        );
         // The archive carries the snapshot under its staging name and the
         // mapping that puts it back; `archivePath` is where restore must leave
         // it, asserted below by opening the restored database at that path.
@@ -447,7 +464,7 @@ describe('consistent database snapshots through every archive writer', () => {
         stagedPath: `${STAGED_PREFIX}runtime-operations.sqlite`,
       },
     ]);
-    expect(listArchiveContents(created.backupPath)).toContain(
+    expect(await listArchiveContents(created.backupPath)).toContain(
       `${STAGED_PREFIX}runtime-operations.sqlite`,
     );
   });
@@ -505,17 +522,24 @@ describe('consistent database snapshots through every archive writer', () => {
   });
 
   it('CLI creation keeps a failed tar private and unpublished', async () => {
-    vi.mocked(execFileSync).mockImplementation((file, args) => {
+    vi.mocked(execFile).mockImplementation(((
+      file: string,
+      args: readonly string[],
+      options: unknown,
+      callback: (error: Error | null, stdout: string, stderr: string) => void,
+    ) => {
       const argv = args as string[];
       if (file === 'tar' && argv[0] === '-czf') {
         const partial = argv[1];
         expect(partial.endsWith('.tar.gz.partial')).toBe(true);
         expect(statSync(partial).mode & 0o777).toBe(0o600);
         expect(existsSync(partial.replace(/\.partial$/, ''))).toBe(false);
-        throw Object.assign(new Error('fixture tar read error'), { status: 2 });
+        callback(Object.assign(new Error('fixture tar read error'), { code: 2 }), '', '');
+        return undefined;
       }
-      return actualChildProcess.execFileSync(file, argv);
-    });
+      actualChildProcess.execFile(file, argv, options as never, callback);
+      return undefined;
+    }) as never);
     await expect(createBackup({ memphisRoot: state, showProgress: false })).rejects.toThrow(
       'fixture tar read error',
     );
@@ -529,20 +553,30 @@ describe('consistent database snapshots through every archive writer', () => {
   it.each([true, false])(
     'tar exit 1 requires a file-change diagnostic (%s)',
     async (diagnostic) => {
-      vi.mocked(execFileSync).mockImplementation((file, args, options) => {
+      vi.mocked(execFile).mockImplementation(((
+        file: string,
+        args: readonly string[],
+        options: unknown,
+        callback: (error: Error | null, stdout: string, stderr: string) => void,
+      ) => {
         const argv = args as string[];
-        const result = actualChildProcess.execFileSync(file, argv, options);
-        if (file === 'tar' && argv[0] === '-czf') {
-          throw Object.assign(new Error('fixture tar exit 1'), {
-            status: 1,
-            stderr:
+        actualChildProcess.execFile(file, argv, options as never, (error, stdout, stderr) => {
+          if (file === 'tar' && argv[0] === '-czf') {
+            // tar's own stderr travels as the callback's third argument, the
+            // way Node's execFile delivers it — the owner reads it there.
+            callback(
+              Object.assign(new Error('fixture tar exit 1'), { code: 1 }),
+              stdout,
               diagnostic && !argv.includes('--warning=no-file-changed')
                 ? 'tar: .: file changed as we read it'
                 : '',
-          });
-        }
-        return result;
-      });
+            );
+            return;
+          }
+          callback(error, stdout, stderr);
+        });
+        return undefined;
+      }) as never);
       const creation = createBackup({ memphisRoot: state, showProgress: false });
       if (diagnostic) {
         const created = await creation;

@@ -1,5 +1,58 @@
 ## Unreleased
 
+### The backup path froze the runtime — and that is why a stop became a kill
+
+On the night of 2026-11-25 the runtime was stopped at 02:28:53 and killed at
+02:29:38. The shutdown handler **never ran**: not one `shutdown.*` line was
+written in the 45 seconds in between, and systemd logged `Failed with result
+'timeout'`.
+
+MEASURED, from the runtime's own journal:
+
+```
+02:00:05  backup.scheduled.start
+02:06:39  backup.scheduled.success   (182 229 559 bytes)
+           ... the restore drill calls execFileSync('tar', ['-xzf', …]) — the loop is BLOCKED …
+02:28:53  systemd: Stopping memphis.service  (SIGTERM)
+02:29:38  systemd: State 'stop-sigterm' timed out. Killing. → SIGKILL
+```
+
+The cause was neither systemd nor the drill's logic. The drill's `tar` was a
+**synchronous** child process; a synchronous child process holds the runtime's
+event loop, and the event loop is what dispatches the signal handler. The
+drill's own `tar` was a child of the unit, so the cgroup's SIGTERM killed it
+and the drill reported the tar's death as a failed backup —
+`lastError: "Command failed: tar -xzf …"`.
+
+**ONE OWNER FOR THE TAR RULE.** `scripts/backup-tar.mjs` now owns how tar is
+invoked, how its failures are read, and how its stderr reaches the operator —
+and **every** call through it is asynchronous. The two runners had already
+drifted: the CLI classified tar's failures one way, and the systemd runner
+re-implemented the "file changed as we read it" rule inline and dropped the
+reason from the message. The capability probes moved with it (tar's
+`--version` probe: 6 ms; the substitution probe: 14 ms — once per process),
+and the archive digest now **streams** instead of pulling 182 MB into the heap.
+
+|                                  | before             | after                                      |
+| -------------------------------- | ------------------ | ------------------------------------------ |
+| the drill's longest silence      | **11 302 ms**      | **1 842 ms** (the chain verifier, not tar) |
+| heartbeat ticks during the drill | 35 of 336 (10.4 %) | **520 of 693 (75 %)**                      |
+| a SIGTERM aimed at the drill     | **never answered** | answered in **1 ms**, clean exit 0         |
+
+**THE GATE, and it can fail.** `tests/integration/backup-event-loop.test.ts`
+puts a `tar` shim first on `PATH` that sleeps a second and writes a marker
+before and after the sleep, so the test knows exactly the window in which tar
+ran; a 20 ms heartbeat runs for the whole call. Against the pre-fix code both
+cases fail with **`expected 0 to be greater than 0`** — zero heartbeat ticks
+inside the tar window — and pass after. The assertion is about the loop, not
+about a duration, so there is no threshold to tune.
+
+`tests/unit/backup-tar-contract.test.ts` holds the artefact of cases: the
+bridge re-exports every runtime export of the shared module, the CLI and the
+runner produce the **same archive** from the same tree, a tar failure still
+names the reason, and no file in the archive path waits on a child process
+synchronously.
+
 ### The cockpit tells the operator to run `/recovery` — and now it has one
 
 The cockpit's own error notice said: **Action: run `/recovery` to see the

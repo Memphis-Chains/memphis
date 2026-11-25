@@ -20,6 +20,7 @@ Post-incident analyses for Memphis runtime failures. **Each postmortem should ha
 | [2026-10-19-generic-dotenv-writers.md](2026-10-19-generic-dotenv-writers.md) | 2026-10-19 | S2 | resolved | — |
 | [2026-10-26-reflection-background-memory-write.md](2026-10-26-reflection-background-memory-write.md) | 2026-10-26 | S2 | resolved | — |
 | [2026-10-29-basal-audit-block-shape.md](2026-10-29-basal-audit-block-shape.md) | 2026-10-29 | S2 | resolved | — |
+| [2026-11-25-backup-loop-blocked-the-shutdown.md](2026-11-25-backup-loop-blocked-the-shutdown.md) | 2026-11-25 | S2 (runtime SIGKILLed; a nightly backup reported a false failure) | open | 1 |
 <!-- postmortem-index:end -->
 
 ## Format
@@ -38,11 +39,13 @@ Each postmortem follows this structure:
 ## When to write one
 
 Write a postmortem when:
+
 - An incident caused user-visible degradation (downtime, data loss, incorrect behavior)
 - A debugging session took >2 hours
 - A failure mode was discovered that could recur
 
 Do NOT write a postmortem for:
+
 - Minor bugs found and fixed in <2 hours
 - Issues that are already covered by an existing ADR
 - Issues that are tracked in a GitHub issue (link to it instead)

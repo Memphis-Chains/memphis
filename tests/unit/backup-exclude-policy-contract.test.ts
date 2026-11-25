@@ -175,7 +175,7 @@ describe('backup exclude policy — one source of truth for every archiver', () 
     }
   });
 
-  it('excludes the semantic-index temp file under its current name', () => {
+  it('excludes the semantic-index temp file under its current name', async () => {
     // The writer renames `${file_name}.tmp-${pid}-${stamp}` into place
     // (crates/memphis-embed/src/pipeline.rs). The file was renamed from
     // `embed-index.json` to `index-v1.json`, and the exclusion followed the
@@ -191,7 +191,7 @@ describe('backup exclude policy — one source of truth for every archiver', () 
     const archive = join(tmpdir(), `memphis-policy-embed-tmp-${process.pid}-${Date.now()}.tar.gz`);
     execFileSync(
       'tar',
-      ['-czf', archive, ...tarWarningFlags(), ...tarPatternArgs(), '-C', root, '.'],
+      ['-czf', archive, ...(await tarWarningFlags()), ...tarPatternArgs(), '-C', root, '.'],
       { stdio: 'pipe', env: { ...process.env, LC_ALL: 'C' } },
     );
     const listing = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' });
@@ -201,7 +201,7 @@ describe('backup exclude policy — one source of truth for every archiver', () 
     expect(listing).not.toContain('embed-index.json.tmp-');
   });
 
-  it('reports nested exclusions consistently with the archive', () => {
+  it('reports nested exclusions consistently with the archive', async () => {
     const root = mkdtempSync(join(tmpdir(), 'memphis-policy-nested-'));
     const nested = 'embed/bge-m3/model';
     mkdirSync(join(root, nested), { recursive: true });
@@ -222,7 +222,7 @@ describe('backup exclude policy — one source of truth for every archiver', () 
     execFileSync('tar', [
       '-czf',
       archive,
-      ...tarWarningFlags(),
+      ...(await tarWarningFlags()),
       ...tarPatternArgs(),
       '-C',
       root,
@@ -237,7 +237,7 @@ describe('backup exclude policy — one source of truth for every archiver', () 
     }
   });
 
-  it('tar drops a secret stored at the archive root', () => {
+  it('tar drops a secret stored at the archive root', async () => {
     // The macOS runner put `./vault-state.json` inside the archive. The
     // `*/name` glob needs a directory component in front of the name, so it
     // cannot match a root entry — every secret therefore also carries a
@@ -261,7 +261,7 @@ describe('backup exclude policy — one source of truth for every archiver', () 
     // hardcoding a flag only one tar dialect accepts.
     execFileSync(
       'tar',
-      ['-czf', archive, ...tarWarningFlags(), ...tarPatternArgs(), '-C', root, '.'],
+      ['-czf', archive, ...(await tarWarningFlags()), ...tarPatternArgs(), '-C', root, '.'],
       { stdio: 'pipe', env: { ...process.env, LC_ALL: 'C' } },
     );
     const listing = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' });
