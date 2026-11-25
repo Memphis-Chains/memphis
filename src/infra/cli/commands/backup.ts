@@ -328,6 +328,129 @@ function drillScratchRoot(archivePath: string): string {
 }
 
 /**
+ * The prefix of a drill's scratch directory.
+ *
+ * The drill's scratch is named after the process that OWNS it, so that a
+ * later drill can tell "this scratch is still in use" from "this scratch is
+ * the corpse of a drill that was killed".
+ */
+const DRILL_SCRATCH_PREFIX = 'memphis-verified-drill-';
+
+/**
+ * The shape of a scratch that names its owner: the owner's pid, a dash, and
+ * the six random characters `mkdtemp` appends.
+ *
+ * The dash is what separates this shape from the OLD one — a bare
+ * `mkdtemp` suffix such as `Jsb39N`, which carries no owner. The dash
+ * matters: a legacy suffix can START with digits (`3sb39N`), so parsing the
+ * digits of a legacy name as a pid would name a process that never owned
+ * the scratch.
+ */
+const DRILL_SCRATCH_OWNER = /^(\d+)-/;
+
+/**
+ * How long a scratch without a provable owner may sit before it counts as
+ * abandoned.
+ *
+ * The longest drill MEASURED on this host was 22 m 16 s (in the runtime,
+ * before E-08's repair); the repaired drill takes 15–19 s. Six hours is
+ * ~16× the worst measurement, so a scratch older than that cannot belong to
+ * a drill in flight — and a scratch younger than that is left alone.
+ */
+const ABANDONED_SCRATCH_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Is that process still alive?
+ *
+ * `process.kill(pid, 0)` asks the kernel without sending anything: it throws
+ * ESRCH when the process is gone and EPERM when it exists but belongs to
+ * somebody else. EPERM therefore means ALIVE — and it is the safe answer: a
+ * scratch we cannot prove is dead is a scratch we do not touch.
+ */
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
+ * Remove the scratch of drills that cannot be in flight.
+ *
+ * WHY: a drill's scratch is ~489 MB and 13 002 files, and the drill removes
+ * it in a `finally` — which does not run when the process is killed. MEASURED
+ * on this host, 2026-11-25: the live stop-during-drill test left
+ * `memphis-verified-drill-Jsb39N` behind with 489 MB and 13 002 files, and
+ * nothing in the runtime ever collected it. A drill that is stopped leaves a
+ * corpse; somebody has to bury it.
+ *
+ * THE RULE, in two cases, and both of them are PROOFS rather than guesses:
+ *
+ * 1. **The scratch names its owner.** The name carries the owner's pid, so
+ *    the kernel can be asked whether that process still exists. ESRCH means
+ *    it is gone and the scratch is a corpse. EPERM means it exists and
+ *    belongs to somebody else — ALIVE, so the scratch is left alone.
+ * 2. **The scratch names no owner** (the shape the drill used before the
+ *    pid was put in the name — this is the shape of the measured 489 MB
+ *    corpse). There is nobody to ask, so the question is answered by the
+ *    directory's own **ctime**: the last time an entry was created inside
+ *    it, which is the extraction itself. tar RESTORES the mtime, so the
+ *    mtime of the scratch points at the ARCHIVE's time and says nothing
+ *    about the drill — the ctime cannot be forged by tar, and it is the
+ *    only one of the two that means "when was this being filled".
+ *
+ * The drill's OWN scratch is never touched, and a scratch that belongs to a
+ * live process is never touched: a drill running in another process must
+ * not be disturbed. `staleMs` is the threshold of case 2; it is a parameter
+ * so the gate can hold the rule to a fixed answer instead of waiting hours.
+ */
+export function reapDeadDrillScratch(root: string, staleMs = ABANDONED_SCRATCH_MS): string[] {
+  const removed: string[] = [];
+  let entries: string[];
+  try {
+    entries = readdirSync(root);
+  } catch {
+    return removed;
+  }
+  const now = Date.now();
+  for (const entry of entries) {
+    if (!entry.startsWith(DRILL_SCRATCH_PREFIX)) continue;
+    const full = join(root, entry);
+    const owner = DRILL_SCRATCH_OWNER.exec(entry.slice(DRILL_SCRATCH_PREFIX.length));
+    if (owner) {
+      const pid = Number.parseInt(owner[1], 10);
+      if (pid <= 0 || pid === process.pid) continue;
+      if (processAlive(pid)) continue;
+    } else {
+      // No owner in the name: the scratch is only a corpse if nothing can be
+      // extracting into it any more. The ctime is when the last entry was
+      // created inside it — the extraction.
+      let ctime: number;
+      try {
+        // `ctimeMs` carries sub-millisecond digits and `Date.now()` does
+        // not, so the two are compared on whole milliseconds — otherwise a
+        // scratch created in the same millisecond as the call would look
+        // like it came from the future.
+        ctime = Math.floor(statSync(full).ctimeMs);
+      } catch {
+        continue;
+      }
+      if (now - ctime < staleMs) continue;
+    }
+    try {
+      rmSync(full, { recursive: true, force: true });
+      removed.push(entry);
+    } catch {
+      // Best effort: a scratch we cannot remove is not a reason to fail a
+      // drill over somebody else's leftovers.
+    }
+  }
+  return removed;
+}
+
+/**
  * Cached result of `tar --warning=no-file-changed --version` probe.
  * GNU tar accepts the flag; BSD tar (macOS default) rejects it with
  * "Option --warning=no-file-changed is not supported" and exit 1,
@@ -1335,6 +1458,23 @@ export interface BackupDrillResult {
 
 /** Restore into an isolated scratch directory; never invoke live restore hooks. */
 export async function drillBackup(backupPath: string): Promise<BackupDrillResult> {
+  const scratchRoot = drillScratchRoot(backupPath);
+  // A drill that was killed left its scratch behind — 489 MB and 13 002 files,
+  // measured on this host. The drill that comes next is the one that can
+  // tell a corpse from a live extraction, so it buries the corpses.
+  //
+  // This happens FIRST, before the archive is even looked at: burying a
+  // corpse is not the drill's verdict, and a drill that rejects its archive
+  // must still bury the corpses — otherwise the one drill that fails is the
+  // one that leaves the mess.
+  const buried = reapDeadDrillScratch(scratchRoot);
+  if (buried.length > 0) {
+    console.warn(
+      `warning: removed ${buried.length} abandoned drill scratch director${
+        buried.length === 1 ? 'y' : 'ies'
+      } (${buried.join(', ')})`,
+    );
+  }
   const entries = await listArchiveContents(backupPath);
   if (
     !entries.length ||
@@ -1352,7 +1492,11 @@ export async function drillBackup(backupPath: string): Promise<BackupDrillResult
       throw new Error('Backup drill refuses links and special files');
     }
   }
-  const root = mkdtempSync(join(drillScratchRoot(backupPath), 'memphis-verified-drill-'));
+  // The scratch's name carries the pid of the process that OWNS it, so that
+  // the next drill can ask the kernel whether this owner is still there. A
+  // drill that is killed leaves its scratch behind, and only a name that
+  // names its owner can be told apart from a scratch in flight.
+  const root = mkdtempSync(join(scratchRoot, `${DRILL_SCRATCH_PREFIX}${process.pid}-`));
   try {
     if (fallback) await extractFallbackArchive(backupPath, root);
     else await extractArchive(backupPath, root);

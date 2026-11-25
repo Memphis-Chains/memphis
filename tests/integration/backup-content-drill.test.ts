@@ -1,9 +1,17 @@
 import { execFileSync } from 'node:child_process';
 import * as crypto from 'node:crypto';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -204,5 +212,36 @@ describe('backup content drill', () => {
     // peek needs. The bound is generous — the point is that the probe is
     // not O(archive).
     expect(growth).toBeLessThan(256 * 1024 * 1024);
+  });
+
+  // A drill that is killed leaves its scratch behind: the `finally` that
+  // removes it does not run when the process dies. MEASURED on this host,
+  // 2026-11-25: the live stop-during-drill test left
+  // `memphis-verified-drill-Jsb39N` with 489 MB and 13 002 files, and
+  // nothing in the runtime ever collected it.
+  //
+  // The drill that comes next is the only thing that runs while the backups
+  // root is being written to, so it is the one that has to bury the corpse —
+  // and it may only bury a corpse it can PROVE is a corpse.
+  it('buries the scratch of a drill whose owner is provably gone', async () => {
+    const { archive } = fixture(false);
+    const corpse = join(dirname(archive), 'memphis-verified-drill-999999999-Jsb39N');
+    mkdirSync(corpse);
+    writeFileSync(join(corpse, 'left-behind.txt'), 'the corpse of a killed drill');
+    expect(existsSync(corpse)).toBe(true);
+    await drillBackup(archive);
+    // The kernel says there is no such process: the scratch is a corpse.
+    expect(existsSync(corpse)).toBe(false);
+  });
+
+  it('leaves the scratch of a drill whose owner is alive', async () => {
+    const { archive } = fixture(false);
+    // PID 1 exists on every Linux host — the drill must not touch the
+    // scratch of a drill that is running right now.
+    const live = join(dirname(archive), 'memphis-verified-drill-1-Jsb39N');
+    mkdirSync(live);
+    writeFileSync(join(live, 'in-flight.txt'), 'a drill that is still extracting');
+    await drillBackup(archive);
+    expect(existsSync(live)).toBe(true);
   });
 });
