@@ -6,18 +6,22 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { gunzipSync, gzipSync } from 'node:zlib';
 
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { drillBackup } from '../../src/infra/cli/commands/backup.js';
 import { hashBlock } from '../../src/infra/storage/chain-adapter.js';
+import { rotateChain } from '../../src/infra/storage/chain-rotation.js';
 
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
@@ -85,37 +89,82 @@ function backupChainFixture(): { archive: string; root: string } {
  * An archive that holds the rotation's `.archives` container next to the
  * chains.
  *
- * `.archives` is NOT a chain: it holds the rotation's `.jsonl.gz` files,
- * not blocks. The owner says so — `classify_chain_directory` in the Rust
- * core returns `foreign`, and the artefact of cases carries it
- * (`tests/fixtures/chain-name-contract.json`, the `.archives` case).
+ * `.archives` is NOT a chain — the owner says so
+ * (`classify_chain_directory` in the Rust core returns `foreign`, and the
+ * artefact of cases carries it, `tests/fixtures/chain-name-contract.json`,
+ * the `.archives` case). But it IS the chains' history: the rotation moved
+ * the oldest blocks aside, and they travel inside every backup. So the drill
+ * does not skip the container and does not call it foreign either — it
+ * VERIFIES what is inside it.
+ *
+ * The container is written by the REAL writer (`rotateChain`), so the gate
+ * reads an archive the runtime really produces. A hand-built one would be a
+ * corpus for a writer that does not exist — which is how the last reader
+ * gate passed for months against archives nobody could read.
  */
-function rotationContainerFixture(): { archive: string; root: string } {
+async function rotationContainerFixture(): Promise<{
+  archive: string;
+  root: string;
+  archivedBlocks: number;
+}> {
   const root = mkdtempSync(join(tmpdir(), 'backup-rotation-drill-'));
   roots.push(root);
-  mkdirSync(join(root, 'source', 'chains', 'journal'), { recursive: true });
-  mkdirSync(join(root, 'source', 'chains', '.archives'), { recursive: true });
-  const block = {
-    index: 0,
-    chain: 'journal',
-    timestamp: '2026-01-01T00:00:00.000Z',
-    prev_hash: '0'.repeat(64),
-    data: { type: 'journal', content: 'retained memory' },
-  };
-  writeFileSync(
-    join(root, 'source', 'chains', 'journal', '000000.json'),
-    JSON.stringify({ ...block, hash: hashBlock(block, crypto) }),
-  );
-  // The rotation writes gzip archives here. The drill must not treat the
-  // container as a chain, and it must not treat its members as blocks.
-  writeFileSync(join(root, 'source', 'chains', '.archives', 'journal_000001-000010.gz'), 'x');
+  const source = join(root, 'source');
+  const chainDir = join(source, 'chains', 'journal');
+  mkdirSync(chainDir, { recursive: true });
+  // A chain of linked blocks, big enough that the rotation moves the oldest
+  // ones aside. The rotation's threshold has a floor of 1 MiB
+  // (`MIN_ROTATION_THRESHOLD_BYTES`), so the blocks have to carry real
+  // weight — three of 400 KB are over it.
+  let prevHash = '';
+  const blockCount = 3;
+  for (let index = 1; index <= blockCount; index += 1) {
+    const block = {
+      index,
+      chain: 'journal',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      prev_hash: prevHash,
+      data: { type: 'journal', content: `retained memory ${index} ${'x'.repeat(400_000)}` },
+    };
+    const hash = hashBlock(block, crypto);
+    writeFileSync(
+      join(chainDir, `${String(index).padStart(6, '0')}.json`),
+      JSON.stringify({ ...block, hash }),
+    );
+    prevHash = hash;
+  }
+  // The REAL writer: it archives the oldest blocks into
+  // `chains/.archives/<chain>_<from>-<to>_<timestamp>.jsonl.gz` and leaves
+  // the rest in the chain.
+  const rotation = await rotateChain('journal', {
+    rawEnv: {
+      ...process.env,
+      MEMPHIS_DATA_DIR: source,
+      MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES: String(1024 * 1024),
+      MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS: '1',
+    },
+  });
+  expect(rotation.rotated).toBe(true);
   const archive = join(root, 'fixture.tar.gz');
-  execFileSync('tar', ['-czf', archive, '-C', join(root, 'source'), '.']);
+  execFileSync('tar', ['-czf', archive, '-C', source, '.']);
   writeFileSync(
     `${archive}.sha256`,
     `${createHash('sha256').update(readFileSync(archive)).digest('hex')}  fixture.tar.gz\n`,
   );
-  return { archive, root };
+  return { archive, root, archivedBlocks: rotation.archivedBlocks };
+}
+
+/**
+ * Tamper with an archive's first block, so that the archive is a corrupt
+ * history instead of an intact one.
+ */
+async function corruptArchive(archivePath: string): Promise<void> {
+  const raw = gunzipSync(await fs.readFile(archivePath)).toString('utf8');
+  const lines = raw.split('\n').filter((line) => line.trim().length > 0);
+  const first = JSON.parse(lines[0]!) as Record<string, unknown>;
+  first.hash = 'deadbeef'.padEnd(64, '0');
+  lines[0] = JSON.stringify(first);
+  await fs.writeFile(archivePath, gzipSync(`${lines.join('\n')}\n`));
 }
 
 describe('backup content drill', () => {
@@ -190,11 +239,40 @@ describe('backup content drill', () => {
   // 2026-11-24, 2026-11-25). The drill now asks the owner what a directory
   // is, and says what it skipped.
   it('skips a directory that is not a chain instead of failing the whole drill', async () => {
-    const { archive } = rotationContainerFixture();
+    const { archive } = await rotationContainerFixture();
     const result = await drillBackup(archive);
     expect(result.chainsChecked).toBe(1);
-    expect(result.blocksChecked).toBe(1);
-    expect(result.foreignDirectories).toEqual(['.archives']);
+    expect(result.blocksChecked).toBeGreaterThan(0);
+    // The rotation's container is VERIFIED now, not skipped — so it is not
+    // in the list of what the drill did not look at.
+    expect(result.foreignDirectories).toEqual([]);
+    expect(result.archivesChecked).toBe(1);
+    expect(result.archiveBlocksChecked).toBeGreaterThan(0);
+  });
+
+  // The rotation's archives are the chains' history: the rotation moved the
+  // oldest blocks aside, and they travel inside every backup. The drill used
+  // to skip them, so a backup could carry a corrupt archived history and
+  // still drill clean.
+  it('verifies the rotation archives inside the backup', async () => {
+    const { archive, archivedBlocks } = await rotationContainerFixture();
+    const result = await drillBackup(archive);
+    expect(result.archivesChecked).toBe(1);
+    expect(result.archiveBlocksChecked).toBe(archivedBlocks);
+  });
+
+  it('fails the drill when a rotation archive is corrupt', async () => {
+    const { archive, root } = await rotationContainerFixture();
+    const archivesDir = join(root, 'source', 'chains', '.archives');
+    const name = readdirSync(archivesDir).find((entry) => entry.endsWith('.jsonl.gz'))!;
+    await corruptArchive(join(archivesDir, name));
+    // The tarball has to be rebuilt — the corruption is inside it.
+    execFileSync('tar', ['-czf', archive, '-C', join(root, 'source'), '.']);
+    writeFileSync(
+      `${archive}.sha256`,
+      `${createHash('sha256').update(readFileSync(archive)).digest('hex')}  fixture.tar.gz\n`,
+    );
+    await expect(drillBackup(archive)).rejects.toThrow(/rotation archive .* is corrupt/);
   });
 
   // The drill's answer must not depend on the machine's free memory. The
@@ -204,7 +282,7 @@ describe('backup content drill', () => {
   // string. The probe now reads the archive's HEAD instead of the whole
   // file, and the scratch directory is created next to the archive.
   it('does not materialise the whole archive to decide that it is not a fallback archive', async () => {
-    const { archive } = rotationContainerFixture();
+    const { archive } = await rotationContainerFixture();
     const before = process.memoryUsage().heapUsed;
     await drillBackup(archive);
     const growth = process.memoryUsage().heapUsed - before;

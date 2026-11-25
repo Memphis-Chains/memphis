@@ -5,6 +5,7 @@ import { getChainPath, getReadableChainPaths, normalizeChainName } from '../../c
 import { buildDecisionContent, normalizeDecisionBlockData } from '../../core/decision-chain.js';
 import { getSearchableChainNames } from '../../memory/chain-catalog.js';
 import {
+  ARCHIVES_DIR_NAME,
   parseArchiveFileName,
   readArchiveBlocksSync,
   type ArchiveBlockValue,
@@ -136,7 +137,7 @@ function resolveArchivedSources(
   const missing = [...wanted].filter((key) => !resolved.has(key));
   if (missing.length === 0) return;
 
-  const archiveDir = join(dirname(getChainPath(chain, rawEnv)), '.archives');
+  const archiveDir = join(dirname(getChainPath(chain, rawEnv)), ARCHIVES_DIR_NAME);
   let entries: string[];
   try {
     entries = readdirSync(archiveDir);
