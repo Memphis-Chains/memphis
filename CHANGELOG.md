@@ -1,5 +1,44 @@
 ## Unreleased
 
+### The runtime comes back — because a clean drain is not a failure
+
+The runtime drains cleanly on SIGTERM and exits **0**, and the unit set
+`Restart=on-failure`. A clean exit is not a failure, so the supervisor did
+nothing: an unsolicited SIGTERM left the unit `inactive` with **pid 0** and
+nothing in the log saying why. The runtime's own last words read like a
+success — `shutdown.exit`, `exitCode: 0`, `drained: true`.
+
+MEASURED on this host, with a scratch unit so the live service was never
+the experiment:
+
+| what was done to the unit             | `Restart=on-failure`  | `Restart=always`    |
+| ------------------------------------- | --------------------- | ------------------- |
+| `systemctl stop` (the operator asked) | stays `inactive`      | stays `inactive`    |
+| an unsolicited `kill -TERM`, exit 0   | **`inactive`, pid 0** | comes back, new pid |
+
+The entry was filed as "an exit 0 leaves the runtime down" — right about the
+mechanism, wrong about the consequence: an operator-initiated stop is
+honoured either way, because systemd does not restart a unit the operator
+stopped. What `on-failure` loses is every UNSOLICITED exit.
+
+Both shipped units (`scripts/systemd/memphis.service` and
+`ops/memphis.service` — two units for the same runtime) now say
+`Restart=always`. `RestartPreventExitStatus=101 102 103` still stops the
+supervisor from looping on the same crash, and `StartLimitBurst=5` still
+caps a boot loop.
+
+`scripts/check-systemd-units.mts` now flags a long-running service whose
+`Restart=` is not `always`. The gate can fail: flipping the unit back to
+`on-failure` makes it exit 1 with a structured message.
+
+MEASURED on the live service after the repair:
+
+```
+kill -TERM <MainPID> → shutdown.start → shutdown.exit exitCode=0 drained=true
+→ 12 s later: active=active, new MainPID, NRestarts=1
+systemctl --user stop → 8 s later: active=inactive, pid=0
+```
+
 ### The restore drill tells the truth, and the retention is a bound
 
 The scheduled backup ran a restore-drill on three consecutive nights and

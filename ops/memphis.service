@@ -21,10 +21,16 @@ WorkingDirectory=/opt/memphis
 ExecStartPre=-/usr/bin/fuser -k 3000/tcp
 ExecStartPre=/usr/bin/npm run build:rust
 ExecStart=/usr/bin/node dist/index.js
-# `on-failure` (not `always`) so RestartPreventExitStatus below is honoured.
+# `always`, for the reason the canonical unit gives (scripts/systemd/
+# memphis.service): the runtime drains cleanly and exits 0, and a clean
+# exit read as "nothing went wrong" left the unit DOWN after an
+# unsolicited SIGTERM — MEASURED 2026-11-25 on the operator's host. An
+# operator-initiated stop is still honoured: systemd does not restart a
+# unit the operator stopped.
+#
 # Exit codes 101/102/103 (integrity fail / config error / startup fail) will
 # stop the supervisor from looping on the same crash.
-Restart=on-failure
+Restart=always
 RestartSec=5
 RestartPreventExitStatus=101 102 103
 
