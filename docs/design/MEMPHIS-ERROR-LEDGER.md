@@ -588,7 +588,7 @@ from the same owner. So no value is written down twice by hand; the
 redundancy is of PROJECTIONS, not of authorship.
 
 **PHASE 6 CLOSED 2026-11-24 — the per-variant shapes of `CaseEntry`**
-(PR #787).
+(PR #787, squash `a31194f8c965`).
 
 Phase 5 left the per-variant shapes as "the explicit residue", and the
 residue turned out to be a hole with a gate that could not see it.
