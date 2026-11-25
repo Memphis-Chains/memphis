@@ -39,6 +39,8 @@
  *   - an OnFailure= target that is itself a stub (no ExecStart=)
  *   - a long-running service with no MemoryMax= (the kernel OOM killer
  *     becomes the supervisor, and the failure has no visible cause)
+ *   - a long-running service that is not Restart=always (a clean exit —
+ *     the runtime's ordinary drain — leaves the unit down, silently)
  *
  * SCOPE
  * -----
@@ -151,6 +153,25 @@ for (const unit of units) {
         'instead of by the supervisor, and the failure has no visible cause',
     });
   }
+
+  // A long-running service that is only restarted ON FAILURE comes back
+  // from a crash and stays down from a CLEAN exit — and the runtime's
+  // clean exit is its ordinary way of stopping: it drains and exits 0.
+  //
+  // MEASURED 2026-11-25 on the operator's host, with a scratch unit: an
+  // unsolicited SIGTERM that exits 0 left the unit `inactive` with pid 0
+  // and nothing in the log saying why, while `Restart=always` brought it
+  // back and still honoured `systemctl stop` (systemd does not restart a
+  // unit the operator stopped).
+  if (LONG_RUNNING_SERVICES.has(unit.name) && !/^\s*Restart\s*=\s*always\s*$/m.test(src)) {
+    findings.push({
+      file,
+      problem:
+        "Restart= is not `always` — a clean exit (the runtime's ordinary " +
+        'drain exits 0) leaves the unit DOWN with nothing in the log saying ' +
+        'why. `RestartPreventExitStatus` still stops the 101/102/103 codes.',
+    });
+  }
 }
 
 if (findings.length > 0) {
@@ -162,4 +183,6 @@ if (findings.length > 0) {
   process.exit(1);
 }
 
-console.log(`systemd unit gate OK — ${units.length} unit files checked, every .service is runnable`);
+console.log(
+  `systemd unit gate OK — ${units.length} unit files checked, every .service is runnable`,
+);

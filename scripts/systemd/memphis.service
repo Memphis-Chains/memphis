@@ -12,10 +12,25 @@ StartLimitIntervalSec=300
 Type=simple
 WorkingDirectory=%h/memphis
 ExecStart=/usr/bin/node %h/memphis/dist/infra/cli/index.js serve
-# `on-failure` (not `always`) so RestartPreventExitStatus is honoured.
+# `always`, and the reason is MEASURED.
+#
+# The runtime drains cleanly on SIGTERM and exits 0 — and a clean drain IS
+# a clean exit. `on-failure` reads a clean exit as "the service did what it
+# was told to do", so the unit stayed DOWN: MEASURED 2026-11-25 on this
+# host, an UNSOLICITED SIGTERM (not `systemctl stop`) left the unit
+# `inactive` with pid 0, and nothing in the log said why. The operator
+# cannot tell "the runtime stopped on purpose" from "the runtime is gone".
+#
+# `always` does not fight the operator. systemd does not restart a unit the
+# operator stopped — MEASURED with a scratch unit on this host: an
+# unsolicited SIGTERM brought it back (new pid), and `systemctl stop` left
+# it `inactive`. The runtime's own drain logs its reason (`shutdown.start`
+# carries it), so the restart is visible rather than mysterious.
+#
 # Exit codes 101/102/103 (integrity fail / config error / startup fail)
-# stop the supervisor from looping on the same crash.
-Restart=on-failure
+# still stop the supervisor from looping on the same crash, and
+# StartLimitBurst=5 still caps a boot loop.
+Restart=always
 RestartSec=5
 RestartPreventExitStatus=101 102 103
 

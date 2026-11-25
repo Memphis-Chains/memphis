@@ -1487,16 +1487,181 @@ the next wedge.**
 
 #### E-07 · A clean drain exits 0, so systemd does not restart the runtime
 
-> Measured: `src/infra/runtime/graceful-shutdown.ts:368` — `const exitCode =
-drained ? 0 : 75;` — and the unit sets `Restart=on-failure`. An exit 0 leaves
-> the runtime down, with no restart and nothing in the log to say why.
+**FOUND AND FIXED 2026-11-25** (decision #592) — the entry was filed from a
+reading of the code, and the reading was RIGHT about the mechanism and WRONG
+about the consequence. The runtime does not stay down because the drain
+failed; it stays down because the drain SUCCEEDED.
+
+**THE MECHANISM, as filed.** `src/infra/runtime/graceful-shutdown.ts` ends
+with `const exitCode = drained ? 0 : 75;` — a clean drain exits **0** — and
+the unit sets `Restart=on-failure`. A clean exit is not a failure, so the
+supervisor does nothing.
+
+**AND THE CONSEQUENCE WAS WRONG IN ONE DIRECTION AND RIGHT IN THE OTHER.**
+The entry said "an exit 0 leaves the runtime down, with no restart". That is
+true for an exit 0 nobody asked for, and FALSE for the exit 0 the operator
+asked for — and the difference is the whole repair.
+
+MEASURED on this host, with a scratch unit (so the live service was never
+the experiment):
+
+| what was done to the unit             | `Restart=on-failure`  | `Restart=always`    |
+| ------------------------------------- | --------------------- | ------------------- |
+| `systemctl stop` (the operator asked) | stays `inactive`      | stays `inactive`    |
+| an unsolicited `kill -TERM`, exit 0   | **`inactive`, pid 0** | comes back, new pid |
+
+**SO THE HARM IS NARROWER AND WORSE THAN FILED.** An operator-initiated
+stop is honoured either way — systemd does not restart a unit the operator
+stopped. What `on-failure` loses is every UNSOLICITED exit: a SIGTERM from
+anywhere else, a supervisor that decided to stop the process, a `kill` in a
+script. The unit then goes `inactive` with **pid 0** and nothing in the log
+says why. The operator cannot tell "the runtime stopped on purpose" from
+"the runtime is gone" — and the runtime's own last words (`shutdown.exit`,
+`exitCode: 0`, `drained: true`) read like a SUCCESS.
+
+**MEASURED ON THE LIVE SERVICE, after the repair:**
+
+```
+kill -TERM <MainPID>
+→ shutdown.start (reason SIGTERM) → shutdown.exit exitCode=0 drained=true
+→ 12 s later: active=active, MainPID 2339519 (was 2312087), NRestarts=1
+```
+
+and the operator's own stop still works:
+
+```
+systemctl --user stop → 8 s later: active=inactive, pid=0
+systemctl --user start → active=active, health ok
+```
+
+**THE REPAIR IS THE POLICY, and the gate pins it.** Both shipped units
+(`scripts/systemd/memphis.service` and `ops/memphis.service` — two units
+for the same runtime, and the E-03 gate already knew there were two) now
+say `Restart=always`. `RestartPreventExitStatus=101 102 103` still stops
+the supervisor from looping on the same crash, and `StartLimitBurst=5` still
+caps a boot loop, so `always` costs nothing there.
+
+`scripts/check-systemd-units.mts` now flags a long-running service whose
+`Restart=` is not `always` — the gate can fail: flipping the unit back to
+`on-failure` makes it exit **1** with a structured message, and the unit is
+the only place the policy is written.
+
+**AND THIS IS THE OTHER END OF E-08's CHAIN, measured.** The SIGTERM that
+arrived during the drill was never handled — not one `shutdown.*` line was
+written in the 45 seconds that followed, and systemd's SIGKILL is what
+finally ended it. The drill's event-loop block has fallen from **19 300 ms**
+to **9 583 ms** with E-08's repair (the head-only probe removed a 486 MB
+gunzip and a 486 MB string from the drill), but the tar passes are still
+synchronous, so a stop that lands inside a drill still waits for the drill
+to finish. That is the residual, and it is stated rather than hidden: the
+drain budget is 15 s, the stopper budget is 5 s, and the unit's
+`TimeoutStopSec` is 45 s. A drill that took 22 minutes — which is what E-08
+measured on this host — does not fit in that budget, and the answer was a
+SIGKILL.
 
 #### E-08 · The backup retention stops when the restore drill fails
 
-> Measured: `~/.memphis/backups` holds **3.3 GB in 27 archives**.
-> `src/infra/runtime/scheduled-backup.ts:301-303` skips pruning whenever
-> `state.lastDrillOk === false` — so one failed drill stops the retention
-> permanently, and the disk grows until something else has to make room.
+**FOUND AND FIXED 2026-11-25** (decision #591) — the entry was filed from a
+reading of the code, and the reading was RIGHT about the latch and WRONG
+about everything else. The drill had not failed once; it had failed three
+times in a row, on archives that were complete, and the failure was the
+drill's own verdict being wrong.
+
+**THE HARM, MEASURED.** The scheduled backup ran a restore-drill on three
+consecutive nights and reported it FAILED every time:
+
+| the backup                          | the drill said               | what was actually true                                       |
+| ----------------------------------- | ---------------------------- | ------------------------------------------------------------ |
+| `scheduled-2026-11-23-02-00.tar.gz` | `invalid chain name`         | the archive was complete                                     |
+| `scheduled-2026-11-24-02-00.tar.gz` | `invalid chain name`         | the archive was complete                                     |
+| `scheduled-2026-11-25-02-00.tar.gz` | `Command failed: tar -xzf …` | the archive was complete — tar was killed by the unit's stop |
+
+**THE DRILL WAS VERIFYING A THING THAT IS NOT A CHAIN.** The archive holds
+`chains/.archives` — the rotation's container, which holds `.jsonl.gz` files
+and no blocks. The drill walked every directory under `chains/` and called
+`verifyChainIntegrity` on it, and the verifier throws `invalid chain name`
+for a name that is neither a plain chain nor a recognised `.backup-*` copy.
+
+**AND THE OWNER ALREADY SAID SO.** `classify_chain_directory`
+(`crates/memphis-paths/src/chain_names.rs`) answers `foreign` for
+`.archives`, and the artefact of cases carries that answer
+(`tests/fixtures/chain-name-contract.json`, the `.archives` case). The drill
+never asked. REPRODUCED on this host, against the newest archive:
+`drillBackup('scheduled-2026-11-25-02-00.tar.gz')` → **`invalid chain
+name`**, while `tar -xzf` of the same archive exits 0 and yields 486 MB.
+
+**THE DRILL'S ANSWER WAS A PROPERTY OF THE MACHINE, NOT OF THE BACKUP.**
+Three things made the drill's verdict depend on the host's free memory:
+
+1. the drill extracted into `os.tmpdir()`, and `/tmp` here is a **tmpfs** —
+   RAM: 1 974 234 blocks of 4 KiB, 8.09 GB of memory, of which 4.9 GB was
+   already used by leftovers;
+2. the drill probed "is this the JSON fallback format?" by gunzipping the
+   WHOLE archive — 182 MB in, a 486 MB buffer and a 486 MB string out — to
+   learn that the answer was "no";
+3. the drill ran inside the runtime, whose cgroup is capped at `MemoryMax=4G`
+   while the host's swap was **fully consumed** (4095 of 4095 MB).
+
+MEASURED: the drill blocks the Node event loop for **19 300 ms** — a 50 ms
+timer fired **2** times in a 19.6 s drill where it should have fired 392.
+And in the runtime it took **22 m 16 s** (`backup.scheduled.success` at
+01:06:39 UTC → `backup.scheduled.drill.failed` at 01:28:55 UTC), against
+19.6 s standalone.
+
+**AND THAT IS WHAT TURNED A STOP INTO A KILL.** MEASURED in the journal:
+systemd sent SIGTERM at 02:28:53 CET — while the drill held the event loop —
+and the handler never ran: **not one `shutdown.*` line** was written in the
+45 seconds that followed. `TimeoutStopSec=45` expired, systemd sent SIGKILL,
+and the unit logged `Failed with result 'timeout'`. The drill's own `tar`
+was a child of the unit, so the cgroup's SIGTERM killed it, and the drill
+reported the tar's death as a failed backup.
+
+**THE REPAIR, in four parts, each with its own falsifier.**
+
+1. **The drill asks the owner.** `classifyChainDirectory` decides what each
+   directory is; `foreign` directories are skipped and NAMED in the result
+   (`foreignDirectories`), so a drill that skipped something says so. The
+   owner is not re-implemented here — the mirror that E-03 put in place is
+   the one that answers.
+   - **FALSIFIER, measured on this host:** before, the drill of the newest
+     archive ended in `invalid chain name`; after, the same archive is
+     verified to its end and the drill reports the **true** defect it holds
+     — the `system.backup-1782897312539` copy inside it carries the wrong
+     identity, because that archive was written BEFORE E-15's repair. A
+     fresh archive of the repaired corpus drills clean: **15 chains, 12 380
+     blocks, `foreignDirectories: [".archives"]`**, 14.1 s.
+2. **The reason is in the message.** `execFileSync` puts tar's stderr in the
+   error object and not in the message, so the drill said `Command failed:
+tar -xzf …` and threw the reason away. A broken archive and a broken
+   machine looked identical — and, measured, three days of failures said
+   nothing about which one it was.
+3. **The scratch directory is created next to the archive**, not in
+   `os.tmpdir()`. The filesystem that holds the archive is the one that has
+   room for its contents, and the backups root is EXCLUDED from the archive
+   (`--exclude=./backups`), so a drill in flight cannot land inside the next
+   backup.
+4. **The retention is a BOUND, not a latch.** The old rule skipped the
+   cleaner entirely once a drill had failed; the drill had been failing for
+   three days, so the scheduled archives would have grown by one 182 MB
+   archive a day, for ever, with nothing in the log saying so. The intent is
+   kept as a NUMBER: a failed drill buys exactly **ONE** extra recovery
+   candidate — the archive just beyond the window — and the cleaner runs
+   either way. The total is bounded by `keep + 1` whatever the drill does.
+   - **FALSIFIER:** three consecutive failed drills must all clean with
+     `keep + 1`, and the number must not creep.
+
+**THE GATES.** `tests/integration/backup-content-drill.test.ts`: the drill
+skips a directory that is not a chain and names it; the drill does not
+materialise the whole archive to decide that it is not a fallback archive.
+`tests/unit/scheduled-backup.test.ts`: the retention is the plain window
+after a good drill, the window plus ONE after a failed drill, and it does
+not creep across failures. Reverting the repair fails **5** of the **17**
+tests in those two files.
+
+**THE RESIDUAL, stated rather than hidden.** The rotation's `.jsonl.gz`
+archives inside a backup are still not verified by the drill — they are not
+blocks, and the drill has no reader for them. What the drill now says is
+"the chains and the rollback copies are intact", which is what it can say.
 
 ### Family C — dead code, committed
 
@@ -1661,10 +1826,10 @@ be run rather than admired:
 7. **The measurement is on this host.** Every claim in this ledger is a number
    taken here, and the numbers have dates.
 
-State today, measured 2026-11-24: (1) **fails** — E-01, E-02, E-03 and E-04 are
-closed, E-09 remains; (2) **fails** — the bridge's vocabulary, the chain-name
+State today, measured 2026-11-25: (1) **fails** — E-01, E-02, E-03 and E-04 are
+closed, E-09 is closed in six phases; (2) **fails** — the bridge's vocabulary, the chain-name
 vocabulary and the embed profile have their artefacts and their two runners,
-E-09 remains; the package artefact now has an owner and a runner as well
+E-09 is closed in six phases; the package artefact now has an owner and a runner as well
 (E-12: the gate installs under a declared policy, proves the native binding and
 probes a command that opens the database); (3) **holds** — every gate added in
 the last four rounds ships
@@ -1673,7 +1838,11 @@ run, the chain-name gate was run BEFORE its fix and failed with
 `[".archives", "cases.backup-2026-07-07T15-07-23-108Z", "journal"]`, and the
 embed-profile gate was run before the fix and failed with
 `left: 32, right: 768` — and then failed AGAIN on its first CI run, on a
-hole in its own artefact; (4) **fails** — E-05, E-07, E-08; (5) **holds** — the
+hole in its own artefact; (4) **fails** — E-05 alone: the fifteen recovery
+turns need the operator's acknowledgements, and no code can clear them.
+E-07 (a clean drain left the unit down, because a clean exit is not a
+failure) and E-08 (the retention was a latch, and the drill's verdict was a
+property of the machine) are closed; (5) **holds** — the
 two dead files are gone; (6) **holds** — the block-format, tool-contract,
 bridge-vocabulary, chain-name and embed-profile artefacts are generated;
 (7) **holds**.
@@ -1684,10 +1853,10 @@ way through; the second closed (1) for the bridge path; the third closed (1),
 for the embed profile; the fifth closed (2) for the artefact that ships — the
 package-artifact gate now installs under a declared policy, proves the native
 binding, and probes a command that opens the database (E-12).
-**Next, in this order:** the REST of E-09 — the manifest family and the
-embed-profile family (the ratchet is at TWO surfaces, and it may only go
-down), then the per-variant shapes of `CaseEntry`, then the two napi
-naming conventions in one crate, which is a WIRE change and needs a
-compatibility window rather than a quiet edit. And only then Family B's
+**Next, in this order:** Family B's
 wedge (E-05), which needs the operator's fifteen acknowledgements before
-any code can help.
+any code can help — and, beside it, the two residuals this round measured
+rather than hid: the drill's tar passes are still synchronous, so a stop that
+lands inside a drill still waits for it, and the rotation's `.jsonl.gz`
+archives inside a backup are still not verified, because the drill has no
+reader for them.
