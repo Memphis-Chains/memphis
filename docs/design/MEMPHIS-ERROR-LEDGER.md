@@ -1804,6 +1804,50 @@ one at a time), not tar. It is 24× under the unit's `TimeoutStopSec=45`, and a
 stop is answered inside it — but it is a real pause, and it belongs to the
 storage layer, not to this rule.
 
+**AND THEN THE LIVE TEST FOUND THE NEXT THING.** The repair was verified on
+the **running service**, not only in a harness: the scheduled backup was
+triggered through the scheduler's own API, and a SIGTERM was aimed at the
+drill while it was extracting.
+
+```
+10:41:52  backup.scheduled.start
+10:42:35  backup.scheduled.success  (182 605 156 bytes)
+10:42:42  the drill's tar -xzf starts
+10:42:42  SIGTERM — the same second as the extraction
+10:42:46  shutdown.exit exitCode=0 drained=true
+```
+
+The stop was answered in the second it was sent and the unit drained cleanly
+— the case this entry was filed about, measured on the service that had the
+defect.
+
+**AND THE TEST LEFT A CORPSE.** The drill removes its scratch directory in a
+`finally`, and a `finally` does not run when the process is killed. The live
+test left `memphis-verified-drill-Jsb39N` in the backups root — **489 MB and
+13 002 files**, measured on this host — and nothing in the runtime ever
+collected it. A drill that is stopped leaves a corpse.
+
+**THE REPAIR, sixth part** (decision #595, journal #1101). The scratch's NAME carries the pid of the process
+that owns it, and the next drill buries the corpses it can PROVE are corpses:
+the kernel says the owner is gone (ESRCH), or — for the scratch of a drill
+that ran before the name carried the owner — the directory's **ctime** is
+older than the drill's longest measured runtime (22 m 16 s; the threshold is
+six hours, ~16× that). tar RESTORES the mtime, so the mtime points at the
+ARCHIVE's time and says nothing about the drill; the ctime is the last time
+an entry was created inside the scratch — the extraction — and tar cannot
+forge it. A scratch whose owner is ALIVE is never touched.
+
+- **FALSIFIER, and the gate can fail in both directions.**
+  `tests/integration/backup-content-drill.test.ts` runs the drill against an
+  archive whose directory holds the scratch of a killed drill and asserts that
+  the corpse is gone afterwards; against the pre-fix code it fails with
+  **`expected true to be false`** — the corpse survived. Its companion case
+  asserts that the scratch of a LIVE owner is left alone, and it fails when
+  the liveness proof is mutated away. `tests/unit/backup-drill-scratch.test.ts`
+  holds the rule's own cases, including the legacy shape and the trap in it
+  (a legacy `mkdtemp` suffix can start with digits, so `3sb39N` must not be
+  read as the pid 3).
+
 ### Family C — dead code, committed
 
 #### E-06 · Two backup files are in the repository
@@ -2005,4 +2049,9 @@ residual — the drill's synchronous tar passes, which is what turned a stop
 into a SIGKILL — is **closed** as of 2026-11-25 (decision #594): the tar
 rule has one owner and every call through it is asynchronous, the drill's
 longest silence fell from 11 302 ms to 1 842 ms, and a stop aimed at the
-drill is now answered in 1 ms.
+drill is now answered in 1 ms. The case the incident was filed about has
+since been measured on the **running service**: the extraction and the
+SIGTERM in the same second (10:42:42), `shutdown.exit exitCode=0
+drained=true` four seconds later — and the scratch that the killed drill
+left behind, 489 MB and 13 002 files, is now buried by the next drill that
+can prove it is a corpse.

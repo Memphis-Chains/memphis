@@ -53,6 +53,43 @@ runner produce the **same archive** from the same tree, a tar failure still
 names the reason, and no file in the archive path waits on a child process
 synchronously.
 
+### The live test passed — and it left 489 MB behind
+
+The repair was verified on the **running service**, not only in a test harness:
+the scheduled backup was triggered through the scheduler's own API, and a
+SIGTERM was aimed at the drill while it was extracting.
+
+```
+10:41:52  backup.scheduled.start
+10:42:35  backup.scheduled.success  (182 605 156 bytes)
+10:42:42  the drill's tar -xzf starts
+10:42:42  SIGTERM — the same second as the extraction
+10:42:46  shutdown.exit exitCode=0 drained=true
+```
+
+The stop was answered in the second it was sent, and the unit drained cleanly.
+
+**AND THE TEST FOUND SOMETHING ELSE.** The drill removes its scratch
+directory in a `finally`, and a `finally` does not run when the process is
+killed: the live test left `memphis-verified-drill-Jsb39N` in the backups root
+— **489 MB and 13 002 files**, measured on this host — and nothing in the
+runtime ever collected it.
+
+**THE SCRATCH OF A KILLED DRILL IS NOW BURIED.** The scratch's name carries
+the pid of the process that owns it, and the next drill buries the corpses it
+can **prove** are corpses: the kernel says the owner is gone (ESRCH), or — for
+the scratch of a drill that ran before the name carried the owner — the
+directory's **ctime** is older than the drill's longest measured runtime. tar
+RESTORES the mtime, so the mtime points at the archive's time and says
+nothing about the drill; the ctime is the last time an entry was created
+inside the scratch — the extraction — and tar cannot forge it. A scratch
+whose owner is alive is never touched.
+
+**THE GATE, and it can fail in both directions.** Against the pre-fix code
+the burial case fails with `expected true to be false` — the corpse survived
+the drill that should have buried it — and the "the owner is alive" case
+fails when the liveness proof is mutated away.
+
 ### The cockpit tells the operator to run `/recovery` — and now it has one
 
 The cockpit's own error notice said: **Action: run `/recovery` to see the
