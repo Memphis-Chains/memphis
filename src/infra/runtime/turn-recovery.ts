@@ -1,6 +1,23 @@
 import Database from 'better-sqlite3';
 
+import { getActiveTier3Session, type Tier3Surface } from '../../security/tier3-session.js';
 import { validateOperatorPassphrase } from '../auth/operator-gate.js';
+
+/**
+ * How the operator proved they ARE the operator.
+ *
+ * TWO authorities, ONE owner. The CLI proves it with the passphrase; the
+ * cockpit proves it with the tier-3 session it already holds — `/tier 3
+ * <passphrase>` mints one, and it has a TTL.
+ *
+ * Both are validated HERE, by the function that writes. The rule "only
+ * the operator may acknowledge a turn" therefore has one owner and one
+ * gate, and the cockpit is not a second, weaker door: it reaches the same
+ * function with an authority the function itself checks.
+ */
+export type RecoveryAuthority =
+  | { kind: 'passphrase'; passphrase: string }
+  | { kind: 'elevated-session'; surface: Tier3Surface; actorId: string };
 
 export interface RecoveryTurn {
   id: string;
@@ -47,8 +64,17 @@ function ensureOperationColumns(db: Database.Database): boolean {
   return true;
 }
 
-function requireOperator(passphrase: string): void {
-  if (!passphrase || !validateOperatorPassphrase(passphrase)) throw new Error('operator authentication failed');
+function requireOperator(authority: RecoveryAuthority): void {
+  if (authority.kind === 'passphrase') {
+    if (!authority.passphrase || !validateOperatorPassphrase(authority.passphrase)) throw new Error('operator authentication failed');
+    return;
+  }
+  // The cockpit's authority: a tier-3 session that is still alive. The
+  // session carries its own expiry, so the check is "is there a live
+  // session", not "did somebody once type the passphrase".
+  if (!getActiveTier3Session(authority.surface, authority.actorId)) {
+    throw new Error('operator authentication failed: no active tier-3 session');
+  }
 }
 
 /** Metadata only: checkpoint contents and arbitrary tool output stay private. */
@@ -103,9 +129,9 @@ export function showRecoveryPartial(databasePath: string, id: string): { text: s
   } finally { db.close(); }
 }
 
-export function acknowledgeRecoveryTurn(databasePath: string, id: string, passphrase: string, forceRunning = false): void {
+export function acknowledgeRecoveryTurn(databasePath: string, id: string, authority: RecoveryAuthority, forceRunning = false): void {
   if (!/^[0-9a-f]{32}$/.test(id)) throw new Error('invalid turn id');
-  requireOperator(passphrase);
+  requireOperator(authority);
   const db = new Database(databasePath, { fileMustExist: true });
   try {
     const hasOperations = ensureOperationColumns(db);
@@ -125,10 +151,10 @@ export function acknowledgeRecoveryTurn(databasePath: string, id: string, passph
   }
 }
 
-export function acknowledgeLegacyOperation(databasePath: string, id: string, passphrase: string, forceRunning = false): void {
+export function acknowledgeLegacyOperation(databasePath: string, id: string, authority: RecoveryAuthority, forceRunning = false): void {
   // eslint-disable-next-line no-control-regex -- operation IDs must not contain control characters
   if (!id || id.length > 512 || /[\x00-\x1f\x7f]/.test(id)) throw new Error('invalid operation id');
-  requireOperator(passphrase);
+  requireOperator(authority);
   const db = new Database(databasePath, { fileMustExist: true });
   try {
     if (!ensureOperationColumns(db)) throw new Error('operation journal not found');

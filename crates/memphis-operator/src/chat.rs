@@ -302,7 +302,7 @@ impl OperatorRuntime {
         ).map_err(|error| OperatorError::Sqlite(error.to_string()))?;
         if running {
             return Err(OperatorError::Message(
-                "a turn is active in this session; inspect `memphis recovery list` before continuing".into(),
+                "a turn is active in this session; inspect `/recovery` in the cockpit (or `memphis recovery list` in a terminal) before continuing".into(),
             ));
         }
         let mut pending = vec![MessageToPersist {
@@ -326,7 +326,7 @@ impl OperatorRuntime {
                 .contains("UNIQUE constraint failed: operator_turn_checkpoints.session_id")
             {
                 return Err(OperatorError::Message(
-                    "another turn started in this session; inspect `memphis recovery list`".into(),
+                    "another turn started in this session; inspect `/recovery` in the cockpit (or `memphis recovery list` in a terminal)".into(),
                 ));
             }
             return Err(error);
@@ -430,7 +430,7 @@ impl OperatorRuntime {
         let recovery_guard = !incomplete.is_empty() || !unsettled.is_empty();
         if recovery_guard {
             on_chunk(ChatStreamEvent::Text(format!(
-                "[recovery] Earlier work is incomplete. Side-effecting tools are paused. Inspect it with `memphis recovery list` before operator acknowledgement.\n{incomplete}\n{unsettled}\n"
+                "[recovery] Earlier work is incomplete. Side-effecting tools are paused. Inspect it with `/recovery` in the cockpit (or `memphis recovery list` in a terminal) before operator acknowledgement.\n{incomplete}\n{unsettled}\n"
             )));
         }
         let user_content = if !recovery_guard {
@@ -969,7 +969,7 @@ fn run_turn(
                 if recovery_guard && !read_only {
                     *blocked_by_recovery = true;
                     return Err(OperatorError::Message(
-                        "side-effecting tool paused: inspect `memphis recovery list` and have the operator acknowledge the earlier turn".into(),
+                        "side-effecting tool paused: inspect `/recovery` in the cockpit (or `memphis recovery list` in a terminal) and have the operator acknowledge the earlier turn".into(),
                     ));
                 }
                 *tool_calls_used += 1;
