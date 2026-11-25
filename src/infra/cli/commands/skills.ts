@@ -7,6 +7,7 @@ import {
   importSkillManifestFile,
   inspectSkillCatalog,
   materializeInstalledSkill,
+  planSkillInstallation,
   validateSkillManifestFile,
 } from '../../../modules/skills/catalog.js';
 import {
@@ -21,9 +22,9 @@ function printSkillsHelp(json: boolean): void {
   print(
     {
       usage:
-        'memphis skills list|show <id>|install <id>|create <id> [--name <name>] [--description <text>] [--tools <tool1,tool2>] [--out <dir>] | validate [--file <manifest.json>] | import --file <manifest.json> [--force] [--json]',
+        'memphis skills list|show <id>|install <id> [--dry-run] [--force]|create <id> [--name <name>] [--description <text>] [--tools <tool1,tool2>] [--out <dir>] | validate [--file <manifest.json>] | import --file <manifest.json> [--force] [--json]',
       notes:
-        'Catalog merges built-in starter skills with local catalog entries under ~/.memphis/skills/catalog. Install materializes SKILL.md plus manifest.json under ~/.memphis/skills/installed/<id>/.',
+        'Catalog merges built-in starter skills with local catalog entries under ~/.memphis/skills/catalog. Install materializes SKILL.md plus manifest.json under ~/.memphis/skills/installed/<id>/. Install --dry-run prints the plan — the directories, the files and whether anything would be overwritten — and writes nothing.',
     },
     json,
   );
@@ -212,6 +213,33 @@ export async function handleSkillsCommand(context: CliContext): Promise<boolean>
 
   if (subcommand === 'install') {
     const ref = manifestRefFromContext(context);
+
+    // The dry-run stops at the PLAN: what would be written, where, and
+    // whether it would overwrite something. Nothing touches the disk.
+    //
+    // Postmortem item B2: "the skill loader must dry-run before it
+    // installs anything." The plan is computed first in every case — the
+    // install applies the very plan the dry-run prints — so the two can
+    // never describe different things.
+    if (context.args.dryRun) {
+      const plan = planSkillInstallation(ref, { rawEnv: process.env });
+      if (json) {
+        print({ dryRun: true, plan }, true);
+      } else {
+        console.log(chalk.cyan(`Dry run — nothing was written for ${plan.skillId}`));
+        console.log(`  directories: ${plan.directories.length}`);
+        for (const dir of plan.directories) {
+          console.log(`    ${dir}`);
+        }
+        console.log(`  files: ${plan.files.length}`);
+        for (const file of plan.files) {
+          console.log(`    ${file.kind} ${file.path} (${file.bytes} B)`);
+        }
+        console.log(`  overwrites: ${plan.overwrites ? 'yes' : 'no'}`);
+      }
+      return true;
+    }
+
     const materialized = materializeInstalledSkill(ref, {
       force: context.args.force,
       rawEnv: process.env,

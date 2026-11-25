@@ -63,3 +63,8 @@ Po każdym użyciu jeśli widzisz co do poprawy:
 - **Player hierarchy:** mpv > vlc > ffplay > parole. mpv nie jest zainstalowany na tym systemie (rekomendacja dla przyszłości).
 - **Anti-pattern:** `nohup cmd &` z parent shell umiera razem z exec. **`setsid -f cmd` (z `</dev/null`) = detach prawidłowy.**
 - **verify.sh v1.0 → v1.1:** TEST 4 miał false-positive dla JPEG (ffprobe raportował "video stream" dla statycznych obrazów). **Fix:** rozróżnij kind (mp4/mkv/jpg) przed sprawdzaniem stream types.
+
+## Sidecar contract
+
+- **Sidecar writes:** `/tmp/<player>-skill-<pid>.log`
+- **Audit target:** none — the play log is temporary and carries no persistent audit.

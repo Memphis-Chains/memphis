@@ -45,6 +45,10 @@ import '../infra/logging/contextual.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 import { initOtelIfEnabled } from '../infra/observability/otel.js';
+import {
+  describeBootFailureGate,
+  evaluateBootFailureGate,
+} from '../infra/runtime/boot-failure-gate.js';
 import { startChainRotationLoop } from '../infra/runtime/chain-rotation-loop.js';
 import { startCronsBridge } from '../infra/runtime/crons-bridge.js';
 import { inStrictMode } from '../infra/runtime/emergency-log.js';
@@ -128,6 +132,24 @@ export async function bootstrap(): Promise<void> {
   // preventing double-counting in production. Non-production entries
   // (tsx dev, tests) bypass bin/memphis.js and still record here.
   maybeRecordBootAttempt(process.env);
+
+  // Postmortem item B3 (2026-09-22): a runtime that is CRASH-LOOPING
+  // must not keep starting. MEASURED that day: 50+ failed restarts in
+  // three minutes, every ~5 s, and `boot-failures.json` grew to 50
+  // entries — the file existed exactly for this purpose and nothing read
+  // it where reading it mattered.
+  //
+  // The refusal exits 102, which is in the unit's
+  // `RestartPreventExitStatus=101 102 103` — systemd does not restart
+  // it, so the service stays DOWN with the reason in the log instead of
+  // flickering through restarts that hide the cause.
+  const bootFailureGate = evaluateBootFailureGate(process.env);
+  if (bootFailureGate.refuseStart) {
+    process.stderr.write(
+      `[memphis-bootstrap] refusing to start — ${describeBootFailureGate(bootFailureGate)}\n`,
+    );
+    process.exit(102);
+  }
 
   // P3 hotfix (Phase 1.3): refuse start when another Memphis runtime
   // already holds the data dir. Without this, two `memphis serve`

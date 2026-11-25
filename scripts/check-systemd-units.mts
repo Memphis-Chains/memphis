@@ -41,6 +41,23 @@
  *     becomes the supervisor, and the failure has no visible cause)
  *   - a long-running service that is not Restart=always (a clean exit —
  *     the runtime's ordinary drain — leaves the unit down, silently)
+ *   - a long-running service with no start-limit pair in [Unit] (the
+ *     systemd default, 5 restarts in 10 s, is not the cap)
+ *   - a unit of the local family whose supervision policy differs from
+ *     the one owner (src/infra/runtime/service-unit-policy.ts)
+ *
+ * THE UNIT THE GENERATOR WOULD WRITE
+ * -----------------------------------
+ * MEASURED 2026-11-25 on the operator's host, while closing postmortem
+ * item A4: the unit that was RUNNING said `Restart=always` and carried a
+ * 4 GB ceiling, while `buildUserServiceUnit` — the function
+ * `memphis service install` deploys — said `Restart=on-failure` and
+ * carried no ceiling at all. The gate read only files, so it passed: the
+ * drift was invisible because the gate was looking somewhere else.
+ *
+ * So the gate now renders that unit too and holds it to the same rules.
+ * The rules themselves live in `src/infra/audit/systemd-unit-rules.ts` —
+ * one owner, read by this gate and by the contract corpus.
  *
  * SCOPE
  * -----
@@ -60,129 +77,82 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import {
+  findUnitFindings,
+  GENERATED_UNIT_FILE,
+  type UnitRuleFinding,
+} from '../src/infra/audit/systemd-unit-rules.js';
 import { listUnitsUnderTest, type UnitUnderTest } from '../src/infra/audit/systemd-unit-scope.js';
+import { buildUserServiceUnit } from '../src/infra/runtime/user-service.js';
 
 const REPO_ROOT = resolve('.');
-
-/**
- * Units that stay up for a long time and therefore must be bounded.
- *
- * The runtime's own cgroup peaked at 3.4 GB and the app slice at 9.6 GB
- * with 1.4 GB of swap, with no limit anywhere above it. A memory cap
- * turns that into a restart the operator can see.
- */
-const LONG_RUNNING_SERVICES = new Set(['memphis.service']);
-
-interface Finding {
-  file: string;
-  problem: string;
-}
 
 function readUnit(unit: UnitUnderTest): string {
   return readFileSync(unit.path, 'utf8');
 }
 
-/**
- * Directives inside [Service]. A unit may declare ExecStart=, ExecStartPre=,
- * ExecStop= or ExecStopPost= — systemd accepts any of them as proof that
- * the unit has something to run. The stub had none of them.
- */
-function hasRunnableDirective(src: string): boolean {
-  return /^\s*Exec(Start|Stop)\w*\s*=/m.test(src);
-}
-
-function onFailureTargets(src: string): string[] {
-  const targets: string[] = [];
-  for (const match of src.matchAll(/^\s*OnFailure\s*=\s*(\S+)/gm)) {
-    targets.push(match[1]);
-  }
-  return targets;
-}
-
 const units = listUnitsUnderTest(REPO_ROOT);
-const findings: Finding[] = [];
+const knownUnitNames = units.map((unit) => unit.name);
+const knownUnitSources = new Map<string, string>(units.map((unit) => [unit.name, readUnit(unit)]));
+
+const findings: UnitRuleFinding[] = [];
 
 for (const unit of units) {
-  const file = unit.file;
-  if (!file.endsWith('.service')) continue;
-  const src = readUnit(unit);
+  findings.push(
+    ...findUnitFindings({
+      file: unit.file,
+      name: unit.name,
+      src: readUnit(unit),
+      knownUnitNames,
+      knownUnitSources,
+    }),
+  );
+}
 
-  if (!hasRunnableDirective(src)) {
-    findings.push({
-      file,
-      problem:
-        'no ExecStart=/ExecStop= — systemd refuses to run this unit with ' +
-        '"Service has no ExecStart=, ExecStop=, or SuccessAction=. Refusing."',
-    });
-  }
+// The unit `memphis service install` would write. It is rendered from the
+// repository root, so the paths in it are the repository's own — the
+// rules do not care where the runtime lives, only what the unit says.
+//
+// If it cannot be rendered (no entrypoint at all), that is itself a
+// finding: a generator that cannot produce a unit is a generator whose
+// policy nobody can check.
+let generatedUnit: string | null = null;
+try {
+  generatedUnit = buildUserServiceUnit(REPO_ROOT, {
+    HOME: process.env.HOME ?? '',
+    NODE_ENV: 'production',
+  });
+} catch (error) {
+  findings.push({
+    rule: 'no-runnable-directive',
+    file: GENERATED_UNIT_FILE,
+    problem: `the generated unit could not be rendered: ${
+      error instanceof Error ? error.message : String(error)
+    }`,
+  });
+}
 
-  for (const target of onFailureTargets(src)) {
-    // Only local unit names are checked; a template or a remote target
-    // (e.g. user@.service) is out of scope for this gate.
-    if (!target.endsWith('.service')) continue;
-    if (target.includes('@')) continue;
-
-    const targetUnit = units.find((candidate) => candidate.name === target);
-    if (!targetUnit) {
-      findings.push({
-        file,
-        problem: `OnFailure= points at ${target}, which is not one of the shipped units`,
-      });
-      continue;
-    }
-
-    const targetSrc = readUnit(targetUnit);
-    if (!hasRunnableDirective(targetSrc)) {
-      findings.push({
-        file,
-        problem: `OnFailure= points at ${target}, which has no ExecStart= — the failure would be reported into the void`,
-      });
-    }
-  }
-
-  // A long-running service with no memory ceiling lets the kernel OOM
-  // killer act instead of the supervisor. The operator then sees the
-  // runtime die with no visible cause — which is exactly what happened
-  // here: 9.6 GB across the app slice, 1.4 GB of swap, no limit above
-  // it.
-  if (LONG_RUNNING_SERVICES.has(unit.name) && !/^\s*MemoryMax\s*=\s*\S/m.test(src)) {
-    findings.push({
-      file,
-      problem:
-        'no MemoryMax= — a memory leak is stopped by the kernel OOM killer ' +
-        'instead of by the supervisor, and the failure has no visible cause',
-    });
-  }
-
-  // A long-running service that is only restarted ON FAILURE comes back
-  // from a crash and stays down from a CLEAN exit — and the runtime's
-  // clean exit is its ordinary way of stopping: it drains and exits 0.
-  //
-  // MEASURED 2026-11-25 on the operator's host, with a scratch unit: an
-  // unsolicited SIGTERM that exits 0 left the unit `inactive` with pid 0
-  // and nothing in the log saying why, while `Restart=always` brought it
-  // back and still honoured `systemctl stop` (systemd does not restart a
-  // unit the operator stopped).
-  if (LONG_RUNNING_SERVICES.has(unit.name) && !/^\s*Restart\s*=\s*always\s*$/m.test(src)) {
-    findings.push({
-      file,
-      problem:
-        "Restart= is not `always` — a clean exit (the runtime's ordinary " +
-        'drain exits 0) leaves the unit DOWN with nothing in the log saying ' +
-        'why. `RestartPreventExitStatus` still stops the 101/102/103 codes.',
-    });
-  }
+if (generatedUnit !== null) {
+  findings.push(
+    ...findUnitFindings({
+      file: GENERATED_UNIT_FILE,
+      name: 'memphis.service',
+      src: generatedUnit,
+      knownUnitNames,
+      knownUnitSources,
+    }),
+  );
 }
 
 if (findings.length > 0) {
   console.error('systemd unit gate FAILED\n');
   for (const f of findings) {
-    console.error(`  ${f.file}: ${f.problem}`);
+    console.error(`  ${f.file} [${f.rule}]: ${f.problem}`);
   }
   console.error('');
   process.exit(1);
 }
 
 console.log(
-  `systemd unit gate OK — ${units.length} unit files checked, every .service is runnable`,
+  `systemd unit gate OK — ${units.length} unit files checked + the generated unit, every .service is runnable`,
 );

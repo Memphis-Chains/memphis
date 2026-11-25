@@ -128,3 +128,8 @@ When Codex reviews land:
 - `feedback_truth_before_refactor.md` — produce CODEBASE-TRUTH-DELTA before larger refactors
 - `feedback_napi_rebuild_after_rust_changes.md` — paired with /memphis-rebuild-rust
 - `feedback_force_push_rules.md` — main vs feature branches
+
+## Sidecar contract
+
+- **Sidecar writes:** none — the skill edits the repository's source and commits it; it writes no file outside the repository.
+- **Audit target:** none — the hotfix's own commit is the audit trail.

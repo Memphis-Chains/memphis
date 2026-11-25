@@ -234,3 +234,8 @@ If you need to change the palette or layout primitives:
 - `/home/memphis/public/sites-discovery/memphis-v5-pl/site_index.html` — currently deployed (may need updating)
 - `~/memphis/docs/pitch/README.md` — pitch deck catalog
 - `~/memphis/docs/partnerships/` — MiniMax outreach materials
+
+## Sidecar contract
+
+- **Sidecar writes:** none — the skill rewrites the landing page files under the repository's sites directory.
+- **Audit target:** none — the deploy report is printed for the operator.

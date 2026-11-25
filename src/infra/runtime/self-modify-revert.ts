@@ -60,7 +60,16 @@ function markerPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
   return join(dataDir, 'state', 'last-self-modify.json');
 }
 
-function bootFailurePath(rawEnv: NodeJS.ProcessEnv = process.env): string {
+/**
+ * Where the boot-failure counter lives.
+ *
+ * Exported because the file is read by more than one rule: the
+ * self-modify auto-revert (here) and the boot-failure gate
+ * (`boot-failure-gate.ts`), which refuses to start a runtime that is
+ * crash-looping. One path, two readers — a second copy of this path is
+ * how the two rules end up looking at different files.
+ */
+export function bootFailurePath(rawEnv: NodeJS.ProcessEnv = process.env): string {
   const dataDir = rawEnv.MEMPHIS_DATA_DIR ?? join(HOME.read(rawEnv), '.memphis');
   return join(dataDir, 'state', 'boot-failures.json');
 }

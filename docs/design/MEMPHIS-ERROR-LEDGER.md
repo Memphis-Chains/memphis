@@ -2140,3 +2140,37 @@ batches, so its silence on the live corpus fell from ~1 000 ms to ~45 ms and
 the verification took the same time as before. In the REAL drill, on the
 real archive, the longest silence fell from **921 ms to 115 ms** — and that
 is with the rotation's archives now verified as well.
+
+**And then the postmortem's own open items — eight of them, still open two
+months after the incident — were measured and closed.** The list is in
+`docs/postmortems/2026-09-22-chains-halt-invalid-block-shape.md`; the
+audit counted them as `open=8`. Each one was measured on this host before
+anything was changed, and three of them were NOT what their one-line
+summary claimed:
+
+- **A4** was already satisfied by the live unit (`StartLimitBurst=5`,
+  `StartLimitIntervalUSec=5min`) — but the unit GENERATOR
+  (`buildUserServiceUnit`) still said `Restart=on-failure` and carried no
+  memory ceiling, so `memphis service install` would have overwritten the
+  measured fix from #794 with a stale one. The policy now has one owner
+  (`src/infra/runtime/service-unit-policy.ts`), the generator renders it,
+  and the gate holds the shipped units AND the generated unit to it.
+  Falsifier measured: breaking the policy makes the gate fail with
+  `policy-mismatch` and `not-restart-always`.
+- **B2** was not "install then sandbox-run for 60 s" — the loader never
+  said what it was about to write. It now computes a PLAN first and the
+  install applies that same plan, so `skills install --dry-run` and the
+  install cannot describe different things.
+- **B3** was about `boot-failures.json`, not about a directory layout: the
+  counter existed exactly for this purpose and nothing read it where
+  reading it mattered. More than five failures in ten minutes now refuses
+  the start with exit 102 — in the unit's `RestartPreventExitStatus`, so
+  systemd does not restart it and the service stays DOWN with the reason
+  in the log.
+
+**Next, in this order:** Family B's wedge (E-05) — the fifteen recovery
+turns need the operator's acknowledgements, and no code can clear them.
+Everything else this ledger could reach is closed; what remains needs a
+decision, not a fix: the scrub of the repository history, the split of the
+two agents, and the 65 commits of `fix/tui-input-sanitize` that are on the
+remote but not in `main`.

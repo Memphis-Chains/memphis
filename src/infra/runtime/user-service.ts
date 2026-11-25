@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { dirname, join, resolve } from 'node:path';
 
 import { resolveInstallRoot } from './install-root.js';
+import { renderServiceUnitPolicy } from './service-unit-policy.js';
 import { HOME } from '../../config/env-registry.js';
 
 export type UserServiceStatus = {
@@ -120,21 +121,32 @@ export function buildUserServiceUnit(
 
   const envFile = rawEnv.MEMPHIS_ENV_FILE ?? join(runtimeRoot, '.env');
 
+  // The supervision policy is NOT restated here. It lives in
+  // `service-unit-policy.ts` — one owner — and the start-limit pair is
+  // rendered into `[Unit]` and the rest into `[Service]`, because systemd
+  // v229+ reads the pair from `[Unit]` and ignores it in `[Service]`.
+  //
+  // MEASURED 2026-11-25 on the operator's host, while closing postmortem
+  // item A4: this function used to write `Restart=on-failure` and no
+  // memory ceiling at all, while the unit that was RUNNING said
+  // `Restart=always` with `MemoryMax=4G`. Running `memphis service
+  // install` would have overwritten a measured fix with a stale one —
+  // and nothing compared the two.
+  const unitPolicy = renderServiceUnitPolicy({ section: 'unit' });
+  const servicePolicy = renderServiceUnitPolicy({ section: 'service' });
+
   return [
     '[Unit]',
     'Description=Memphis local runtime',
     'After=network-online.target',
     'Wants=network-online.target',
-    'StartLimitIntervalSec=300',
-    'StartLimitBurst=5',
+    ...unitPolicy,
     '',
     '[Service]',
     'Type=simple',
     `WorkingDirectory=${runtimeRoot}`,
     `ExecStart=${execStart}`,
-    'Restart=on-failure',
-    'RestartSec=5',
-    'RestartPreventExitStatus=101 102 103',
+    ...servicePolicy,
     `EnvironmentFile=${envFile}`,
     `Environment=HOME=${home}`,
     `Environment=NODE_ENV=${nodeEnv}`,

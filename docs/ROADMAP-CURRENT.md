@@ -168,6 +168,26 @@ Detailed plan: `/home/memphis/_Watra/_embedding-cascade-plan.md` (local,
 gitignored) — 4 sprints, acceptance criteria, risk register, integration
 points with Phase B (Blueprint), Phase T (Trust chains), and Phase G (GUI).
 
+## Deprecated Paths And Sidecars
+
+These paths are DEPRECATED. A sidecar's storage must not live under
+`chains/` — the chain corpus is read as chains and blocks, and a
+non-conforming entry there crashes the runtime at the next boot
+(incident of 2026-09-22,
+[postmortem](postmortems/2026-09-22-chains-halt-invalid-block-shape.md)).
+
+- `chains/halt/` — **deprecated**. The halt registry and its audit trail
+  moved on 2026-09-16 to `~/.memphis/halt/` (the registry) and
+  `~/.memphis/audit/halt/` (the append-only JSONL audit trail). The
+  skill `halt-aware-destructive-ops` v0.2 writes there; nothing writes
+  under `chains/` any more.
+- `~/.memphis/audit/halt/` — the current home of the halt audit trail.
+  It lives outside the corpus on purpose.
+
+The rule that keeps new sidecars out of the corpus is written down in
+[docs/SKILLS.md](SKILLS.md), and it is enforced by
+`npm run -s ops:check-skill-contracts`.
+
 ## Explicitly Deferred
 
 These are not current blockers and should not outrun the stabilization phase:

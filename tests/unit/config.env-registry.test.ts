@@ -12,6 +12,7 @@ import {
   HOME,
   LOG_LEVEL,
   MEMPHIS_AGENT_NAME,
+  MEMPHIS_CHAINS_ALLOWLIST,
   MEMPHIS_OWNER_NAME,
   NODE_ENV,
 } from '../../src/config/env-registry.js';
@@ -34,9 +35,9 @@ describe('env-registry — typed accessors', () => {
   });
 
   it('MEMPHIS_AGENT_NAME / MEMPHIS_OWNER_NAME: trim + default', () => {
-    expect(
-      MEMPHIS_AGENT_NAME.read({ MEMPHIS_AGENT_NAME: '  Jawor  ' } as NodeJS.ProcessEnv),
-    ).toBe('Jawor');
+    expect(MEMPHIS_AGENT_NAME.read({ MEMPHIS_AGENT_NAME: '  Jawor  ' } as NodeJS.ProcessEnv)).toBe(
+      'Jawor',
+    );
     expect(MEMPHIS_AGENT_NAME.read({} as NodeJS.ProcessEnv)).toBe('Memphis Agent');
     expect(MEMPHIS_OWNER_NAME.read({ MEMPHIS_OWNER_NAME: 'Marcin' } as NodeJS.ProcessEnv)).toBe(
       'Marcin',
@@ -96,6 +97,21 @@ describe('env-registry — registry surface', () => {
     expect(names).toContain('MEMPHIS_AGENT_NAME');
     expect(names).toContain('MEMPHIS_OWNER_NAME');
     expect(names).toContain('HOME');
+  });
+
+  it('MEMPHIS_CHAINS_ALLOWLIST is registered and reads the operator value (postmortem C4)', () => {
+    // The variable was read by the chain adapter and set in the operator's
+    // `.env`, but the registry that documents every env var Memphis reads
+    // did not name it — so `memphis doctor` answered "what does Memphis
+    // read?" without the variable that decides WHICH chains get scanned.
+    const names = ENV_REGISTRY.map((acc) => acc.name);
+    expect(names).toContain('MEMPHIS_CHAINS_ALLOWLIST');
+    expect(
+      MEMPHIS_CHAINS_ALLOWLIST.read({
+        MEMPHIS_CHAINS_ALLOWLIST: 'journal,decisions',
+      } as NodeJS.ProcessEnv),
+    ).toBe('journal,decisions');
+    expect(MEMPHIS_CHAINS_ALLOWLIST.read({} as NodeJS.ProcessEnv)).toBe('');
   });
 
   it('buildEnvRegistryReport returns count + entries snapshot', () => {

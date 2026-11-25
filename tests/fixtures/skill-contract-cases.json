@@ -1,0 +1,65 @@
+{
+  "description": "The skill sidecar contract, as cases. Postmortem item C1 (docs/postmortems/2026-09-22-chains-halt-invalid-block-shape.md): MEASURED 2026-09-22 on the operator's host, a skill wrote its audit trail INSIDE the chain corpus (`chains/halt/*.json`), and a non-conforming block there crashed Memphis at the next boot. The rule existed only as a paragraph in the postmortem. The original wording asked for a `compat.test.sh` per skill — that is a copy of one rule in every skill directory, and a copy per directory is how rules drift. So the rule has ONE owner (`src/infra/audit/skill-sidecar-contract.ts`), every skill DECLARES where it writes, and two runners read it: the gate (`scripts/check-skill-contracts.mts`) and this corpus. {skill} = the SKILL.md text under test; {expectedRules} = the rules that must fire, in order.",
+  "cases": [
+    {
+      "name": "a skill that says nothing about its writes cannot be checked",
+      "skillId": "silent-skill",
+      "skill": "# silent-skill\n\n## Purpose\n\nDoes a thing.\n",
+      "expectedRules": ["missing-section"]
+    },
+    {
+      "name": "a contract that omits the audit target is incomplete",
+      "skillId": "half-declared",
+      "skill": "# half-declared\n\n## Sidecar contract\n\n- **Sidecar writes:** `~/.memphis/audit/events.jsonl`\n",
+      "expectedRules": ["missing-declaration"]
+    },
+    {
+      "name": "a contract that omits the sidecar writes is incomplete",
+      "skillId": "no-writes-declared",
+      "skill": "# no-writes-declared\n\n## Sidecar contract\n\n- **Audit target:** `~/.memphis/audit/events.jsonl`\n",
+      "expectedRules": ["missing-declaration"]
+    },
+    {
+      "name": "an empty declaration is not an answer",
+      "skillId": "empty-declared",
+      "skill": "# empty-declared\n\n## Sidecar contract\n\n- **Sidecar writes:**\n- **Audit target:**\n",
+      "expectedRules": ["empty-declaration", "empty-declaration"]
+    },
+    {
+      "name": "a sidecar write under chains/ is the shape that crashed the runtime",
+      "skillId": "writes-under-chains",
+      "skill": "# writes-under-chains\n\n## Sidecar contract\n\n- **Sidecar writes:** `chains/halt/events.jsonl`\n- **Audit target:** `chains/halt/events.jsonl`\n",
+      "expectedRules": ["writes-under-chains", "audit-under-chains"]
+    },
+    {
+      "name": "a relative chains/ path is under the corpus too",
+      "skillId": "relative-chains",
+      "skill": "# relative-chains\n\n## Sidecar contract\n\n- **Sidecar writes:** `chains/decisions`\n- **Audit target:** none\n",
+      "expectedRules": ["writes-under-chains"]
+    },
+    {
+      "name": "a skill that writes nothing says none — that is an answer",
+      "skillId": "writes-nothing",
+      "skill": "# writes-nothing\n\n## Sidecar contract\n\n- **Sidecar writes:** none\n- **Audit target:** none\n",
+      "expectedRules": []
+    },
+    {
+      "name": "an explanation after none does not turn into a path",
+      "skillId": "none-with-reason",
+      "skill": "# none-with-reason\n\n## Sidecar contract\n\n- **Sidecar writes:** none — the skill only edits the repository\n- **Audit target:** none — the commit is the trail\n",
+      "expectedRules": []
+    },
+    {
+      "name": "a write outside the corpus is the shape the rule asks for",
+      "skillId": "writes-outside",
+      "skill": "# writes-outside\n\n## Sidecar contract\n\n- **Sidecar writes:** `~/.memphis/audit/halt/events.jsonl`, `~/.memphis/halt/`\n- **Audit target:** `~/.memphis/audit/halt/events.jsonl`\n",
+      "expectedRules": []
+    },
+    {
+      "name": "a path that merely mentions chains is not under the corpus",
+      "skillId": "chains-backup",
+      "skill": "# chains-backup\n\n## Sidecar contract\n\n- **Sidecar writes:** `/srv/chains-backup/events.jsonl`\n- **Audit target:** `/srv/chains-backup/events.jsonl`\n",
+      "expectedRules": []
+    }
+  ]
+}

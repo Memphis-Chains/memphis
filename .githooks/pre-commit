@@ -55,3 +55,56 @@ done
 if [ "$NEEDS_SYSTEMD_GATE" -eq 1 ]; then
   npm run -s ops:check-systemd-units
 fi
+
+# The chain corpus is the runtime's memory. Postmortem item C2: "A pre-commit
+# git hook running `memphis chain verify` over the chains a change touches.
+# Any block failing the schema blocks the commit."
+#
+# Two triggers, because there are two ways a change can reach the corpus:
+#   - a staged change UNDER chains/ — the corpus itself changed;
+#   - a staged change to the code that READS the corpus — the corpus did not
+#     change, but the reader did, and a reader that cannot read the corpus is
+#     the defect this catches. (MEASURED on the live corpus: 66 blocks of the
+#     chain tails in 2 s.)
+#
+# The sweep asks the native core when the core is loadable, so a green line
+# means "the core can read these blocks", not "the JSON parsed".
+NEEDS_CHAIN_SWEEP=0
+CHAINS_DIR_TO_SWEEP=""
+for file in $STAGED; do
+  case "$file" in
+    chains/*)
+      NEEDS_CHAIN_SWEEP=1
+      CHAINS_DIR_TO_SWEEP="chains"
+      break
+      ;;
+    src/infra/storage/chain-*|src/infra/memory/exact-search.ts|src/infra/storage/chain-archive-*|src/core/chain-hash.ts|src/core/block-payload.ts|crates/memphis-chain/*)
+      NEEDS_CHAIN_SWEEP=1
+      CHAINS_DIR_TO_SWEEP="${MEMPHIS_HOME:-$HOME/.memphis}/chains"
+      break
+      ;;
+  esac
+done
+
+if [ "$NEEDS_CHAIN_SWEEP" -eq 1 ]; then
+  echo "pre-commit: sweeping the chain corpus in $CHAINS_DIR_TO_SWEEP"
+  CHAINS_DIR="$CHAINS_DIR_TO_SWEEP" node scripts/chain-integrity-sweep.mjs
+fi
+
+# Every skill must declare where it writes, and nothing may write under
+# chains/ — the shape that crashed Memphis on 2026-09-22. The rule is in
+# src/infra/audit/skill-sidecar-contract.ts; this is its runner over the
+# skills in the repository.
+NEEDS_SKILL_CONTRACT_GATE=0
+for file in $STAGED; do
+  case "$file" in
+    skills/*)
+      NEEDS_SKILL_CONTRACT_GATE=1
+      break
+      ;;
+  esac
+done
+
+if [ "$NEEDS_SKILL_CONTRACT_GATE" -eq 1 ]; then
+  npm run -s ops:check-skill-contracts
+fi
