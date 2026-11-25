@@ -97,6 +97,21 @@ type PayloadShape = {
   /** How the shape's field names reach the wire: `napiObject` or `serde`. */
   naming: 'napiObject' | 'serde';
   fields: PayloadField[];
+  /**
+   * The PER-VARIANT split, for a shape whose wire carries different
+   * fields depending on the variant.
+   *
+   * A tagged enum puts ONE variant's fields on the wire — a genitive
+   * carries `owner` and `possessed` and nothing else. The flat `fields`
+   * above cannot say that, because a flat list is the union by
+   * construction, and the union is a shape that permits a genitive with a
+   * `verb`.
+   */
+  variants?: {
+    /** The key the wire carries to say which variant it is. */
+    tag: string;
+    variants: Array<{ name: string; fields: PayloadField[] }>;
+  };
 };
 
 type PayloadRow = {
@@ -187,9 +202,7 @@ function readManifest(): {
         field.type.kind === 'enum' ||
         (field.type.kind === 'array' && field.type.of.kind === 'enum');
       if (enumerated && !field.vocabulary?.values.length) {
-        problems.push(
-          `shape ${shape.name} enumerates ${field.name} but declares no vocabulary`,
-        );
+        problems.push(`shape ${shape.name} enumerates ${field.name} but declares no vocabulary`);
       }
       if (!enumerated && field.vocabulary) {
         problems.push(
@@ -290,9 +303,58 @@ function tsTypeFor(field: PayloadField): string {
   return field.nullable ? `${base} | null` : base;
 }
 
+/**
+ * A shape whose wire carries DIFFERENT fields per variant, as a
+ * discriminated union.
+ *
+ * The tag is the discriminator: it is a LITERAL, not a union of the
+ * eight words, because the fields that follow depend on it. A genitive
+ * carries `owner` and `possessed`; a nominative carries `entity`,
+ * `action` and `timestamp`; neither carries the other's fields, and
+ * neither of them carries a `verb`.
+ *
+ * MEASURED 2026-11-24 on this host: the TypeScript side had written this
+ * union down BY HAND, and nothing compared it with the owner — so the
+ * hand-written union could drift from the enum while every gate stayed
+ * green. The falsifier: the owner grew a field on `CaseEntry::Dative`,
+ * and the contract gate, `tsc` and the whole TypeScript suite were all
+ * green while the hand-written union still did not have the field.
+ */
+function renderVariantUnion(shape: PayloadShape): string {
+  const variants = shape.variants;
+  if (!variants) {
+    throw new Error(`the shape ${shape.name} has no per-variant split`);
+  }
+
+  const arms = variants.variants.map((variant) => {
+    const members: string[] = [`${variants.tag}: '${variant.name}'`];
+    for (const field of variant.fields) {
+      const optional = field.optional || Boolean(field.legacyName);
+      members.push(`${field.name}${optional ? '?' : ''}: ${tsTypeFor(field)}`);
+    }
+    return `  | { ${members.join('; ')} }`;
+  });
+
+  const convention =
+    shape.naming === 'napiObject'
+      ? 'an explicit `js_name` verbatim, a field without one in camelCase'
+      : 'serde\'s rule — `rename_all = "camelCase"` camelCases, a field without it keeps its own name';
+
+  return `/** ${shape.naming} — ${convention}. One variant's fields per variant — the tag says which. */\nexport type ${shape.name} =\n${arms.join('\n')};`;
+}
+
 function buildMirror(shapes: PayloadShape[], payloads: PayloadRow[]): string {
   const shapeBlocks = shapes
     .map((shape) => {
+      // A shape with a PER-VARIANT split is a DISCRIMINATED UNION: the
+      // wire carries one variant's fields, so the type has to say which
+      // fields belong to which variant. A flat interface cannot — it is
+      // the union by construction, and the union permits a genitive with
+      // a `verb`.
+      if (shape.variants && shape.variants.variants.length > 0) {
+        return renderVariantUnion(shape);
+      }
+
       const lines: string[] = [];
       for (const field of shape.fields) {
         // A field with a declared legacy spelling is OPTIONAL on the wire:
@@ -358,7 +420,7 @@ export type BridgePayloadOf<K extends BridgePayloadExport> = BridgePayloadMap[K]
 `;
 }
 
-function main(): number {
+async function main(): Promise<number> {
   const check = process.argv.includes('--check');
   const { shapes, payloads, schemaVersion, bridgePath, problems } = readManifest();
 
@@ -371,7 +433,9 @@ function main(): number {
   }
 
   const fixture = buildFixture(shapes, payloads, schemaVersion);
-  const mirror = buildMirror(shapes, payloads);
+  // The mirror is compared in the house's FORMAT, because that is how it
+  // is written — see `formatWithPrettier`.
+  const mirror = await formatWithPrettier(buildMirror(shapes, payloads));
 
   if (check) {
     const problemsFound: string[] = [];
@@ -409,4 +473,24 @@ function main(): number {
   return 0;
 }
 
-process.exit(main());
+/**
+ * The mirror, in the house's FORMAT.
+ *
+ * The mirror is a source file like any other, and the house formats them
+ * all with prettier (`npm run format:check` is a gate). So the projection
+ * writes prettier's formatting, not its own — otherwise the file it
+ * generates is born stale, and the very next `format:check` fails on a
+ * file nobody edited by hand.
+ *
+ * MEASURED 2026-11-24: the flat interfaces this script used to render
+ * happened to be prettier-clean, so the problem stayed hidden; the
+ * discriminated union is not, and the mirror came out stale on the first
+ * write.
+ */
+async function formatWithPrettier(source: string): Promise<string> {
+  const prettier = await import('prettier');
+  const options = (await prettier.resolveConfig(resolve(MIRROR))) ?? {};
+  return prettier.format(source, { ...options, filepath: resolve(MIRROR) });
+}
+
+process.exit(await main());

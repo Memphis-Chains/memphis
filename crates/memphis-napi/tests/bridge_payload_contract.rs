@@ -57,7 +57,7 @@ use std::fs;
 
 use memphis_napi::bridge_exports::BRIDGE_EXPORTS;
 use memphis_napi::bridge_payloads::{
-    BRIDGE_PAYLOADS, PAYLOAD_SHAPES, PayloadNaming, PayloadType, Vocabulary,
+    BRIDGE_PAYLOADS, PAYLOAD_SHAPES, PAYLOAD_VARIANT_SHAPES, PayloadNaming, PayloadType, Vocabulary,
 };
 
 // ---------------------------------------------------------------------------
@@ -396,9 +396,26 @@ fn parse_enums(source: &str) -> Vec<SourceEnum> {
                 .trim()
                 .to_string();
 
-            let fields = match text.find('{') {
+            // The fields are parsed from the ORIGINAL chunk, not from
+            // `text`.
+            //
+            // `split_attributes` above removed EVERY attribute from the
+            // chunk — and a field's attribute is inside the variant's
+            // braces, so the field's `#[serde(skip_serializing_if = …)]`
+            // was gone before `parse_variant_fields` ever saw it. MEASURED
+            // 2026-11-24: `CaseEntry::Ablative::destination` declares
+            // `skip_serializing_if`, and the parser reported
+            // `skip_serializing_if = false` for it. The gate never noticed,
+            // because the union rule made the field optional anyway — the
+            // field is in ONE variant, so "optional" was right for a
+            // reason that had nothing to do with the attribute.
+            //
+            // The per-variant check is where that matters: a variant's own
+            // field is optional ONLY because of the attribute, and the
+            // attribute was invisible.
+            let fields = match chunk.find('{') {
                 Some(brace) => {
-                    let inner = &text[brace + 1..];
+                    let inner = &chunk[brace + 1..];
                     let inner = inner.rsplit_once('}').map(|(head, _)| head).unwrap_or(inner);
                     parse_variant_fields(inner)
                 }
@@ -1438,6 +1455,48 @@ fn the_artefact_is_what_the_table_says() {
                 shape.name
             );
         }
+
+        // The per-variant split, when the shape has one. The key's
+        // PRESENCE is the fact: a shape without a per-variant shape has
+        // no "variants" key at all.
+        match PAYLOAD_VARIANT_SHAPES
+            .iter()
+            .find(|candidate| candidate.shape == shape.name)
+        {
+            Some(variant_shape) => {
+                let variants = entry
+                    .get("variants")
+                    .and_then(|value| value.get("variants"))
+                    .and_then(|value| value.as_array())
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "the artefact's shape {} has a per-variant shape but the artefact carries no variants",
+                            shape.name
+                        )
+                    });
+                assert_eq!(
+                    variants.len(),
+                    variant_shape.variants.len(),
+                    "the artefact's shape {} has {} variants, the table has {}",
+                    shape.name,
+                    variants.len(),
+                    variant_shape.variants.len()
+                );
+                for (variant, declared) in variants.iter().zip(variant_shape.variants.iter()) {
+                    assert_eq!(
+                        variant.get("name").and_then(|value| value.as_str()),
+                        Some(declared.name),
+                        "the artefact's shape {} names a different variant",
+                        shape.name
+                    );
+                }
+            }
+            None => assert!(
+                entry.get("variants").is_none(),
+                "the artefact's shape {} carries variants, but the table declares no per-variant shape for it",
+                shape.name
+            ),
+        }
     }
 
     for payload in BRIDGE_PAYLOADS {
@@ -1645,6 +1704,7 @@ fn a_constant_can_be_the_source_of_a_closed_vocabulary() {
 /// the WHOLE enum is the tag plus the union of the variants — and the
 /// union is what the owner has to declare.
 fn union_fields(enum_: &SourceEnum) -> Vec<SourceField> {
+
     let mut union: Vec<SourceField> = Vec::new();
     for variant in &enum_.variants {
         for field in &variant.fields {
@@ -1769,6 +1829,147 @@ fn every_enum_shape_is_the_tag_and_the_union_of_its_variants() {
     );
 }
 
+/// THE PER-VARIANT SPLIT IS THE ENUM'S, VARIANT BY VARIANT.
+///
+/// The flat table says which fields the enum can carry; this says WHICH
+/// VARIANT carries WHICH. MEASURED 2026-11-24: the TypeScript side had
+/// written that split down by hand and NOTHING compared it with the
+/// enum — so the hand-written union could drift from the owner while
+/// every gate stayed green.
+///
+/// The falsifier, measured: the owner grew a field on `CaseEntry::Dative`;
+/// the flat table and the generated mirror grew it with it; the contract
+/// gate was green (12/12), `tsc` was clean and the TypeScript suite was
+/// green (41/41) — and the hand-written union still did not have the
+/// field. This test is what makes that drift impossible.
+#[test]
+fn every_variant_shape_is_the_variants_of_its_enum() {
+    let (_, _, enums, _) = crate_sources();
+    let rust_types: Vec<&'static str> = PAYLOAD_SHAPES.iter().map(|shape| shape.rust_type).collect();
+
+    let mut checked = 0;
+    for variant_shape in PAYLOAD_VARIANT_SHAPES {
+        let Some(flat) = PAYLOAD_SHAPES
+            .iter()
+            .find(|shape| shape.name == variant_shape.shape)
+        else {
+            panic!(
+                "the per-variant shape {} describes a shape the flat table does not have",
+                variant_shape.shape
+            );
+        };
+
+        let Some(enum_) = enums.iter().find(|candidate| candidate.name == flat.rust_type) else {
+            panic!(
+                "the per-variant shape {} describes the type {}, and the gate did not find that enum in the sources",
+                variant_shape.shape, flat.rust_type
+            );
+        };
+        checked += 1;
+
+        // The tag: the key the wire carries to say WHICH variant it is.
+        let enum_tag = enum_.tag.as_ref().unwrap_or_else(|| {
+            panic!(
+                "the shape {} describes the enum {}, and that enum carries no serde tag",
+                variant_shape.shape, enum_.name
+            )
+        });
+        assert_eq!(
+            variant_shape.tag, enum_tag,
+            "{}: the per-variant shape says the tag is {}, but the enum says {}",
+            variant_shape.shape, variant_shape.tag, enum_tag
+        );
+
+        // The variants, by their WIRE names — serde's rule applied.
+        let expected: Vec<String> = enum_
+            .variants
+            .iter()
+            .map(|variant| serde_variant_name(enum_.rename_all.as_deref(), &variant.name))
+            .collect();
+        let declared: Vec<String> = variant_shape
+            .variants
+            .iter()
+            .map(|variant| variant.name.to_string())
+            .collect();
+        assert_eq!(
+            declared, expected,
+            "{}: the per-variant shape declares {:?}, but the enum {} has {:?}",
+            variant_shape.shape, declared, enum_.name, expected
+        );
+
+        // And now, variant by variant, field by field.
+        for (declared_variant, source_variant) in variant_shape
+            .variants
+            .iter()
+            .zip(enum_.variants.iter())
+        {
+            assert_eq!(
+                declared_variant.fields.len(),
+                source_variant.fields.len(),
+                "{}: the variant {} declares {} fields, but the enum declares {}",
+                variant_shape.shape,
+                declared_variant.name,
+                declared_variant.fields.len(),
+                source_variant.fields.len()
+            );
+
+            for (declared, field) in declared_variant.fields.iter().zip(source_variant.fields.iter()) {
+                assert_eq!(
+                    declared.name, field.name,
+                    "{}: the variant {} declares {}, but the enum declares {}",
+                    variant_shape.shape,
+                    declared_variant.name,
+                    declared.name,
+                    field.name
+                );
+
+                let (expected_type, is_option) = rust_kind(&field.type_text, &rust_types, &enums)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "{}: the gate does not know the Rust type {} of the variant field {}",
+                            variant_shape.shape, field.type_text, field.name
+                        )
+                    });
+                assert_eq!(
+                    kind_of(declared.ty),
+                    expected_type,
+                    "{}: the variant {} declares {:?} for {}, but the enum declares {}",
+                    variant_shape.shape,
+                    declared_variant.name,
+                    declared.ty,
+                    field.name,
+                    field.type_text
+                );
+
+                // The PRESENCE of a variant's own field: it is on the
+                // wire whenever that variant is — unless it is an `Option`
+                // with `skip_serializing_if`, which makes it ABSENT when it
+                // has no value. Absent, not null.
+                let (expected_optional, expected_nullable) = if field.skip_serializing_if {
+                    (true, false)
+                } else {
+                    (false, is_option)
+                };
+                assert_eq!(
+                    (declared.optional, declared.nullable),
+                    (expected_optional, expected_nullable),
+                    "{}: the variant {} declares optional={} nullable={} for {}, but the enum declares otherwise",
+                    variant_shape.shape,
+                    declared_variant.name,
+                    declared.optional,
+                    declared.nullable,
+                    declared.name
+                );
+            }
+        }
+    }
+
+    assert!(
+        checked > 0,
+        "the gate found no per-variant shape at all — the table is empty, not the parser broken"
+    );
+}
+
 fn artefact_path() -> String {
     // The artefact lives at the repository root, two levels up from
     // `crates/memphis-napi/tests/`.
@@ -1778,3 +1979,4 @@ fn artefact_path() -> String {
     path.push("tests/fixtures/bridge-payload-contract.json");
     path.to_string_lossy().to_string()
 }
+
