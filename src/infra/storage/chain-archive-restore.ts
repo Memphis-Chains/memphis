@@ -27,17 +27,45 @@
  * post-restore to get the fresh full-chain integrity check.
  */
 
-import { createReadStream } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { StringDecoder } from 'node:string_decoder';
-import { createGunzip } from 'node:zlib';
 
-import { hashBlock, type ChainBlock } from './chain-adapter.js';
-import { scanArchiveValues } from './chain-archive-format.js';
+import { type ChainBlock } from './chain-adapter.js';
+import {
+  ChainArchiveVerificationError,
+  verifyChainArchive,
+  type ChainArchiveDefectCode,
+  type ChainArchiveVerification,
+} from './chain-archive-verify.js';
 import { serializeBlockForDisk } from './chain-file-io.js';
 import { getChainPath } from '../../config/paths.js';
 import { SAFE_CHAIN_NAME } from '../../memory/chain-catalog.js';
+
+/**
+ * The restore's own error codes, and how the shared rule's codes map onto
+ * them.
+ *
+ * The restore has a public contract — its callers match on `code` — so the
+ * shared rule's codes are translated here rather than leaking out of it.
+ */
+function restoreCodeFor(code: ChainArchiveDefectCode): ChainArchiveRestoreError['code'] {
+  switch (code) {
+    case 'empty-archive':
+      return 'empty-archive';
+    case 'hash-mismatch':
+      return 'hash-mismatch';
+    case 'internal-chain-break':
+      return 'internal-chain-break';
+    case 'identity-mismatch':
+      return 'identity-mismatch';
+    case 'index-gap':
+      return 'index-gap';
+    case 'range-mismatch':
+      return 'range-mismatch';
+    case 'unreadable':
+      return 'parse-error';
+  }
+}
 
 export interface ChainArchiveRestoreResult {
   chain: string;
@@ -76,95 +104,14 @@ export class ChainArchiveRestoreError extends Error {
       | 'internal-chain-break'
       | 'discontinuous-with-active'
       | 'parse-error'
-      | 'empty-archive',
+      | 'empty-archive'
+      | 'identity-mismatch'
+      | 'index-gap'
+      | 'range-mismatch',
   ) {
     super(message);
     this.name = 'ChainArchiveRestoreError';
   }
-}
-
-async function readArchiveToBlocks(archivePath: string): Promise<ChainBlock[]> {
-  const blocks: ChainBlock[] = [];
-  await new Promise<void>((resolve, reject) => {
-    const stream = createReadStream(archivePath).pipe(createGunzip());
-    // A UTF-8 DECODER, not `chunk.toString('utf8')`.
-    //
-    // A multi-byte character that straddles a chunk boundary is not a
-    // character plus a fragment — it is one character. Decoding each
-    // chunk on its own replaces the split sequence with U+FFFD, and the
-    // block's content is silently wrong.
-    //
-    // Measured 2026-11-23 on this host, on a real rotation of the
-    // `insights` chain (297 blocks archived): 20 of the 297 lines came
-    // back corrupted, the first of them at block 190 — where the restore
-    // then failed with "hash mismatch at block 190", because the
-    // corrupted byte sat inside a hash-covered field. Every corrupted
-    // character sat exactly two bytes before a 16 KB chunk boundary:
-    // the two bytes of `ó` (0xC3 0xB3), split in half.
-    //
-    // `StringDecoder` holds the incomplete tail of a chunk until the
-    // next one arrives, so the character survives.
-    const decoder = new StringDecoder('utf8');
-    let buffer = '';
-    stream.on('data', (chunk: Buffer | string) => {
-      buffer += typeof chunk === 'string' ? chunk : decoder.write(chunk);
-
-      // Split the stream into complete JSON VALUES, not into lines.
-      //
-      // The old reader split on newlines and parsed each line — which is
-      // what "JSON Lines" means — while the writer produced pretty-printed
-      // blocks glued together by newlines. Every archive the runtime
-      // produced therefore died on its first line, which was `{`.
-      //
-      // The scanner reads both the current format (one object per line)
-      // and the legacy one (objects spread over many lines), so the
-      // archives already on disk stay recoverable. See
-      // `chain-archive-format.ts`.
-      const scan = scanArchiveValues(buffer);
-      buffer = scan.rest;
-
-      for (const value of scan.values) {
-        try {
-          blocks.push(JSON.parse(value) as ChainBlock);
-        } catch (err) {
-          reject(
-            new ChainArchiveRestoreError(
-              `parse error in archive: ${err instanceof Error ? err.message : String(err)}`,
-              'parse-error',
-            ),
-          );
-          stream.destroy();
-          return;
-        }
-      }
-    });
-    stream.on('end', () => {
-      // Flush the decoder's tail — a truncated character at the very end
-      // of the stream still has to be surfaced, not silently dropped.
-      buffer += decoder.end();
-
-      // Anything left is a truncated value — fail closed.
-      const tail = buffer.trim();
-      if (tail) {
-        try {
-          blocks.push(JSON.parse(tail) as ChainBlock);
-        } catch (err) {
-          reject(
-            new ChainArchiveRestoreError(
-              `parse error at archive tail: ${err instanceof Error ? err.message : String(err)}`,
-              'parse-error',
-            ),
-          );
-          return;
-        }
-      }
-      resolve();
-    });
-    stream.on('error', (err) => {
-      reject(err instanceof ChainArchiveRestoreError ? err : err);
-    });
-  });
-  return blocks;
 }
 
 /**
@@ -222,42 +169,21 @@ export async function restoreChainFromArchive(
   const crypto = options.crypto ?? (await import('node:crypto'));
   const skipExisting = options.skipExisting ?? true;
 
-  const blocks = await readArchiveToBlocks(archivePath);
-  if (blocks.length === 0) {
-    throw new ChainArchiveRestoreError(
-      `archive contained no blocks: ${archivePath}`,
-      'empty-archive',
-    );
-  }
-
-  // Step 1: per-block hash verification.
-  for (const block of blocks) {
-    const withoutHash = {
-      index: block.index,
-      timestamp: block.timestamp,
-      chain: block.chain,
-      data: block.data,
-      prev_hash: block.prev_hash,
-    };
-    const expected = hashBlock(withoutHash, crypto);
-    if (block.hash !== expected) {
-      throw new ChainArchiveRestoreError(
-        `hash mismatch at block ${block.index}: stored=${block.hash} expected=${expected}`,
-        'hash-mismatch',
-      );
+  // Steps 1 and 2 — the archive's blocks are intact — are the rule of
+  // `chain-archive-verify.ts`, and the backup drill asks the same question.
+  // One owner: if the restore and the drill each had their own copy of
+  // "what makes an archive intact", they would drift, and the drill would
+  // be verifying something the restore does not.
+  let verification: ChainArchiveVerification;
+  try {
+    verification = await verifyChainArchive(archivePath, { crypto, expectedChain: chainName });
+  } catch (error) {
+    if (error instanceof ChainArchiveVerificationError) {
+      throw new ChainArchiveRestoreError(error.message, restoreCodeFor(error.code));
     }
+    throw error;
   }
-
-  // Step 2: internal prev_hash chain.
-  blocks.sort((a, b) => a.index - b.index);
-  for (let i = 1; i < blocks.length; i += 1) {
-    if (blocks[i].prev_hash !== blocks[i - 1].hash) {
-      throw new ChainArchiveRestoreError(
-        `prev_hash break between block ${blocks[i - 1].index} and ${blocks[i].index}`,
-        'internal-chain-break',
-      );
-    }
-  }
+  const blocks = verification.blocks;
 
   // Step 3: continuity against the active chain's HEAD (prefix-restore semantics).
   // Codex Round 5 P1 fix: rotateChain archives the OLDEST blocks, so a

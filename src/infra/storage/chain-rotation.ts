@@ -12,7 +12,12 @@ import * as path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 
-import { archiveFileName, parseArchiveFileName, toArchiveLine } from './chain-archive-format.js';
+import {
+  ARCHIVES_DIR_NAME,
+  archiveFileName,
+  parseArchiveFileName,
+  toArchiveLine,
+} from './chain-archive-format.js';
 import { ROTATION_HEAD_FORMAT, writeChainRotationHead } from './chain-rotation-head.js';
 import { withChainWriteLock } from './chain-write-lock.js';
 import { getChainPath, getChainSnapshotsPath } from '../../config/paths.js';
@@ -365,7 +370,7 @@ async function prepareArchive(
   chainName: string,
   blocks: { file: string; index: number }[],
 ): Promise<ArchivePreparation> {
-  const archiveDir = path.join(path.dirname(chainDir), '.archives');
+  const archiveDir = path.join(path.dirname(chainDir), ARCHIVES_DIR_NAME);
   await fs.mkdir(archiveDir, { recursive: true });
 
   const firstIdx = blocks[0]!.index;
@@ -550,7 +555,7 @@ export async function archiveGC(
     options.gcKeep ?? readEnvKeepArchives(options.rawEnv) ?? DEFAULT_ARCHIVE_KEEP,
   );
   const chainDir = getChainPath(chainName, options.rawEnv);
-  const archiveDir = path.join(path.dirname(chainDir), '.archives');
+  const archiveDir = path.join(path.dirname(chainDir), ARCHIVES_DIR_NAME);
 
   const archives = await listArchives(archiveDir, chainName);
   if (!enabled || archives.length <= keep) {
