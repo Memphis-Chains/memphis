@@ -20,6 +20,7 @@ import {
   diagnoseChainHashes,
   exportChain,
   rebuildChainHashes,
+  repairArchiveIdentity,
   verifyChainIntegrity,
 } from '../../storage/chain-adapter.js';
 import { NapiChainAdapter } from '../../storage/rust-chain-adapter.js';
@@ -261,6 +262,19 @@ async function handleChainCommand(context: CliContext): Promise<boolean> {
     print(result, json);
     return true;
   }
+  // chain repair-archive-identity — restores the chain identity of a
+  // ROLLBACK COPY that carries its own directory name instead of the
+  // chain's logical name. The identity is inside the hash, so such a copy
+  // is a different history of the same blocks: it verifies clean and cannot
+  // be rolled back. Only an archive directory is accepted.
+  if (subcommand === 'repair-archive-identity') {
+    if (!chain) {
+      throw new Error('chain repair-archive-identity requires --chain <archive-directory>');
+    }
+    const result = await repairArchiveIdentity(chain);
+    print(result, json);
+    return true;
+  }
   // chain migrate — walks every chain and applies the registered schema
   // migrations (see src/infra/storage/migrations/). Default = dry-run;
   // pass --apply to actually swap dirs. Closes Phase 3.2 production sprint.
@@ -358,6 +372,7 @@ async function handleChainCommand(context: CliContext): Promise<boolean> {
       'rebuild',
       'diagnose',
       'rebuild-hashes',
+      'repair-archive-identity',
       'restore',
       'migrate',
       'rotate',
