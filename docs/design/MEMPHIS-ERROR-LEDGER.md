@@ -937,6 +937,16 @@ archive and in the live chain — because a chain is append-only, so a copy
 of it shares its prefix for ever. `INSERT OR REPLACE` would rewrite a row
 with its own twin.
 
+**AND THE GENERAL CLAUSE IN THAT SENTENCE IS TRUE ONLY FOR A COPY MADE BY
+COPY.** MEASURED 2026-11-25: `cases.backup-2026-07-07T15-07-23-108Z` shares
+**276/276** hashes with the live chain, `journal.backup-1784913076785` shares
+**210/210** — and `system.backup-1782897312539` shares **0/261**, because its
+blocks carry the directory name in `chain` and were hashed over it. A copy
+whose identity was rewritten from a directory name is not a copy of the same
+chain any more. The sentence above stands for the archive it measured; it
+does not stand for archives in general, and the difference is itself a
+defect (filed on its own).
+
 **And the fix this entry recorded was wrong too — which the measurement is
 why.** The obvious repair, a composite key `(chain, block_index)`, would
 **not** have separated the two, and the house says so out loud:
@@ -1010,6 +1020,111 @@ carry the same `chain` value as the chain they copy. The key has to carry
 the SOURCE, and `rebuild()` has to stop wiping the whole table. That is
 the next step, and it is queued with the correction above, not with the
 plan this entry first recorded.
+
+#### E-14 · The case index's key cannot tell two chains apart, and the fix is a WIRE change
+
+**OPEN — designed 2026-11-24 (decision #586), NOT started.** The harm
+today is ZERO, and the plan this entry first recorded was WRONG. Both
+facts are measured.
+
+> Measured 2026-11-24 on this host:
+>
+> |                                                            |                                                                                           |
+> | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+> | the index's key                                            | `block_index INTEGER PRIMARY KEY` — the chain is NOT in it                                |
+> | the `chain` column                                         | every row says `cases` — it carries no information                                        |
+> | the index's rows                                           | **2 190**, `block_index` 0…2 189 — exactly the live chain                                 |
+> | the archive `chains/cases.backup-2026-07-07T15-07-23-108Z` | **276** blocks at indices 0…275, and **all 276 hashes are IDENTICAL** to the live chain's |
+> | code paths that index an archive                           | **none** — the adapter hardcodes `CHAIN_NAME = 'cases'`                                   |
+> | `PRAGMA user_version`                                      | **0** — there is no schema versioning at all                                              |
+
+**THE PLAN E-13 RECORDED WAS WRONG, and the measurement is why.** The
+obvious repair — a composite key `(chain, block_index)` —
+would **not** have separated the live chain from its archive. The house
+says so out loud: `src/memory/chain-catalog.ts` states that _"the
+archive suffix is a COPY marker, not part of the chain's identity: the
+blocks inside it carry `chain: "journal"`"_. MEASURED: all 276 archived
+blocks carry `chain: "cases"` — the same value as the live chain's. The
+one column that could have told them apart is the one column that does
+not.
+
+**THE KEY MUST CARRY THE SOURCE** — the chain DIRECTORY the blocks were
+read from, not the logical chain name. And the source **cannot come from
+the blocks**: the house forbids reading the directory name as the chain
+name, because that is how a repair would rewrite every archived block's
+`chain` field and invalidate the archive's hashes. So the source has to
+be threaded from the CALLER — the adapter, which knows the directory it
+read — down to the owner.
+
+**AND ON 2026-11-25 THAT WAS MEASURED, AND THE BLOCKS DO NOT AGREE WITH EACH
+OTHER** — which is the strongest form the argument can take, because it stops
+being a rule and becomes an observation. All three archives on this host, the
+`chain` field they carry, and whether their hashes still match the live
+chain's prefix:
+
+| the archive directory                   | blocks  | the `chain` field it carries  | hashes identical to the live chain's prefix |
+| --------------------------------------- | ------- | ----------------------------- | ------------------------------------------- |
+| `cases.backup-2026-07-07T15-07-23-108Z` | **276** | `cases`                       | **276/276**                                 |
+| `journal.backup-1784913076785`          | **210** | `journal`                     | **210/210**                                 |
+| `system.backup-1782897312539`           | **261** | `system.backup-1782897312539` | **0/261**                                   |
+
+**TWO OF THE THREE ARCHIVES SAY ONE THING AND THE THIRD SAYS ANOTHER.** A key
+built from the blocks' own `chain` field would file the `cases` and `journal`
+archives under their live chain's name and the `system` archive under a name
+of its own — one logical chain, three keys, and the index could not tell the
+fork from the copies. The source has to be the DIRECTORY, and the directory
+is known only to the CALLER. That is not a preference; it is the only
+reading that survives the corpus.
+
+**AND THE THIRD ROW IS ALSO A DEFECT OF ITS OWN, so it is not filed as
+E‑14's problem.** `system.backup-1782897312539` is a **forked** copy: its
+261 blocks carry the DIRECTORY name in `chain`, and their hashes are
+consistent with THAT value — recomputed on this host with the repo's own rule
+(`canonicalStringify({...block, data: toCanonicalHashData(block.data)})`),
+every one of the 261 matches. So it is not a corrupt archive: it is a
+self-consistent copy of a **different chain identity**, sitting where a
+rollback copy of `system` should be. The rule it broke is the owner's own
+(`crates/memphis-paths/src/chain_names.rs`): _"the archive suffix is a COPY
+marker, not part of the chain's identity"_. Filed on its own, with its own
+measurement and its own falsifier.
+
+**That is a WIRE change**, and the house says a WIRE change needs the
+compatibility window E-01 built, not a quiet edit. So E-14 is queued as:
+the compatibility window FIRST (the risky part, and it is independent),
+then the schema, then the rebuild's scope.
+
+**TWO MORE THINGS THE MIGRATION MUST FIX, measured:**
+
+- `rebuild()` opens with `DELETE FROM case_entries` — a **global** wipe.
+  Rebuilding from one chain destroys every other chain's entries, so a
+  per-source index needs a per-source rebuild. A composite key alone
+  would not fix that.
+- There is **no schema versioning**: `PRAGMA user_version = 0` and
+  `CREATE TABLE IF NOT EXISTS` means an existing index never receives a
+  new schema. A migration has nowhere to live until that changes.
+
+**WHY IT IS NOT URGENT, and saying so is the point of measuring it:** the
+index is correct today, nothing can reach the archive, and the rotation —
+the only thing that would ever put a second chain's blocks next to the live
+chain's — is **3.1 years** away (the chain is at 11.5% of the threshold).
+
+**AND THE CLAIM THAT AN ARCHIVE ALWAYS SHARES THE LIVE CHAIN'S PREFIX WAS
+MEASURED FALSE ON 2026-11-25** — it holds for two of the three archives and
+not for the third (see the table above). An archive is a COPY, but a copy
+whose `chain` field was written from a directory name is a copy of a
+DIFFERENT chain identity, and it carries its own hashes. The reason the
+index is still correct today is not that the archives are safe by
+construction — it is that **nothing can reach them**: the adapter
+hardcodes `CHAIN_NAME = 'cases'` and only ever reads the live chain's
+directory.
+
+**AND THE SHORTCUTS WERE CONSIDERED AND REJECTED, so the next cycle does
+not take them:** a per-source index FILE (no WIRE change, but the rule
+moves OUT of the owner and into a filename convention, and it orphans the
+operator's existing index); and conflict detection (refuse to replace a
+row whose hash differs — the chain is the truth and the index must
+FOLLOW it, so refusing would turn a legitimate re-index into a false
+alarm).
 
 ### Family B — the system degrades quietly instead of failing
 
