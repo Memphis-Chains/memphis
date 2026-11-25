@@ -1545,6 +1545,13 @@ the stdio JSON protocol, and refuses an unauthorised acknowledgement with
 the authority that is missing. The owner: the tier-3 session is accepted
 when it is alive and refused when it is not.
 
+**MEASURED ON THIS HOST, through the cockpit's own path.** The host
+advertises `recovery.list` and `recovery.acknowledge`, and
+`recovery.list` answers **49 turns, 15 needing acknowledgement** — the
+SAME numbers the CLI reports for the same corpus, because it is the same
+owner. The listing names the pending turns with their sessions and their
+unsettled counts, and it ends with the command the operator should type.
+
 **THE RESIDUAL, stated rather than hidden.** The acknowledgement is still
 implemented in the TypeScript arm while the Rust arm owns the schema and
 the guard — two arms, one write. Moving the write into the Rust core means
