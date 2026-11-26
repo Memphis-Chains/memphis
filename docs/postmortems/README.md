@@ -21,6 +21,7 @@ Post-incident analyses for Memphis runtime failures. **Each postmortem should ha
 | [2026-10-26-reflection-background-memory-write.md](2026-10-26-reflection-background-memory-write.md) | 2026-10-26 | S2 | resolved | — |
 | [2026-10-29-basal-audit-block-shape.md](2026-10-29-basal-audit-block-shape.md) | 2026-10-29 | S2 | resolved | — |
 | [2026-11-25-backup-loop-blocked-the-shutdown.md](2026-11-25-backup-loop-blocked-the-shutdown.md) | 2026-11-25 | S2 (runtime SIGKILLed; a nightly backup reported a false failure) | resolved | — |
+| [2026-11-26-secret-env-in-published-history.md](2026-11-26-secret-env-in-published-history.md) | 2026-11-26 | S3 (no live secret was exposed; every value was already rotated, and the published history was rewritten on 2026-11-26) | open | 4 |
 <!-- postmortem-index:end -->
 
 ## Format

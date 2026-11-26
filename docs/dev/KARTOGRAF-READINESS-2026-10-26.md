@@ -92,7 +92,7 @@ quality or Q2 completion.
 
 A private, repository-only baseline now exists in the operator evidence archive.
 It was built from clean tracked sources at
-`e095e10630c1990f407b72e8bd38a63b56d00e6f`; operator chains and configuration
+`7b2031f29c4cf2e6e346a4e342251cfe5022192e`; operator chains and configuration
 were explicitly excluded. It contains 1,560 unique samples, split 1,249/311,
 and 1,038 training / 249 evaluation pairs with uniform four hard negatives.
 The independent byte audit found zero exact-content split overlap and zero

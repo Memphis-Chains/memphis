@@ -270,7 +270,7 @@ chmod +x bin/memphis.js
 ## 🔗 QUICK REFERENCE
 
 **Repository:** https://github.com/Memphis-Chains/memphis
-**Fix commit:** ecd2884f00001ec2940e7857283965c437d0e264
+**Fix commit:** c12bddcfb264fb11ac06ff8608572dfc9db7f154
 **Issue date:** 2026-03-11 08:23 CET
 **Fixed by:** Memphis-Chains
 

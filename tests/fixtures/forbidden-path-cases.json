@@ -1,0 +1,95 @@
+{
+  "why": "The forbidden-path rule, pinned as cases. A rule that only exists in a postmortem is a rule that waits for the next incident; these cases are the rule's executable form, and they must fail BEFORE the fix that adds them.",
+  "cases": [
+    {
+      "path": ".env",
+      "forbidden": true,
+      "rule": "secret-env",
+      "why": "The runtime configuration file. Its values are the vault pepper and API tokens; it was committed in 16 commits between 2026-03-10 and 2026-03-15 and the published history had to be rewritten on 2026-11-26."
+    },
+    {
+      "path": ".env.local",
+      "forbidden": true,
+      "rule": "secret-env",
+      "why": "The same file with a different name is the same secret."
+    },
+    {
+      "path": "services/gateway/.env.production",
+      "forbidden": true,
+      "rule": "secret-env",
+      "why": "The rule is about the file name in any directory, not only at the repository root."
+    },
+    {
+      "path": ".env.example",
+      "forbidden": false,
+      "rule": null,
+      "why": "The template carries no values, and the repository carries it on purpose: it is how the operator learns which keys exist."
+    },
+    {
+      "path": "vault-state.json",
+      "forbidden": true,
+      "rule": "vault-state",
+      "why": "The vault's own state file never enters the repository."
+    },
+    {
+      "path": "data/vault-state.json",
+      "forbidden": true,
+      "rule": "vault-state",
+      "why": "The rule matches the file name in any directory."
+    },
+    {
+      "path": "secrets/operator.tier2-passphrase",
+      "forbidden": true,
+      "rule": "tier2-passphrase",
+      "why": "A tier-2 passphrase never enters the repository, under any name."
+    },
+    {
+      "path": "operator.tier2-passphrase",
+      "forbidden": true,
+      "rule": "tier2-passphrase",
+      "why": "The rule matches the suffix in any directory."
+    },
+    {
+      "path": ".github-pat",
+      "forbidden": true,
+      "rule": "github-pat",
+      "why": "The GitHub personal access token never enters the repository."
+    },
+    {
+      "path": "home/.github-pat",
+      "forbidden": true,
+      "rule": "github-pat",
+      "why": "The rule matches the file name in any directory."
+    },
+    {
+      "path": "dist/infra/cli/index.js",
+      "forbidden": true,
+      "rule": "build-output",
+      "why": "Build output is not repository content."
+    },
+    {
+      "path": "node_modules/tsx/dist/cli.mjs",
+      "forbidden": true,
+      "rule": "build-output",
+      "why": "Dependencies are not repository content."
+    },
+    {
+      "path": "src/index.ts",
+      "forbidden": false,
+      "rule": null,
+      "why": "Source is what the repository is for."
+    },
+    {
+      "path": "docs/design/dist.md",
+      "forbidden": false,
+      "rule": null,
+      "why": "A document named dist is not under the dist directory; the rule is about directories."
+    },
+    {
+      "path": "src/infra/audit/forbidden-paths.ts",
+      "forbidden": false,
+      "rule": null,
+      "why": "The rule's own owner is repository content."
+    }
+  ]
+}
