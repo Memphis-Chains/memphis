@@ -401,7 +401,7 @@ in [VALIDATION.md](VALIDATION.md#earlier-acceptance-status--2026-10-17).
 The detailed [handoff](../../../notes/next-session-memphis-recovery-2026-10-14.md)
 retains commands, failure explanations and private artifact locations.
 
-The source baseline is `10fac3d81901892001d8634c754e42a333659fca` on
+The source baseline is `8eed22fad4c524304079f8211b634185289cacaf` on
 `fix/embed-persistence-and-chain-parse`. That selected vault/config/reader commit
 was pushed to `elathoxu-crypto/memphis-fork` on October 17. The current deployed
 build also includes local work. In particular, E17-SNAPSHOT is deployed but

@@ -559,7 +559,7 @@ health-reporting      FAILURE  1 failing check(s); top-line=healthy
                       checks.embed_index_dimension=fail
 deployment-freshness  FAILURE  dist is 13 commit(s) behind main; 2 cli command(s) missing
                       newest built file: 2026-11-01T23:46:28.476Z
-                      main head: 91049d2ee369e62b7e4847ae5b4c0bc3da38e222
+                      main head: 2073e4e6824c4bc76314520a0de99a01b2e28c00
                       missing from the build: dream, audit-runtime
 branch-boundary       FAILURE  1 script(s) push HEAD to a protected branch
                       crons/tuesday-code.sh:155 pushes main
