@@ -1,5 +1,43 @@
 ## Unreleased
 
+### A falsifier deleted the runtime's `.env` — and the pepper that opens the vault was one `rm` from being gone
+
+The forbidden-path gate's falsifier wrote its payload to the **live**
+`/home/memphis/memphis/.env` instead of a scratch path. `git add .env` rejected
+it — because the path is gitignored, not because any gate refused it — and the
+`rm -f .env` that followed removed the operator's configuration file.
+`memphis.service` could not start: systemd refuses a unit whose
+`EnvironmentFile=` is missing.
+
+**Nothing was lost, and the reason is worth writing down.** The pepper that
+opens the vault lived in exactly one file, and no backup on this host contains
+it — `scripts/backup-exclude-policy.json` excludes `.env` from every archive,
+correctly and deliberately. The three historical peppers in the pre-scrub git
+backup do **not** open the live vault. The live pepper was found in the
+operator's own chat history in `data/memphis.db`, and it was selected **by
+proof**: a candidate counts only when it unwraps `vault-state.json` _and_
+decrypts every entry. One candidate out of fifteen decrypts **17/17** entries —
+the provider keys, the Telegram bot token, the GitHub PAT, the DID seed and
+nine memory archives.
+
+**The API token was reissued, not guessed.** The 2026-09-30 rotation is
+redacted at every write site, and the daemon compares the token verbatim with
+no verifier, so a candidate cannot be tested. A fresh token came from the
+repository's own generator; off-host clients have to be updated by the operator.
+
+**Measured after the restart:** `ActiveState=active`, `NRestarts=0`;
+`memphis health` → `status: ok`, `vaultInitialized: true`; `memphis doctor` →
+61 checks, 48 pass, 13 warn, **0 fail**; `memphis chain verify` → `ok: true`,
+14 chains, 12 840 blocks; the Telegram gateway comes up with the same
+provider/model pair it logged before the outage; an authenticated HTTP request
+with the new token returns 200.
+
+The vault was sealed into `~/runtime-archives/vault-recovery-2026-11-26/`
+**before** any reinstall, because the setup wizard initialises a new vault and
+`vault init --force` overwrites both vault files irrecoverably. The procedure
+lives in `docs/runbooks/RESTORE-VAL-AFTER-ENV-LOSS.md`; the incident in
+`docs/postmortems/2026-11-26-live-env-destroyed-by-falsifier.md`.
+
 ### The runtime's own `.env` sat in the published history for eight months
 
 A file named `.env` was committed in March 2026 and stayed in the published
