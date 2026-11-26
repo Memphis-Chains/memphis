@@ -1,5 +1,57 @@
 ## Unreleased
 
+### The runtime's own `.env` sat in the published history for eight months
+
+A file named `.env` was committed in March 2026 and stayed in the published
+history of this repository until 2026-11-26 — sixteen commits, eight months.
+It was not a template: it held four non-empty values under
+`MEMPHIS_VAULT_PEPPER` and one under `MEMPHIS_API_TOKEN`.
+
+**Measured before anything changed, and without printing a value:** two
+distinct vault peppers (18 and 64 characters) and one API token; the live
+pepper and the live token do **not** match the published ones, so nothing in
+the running system was compromised. The exposure was real but stale — and a
+pepper that is published is a pepper that is not secret, which leaves every
+vault archive encrypted under the OLD pepper decryptable by a reader of the
+history.
+
+**The history was rewritten, and verified before it was published.** A
+recovery point first (a byte copy of `.git`, a bundle of all 213 refs, a
+bundle of the local-only branches), then a full mirror rewritten with
+`git filter-repo --path .env --invert-paths` — 3 927 commits in 1.8 s. The
+verification is the part that matters: `.env` in 0 commits, `git fsck` exit
+0, and for **all 69 branches and tags** the tree is identical to the
+original minus `.env`, with author, committer, dates and subject preserved
+(400/400 sampled) and **0 commits pruned** — the shape of the history did
+not change, only the file did. `.env.example` was kept on purpose: it is a
+template with no values.
+
+**`main` was refused, and the gate that refused it was not a bug.** The
+ruleset "main" (id 14186283) carries `non_fast_forward` plus four required
+checks and has **zero bypass actors** — not even the repository admin
+passes. With the operator's consent, the checks were dispatched on the
+rewritten SHA first (all four contexts green on the exact commit being
+pushed), the rules were relaxed for the push alone, and the ruleset was
+restored from its JSON dump and verified byte-identical right afterwards.
+The push took under ten seconds.
+
+**The cheap half of the answer is now in place.** `src/infra/audit/forbidden-paths.ts`
+owns the rule, `scripts/check-forbidden-paths.mts` runs it over the staged
+files, and `tests/fixtures/forbidden-path-cases.json` (15 cases) with
+`tests/unit/forbidden-paths.test.ts` (21 tests) pin it. The pre-commit hook
+runs it on every staged change. The gate reads PATHS only, so it can never
+print a secret into a log. Staging a `.env` fails it with exit 1;
+`.env.example` passes.
+
+**Still open, measured:** the public fork `elathoxu-crypto/memphis-fork`
+carries the pre-scrub history and no token on this host may write to it
+(the rewrite is prepared and verified, 66/66 refs); six `.env` blobs remain
+reachable through GitHub-owned `refs/pull/*`; five local branches and two
+detached worktrees still point into the old history; and the open question
+the incident actually leaves is whether any vault archive was encrypted
+under the exposed pepper. See
+`docs/postmortems/2026-11-26-secret-env-in-published-history.md`.
+
 ### Eight open items from the 22.09 incident — measured, then closed
 
 The audit of 2026-09-22 ended with eight unchecked boxes. Two months later
