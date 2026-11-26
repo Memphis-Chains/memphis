@@ -65,6 +65,7 @@
     "ops:check-scan-parity": "tsx scripts/check-scan-parity.mts",
     "ops:check-systemd-units": "tsx scripts/check-systemd-units.mts",
     "ops:check-skill-contracts": "tsx scripts/check-skill-contracts.mts",
+    "ops:check-forbidden-paths": "tsx scripts/check-forbidden-paths.mts",
     "ops:check-package-runtime-closure": "tsx scripts/check-package-runtime-closure.mts",
     "ops:check-native-bridge": "tsx scripts/check-native-bridge.mts",
     "ops:dream-falsifier": "tsx scripts/dream-falsifier.mts",

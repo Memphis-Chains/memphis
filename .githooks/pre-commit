@@ -16,6 +16,19 @@ npm run lint
 
 STAGED="$(git diff --cached --name-only)"
 
+# A path that may never enter the repository. MEASURED 2026-11-26: a `.env`
+# file was committed in 16 commits in March 2026 and stayed in the published
+# history for eight months, carrying two vault peppers and one API token —
+# all rotated since, but published the whole time. The history had to be
+# rewritten with filter-repo and a force-push of every branch and tag. This
+# gate is the cheap half of that answer: the file never enters, so no
+# rewrite is ever needed. The rule's owner is
+# src/infra/audit/forbidden-paths.ts; the gate reads PATHS only, so it can
+# never print a secret into a log.
+if [ -n "$STAGED" ]; then
+  npm run -s ops:check-forbidden-paths
+fi
+
 GUARDED='scripts/pii-scan.sh
 scripts/default-secret-scan.sh
 sites/memphis-v5/api/_boot.php
